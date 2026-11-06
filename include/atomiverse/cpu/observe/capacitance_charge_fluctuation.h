@@ -20,7 +20,7 @@
 /// Does **not** solve constant-potential charges — it measures whatever is
 /// already on the Frame. Primary electrode is type list index 0 (parallel-plate
 /// left wall). Units: \(Q\) [e], \(T\) [K], \(\Psi\) [V], \(k_B\) from
-/// `units::md_boltz` so \(k_B T\) [eV] and \(1\,e\cdot 1\,\mathrm{V}=1\,\mathrm{eV}\).
+/// boltz so \(k_B T\) [eV] and \(1\,e\cdot 1\,\mathrm{V}=1\,\mathrm{eV}\).
 ///
 /// Refs: Limmer et al., J. Chem. Phys. 139, 184704 (2013); Scalfi et al.,
 /// Phys. Chem. Chem. Phys. 22, 10480 (2020); MetalWalls JOSS 5, 2373 (2020)

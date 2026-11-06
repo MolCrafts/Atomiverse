@@ -112,7 +112,8 @@ int main(int argc, char** argv) {
                                                : 1.0;
         const double thermal_energy =
             model == "lj" ? 1.0 : 300.0 * 8.617333262145e-5;
-        const double dt = model == "lj"    ? 0.005 * std::sqrt(units::md_mvv2e)
+        const double dt = model == "lj"
+                              ? 0.005 * std::sqrt(units::UnitSystem::lj().mvv2e)
                           : model == "eam" ? 1.0
                                            : 0.5;
         const double basis[8][3] = {
@@ -126,7 +127,8 @@ int main(int argc, char** argv) {
         frame.box.set_cell(cell_matrix);
         std::mt19937 random(87287);
         std::normal_distribution<double> velocity(
-            0.0, std::sqrt(thermal_energy * units::md_ftm2v / mass));
+            0.0,
+            std::sqrt(thermal_energy * units::UnitSystem::lj().ftm2v / mass));
         double mean[3]{};
         for (int i = 0; i < n; ++i) {
             frame.span(kAtom_tag)[i] = i + 1;

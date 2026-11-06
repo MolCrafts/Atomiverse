@@ -4,7 +4,7 @@
 ///
 /// `SteepestDescent` is an `Optimizer`-role component that moves atoms
 /// along the force (negative gradient) direction each iteration:
-/// `x += alpha * f / m * ATV::units::md_ftm2v`. It is hot-swappable: it plugs into the
+/// `x += alpha * f / m * ftm2v. It is hot-swappable: it plugs into the
 /// single `cuda::minimizer::Minimize` driver exactly as the CPU
 /// `cpu::minimizer::LBFGS` / `CG` Optimizer components plug into
 /// `cpu::minimizer::Minimize`.
@@ -48,7 +48,7 @@ namespace ATV {
 namespace cuda {
 namespace minimizer {
 
-/// @brief Steepest-descent Optimizer component: `x += alpha * f / m * ATV::units::md_ftm2v`.
+/// @brief Steepest-descent Optimizer component: `x += alpha * f / m * ftm2v.
 ///
 /// Binds `search_direction` (the step) and `convergence_check` (the metric publish).
 /// The `alpha` parameter controls the step size (a pseudo-timestep in fs) — same unit

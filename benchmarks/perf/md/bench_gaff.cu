@@ -158,7 +158,7 @@ int main(int argc, char** argv) try {
         // here from the input velocities (later records come from MD).
         double ke0 = 0;
         for (int i = 0; i < n; ++i)
-            ke0 += 0.5 * units::md_mvv2e * f.span(kAtom_mass)[i]
+            ke0 += 0.5 * units::UnitSystem::lj().mvv2e * f.span(kAtom_mass)[i]
                    * (f.span(kAtom_vx)[i] * f.span(kAtom_vx)[i]
                       + f.span(kAtom_vy)[i] * f.span(kAtom_vy)[i]
                       + f.span(kAtom_vz)[i] * f.span(kAtom_vz)[i]);

@@ -2004,7 +2004,7 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
     // velocity-Verlet diverges within a few steps here: atoms accelerate under
     // the overlap force spikes, the system clumps, and the neighbor count grows
     // without bound until it overflows int32 at ~1M atoms. Match LAMMPS:
-    // displacement-capped integration (ATV::units::md_ftm2v units + orthorhombic PBC wrap).
+    // displacement-capped integration (ftm2v units + orthorhombic PBC wrap).
     // Å, == `fix nve/limit 0.05`
     constexpr mixed_t kNveLimitXmax = mixed_t(0.05);
     if (reneigh_every < 1)
@@ -2045,6 +2045,7 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
                 // order) drains all devices at entry instead.
                 auto st = static_cast<cudaStream_t>(ctx_[s].stream);
                 launch_nve_limit_initial(frames_[s], nl, ctx_[s].host_box, dtw,
+                                         mixed_t(ctx_[s].units.ftm2v),
                                          kNveLimitXmax, step, st);
                 CKM(cudaGetLastError());
                 if (count() > 1)
@@ -2068,8 +2069,9 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
                 // reverse halo's scatter-adds (comm stream) — wait its event.
                 if (count() > 1)
                     CKM(cudaStreamWaitEvent(st, ev_rev_[s], 0));
-                launch_nve_limit_final(frames_[s], nl, dtw, kNveLimitXmax, step,
-                                       st);
+                launch_nve_limit_final(frames_[s], nl, dtw,
+                                       mixed_t(ctx_[s].units.ftm2v),
+                                       kNveLimitXmax, step, st);
                 CKM(cudaGetLastError());
             }
         });

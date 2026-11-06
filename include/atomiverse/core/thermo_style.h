@@ -18,31 +18,34 @@ namespace ATV {
 /// @brief One `thermo_style custom` column.
 enum class ThermoKeyword {
     Step,      ///< `step` — timestep index.
-    Temp,      ///< `temp` — 2 KE / (Ndof kB) [K].
-    Pe,        ///< `pe` — potential energy [eV].
-    Ke,        ///< `ke` — kinetic energy [eV].
-    Etotal,    ///< `etotal` — pe + ke [eV].
-    Econserve, ///< `econserve` — integrator conserved quantity [eV].
-    Press,     ///< `press` — isotropic pressure [bar].
-    Pxx,       ///< `pxx` — pressure tensor xx [bar].
-    Pyy,       ///< `pyy` — pressure tensor yy [bar].
-    Pzz,       ///< `pzz` — pressure tensor zz [bar].
-    Pxy,       ///< `pxy` — pressure tensor xy [bar].
-    Pxz,       ///< `pxz` — pressure tensor xz [bar].
-    Pyz,       ///< `pyz` — pressure tensor yz [bar].
-    Vol,       ///< `vol` — cell volume [Å³].
+    Temp,      ///< `temp` — 2 KE / (Ndof boltz) [temperature].
+    Pe,        ///< `pe` — potential energy [energy].
+    Ke,        ///< `ke` — kinetic energy [energy].
+    Etotal,    ///< `etotal` — pe + ke [energy].
+    Econserve, ///< `econserve` — integrator conserved quantity [energy].
+    Press,     ///< `press` — isotropic pressure [pressure].
+    Pxx,       ///< `pxx` — pressure tensor xx [pressure].
+    Pyy,       ///< `pyy` — pressure tensor yy [pressure].
+    Pzz,       ///< `pzz` — pressure tensor zz [pressure].
+    Pxy,       ///< `pxy` — pressure tensor xy [pressure].
+    Pxz,       ///< `pxz` — pressure tensor xz [pressure].
+    Pyz,       ///< `pyz` — pressure tensor yz [pressure].
+    Vol,       ///< `vol` — cell volume [volume].
 };
 
-/// @brief One sampled step, as the recorder captured it.
+/// @brief One sampled step, as the recorder captured it, in the run's
+///        LAMMPS `units` style (every column is printed in that style).
 struct ThermoSample {
     BigInt step = 0;
-    double pe = 0;          ///< [eV]
-    double ke = 0;          ///< [eV]
-    double conserved = 0;   ///< [eV]
-    double volume = 0;      ///< [Å³]
-    double virial[6] = {};  ///< Extensive pair/bonded virial, Voigt [eV].
-    double kinetic[6] = {}; ///< Extensive kinetic stress, Voigt [eV].
+    double pe = 0;          ///< [energy]
+    double ke = 0;          ///< [energy]
+    double conserved = 0;   ///< [energy]
+    double volume = 0;      ///< [volume]
+    double virial[6] = {};  ///< Extensive pair/bonded virial, Voigt [energy].
+    double kinetic[6] = {}; ///< Extensive kinetic stress, Voigt [energy].
     BigInt ndof = 0;
+    double boltz = 1.0;  ///< The run's boltz (`temp`).
+    double nktv2p = 1.0; ///< The run's nktv2p (pressure columns).
 };
 
 /// @brief Parsed `thermo_style custom` keyword list.

@@ -115,11 +115,11 @@ TEST(PmeMath, NonSymmetricCellSplineAndForceUseDualTransforms) {
         grid[i] = std::sin(0.37 * static_cast<double>(i));
     const StorageReal q[] = {0.7};
     AccReal fx[1]{}, fy[1]{}, fz[1]{}, sxforce[1]{}, syforce[1]{}, szforce[1]{};
-    longrange::pme_interpolate_forces(q, 1, order, K, inv, 1.0, base, theta,
-                                      dtheta, grid.data(), fx, fy, fz);
-    longrange::pme_interpolate_forces(q, 1, order, K, identity, 1.0, base_ref,
-                                      theta_ref, dtheta_ref, grid.data(),
-                                      sxforce, syforce, szforce);
+    longrange::pme_interpolate_forces(q, 1, order, K, inv, 1.0, 1.0, base,
+                                      theta, dtheta, grid.data(), fx, fy, fz);
+    longrange::pme_interpolate_forces(q, 1, order, K, identity, 1.0, 1.0,
+                                      base_ref, theta_ref, dtheta_ref,
+                                      grid.data(), sxforce, syforce, szforce);
     // Cartesian forces must be H^-T times the fractional-coordinate gradient.
     const Vec3 expected =
         inv.transpose() * Vec3{sxforce[0], syforce[0], szforce[0]};

@@ -73,7 +73,7 @@ double peculiar_ke(const cpu::Frame& f, const md::SllodFlow& flow) {
         const double pz = f.span(kAtom_vz)[i] - bz;
         ke += f.span(kAtom_mass)[i] * (px * px + py * py + pz * pz);
     }
-    return 0.5 * units::md_mvv2e * ke;
+    return 0.5 * units::UnitSystem::lj().mvv2e * ke;
 }
 
 void launch(cpu::md::NvtSllod& sllod, cpu::Context& ctx, cpu::Frame& f,
@@ -111,7 +111,7 @@ TEST(CpuNvtSllod, ChainFollowsFixNhOrderWithTheCarriedTemperature) {
     cpu::Context ctx;
     ctx.md.n_dof_global = md::degrees_of_freedom(kN);
     const double ndof = ctx.md.n_dof_global;
-    const double kT = units::md_boltz * T;
+    const double kT = units::UnitSystem::lj().boltz * T;
     cpu::md::NvtSllod sllod(T, tau, dt, rate, dir, kChain);
     sllod.build({ctx, f});
     atv_test::LammpsNhc ref(kChain, ndof, kT, tau, dt);
@@ -120,7 +120,7 @@ TEST(CpuNvtSllod, ChainFollowsFixNhOrderWithTheCarriedTemperature) {
     // the peculiar ones.
     double ke = 0;
     for (int i = 0; i < kN; ++i)
-        ke += 0.5 * units::md_mvv2e * f.span(kAtom_mass)[i]
+        ke += 0.5 * units::UnitSystem::lj().mvv2e * f.span(kAtom_mass)[i]
               * (std::pow(f.span(kAtom_vx)[i], 2)
                  + std::pow(f.span(kAtom_vy)[i], 2)
                  + std::pow(f.span(kAtom_vz)[i], 2));

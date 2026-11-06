@@ -368,7 +368,8 @@ TEST(CudaRecorderStepConvention, PressureSeriesRowsAreTheStateAfterTheirStep) {
         for (int a = 0; a < 6; ++a)
             stress[a] = ref.meta.get(kStress)[a];
         for (int i = 0; i < kN; ++i) {
-            const double m = ref.span(kAtom_mass)[i] * units::md_mvv2e;
+            const double m =
+                ref.span(kAtom_mass)[i] * units::UnitSystem::lj().mvv2e;
             const double v[3] = {ref.span(kAtom_vx)[i], ref.span(kAtom_vy)[i],
                                  ref.span(kAtom_vz)[i]};
             kinetic[0] += m * v[0] * v[0];

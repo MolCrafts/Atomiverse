@@ -101,8 +101,9 @@ int run() {
     //    E_pol = -1.682169167852 eV on this same geometry — the 5.17x gap is
     //    the real-space truncation, see REFERENCE.md. Units: eV, eV, eV/A^3.
     // Offline pins were eV (qqr2e = units::coulomb). The engine multiplies
-    // md_qqr2e, so energy, virial and the pressure made from that virial scale.
-    const double e_scale = ATV::units::md_qqr2e / ATV::units::coulomb;
+    // qqrd2e, so energy, virial and the pressure made from that virial scale.
+    const double e_scale =
+        ATV::units::UnitSystem::lj().qqrd2e() / ATV::units::coulomb;
     const double E_pol_pin = -8.695749870555906 * e_scale;
     const double W_pin[6] = {
         -10.66184373345355 * e_scale, -12.125914211727187 * e_scale,

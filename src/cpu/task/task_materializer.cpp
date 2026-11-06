@@ -638,6 +638,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
         const auto& task = spec.md();
         budget_ = task.n_steps;
         md_.emplace();
+        md_->set_units(units::style_name(task.units));
         md_->set_capture_buffer_bytes(task.capture_buffer_bytes);
         for (const auto& entry : task.entries)
             register_md_entry(*md_, entry, task.n_steps);
@@ -669,6 +670,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
     const auto& task = spec.minimize();
     budget_ = task.max_iter;
     minimize_.emplace();
+    minimize_->set_units(units::style_name(task.units));
     internal::add_minimize_criterion(*minimize_, task.convergence);
     for (const auto& entry : task.entries)
         register_minimize_entry(*minimize_, entry);

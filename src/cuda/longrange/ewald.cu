@@ -125,14 +125,13 @@ __global__ void ewald_structure_factor(
 
 /// @brief Reciprocal energy Σ_k K·kw·|S(k)|² (+ virial), K = 2π k_e / V.
 template <bool Virial>
-__global__ void ewald_energy(const double* __restrict__ kw,
-                             const double* __restrict__ virial,
-                             const double* __restrict__ sr,
-                             const double* __restrict__ si, int ng, Box box_arg,
-                             EnergyTerm energy, acc_t* __restrict__ stress) {
+__global__ void
+ewald_energy(const double* __restrict__ kw, const double* __restrict__ virial,
+             const double* __restrict__ sr, const double* __restrict__ si,
+             int ng, Box box_arg, double qqrd2e, EnergyTerm energy,
+             acc_t* __restrict__ stress) {
     const int k = blockIdx.x * blockDim.x + threadIdx.x;
-    const double K = ATV::units::md_qqr2e * 2.0 * ATV::units::pi
-                     / box_arg.current().volume();
+    const double K = qqrd2e * 2.0 * ATV::units::pi / box_arg.current().volume();
     constexpr int components = Virial ? 7 : 1;
     ::cuda::std::array<acc_t, components> values{};
     if (k < ng) {
@@ -166,7 +165,8 @@ ewald_forces(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
              const double* __restrict__ kx, const double* __restrict__ ky,
              const double* __restrict__ kz, const double* __restrict__ kw,
              const double* __restrict__ sr, const double* __restrict__ si,
-             int ng, Box box_arg, double self_pref, EnergyTerm energy) {
+             int ng, Box box_arg, double qqrd2e, double self_pref,
+             EnergyTerm energy) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double qi = i < n ? double(q[i]) : 0;
     if (energy) { // uniform: a step without eflag skips it
@@ -178,8 +178,7 @@ ewald_forces(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
     }
     if (i >= n)
         return;
-    const double K = ATV::units::md_qqr2e * 2.0 * ATV::units::pi
-                     / box_arg.current().volume();
+    const double K = qqrd2e * 2.0 * ATV::units::pi / box_arg.current().volume();
     const double xi = double(x[i]), yi = double(y[i]), zi = double(z[i]);
     double fxi = 0, fyi = 0, fzi = 0;
     for (int k = 0; k < ng; ++k) {
@@ -261,7 +260,8 @@ void KSpaceEwald::build(const BuildContext& ctx) {
     double net_charge = 0.0;
     for (const force_t q : charge)
         net_charge += double(q);
-    background_coef_ = -longrange::background_energy(net_charge, 1.0, alpha_);
+    background_coef_ = -longrange::background_energy(
+        net_charge, 1.0, alpha_, ctx.runtime.units.qqrd2e());
 }
 
 void KSpaceEwald::compute(const LaunchContext& ctx) {
@@ -272,7 +272,8 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
         return;
 
     const cuda::Box& box = ctx.runtime.host_box;
-    const double self_pref = longrange::self_energy_prefactor(alpha_);
+    const double qqrd2e = ctx.runtime.units.qqrd2e();
+    const double self_pref = longrange::self_energy_prefactor(alpha_, qqrd2e);
     const double inv4a2 = 1.0 / (4.0 * alpha_ * alpha_);
     auto* tables = static_cast<EwaldTables*>(d_tables_);
     // Per-step LAMMPS eflag/vflag.
@@ -294,7 +295,8 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
             d_kx_, d_ky_, d_kz_, ng_, d_sr_, d_si_);
         if (energy || Virial)
             kernels::ewald_energy<Virial><<<grid_size(ng_), blk, 0, stream>>>(
-                d_kw_, d_virial_, d_sr_, d_si_, ng_, box, energy, stress);
+                d_kw_, d_virial_, d_sr_, d_si_, ng_, box, qqrd2e, energy,
+                stress);
     };
     if (virial)
         run.template operator()<true>();
@@ -303,7 +305,8 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
     kernels::ewald_forces<<<grid_size(n), blk, 0, stream>>>(
         frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.force_fault,
         frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.charge, n,
-        d_kx_, d_ky_, d_kz_, d_kw_, d_sr_, d_si_, ng_, box, self_pref, energy);
+        d_kx_, d_ky_, d_kz_, d_kw_, d_sr_, d_si_, ng_, box, qqrd2e, self_pref,
+        energy);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 

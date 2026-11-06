@@ -20,6 +20,7 @@
 #include "evaluator_setters.h"
 #include "frame_guards.h"
 #include "molpy_frame_bridge.h"
+#include "units_binding.h"
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -324,8 +325,9 @@ struct MinimizeHandle {
         // TaskSpec always carries a convergence policy (defaults if unset).
         const MinimizeCriterionParams conv =
             user_criterion ? convergence : MinimizeCriterionParams{};
-        const cpu::task::TaskSpec spec{cpu::task::MinimizeTask{
-            mirror, static_cast<std::int64_t>(max_iter), conv}};
+        const cpu::task::TaskSpec spec{
+            cpu::task::MinimizeTask{mirror, static_cast<std::int64_t>(max_iter),
+                                    conv, driver.units().style}};
         auto frame = borrow_molpy_frame(frame_obj);
         require_charge_column(*frame);
         cpu::Frame work = cpu::from_molpy(*frame);
@@ -462,8 +464,8 @@ void bind_minimizer(nb::module_& m) {
             "Construct with the FIRE 1.0 knobs, all defaulted to the C++ "
             "(ASE-aligned) values. Note alpha0 here is a mixing FRACTION, not "
             "the step size LBFGS and CG call alpha0:\n"
-            "  dt0       initial pseudo-timestep [fs].\n"
-            "  dt_max    ceiling on the pseudo-timestep [fs].\n"
+            "  dt0       initial pseudo-timestep [time].\n"
+            "  dt_max    ceiling on the pseudo-timestep [time].\n"
             "  n_min     accelerating steps before dt grows [count].\n"
             "  f_inc     dt growth factor while accelerating "
             "(dimensionless, > 1).\n"
@@ -474,13 +476,15 @@ void bind_minimizer(nb::module_& m) {
             "redirected onto the force direction each step.\n"
             "  f_alpha   decay factor applied to alpha while accelerating "
             "(dimensionless, < 1).\n"
-            "  max_step  cap on the per-atom displacement of one step [A].");
+            "  max_step  cap on the per-atom displacement of one step "
+            "[length].");
 
     nb::class_<cpu::task::IsotropicCellRelaxParams>(
         m, "IsotropicCellRelax",
         "Isotropic variable-cell relaxation optimizer.\n\n"
-        "Reads the extensive Voigt virial W [eV] the evaluators wrote to the "
-        "frame, forms the isotropic pressure P = tr(W) / (3V) [eV/A^3] from "
+        "Reads the extensive Voigt virial W [energy] the evaluators wrote to "
+        "the "
+        "frame, forms the isotropic pressure P = tr(W) / (3V) [pressure] from "
         "the cell volume V, and scales the whole cell — the atom coordinates "
         "riding along affinely — towards P_target. It never moves an atom "
         "RELATIVE to the cell, so pair it with a separate geometry relaxation "
@@ -506,8 +510,8 @@ void bind_minimizer(nb::module_& m) {
         "P_target = 0 reports success on an untouched cell.\n\n"
         "A variable-cell run does not terminate on forces: add "
         "PressureConverged (or StressConverged), not ForceConverged. The "
-        "relaxer publishes its pressure residual [eV/A^3] into the metric "
-        "slot ForceConverged reads as a force [eV/A], so that pairing does "
+        "relaxer publishes its pressure residual [pressure] into the metric "
+        "slot ForceConverged reads as a force [force], so that pairing does "
         "not fail loudly — it silently compares the wrong quantity.")
         .def(
             "__init__",
@@ -518,13 +522,13 @@ void bind_minimizer(nb::module_& m) {
             },
             nb::arg("P_target") = 0.0, nb::arg("alpha0") = 0.05,
             nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = 1.0,
-            "Construct with the target pressure P_target [eV/A^3] (0 is a "
-            "relaxed cell; 1 bar ~ 6.2415e-7 eV/A^3).\n\n"
+            "Construct with the target pressure P_target [pressure] (0 is a "
+            "relaxed cell; metal bar, real atm).\n\n"
             "  alpha0     relative scale-step gain, i.e. how strongly the "
             "pressure residual translates into a requested |s-1|.\n"
             "  max_scale  cap on |s-1| per step — how far one iteration may "
             "breathe the cell.\n"
-            "  bulk_mod   soft bulk modulus [eV/A^3] dividing the step; "
+            "  bulk_mod   soft bulk modulus [pressure] dividing the step; "
             "larger means a gentler cell change per iteration.");
 
     nb::class_<cpu::task::AnisotropicCellRelaxParams>(
@@ -552,10 +556,11 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = 1.0,
             nb::arg("relax_x") = true, nb::arg("relax_y") = true,
             nb::arg("relax_z") = true,
-            "Construct with the target pressure P_target [eV/A^3], the same "
+            "Construct with the target pressure P_target [pressure], the same "
             "on every relaxed axis, plus the per-axis scale gain alpha0, the "
             "per-step cap max_scale on |s-1|, the soft bulk modulus bulk_mod "
-            "[eV/A^3] and the relax_x / relax_y / relax_z mask (False freezes "
+            "[pressure] and the relax_x / relax_y / relax_z mask (False "
+            "freezes "
             "that box edge).");
 
     nb::class_<cpu::task::TriclinicCellRelaxParams>(
@@ -583,7 +588,7 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("alpha0") = 0.02, nb::arg("max_strain") = 0.05,
             nb::arg("bulk_mod") = 1.0,
             "Construct with the strain gain alpha0, the per-step cap "
-            "max_strain on |eps_ab|, and the soft modulus bulk_mod [eV/A^3] "
+            "max_strain on |eps_ab|, and the soft modulus bulk_mod [pressure] "
             "dividing the step.");
 
     nb::class_<cpu::task::JointIsotropicRelaxParams>(
@@ -609,10 +614,11 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("P_target") = 0.0, nb::arg("atom_step") = 0.01,
             nb::arg("alpha0") = 0.05, nb::arg("max_scale") = 0.05,
             nb::arg("bulk_mod") = 1.0,
-            "Construct with the target pressure P_target [eV/A^3], the atom "
-            "displacement atom_step [A] taken along the unit force each "
+            "Construct with the target pressure P_target [pressure], the atom "
+            "displacement atom_step [length] taken along the unit force each "
             "iteration, the relative cell-scale gain alpha0, the per-step cap "
-            "max_scale on |s-1| and the soft bulk modulus bulk_mod [eV/A^3].");
+            "max_scale on |s-1| and the soft bulk modulus bulk_mod "
+            "[pressure].");
 
     // ── Criteria (the plural add_criterion slot) ──
 
@@ -641,11 +647,13 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("etol") = 1e-5,
             "Construct with the five tolerances, defaulted to the C++ "
             "(LAMMPS/ASE-shaped) values:\n"
-            "  ftol      largest per-atom force magnitude [eV/A].\n"
-            "  rms_ftol  root-mean-square force over all atoms [eV/A].\n"
-            "  max_dtol  largest per-atom displacement of the last step [A].\n"
-            "  rms_dtol  root-mean-square displacement of that step [A].\n"
-            "  etol      energy change between the last two iterations [eV].");
+            "  ftol      largest per-atom force magnitude [force].\n"
+            "  rms_ftol  root-mean-square force over all atoms [force].\n"
+            "  max_dtol  largest per-atom displacement of the last step "
+            "[length].\n"
+            "  rms_dtol  root-mean-square displacement of that step [length].\n"
+            "  etol      energy change between the last two iterations "
+            "[energy].");
 
     nb::class_<cpu::task::PressureConvergedParams>(
         m, "PressureConverged",
@@ -654,9 +662,9 @@ void bind_minimizer(nb::module_& m) {
         "alongside the forces; the frame carries it as the 'stress' metadata "
         "entry in Voigt order — the six independent components of a symmetric "
         "3x3 tensor, listed (xx, yy, zz, xy, xz, yz). It is EXTENSIVE: a "
-        "whole-cell energy W [eV], not a stress, for every evaluator that "
+        "whole-cell energy W [energy], not a stress, for every evaluator that "
         "writes it. This criterion therefore forms P = (W_xx + W_yy + W_zz) / "
-        "(3V) [eV/A^3] from the box volume V and declares convergence once "
+        "(3V) [pressure] from the box volume V and declares convergence once "
         "|P - P_target| falls below ptol.\n\n"
         "StressConverged reads the identical entry and divides by the "
         "identical volume; it differs only in judging each diagonal component "
@@ -668,19 +676,20 @@ void bind_minimizer(nb::module_& m) {
                 new (p) cpu::task::PressureConvergedParams{P_target, ptol};
             },
             nb::arg("P_target") = 0.0, nb::arg("ptol") = 1e-5,
-            "Construct with the target pressure P_target [eV/A^3] (0 is a "
+            "Construct with the target pressure P_target [pressure] (0 is a "
             "relaxed cell; negative is a tensile setpoint) and the absolute "
-            "tolerance ptol [eV/A^3], which must be > 0 — a non-positive "
+            "tolerance ptol [pressure], which must be > 0 — a non-positive "
             "tolerance can never be met, and add_criterion raises ValueError "
             "on it.");
 
     nb::class_<cpu::task::StressConvergedParams>(
         m, "StressConverged",
         "Per-axis diagonal-stress stop policy for a variable-cell run.\n\n"
-        "Same input as PressureConverged — the extensive Voigt virial W [eV] "
+        "Same input as PressureConverged — the extensive Voigt virial W "
+        "[energy] "
         "on the frame's 'stress' entry — divided by the same cell volume V, "
         "but judged per axis: it compares the intensive stress "
-        "sigma_dd = W_dd / V [eV/A^3] of every UNMASKED axis d against "
+        "sigma_dd = W_dd / V [pressure] of every UNMASKED axis d against "
         "sigma_target and converges once the largest of those deviations "
         "falls below stol.\n\n"
         "Pair the mask with AnisotropicCellRelax's relax_x / relax_y / "
@@ -702,8 +711,8 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("sigma_target") = 0.0, nb::arg("stol") = 1e-4,
             nb::arg("check_x") = true, nb::arg("check_y") = true,
             nb::arg("check_z") = true,
-            "Construct with the target diagonal stress sigma_target [eV/A^3] "
-            "(0 is a relaxed cell), the absolute tolerance stol [eV/A^3] "
+            "Construct with the target diagonal stress sigma_target [pressure] "
+            "(0 is a relaxed cell), the absolute tolerance stol [pressure] "
             "(must be > 0) and the check_x / check_y / check_z axis mask.");
 
     nb::class_<TaskResult>(m, "MinimizeResult",
@@ -727,6 +736,12 @@ void bind_minimizer(nb::module_& m) {
         "RuntimeError afterwards. A different configuration means a new "
         "Minimize object. Running again with the same configuration stays "
         "legal and re-optimizes from the frame's current state.");
+    ATV::python::bind_units(
+        minimize,
+        [](MinimizeHandle& h) -> cpu::minimizer::Minimize& { return h.driver; },
+        [](const MinimizeHandle& h, const char* s) {
+            h.require_configurable_(s);
+        });
     minimize
         .def(nb::init<>(),
              "Default construct; ForceConverged is auto-installed at build "

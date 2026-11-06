@@ -27,15 +27,16 @@ namespace minimizer {
 class IsotropicCellRelax : public Optimizer {
   public:
     double P_target =
-        0.0;              ///< Target pressure [eV/Å³] (0 = vacuum/zero stress).
-    double alpha0 = 0.05; ///< Relative scale step gain (dimensionless).
+        0.0; ///< Target pressure [style pressure] (0 = vacuum/zero stress).
+    double alpha0 = 0.05;    ///< Relative scale step gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per step (dimensionless).
-    double bulk_mod = 1.0;   ///< Soft bulk modulus scale [eV/Å³] for step size.
+    double bulk_mod =
+        1.0; ///< Soft bulk modulus scale [style pressure] for step size.
 
     /// @brief Construct with zero target pressure and default step gains.
     IsotropicCellRelax() = default;
 
-    /// @param P_target_ev_a3 Target pressure [eV/Å³].
+    /// @param P_target_ev_a3 Target pressure [style pressure].
     /// @param alpha Relative scale gain (dimensionless).
     explicit IsotropicCellRelax(double P_target_ev_a3, double alpha = 0.05);
 
@@ -53,10 +54,10 @@ class IsotropicCellRelax : public Optimizer {
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
-    /// @brief Latest pressure residual |P − P_target| [eV/Å³].
+    /// @brief Latest pressure residual |P − P_target| [style pressure].
     double pressure_residual() const { return p_residual_; }
 
-    /// @brief Latest pressure [eV/Å³].
+    /// @brief Latest pressure [style pressure].
     double pressure() const { return pressure_; }
 
   private:

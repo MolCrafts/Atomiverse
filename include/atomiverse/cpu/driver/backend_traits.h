@@ -30,8 +30,10 @@ struct backend_traits<cpu::device_tag> {
     static constexpr bool has_device_timing = false;
 
     static void run(backend_type& backend, frame_type& frame,
-                    const Plan<component_type>& plan, timer_type*, int steps) {
+                    const Plan<component_type>& plan, timer_type*,
+                    const units::UnitSystem& units, int steps) {
         backend.init();
+        backend.context().units = units;
         backend.load(plan);
         backend.set_frame(frame);
         backend.build_components();

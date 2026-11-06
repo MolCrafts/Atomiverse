@@ -12,9 +12,11 @@
 /// contraction, multi-rank bead parallel, Trotter-factor tables.
 ///
 /// Spring constant (Tuckerman / Ceriotti), lj row:
-///   k = m_eff * P / (β² ℏ²),  m_eff = md_mvv2e * m,  ℏ = md_hplanck/(2π),
-///   β = 1/(md_boltz * T).
+///   k = m_eff * P / (β² ℏ²),  m_eff = mvv2e * m,  ℏ = hplanck/(2π),
+///   β = 1/(boltz * T), in the factors of `units`.
 #pragma once
+
+#include "atomiverse/core/unit_system.h"
 
 #include <cstdint>
 #include <memory>
@@ -40,6 +42,8 @@ class Pimd {
     int n_beads = 4;
     /// @brief Temperature in the lj style (> 0).
     double temperature = 300.0;
+    /// @brief LAMMPS `units` of every bead program (default lj).
+    units::UnitSystem units = units::UnitSystem::lj();
     /// @brief Nested MD timestep in the lj style (> 0).
     double dt = 0.5;
     /// @brief MD steps between outer bookkeeping.
@@ -77,7 +81,8 @@ class Pimd {
     void propagate_();
     void collapse_centroid_(cpu::Frame& out);
     static double compute_k_spring_(double temperature_K, int n_beads,
-                                    double mass_amu);
+                                    double mass_amu,
+                                    const units::UnitSystem& u);
 
     ProgramBuilder builder_ = nullptr;
     void* builder_user_ = nullptr;

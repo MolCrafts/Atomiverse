@@ -145,7 +145,8 @@ int run() {
         sim.run(frame, n_prod / n_sample);
 
         const double ke = frame.meta.get(ATV::kKinetic); // [eV]
-        t_sum += 2.0 * ke / (double(ndof_rigid) * units::md_boltz);
+        t_sum +=
+            2.0 * ke / (double(ndof_rigid) * units::UnitSystem::lj().boltz);
 
         const auto& tag_row = frame.meta.get(ATV::cpu::kTagIndex);
         for (int m = 0; m < n_mol; ++m) {

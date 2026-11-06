@@ -122,6 +122,12 @@ class NeighborProvider {
     /// @return Enumeration radius [Å], at least supported_cutoff().
     virtual AccReal neighbor_reach() const = 0;
 
+    /// @brief LAMMPS `units` resets `neighbor->skin`: the driver hands the
+    ///        style's default skin [length] before it validates or builds.
+    ///        A provider constructed with an explicit skin (or without a
+    ///        skin of its own) keeps what it has.
+    virtual void apply_default_skin(double skin) { (void)skin; }
+
     /// @brief Validate the radii and return the allowed relative displacement.
     double validated_skin() const {
         const double cutoff = supported_cutoff();

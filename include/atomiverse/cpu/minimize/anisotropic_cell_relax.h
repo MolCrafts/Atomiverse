@@ -27,10 +27,10 @@ namespace minimizer {
 /// this optimizer does not minimize non-affine atomic forces.
 class AnisotropicCellRelax : public Optimizer {
   public:
-    double P_target = 0.0;   ///< Target pressure [eV/Å³].
+    double P_target = 0.0;   ///< Target pressure [style pressure].
     double alpha0 = 0.05;    ///< Scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per axis.
-    double bulk_mod = 1.0;   ///< Soft bulk modulus [eV/Å³].
+    double bulk_mod = 1.0;   ///< Soft bulk modulus [style pressure].
     bool relax_x = true;     ///< Relax the x box edge.
     bool relax_y = true;     ///< Relax the y box edge.
     bool relax_z = true;     ///< Relax the z box edge.

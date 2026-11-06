@@ -361,7 +361,7 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     kernel.ntypes = n_types_;
     kernel.rc_sq = cut_sq_;
     kernel.coul_sq = cut_coulsq_;
-    kernel.qqr2e = ATV::units::md_qqr2e;
+    kernel.qqr2e = ctx.runtime.units.qqrd2e();
     kernel.alpha = alpha_;
     kernel.has_r4 = table_.has_r4();
     const int* __restrict type_ptr = kernel.type;

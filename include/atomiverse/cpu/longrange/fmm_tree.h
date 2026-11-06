@@ -44,7 +44,7 @@ class FmmTree {
     int max_per_leaf() const { return max_per_leaf_; }
 
     /// @brief Coulomb energy ½ Σ_i q_i Φ_i with self-terms excluded
-    ///        [dimensionless; multiply by units::md_qqr2e for eV].
+    ///        [dimensionless; multiply by qqrd2e for eV].
     ///
     /// @param positions Particle positions [length], size N.
     /// @param charges   Particle charges [kernel charge], size N.

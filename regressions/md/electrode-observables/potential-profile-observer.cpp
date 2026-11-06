@@ -26,7 +26,7 @@ using namespace ATV;
 
 namespace {
 
-// E_gap = 4π md_qqr2e σ with σ = 1/100 e/Å². Ψ drops across the 9 Å gap.
+// E_gap = 4π qqrd2e σ with σ = 1/100 e/Å². Ψ drops across the 9 Å gap.
 constexpr double kPinRhoLeft = 0.01;
 constexpr double kPinRhoRight = -0.01;
 constexpr double kTol = 1e-12;
@@ -66,7 +66,8 @@ bool check(const char* name, double got, double want, double tol) {
 } // namespace
 
 int run() {
-    const double kPinEGap = 4.0 * units::pi * units::md_qqr2e * (1.0 / 100.0);
+    const double kPinEGap =
+        4.0 * units::pi * units::UnitSystem::lj().qqrd2e() * (1.0 / 100.0);
     const double kPinPsiDrop = -kPinEGap * 9.0;
     bool ok = true;
 

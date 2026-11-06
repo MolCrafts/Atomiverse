@@ -78,7 +78,7 @@ TEST(PairLJCutPort, EnergyMatchesAnalyticFormula) {
     sim.build();
     // 1 integration step from rest. The energy is read after the step, so
     // the atoms must stay put: at r = σ the force is 24ε/σ = 4, and in lj
-    // units (md_ftm2v = 1) a = 4 moves each atom a·dt²/2 = 2e-10.
+    // units (ftm2v = 1) a = 4 moves each atom a·dt²/2 = 2e-10.
     sim.run(frame, 1);
 
     // Energy at r≈σ with shifted potential:

@@ -104,7 +104,7 @@ int run() {
     // ≤ 0.1%. So 5% is ≈ 6σ, while the "no QM at all" failure mode is +46%.
     const double var_rel_tol = 0.05;
 
-    const double kT = units::md_boltz * temperature; // [eV]
+    const double kT = units::UnitSystem::lj().boltz * temperature; // [eV]
 
     // ── Drift guard: re-measure the RHF curvature at r0 ───────────────────
     // Five single points (energy only — this stencil wants no gradient). If

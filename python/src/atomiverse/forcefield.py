@@ -33,13 +33,14 @@ takes neither the force field's Coulomb special weights nor its Coulomb
 constant, so it cannot reproduce them; compose ``CoulLong`` + a k-space
 solver yourself when you mean a different model.
 
-Units come from the IR, not from assumptions: every parameter carries a
-dimension in molpy's style registry (``E``, ``L``, ``Q``, ``A`` and products),
-converted from the force field's declared ``units`` (``real`` or ``metal``) to
-Atomiverse's eV / Å / e / rad. An angle *value* (dimension ``A``, stored in
-degrees) becomes radians; a per-angle constant (``E/A^2``) is already per
-radian, as the registry's own expressions (``k*(theta-theta0*(pi/180))^2``)
-show.
+Units are LAMMPS's: a force field states its ``units`` style and its
+numbers are taken in that style, unconverted, exactly as LAMMPS takes a
+``pair_coeff`` line. The run must be in the same style (``MD(units=...)``,
+:func:`atomiverse.set_units`); :func:`compile` refuses a force field whose
+style is not the run's, and one that states none. Only an angle *value*
+(dimension ``A``, stored in degrees) becomes radians, as LAMMPS does
+internally; a per-angle constant (``E/A^2``) is already per radian, as the
+registry's own expressions (``k*(theta-theta0*(pi/180))^2``) show.
 
 Every evaluator is a cutoff style. A gas-phase (vacuum) calculation of one
 molecule is plain composition: set the pair styles' ``cutoff`` beyond the
@@ -51,8 +52,8 @@ molecule and give the frame a box in which no periodic image comes within it::
     for name in ("lj/cut", "coul/cut"):
         ff.get_style("pair", name).set(cutoff=rc)
     frame.box = molpy.Box.cube(diameter + rc + 2 * skin)
-    system = avff.compile(ff, frame)
-    opt = Minimize()
+    system = avff.compile(ff, frame, units=ff.units)
+    opt = Minimize(units=system.units)
     opt.set_neighbor(NeighborList(system.cutoff, skin))
     for term in system.evaluators:
         opt.set_evaluator(term)
@@ -72,17 +73,9 @@ from typing import Any, NamedTuple
 import numpy as np
 
 from atomiverse._binding import _cpp, require_domain
+from atomiverse._units import resolve as _resolve_units
 
 require_domain(__name__, "potentials")
-
-#: 1 kcal/mol in eV (CODATA 2018: 4184 J / (N_A · e)).
-KCAL_PER_MOL: float = 4184.0 / (6.02214076e23 * 1.602176634e-19)
-
-#: Base-dimension factors into Atomiverse units, per molpy ``units``.
-_UNITS: dict[str, dict[str, float]] = {
-    "real": {"E": KCAL_PER_MOL, "L": 1.0, "Q": 1.0},
-    "metal": {"E": 1.0, "L": 1.0, "Q": 1.0},
-}
 
 _PREFIX = "atv_"
 _DIM_TOKEN = re.compile(r"([*/]?)\s*([A-Za-z]+|1)(?:\^(-?\d+))?")
@@ -95,7 +88,9 @@ class ForceFieldError(ValueError):
 class Compiled(NamedTuple):
     """What :func:`compile` returns.
 
-    ``frame`` is the ``molpy.Frame`` a driver runs on (positions, masses,
+    ``units`` is the LAMMPS style every number is in (the force field's own;
+    run the drivers with it). ``frame`` is the ``molpy.Frame`` a driver runs
+    on (positions, masses,
     charges, the force-field atom type as integer ``atoms.type_id``, the
     topology with integer ``type_id`` kinds, the box). ``evaluators`` are the
     parameter objects, one per translated style, in the force field's style
@@ -106,9 +101,10 @@ class Compiled(NamedTuple):
     frame: Any
     evaluators: list[Any]
     cutoff: float | None
+    units: str
 
 
-def compile(forcefield: Any, frame: Any) -> Compiled:  # noqa: A001 - mirrors molpy's PotentialCompiler.compile
+def compile(forcefield: Any, frame: Any, units: str | None = None) -> Compiled:  # noqa: A001 - mirrors molpy's PotentialCompiler.compile
     """Translate ``forcefield`` against the typed ``frame``, style by style.
 
     Parameters
@@ -120,6 +116,9 @@ def compile(forcefield: Any, frame: Any) -> Compiled:  # noqa: A001 - mirrors mo
         ``type`` (force-field atom types), ``charge`` [e] when a Coulomb style
         is present, and a box; topology blocks with their ``type`` labels, as
         ``Atomistic.to_frame()`` writes a typed molecule. It is not modified.
+    units : str, optional
+        LAMMPS ``units`` style of the run the evaluators are for; default
+        :func:`atomiverse.units_style`. Must equal the force field's.
 
     Raises
     ------
@@ -128,8 +127,9 @@ def compile(forcefield: Any, frame: Any) -> Compiled:  # noqa: A001 - mirrors mo
         category, a parameter the force field leaves unset, a style parameter
         the kernel cannot honour (LJ exponents other than 12-6, an unknown
         mixing rule, a Coulomb ``delta``, a CHARMM dihedral weight), a
-        torsion multiplicity that is not a positive integer, or units other
-        than ``real`` / ``metal``.
+        torsion multiplicity that is not a positive integer, a force field
+        that declares no ``units``, or one whose ``units`` are not the run's
+        (nothing is ever converted).
     KeyError
         If the frame has no box, or no ``atoms.charge`` while a Coulomb style
         is present.
@@ -137,10 +137,17 @@ def compile(forcefield: Any, frame: Any) -> Compiled:  # noqa: A001 - mirrors mo
     import molpy
     from molpy.ff import style_registry
 
-    units = _UNITS.get(forcefield.units)
-    if units is None:
+    run_units = _resolve_units(units)
+    if forcefield.units is None:
         raise ForceFieldError(
-            f"force field units are {forcefield.units!r}; supported: {sorted(_UNITS)}"
+            "the force field declares no units; its numbers mean nothing "
+            "without a LAMMPS units style"
+        )
+    if forcefield.units != run_units:
+        raise ForceFieldError(
+            f"the force field is in units {forcefield.units!r} but the run is "
+            f"in units {run_units!r}; parameters are never converted: run the "
+            f"drivers with units={forcefield.units!r}"
         )
     specs = {(s.category, s.name): s for s in style_registry.GlobalRegistry().styles()}
     styles = list(forcefield.get_styles(molpy.ff.forcefield.Style))
@@ -170,7 +177,7 @@ def compile(forcefield: Any, frame: Any) -> Compiled:  # noqa: A001 - mirrors mo
         if special is None
         else (tuple(float(w) for w in special[0]), tuple(float(w) for w in special[1]))
     )
-    conv = _Converter(units, specs)
+    conv = _Converter(specs)
     atom_types = sorted({str(t) for t in np.asarray(work["atoms"]["type"])})
     out = _driver_frame(work, atom_types)
     evaluators: list[Any] = []
@@ -189,7 +196,7 @@ def compile(forcefield: Any, frame: Any) -> Compiled:  # noqa: A001 - mirrors mo
             term = _bonded(style, conv, work, out)
         if term is not None:
             evaluators.append(term)
-    return Compiled(out, evaluators, max(cutoffs) if cutoffs else None)
+    return Compiled(out, evaluators, max(cutoffs) if cutoffs else None, run_units)
 
 
 # ── Styles and units ─────────────────────────────────────────────────────
@@ -229,10 +236,13 @@ def _check_styles(styles: list[Any]) -> None:
 
 
 class _Converter:
-    """Dimension-driven conversion into Atomiverse units."""
+    """Dimension-driven reading of registry parameters: degrees to radians,
+    every other base taken as stated (the force field's units are the run's).
+    """
 
-    def __init__(self, units: dict[str, float], specs: dict[tuple[str, str], Any]) -> None:
-        self._units = units
+    _BASES = frozenset({"E", "L", "Q"})
+
+    def __init__(self, specs: dict[tuple[str, str], Any]) -> None:
         self._specs = specs
 
     def factor(self, dim: str) -> float:
@@ -248,8 +258,8 @@ class _Converter:
                 # is per radian already (the registry expressions convert
                 # only the value).
                 total *= (math.pi / 180.0) ** p if p > 0 else 1.0
-            elif base in self._units:
-                total *= self._units[base] ** p
+            elif base in self._BASES:
+                continue
             else:
                 raise ForceFieldError(f"dimension '{dim}': unknown base '{base}'")
         return total
@@ -490,4 +500,4 @@ def _periodic_dihedrals(block: Any, f_k: float, f_phase: float, out: Any) -> Any
     return _make_bonded("dihedral", "periodic", table)
 
 
-__all__ = ["Compiled", "ForceFieldError", "KCAL_PER_MOL", "compile"]
+__all__ = ["Compiled", "ForceFieldError", "compile"]

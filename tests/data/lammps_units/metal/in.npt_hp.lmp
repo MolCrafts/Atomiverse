@@ -1,0 +1,17 @@
+# units metal, case npt_hp. Reference: ref.npt_hp.thermo / ref.npt_hp.dump (make_refs.sh).
+units metal
+atom_style full
+read_data data.lmp
+include system.ff
+pair_modify table 0
+kspace_modify gewald 0.59233 mesh 24 24 24 order 5
+neighbor 2.0 bin
+neigh_modify every 1 delay 0 check no
+timestep 0.002
+fix 1 all npt temp 1000.0 1000.0 0.2 iso 20000.0 20000.0 2.0
+thermo_style custom step temp pe ke etotal press econserve vol lx
+thermo_modify norm no format float %.17g
+thermo 10
+dump d all custom 100 ref.npt_hp.dump id type xu yu zu vx vy vz fx fy fz
+dump_modify d format float %.17g sort id delay 1
+run 100

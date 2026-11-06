@@ -144,9 +144,9 @@ class PressureConverged : public Criterion {
     bool contributes_to_convergence() const override { return true; }
 
     /// @brief Construct the isotropic-pressure test.
-    /// @param P_target Target pressure [eV/Å³]; 0 is a relaxed cell, negative
+    /// @param P_target Target pressure [run's pressure unit]; 0 is a relaxed cell, negative
     ///                 is a tensile setpoint.
-    /// @param ptol Absolute pressure tolerance [eV/Å³]; must be > 0.
+    /// @param ptol Absolute pressure tolerance [run's pressure unit]; > 0.
     /// @throws std::invalid_argument for a nonfinite target or a nonpositive
     ///         or nonfinite tolerance.
     explicit PressureConverged(double P_target = 0.0, double ptol = 1e-5)
@@ -173,7 +173,9 @@ class PressureConverged : public Criterion {
         if (!std::isfinite(V) || !(V > 0.0))
             return Verdict::Stop;
         const auto& st = s.frame.meta.get(kStress);
-        const double P = (st[0] / V + st[1] / V + st[2] / V) / 3.0;
+        // In the run's pressure unit (LAMMPS: virial / V · nktv2p).
+        const double P =
+            (st[0] / V + st[1] / V + st[2] / V) / 3.0 * s.runtime.units.nktv2p;
         if (!std::isfinite(P))
             return Verdict::Stop;
         return (std::fabs(P - P_target_) < ptol_) ? Verdict::Converged
@@ -216,8 +218,9 @@ class StressConverged : public Criterion {
     bool contributes_to_convergence() const override { return true; }
 
     /// @brief Construct the per-axis diagonal-stress test.
-    /// @param sigma_target Target diagonal stress [eV/Å³] (0 = relaxed cell).
-    /// @param stol Absolute stress tolerance [eV/Å³]; must be > 0.
+    /// @param sigma_target Target diagonal stress [run's pressure unit]
+    ///        (0 = relaxed cell).
+    /// @param stol Absolute stress tolerance [run's pressure unit]; > 0.
     /// @param check_x Judge σ_xx.
     /// @param check_y Judge σ_yy.
     /// @param check_z Judge σ_zz.
@@ -261,7 +264,8 @@ class StressConverged : public Criterion {
         double r = 0.0;
         for (std::size_t d = 0; d < 3; ++d)
             if (check_[d]) {
-                const double residual = std::fabs(st[d] / V - sigma_target_);
+                const double residual = std::fabs(
+                    st[d] / V * s.runtime.units.nktv2p - sigma_target_);
                 if (!std::isfinite(residual))
                     return Verdict::Stop;
                 r = std::max(r, residual);

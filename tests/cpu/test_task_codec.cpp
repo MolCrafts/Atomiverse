@@ -20,9 +20,11 @@ using namespace ATV::cpu::task;
 
 namespace {
 
+// MD / Minimize: magic 4 + kind 1 + units style 1 + entry count 4.
 constexpr std::size_t kTaskKindOffset = 4;
-constexpr std::size_t kFirstComponentIdOffset = 9;
-constexpr std::size_t kFirstPhaseOffset = 12;
+constexpr std::size_t kUnitsOffset = 5;
+constexpr std::size_t kFirstComponentIdOffset = 10;
+constexpr std::size_t kFirstPhaseOffset = 13;
 // SinglePoint carries no entry-count word: its single component ID follows
 // the task-kind byte directly (magic 4 + kind 1).
 constexpr std::size_t kSinglePointComponentIdOffset = 5;
@@ -587,6 +589,25 @@ TEST(TaskCodec, MinimizeCriterionRoundtripCoversEveryAlternative) {
         EXPECT_EQ(back.minimize().convergence.index(), criteria[i].index());
         EXPECT_TRUE(back.minimize() == spec.minimize());
     }
+}
+
+TEST(TaskCodec, UnitsStyleRoundTripsAndUnknownStylesAreRejected) {
+    for (const auto style : {units::Style::lj, units::Style::real,
+                             units::Style::metal, units::Style::nano}) {
+        MDTask md{{}, 3};
+        md.units = style;
+        const auto md_bytes = pack(TaskSpec(md));
+        EXPECT_EQ(static_cast<units::Style>(md_bytes[kUnitsOffset]), style);
+        EXPECT_EQ(unpack(md_bytes.data(), md_bytes.size()).md().units, style);
+        MinimizeTask min{{}, 3, {}};
+        min.units = style;
+        const auto min_bytes = pack(TaskSpec(min));
+        EXPECT_EQ(unpack(min_bytes.data(), min_bytes.size()).minimize().units,
+                  style);
+    }
+    auto bytes = pack(make_md_spec());
+    bytes[kUnitsOffset] = std::byte{8};
+    expect_runtime_error(bytes, "unknown units style 8");
 }
 
 TEST(TaskCodec, UnknownTaskAndComponentIdsAreRejected) {

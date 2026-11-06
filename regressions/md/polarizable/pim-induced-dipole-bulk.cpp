@@ -142,8 +142,8 @@ int run() {
     // at c8ad175d: zero hits). Closed-form two-site Applequist SCC with
     // van Duijnen/Swart exponential λ3/λ5/λ7; see REFERENCE.md.
     // Closed-form pins were eV (qqr2e = units::coulomb). Engine multiplies
-    // md_qqr2e, once, on energy and force. Dipoles do not carry it.
-    const double e_scale = units::md_qqr2e / units::coulomb;
+    // qqrd2e, once, on energy and force. Dipoles do not carry it.
+    const double e_scale = units::UnitSystem::lj().qqrd2e() / units::coulomb;
     const double E_pin = -0.12040946414707571 * e_scale;
     const double f0x_pin = 0.040341072868572643 * e_scale;
     const double f1x_pin = -0.040341072868572643 * e_scale;

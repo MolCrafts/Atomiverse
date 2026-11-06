@@ -13,7 +13,7 @@
 ///
 /// | LAMMPS keyword            | `NeighborList`            | Default        | Verdict |
 /// |---------------------------|---------------------------|----------------|---------|
-/// | `neighbor skin style`     | `skin` ctor arg [Å]       | `0.3·cutoff`   | aligned (semantic); LAMMPS has no auto-skin — the auto default is a documented divergence (convenience, opt-out by passing skin explicitly) |
+/// | `neighbor skin style`     | `skin` ctor arg [length]  | style default  | aligned: a negative skin takes the default `units <style>` sets (`Update::set_units`: lj 0.3, real/metal/electron 2.0, si 0.001, cgs/micro/nano 0.1) |
 /// | `neigh_modify every N`    | `every` ctor arg          | `1`            | aligned |
 /// | `neigh_modify delay M`    | `delay` ctor arg          | `0`            | aligned: LAMMPS defaults `delay = 0` (`src/neighbor.cpp:122`, e8c4c278a8). A deferred check is not safe for MD either: a bead that moves more than half the skin inside the delay window meets partners the list does not hold, and their force switches on mid-range (measured: a DPD fluid at dt = 0.04 τ heats from T* = 1 to 13 in 2 τ under `delay 10`, and holds T* = 1 under `delay 0`) |
 /// | `neigh_modify check yes/no` | `check` ctor arg (bool) | `true` (= `yes`) | aligned — see below |
@@ -83,7 +83,9 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     Role role() const override { return role_bit(RoleFlag::FrameImmutable); }
 
     /// @param cutoff Interaction cutoff [Angstrom].
-    /// @param skin Verlet skin width [Angstrom]. Negative = auto (0.3 * cutoff).
+    /// @param skin Verlet skin width [length]. Negative = the LAMMPS
+    ///        default of the run's `units` style (lj 0.3, real/metal 2.0, ...;
+    ///        `units::UnitSystem::skin`), applied by the driver.
     /// @param every Attempt rebuild at most every N steps (LAMMPS `neigh_modify
     ///        every`; default 1 reproduces LAMMPS's built-in default).
     /// @param delay Skip displacement check for this many steps after a rebuild
@@ -97,7 +99,9 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
                           int delay = 0, bool check = true)
         : strategy_(cutoff, skin), cutoff_(cutoff),
           every_(every < 1 ? 1 : every), delay_(delay < 0 ? 0 : delay),
-          check_(check) {}
+          check_(check) {
+        skin_explicit_ = skin >= 0;
+    }
 
     /// @brief LAMMPS `atom_modify sort Nfreq binsize` — spatial reorder of
     ///        owned atoms. Runtime applies it after exchange and before borders.
@@ -136,6 +140,11 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// `NeighborProvider::neighbor_reach`).
     /// @return Enumeration radius [Angstrom].
     AccReal supported_cutoff() const override { return cutoff_; }
+
+    void apply_default_skin(double skin) override {
+        if (!skin_explicit_)
+            strategy_.set_skin(skin);
+    }
 
     AccReal neighbor_reach() const override {
         return static_cast<AccReal>(cutoff_ + strategy_.skin());
@@ -263,8 +272,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     /// @brief LAMMPS `neigh_modify check` flag (`true` = `check yes`).
     bool check() const { return check_; }
 
-    /// @brief Verlet skin width [Angstrom] (negative input resolved to the
-    /// `0.3*cutoff` auto value during construction). Surfaced for the
+    /// @brief Verlet skin width [length] (a negative input resolves to the
+    /// run style's LAMMPS default when the driver builds). Surfaced for the
     /// MD/Evaluate auto-injection path that extends the halo cutoff by
     /// the skin to keep ghosts stable across full-rebuild boundaries.
     double skin() const { return strategy_.skin(); }
@@ -314,8 +323,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
         // The strategy is sized and filtered by the VERLET reach, not the
         // bare cutoff: a list built to `cutoff` alone drops every pair in
         // the skin band and stops being reusable between rebuilds.
-        // (`skin()` is the constructor's negative-means-auto value already
-        // resolved, so this is exactly what the strategy derives itself.)
+        // (`skin()` is already resolved: explicit, or the style default the
+        // driver applied, so this is exactly what the strategy derives.)
         const double cutoff_skin = cutoff_ + strategy_.skin();
         strategy_dd_ = rt.md.dd;
         if (strategy_dd_) {
@@ -326,6 +335,7 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
     }
 
     Strategy strategy_;
+    bool skin_explicit_ = false;
     const mpi::DomainDecomposition* strategy_dd_ = nullptr;
     std::vector<Vec3> saved_positions_;
     /// Cell at the last enumeration (LAMMPS `corners_hold` / `boxhi_hold`).

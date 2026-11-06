@@ -96,7 +96,7 @@ void NvtSllod::build(const cpu::BuildContext& ctx) {
     if (n_dof_ > 0)
         ATV::md::sllod_chain_masses(eta_mass_.data(), tchain_,
                                     static_cast<double>(n_dof_),
-                                    units::md_boltz * T_, tau_);
+                                    ctx.runtime.units.boltz * T_, tau_);
     ke_current_ = 0;
     ke_valid_ = false;
 }
@@ -139,7 +139,7 @@ double NvtSllod::peculiar_ke_(const cpu::LaunchContext& ctx) const {
         const double pz = vz[i] - bz;
         ke_local += mass[i] * (px * px + py * py + pz * pz);
     }
-    ke_local *= 0.5 * units::md_mvv2e;
+    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -163,7 +163,7 @@ void NvtSllod::thermostat_(const cpu::LaunchContext& ctx, bool measure) {
         ke_current_ = peculiar_ke_(ctx);
     ke_valid_ = true;
 
-    const double kT = units::md_boltz * T_;
+    const double kT = ctx.runtime.units.boltz * T_;
     const double target = static_cast<double>(n_dof_) * kT;
     const double scale =
         ATV::md::sllod_nhc_half(eta_.data(), eta_dot_.data(), eta_mass_.data(),
@@ -198,7 +198,7 @@ void NvtSllod::nve_v_(const cpu::LaunchContext& ctx) {
     const AccReal* __restrict fx = f.span(kAtom_fx);
     const AccReal* __restrict fy = f.span(kAtom_fy);
     const AccReal* __restrict fz = f.span(kAtom_fz);
-    const double dtf = 0.5 * dt_ * units::md_ftm2v;
+    const double dtf = 0.5 * dt_ * ctx.runtime.units.ftm2v;
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
         const double dtfm = dtf / mass[i];

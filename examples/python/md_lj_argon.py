@@ -70,7 +70,7 @@ _SEED: int = 42
 _N_STEPS: int = 200  # 0.2 ps
 _THERMO_EVERY: int = 100  # LAMMPS-style print cadence
 
-#: Temperature report uses the engine's md_boltz (lj row, 1).
+#: Temperature report uses the run's boltz (lj row, 1).
 _KB_EV_PER_K: float = 1.0
 
 #: Minimum motion a 0.2 ps run at 94 K must produce [Å]. Argon's thermal

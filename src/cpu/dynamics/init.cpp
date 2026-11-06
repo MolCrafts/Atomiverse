@@ -42,7 +42,7 @@ void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
         ke += sp_mass[i] * v2;
     }
 
-    f.meta.get(kKinetic) = double(0.5) * units::md_mvv2e * ke;
+    f.meta.get(kKinetic) = double(0.5) * ctx.runtime.units.mvv2e * ke;
 }
 
 // ── ZeroMomentum ─────────────────────────────────────────────────
@@ -188,7 +188,7 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
 
     // ── 3. rescale so the measured temperature equals T exactly ──────
     // LAMMPS `rescale(t_old, t_new)`: factor = sqrt(t_new / t_old).
-    // KE = 0.5 * units::md_mvv2e * sum(m v^2); T = 2*KE / (Ndof * kB) with
+    // KE = 0.5 * mvv2e * sum(m v^2); T = 2*KE / (Ndof * kB) with
     // Ndof = 3N - 3 (COM removed), matching `compute temp` extra_dof.
     double sum_mv2 = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -208,9 +208,9 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
     const long long ndof = ctx.runtime.md.n_dof_global;
     if (ndof > 0 && sum_mv2 > 0.0) {
-        const double ke = 0.5 * units::md_mvv2e * sum_mv2;
+        const double ke = 0.5 * ctx.runtime.units.mvv2e * sum_mv2;
         const double t_measured =
-            2.0 * ke / (static_cast<double>(ndof) * units::md_boltz);
+            2.0 * ke / (static_cast<double>(ndof) * ctx.runtime.units.boltz);
         const double factor = std::sqrt(temperature_ / t_measured);
         for (int i = 0; i < n; ++i) {
             sp_vx[i] *= factor;

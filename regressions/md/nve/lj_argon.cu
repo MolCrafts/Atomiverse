@@ -49,16 +49,16 @@ namespace {
 
 // ── Rahman (1964) liquid argon — shared by every leg ─────────────────────
 // eps/kB = 120 K, sigma = 3.4 A, number density 0.02071 A^-3, T = 94.4 K.
-const double kEps = 120.0 * units::md_boltz; // 0.010341 eV
-constexpr double kSigma = 3.4;               // [A]
-const double kCutoff = 2.5 * kSigma;         // 8.5 A, the textbook LJ cutoff
-constexpr double kSkin = 0.5;                // [A]
-constexpr double kNumberDensity = 0.02071;   // [A^-3]
-constexpr double kTemperature = 94.4;        // [K]
-constexpr double kDt = 5.0;                  // [fs]  (Rahman used 10 fs)
-constexpr int kNSide = 6;                    // 6^3 = 216 atoms
-constexpr int kNSteps = 2000;                // 10 ps
-constexpr int kNChunks = 20; // sample the drift 20x along the way
+const double kEps = 120.0 * units::UnitSystem::lj().boltz; // 0.010341 eV
+constexpr double kSigma = 3.4;                             // [A]
+const double kCutoff = 2.5 * kSigma;       // 8.5 A, the textbook LJ cutoff
+constexpr double kSkin = 0.5;              // [A]
+constexpr double kNumberDensity = 0.02071; // [A^-3]
+constexpr double kTemperature = 94.4;      // [K]
+constexpr double kDt = 5.0;                // [fs]  (Rahman used 10 fs)
+constexpr int kNSide = 6;                  // 6^3 = 216 atoms
+constexpr int kNSteps = 2000;              // 10 ps
+constexpr int kNChunks = 20;               // sample the drift 20x along the way
 constexpr unsigned kSeed = 12345u;
 
 // Gate thresholds (REFERENCE.md): the symplectic envelope and the

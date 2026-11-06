@@ -26,7 +26,7 @@ TEST(InducedDipole, SingleSiteUniformField) {
     EXPECT_NEAR(mu[1], alpha * e_perm[1], 1e-14);
     EXPECT_NEAR(mu[2], alpha * e_perm[2], 1e-14);
     const double e_expect =
-        units::md_qqr2e
+        units::UnitSystem::lj().qqrd2e()
         * (-0.5 * (mu[0] * e_perm[0] + mu[1] * e_perm[1] + mu[2] * e_perm[2]));
     EXPECT_NEAR(e_pol, e_expect, 1e-12);
     EXPECT_LT(e_pol, 0.0);

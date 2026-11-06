@@ -91,7 +91,8 @@ void Brownian::launch(const LaunchContext& ctx) {
     const mixed_t dt = static_cast<mixed_t>(dt_);
     const mixed_t D = static_cast<mixed_t>(D_);
     const mixed_t temperature = static_cast<mixed_t>(temperature_);
-    const mixed_t mobility = brownian_mobility(D, temperature);
+    const mixed_t mobility = brownian_mobility(
+        D, temperature, static_cast<mixed_t>(ctx.runtime.units.boltz));
     const mixed_t noise = brownian_noise_amplitude(D, dt);
     const cuda::Box& box = ctx.runtime.host_box;
     const int block = cuda::kDefaultBlock;

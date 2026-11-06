@@ -9,7 +9,7 @@
 /// inverse FFT → force interpolation, giving O(N log N) scaling.
 ///
 /// Smooth PME of Essmann et al., J. Chem. Phys. 103, 8577 (1995):
-///   E_recip = units::md_qqr2e/(2πV) · Σ_{m≠0} exp(−π²m²/α²)/m² · B(m) · |F(Q)(m)|²
+///   E_recip = qqrd2e/(2πV) · Σ_{m≠0} exp(−π²m²/α²)/m² · B(m) · |F(Q)(m)|²
 /// with Q the spline-interpolated charge grid and B(m) the Euler spline
 /// modulus. DOI: 10.1063/1.470117.
 ///

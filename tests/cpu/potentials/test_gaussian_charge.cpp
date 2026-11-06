@@ -53,8 +53,10 @@ TEST(PairGaussianCoul, SpatialHalfRowsMayPointToALowerLocalIndex) {
     cpu::PairGaussianCoul potential(8.0, {}, false);
     potential.build({context, frame});
     potential.launch({context, frame, 0, 0});
-    EXPECT_NEAR(frame.meta.get(kEnergy), -units::md_qqr2e / 2.5, 1e-12);
-    EXPECT_NEAR(frame.span(kAtom_fx)[0], units::md_qqr2e / (2.5 * 2.5), 1e-12);
+    EXPECT_NEAR(frame.meta.get(kEnergy),
+                -units::UnitSystem::lj().qqrd2e() / 2.5, 1e-12);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0],
+                units::UnitSystem::lj().qqrd2e() / (2.5 * 2.5), 1e-12);
     potential.destroy({context, frame});
 }
 
@@ -94,7 +96,7 @@ TEST(GaussianChargeKernel, DGreensMatchesFD) {
 
 TEST(PairGaussianCoul, AnalyticDimerEnergyForce) {
     const double r = 3.0, eta = 1.0, q0 = 1.0, q1 = 1.0;
-    const double K = ATV::units::md_qqr2e;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double G = cpu::GaussianChargeKernel::greens(r, eta, eta);
     const double dG = cpu::GaussianChargeKernel::dgreens_dr(r, eta, eta);
     const double U_pair = K * q0 * q1 * G;
@@ -122,7 +124,7 @@ TEST(PairGaussianCoul, AnalyticDimerEnergyForce) {
 
 TEST(PairGaussianCoul, PointPointRecoversCoulomb) {
     const double r = 4.0, q0 = 0.5, q1 = -1.0;
-    const double K = ATV::units::md_qqr2e;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double U = K * q0 * q1 / r;
     const double F0x = K * q0 * q1 * (-1.0 / (r * r)); // dG/dr = -1/r²
 
@@ -144,7 +146,7 @@ TEST(PairGaussianCoul, PointPointRecoversCoulomb) {
 
 TEST(PairGaussianCoul, GaussianPointCross) {
     const double r = 5.0, eta = 1.0, qg = 0.3, qp = 1.0;
-    const double K = ATV::units::md_qqr2e;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double G = cpu::GaussianChargeKernel::greens(r, eta, 0.0);
     const double U =
         K * qg * qp * G + cpu::GaussianChargeKernel::self_energy(K, qg, eta);
@@ -183,7 +185,7 @@ TEST(PairGaussianCoul, ThrowsOnATypeTheWidthTableDoesNotCover) {
 /// type index.
 TEST(PairGaussianCoul, EmptyTableIsAllPointChargesAtAnyTypeIndex) {
     const double r = 4.0, q0 = 0.5, q1 = -1.0;
-    const double U = ATV::units::md_qqr2e * q0 * q1 / r;
+    const double U = ATV::units::UnitSystem::lj().qqrd2e() * q0 * q1 / r;
     auto f = dimer(r, q0, q1, /*t0=*/7, /*t1=*/9);
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;

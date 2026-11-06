@@ -107,6 +107,7 @@ re-optimizes from the frame's current state.
 from __future__ import annotations
 
 from atomiverse._binding import _cpp, require_domain, backend_type
+from atomiverse._units import resolve as _resolve_units
 
 require_domain(__name__, "minimize")
 from atomiverse._dispatch import (
@@ -175,6 +176,9 @@ class Minimize:
     convergence : ForceConverged | PressureConverged | StressConverged, optional
         Stop policy. If omitted, C++ ``install_defaults()`` attaches a
         default ``ForceConverged`` at build time.
+    units : str, optional
+        LAMMPS ``units`` style of the run (see :class:`atomiverse.MD`);
+        default :func:`atomiverse.units_style`.
     device : str, optional
         Execution backend: ``"cpu"`` or ``"cuda"``. CUDA currently binds
         AM1/RM1/MNDO/PM3, native SteepestDescent and ForceConverged. CPU optimizers
@@ -185,12 +189,24 @@ class Minimize:
         self,
         convergence: object | None = None,
         device: str = "cpu",
+        units: str | None = None,
     ) -> None:
         self.device = device
         self._cpp = backend_type(device, "Minimize", "_CudaMinimize")()
+        self._cpp.set_units(_resolve_units(units))
         self._built = False
         if convergence is not None:
             self.add_criterion(convergence)
+
+    def set_units(self, style: str) -> Minimize:
+        """LAMMPS ``units <style>`` of this run (before the first ``run``)."""
+        self._cpp.set_units(style)
+        return self
+
+    @property
+    def units_style(self) -> str:
+        """LAMMPS ``units`` style of this run."""
+        return self._cpp.units_style
 
     def set_optimizer(self, component: object) -> Minimize:
         """Install the optimizer (``Minimize::set_optimizer``).

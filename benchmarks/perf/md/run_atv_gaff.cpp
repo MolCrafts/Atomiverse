@@ -2,7 +2,7 @@
 /// @brief MPI GAFF MD timing bench vs LAMMPS paper config.
 ///
 /// Aligns with figures/flexible (Gudla–Zhang) / ref_lammps packmol_n100:
-///   units real → ATV eV/Å/fs
+///   units real (the run is `units real`: kcal/mol, Å, fs, atm, K)
 ///   atom_style full, special_bonds amber
 ///   pair_style lj/cut/coul/long 10 10  (fused PairLJCutCoulLong)
 ///   kspace_style pppm 1e-4             (KSpacePPPM)
@@ -181,13 +181,10 @@ Args parse(int argc, char** argv) {
 // types 0..4 = c3, h1, hc, ho, oh
 std::vector<LJTypeCoeff> peo_lj(double cut_unused) {
     (void)cut_unused;
-    using cpu::kcal_per_mol_to_ev;
     return {
-        {0, 0, kcal_per_mol_to_ev(0.1078), 3.39771},
-        {1, 1, kcal_per_mol_to_ev(0.0208), 2.421997},
-        {2, 2, kcal_per_mol_to_ev(0.0208), 2.600177},
-        {3, 3, kcal_per_mol_to_ev(0.0047), 0.537925},
-        {4, 4, kcal_per_mol_to_ev(0.0930), 3.242871},
+        {0, 0, 0.1078, 3.39771},  {1, 1, 0.0208, 2.421997},
+        {2, 2, 0.0208, 2.600177}, {3, 3, 0.0047, 0.537925},
+        {4, 4, 0.0930, 3.242871},
     };
 }
 
@@ -218,7 +215,6 @@ int main(int argc, char** argv) {
     }
 
     using cpu::degree_to_rad;
-    using cpu::kcal_per_mol_to_ev;
 
     // ── Coefficient tables: --ff file, or the built-in PEO GAFF2 tables ──
     std::vector<LJTypeCoeff> lj_coeffs;
@@ -287,27 +283,18 @@ int main(int argc, char** argv) {
     } else {
         lj_coeffs = peo_lj(cutoff);
         // Bond types: c3-c3, c3-h1, c3-hc, c3-oh, ho-oh
-        Kbond = {kcal_per_mol_to_ev(228.89), kcal_per_mol_to_ev(344.22),
-                 kcal_per_mol_to_ev(345.25), kcal_per_mol_to_ev(285.15),
-                 kcal_per_mol_to_ev(535.51)};
+        Kbond = {228.89, 344.22, 345.25, 285.15, 535.51};
         r0 = {1.5354, 1.0969, 1.0962, 1.4242, 0.9725};
         // Angle types 1..9 from data labels
-        Kang = {kcal_per_mol_to_ev(43.28), kcal_per_mol_to_ev(43.27),
-                kcal_per_mol_to_ev(76.79), kcal_per_mol_to_ev(88.334),
-                kcal_per_mol_to_ev(65.13), kcal_per_mol_to_ev(35.64),
-                kcal_per_mol_to_ev(56.29), kcal_per_mol_to_ev(35.80),
-                kcal_per_mol_to_ev(62.80)};
+        Kang = {43.28, 43.27, 76.79, 88.334, 65.13, 35.64, 56.29, 35.80, 62.80};
         th0 = {degree_to_rad(109.590047), degree_to_rad(109.680047),
                degree_to_rad(109.660047), degree_to_rad(113.600049),
                degree_to_rad(107.390046), degree_to_rad(108.550047),
                degree_to_rad(110.380047), degree_to_rad(107.730046),
                degree_to_rad(109.500047)};
         // Dihedral types (fourier single term → Charmm)
-        Kd = {kcal_per_mol_to_ev(0.166667), kcal_per_mol_to_ev(0.060000),
-              kcal_per_mol_to_ev(0.166667), kcal_per_mol_to_ev(0.123000),
-              kcal_per_mol_to_ev(0.155556), kcal_per_mol_to_ev(0.090000),
-              kcal_per_mol_to_ev(0.166667), kcal_per_mol_to_ev(0.250000),
-              kcal_per_mol_to_ev(1.000000)};
+        Kd = {0.166667, 0.060000, 0.166667, 0.123000, 0.155556,
+              0.090000, 0.166667, 0.250000, 1.000000};
         nper = {3, 3, 3, 3, 3, 3, 3, 1, 1};
         dphase.assign(9, 0.0);
     }
@@ -315,6 +302,7 @@ int main(int argc, char** argv) {
     // LAMMPS kspace_style pppm <accuracy> (default order 5) with the
     // kspace_modify gewald / mesh overrides this tool exposes.
     longrange::PppmAccuracyRequest acc_req;
+    acc_req.unit_system = units::from_style("real");
     acc_req.accuracy = accuracy;
     acc_req.cutoff = cutoff;
     acc_req.order = 5;
@@ -403,6 +391,7 @@ int main(int argc, char** argv) {
         // report reuses it as the ghost-shell lower bound.
         const double skin = 2.0;
         cpu::Evaluate eval;
+        eval.set_units("real");
         eval.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
         install(eval);
         eval.build();
@@ -480,37 +469,27 @@ int main(int argc, char** argv) {
         }
 
         if (rank == 0) {
-            std::printf("[atv] SINGLE-POINT (eV): E=%.8f pair+kspace=%.8f "
-                        "bond=%.8f angle=%.8f dihedral=%.8f\n",
+            std::printf("[atv] SINGLE-POINT (kcal/mol): E=%.6f "
+                        "pair+kspace=%.6f bond=%.6f angle=%.6f "
+                        "dihedral=%.6f\n",
                         frame.meta.get(kEnergy), frame.meta.get(kEnergyPair),
                         frame.meta.get(kEnergyBond),
                         frame.meta.get(kEnergyAngle),
                         frame.meta.get(kEnergyDihedral));
-            const double kcal = 1.0 / ATV::cpu::kKcalPerMolInEv;
-            std::printf("[atv] SINGLE-POINT (kcal/mol): E=%.6f "
-                        "pair+kspace=%.6f bond=%.6f angle=%.6f "
-                        "dihedral=%.6f\n",
-                        frame.meta.get(kEnergy) * kcal,
-                        frame.meta.get(kEnergyPair) * kcal,
-                        frame.meta.get(kEnergyBond) * kcal,
-                        frame.meta.get(kEnergyAngle) * kcal,
-                        frame.meta.get(kEnergyDihedral) * kcal);
             // Machine-readable line for benchmarks/compare/gaff-liquid/compare_sp.py.
             std::printf("[atv] SP_KCAL total=%.14e nonbonded=%.14e "
                         "bond=%.14e angle=%.14e dihedral=%.14e "
                         "improper=%.14e\n",
-                        frame.meta.get(kEnergy) * kcal,
-                        frame.meta.get(kEnergyPair) * kcal,
-                        frame.meta.get(kEnergyBond) * kcal,
-                        frame.meta.get(kEnergyAngle) * kcal,
-                        frame.meta.get(kEnergyDihedral) * kcal,
-                        frame.meta.get(kEnergyImproper) * kcal);
+                        frame.meta.get(kEnergy), frame.meta.get(kEnergyPair),
+                        frame.meta.get(kEnergyBond),
+                        frame.meta.get(kEnergyAngle),
+                        frame.meta.get(kEnergyDihedral),
+                        frame.meta.get(kEnergyImproper));
         }
         if (!args.forces_out.empty()) {
             if (nrank != 1)
                 throw std::invalid_argument("--forces-out needs one rank");
             // Rows are data-file order (tag = row), so id = tag + 1.
-            const double kcal_f = 1.0 / ATV::cpu::kKcalPerMolInEv;
             const auto tag = frame.span(kAtom_tag);
             const AccReal* fx = frame.span(kAtom_fx);
             const AccReal* fy = frame.span(kAtom_fy);
@@ -521,14 +500,15 @@ int main(int argc, char** argv) {
             out.precision(15);
             out << std::scientific;
             for (int i = 0; i < frame.nlocal(); ++i)
-                out << tag[i] + 1 << ' ' << fx[i] * kcal_f << ' '
-                    << fy[i] * kcal_f << ' ' << fz[i] * kcal_f << '\n';
+                out << tag[i] + 1 << ' ' << fx[i] << ' ' << fy[i] << ' '
+                    << fz[i] << '\n';
         }
         MPI_Finalize();
         return 0;
     }
 
     cpu::md::MD sim;
+    sim.set_units("real");
     // Match paper in.workflow: neighbor 2.0 bin; neigh_modify delay 0 every 1
     // check yes. atom_modify sort: LAMMPS default nfreq=1000 (paper does not
     // set sort 1); every-reneighbor sort thrash-rebuilds BondedTupleCache.
@@ -537,10 +517,9 @@ int main(int argc, char** argv) {
                          .set_atom_sort(/*nfreq=*/1000));
     install(sim);
     if (args.npt) {
-        // 1 atm = 6.324209e-7 eV/Å³ (LAMMPS units real pressure is atm)
-        const double P_evA3 = args.P_atm * 6.3242090e-7;
-        sim.set_integrator(cpu::md::NoseHooverNPT{args.T, args.tau_T, P_evA3,
-                                                  args.tau_P, args.dt});
+        // units real: the target is in atm, as LAMMPS takes it.
+        sim.set_integrator(cpu::md::NoseHooverNPT{
+            args.T, args.tau_T, args.P_atm, args.tau_P, args.dt});
     } else {
         sim.set_integrator(cpu::md::VelocityVerlet{args.dt});
         if (!args.nve)
@@ -655,8 +634,8 @@ int main(int argc, char** argv) {
         std::printf("[atv] PERFORMANCE  wall=%.4f s  steps/s=%.3f  "
                     "Matom-step/s=%.3f  ns/day=%.3f  ranks=%d\n",
                     wall, steps_s, matom, ns_day, nrank);
-        std::printf("[atv] E=%.6f pair=%.6f (eV)\n", frame.meta.get(kEnergy),
-                    frame.meta.get(kEnergyPair));
+        std::printf("[atv] E=%.6f pair=%.6f (kcal/mol)\n",
+                    frame.meta.get(kEnergy), frame.meta.get(kEnergyPair));
         std::printf(
             "[atv] NOTE: Timing breakdown table above uses LAMMPS section "
             "names: Pair Bond Kspace Neigh Comm Output Modify Other\n");

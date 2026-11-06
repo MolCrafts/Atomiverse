@@ -76,6 +76,22 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
 - Sweep owed: any regression that can silently degrade its own physics on a
   missing input (the old `pw-smearing-al` toy-Hamiltonian fallback pattern).
 
+## MD units
+
+- Classical MD units are the LAMMPS `units` command: one `UnitSystem` per run
+  on the driver (`Driver::set_units`, default lj), published on the Context
+  before build, fixed once the run binds its system; CUDA kernels take the
+  factors as launch arguments. Nothing is converted (`load_lammps_coeffs`,
+  `forcefield.compile` take values in their own style; a mismatched molpy
+  force field is refused). Oracle: `tests/data/lammps_units` +
+  `test_lammps_units_parity` (stock LAMMPS, lj/real/metal/si/electron).
+- Not LAMMPS-exact yet (algorithm, not units): `NoseHoover` splits xi by
+  dt/2 where `fix nvt` uses dt/4 kicks; `NoseHooverNPT` uses the MTK mass
+  `(N_f+3)kT tau_P^2` and a fused remap; `Virial` kinetic stress mounted at
+  `post_force` sees half-step velocities (LAMMPS thermo uses end-of-step).
+- Electronic-structure force sources return eV/Å: a BOMD run is physical
+  only in `units metal`; the ES-MD regressions still run in the default lj.
+
 ## Build-shape conclusions
 
 - **molpy is derived** (`ATV_BUILD_ANALYSIS` / `IO` / `PYTHON` / `GPW` / `HF` /

@@ -109,7 +109,7 @@ class ZeroMomentum : public Component {
 ///
 /// @par Units
 /// Temperature in Kelvin. Velocities in Angstrom/fs.
-/// v_i ~ N(0, sqrt(kB*T / (ATV::units::md_mvv2e * m_i))) per component.
+/// v_i ~ N(0, sqrt(kB*T / (mvv2e * m_i))) per component.
 ///
 /// @par Usage
 /// @code{.cpp}

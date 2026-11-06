@@ -60,13 +60,14 @@ using namespace ATV;
 
 namespace {
 
-// Argon-like LJ liquid started from a simple cubic lattice at 2x the target
-// temperature: it melts within the warm-up, so the steady interval rebuilds.
-constexpr double kEps = 0.0104, kSigma = 3.4, kCutoff = 8.5, kDt = 2.0;
-// The classical engine works in LJ units (kB = 1, mvv2e = 1): the target
-// temperature is the energy kB·120 K of the eV-valued well depth.
+// Argon-like LJ liquid in LAMMPS `units metal` (eV, Å, ps, g/mol, K, bar),
+// started from a simple cubic lattice at 2x the target temperature: it melts
+// within the warm-up, so the steady interval rebuilds.
+constexpr double kEps = 0.0104, kSigma = 3.4, kCutoff = 8.5, kDt = 0.002;
 constexpr double kMass = 39.948;
-const double kTemperature = units::kB_ev_per_k * 120.0;
+constexpr double kTemperature = 120.0; // [K]
+constexpr double kPressure = 1.0;      // [bar]
+const units::UnitSystem kUnits = units::from_style("metal");
 
 cpu::Frame make_liquid(int n_side, double density, bool charged) {
     const int n = n_side * n_side * n_side;
@@ -75,7 +76,8 @@ cpu::Frame make_liquid(int n_side, double density, bool charged) {
     cpu::Frame frame(n);
     std::mt19937_64 rng(20261029);
     std::normal_distribution<double> normal(0.0, 1.0);
-    const double sigma_v = std::sqrt(2.0 * kTemperature / kMass);
+    const double sigma_v =
+        std::sqrt(kUnits.boltz * 2.0 * kTemperature / (kUnits.mvv2e * kMass));
     double p[3] = {};
     int i = 0;
     for (int ix = 0; ix < n_side; ++ix)
@@ -111,12 +113,10 @@ cpu::Frame make_liquid(int n_side, double density, bool charged) {
 
 // ── Constrained molecular liquids (2 fs step, PME) ───────────────────────
 
-/// One femtosecond in the engine's eV·Å·amu time unit (10.18 fs).
-constexpr double kFs = 1.0 / 10.180505;
-/// LJ-unit charge of one elementary charge (qqr2e = 1).
-const double kQ = std::sqrt(14.399645);
+/// Molecular cases are units metal too: one fs is 1e-3 ps; charges in e.
+constexpr double kFs = 1.0e-3;
 constexpr double kMolCutoff = 9.0, kMolAlpha = 0.3;
-const double kMolTemperature = units::kB_ev_per_k * 300.0;
+constexpr double kMolTemperature = 300.0; // [K]
 constexpr double kDOH = 0.9572, kDHH = 1.5139;
 constexpr double kCC = 1.529, kCH = 1.09, kHCC = 1.9321;
 
@@ -159,7 +159,8 @@ cpu::Frame molecular_lattice(int side, double spacing,
                     const auto r =
                         rotate(body[static_cast<std::size_t>(s)], a, b, c);
                     const double m = mass[static_cast<std::size_t>(s)];
-                    const double sv = std::sqrt(kMolTemperature / m);
+                    const double sv = std::sqrt(kUnits.boltz * kMolTemperature
+                                                / (kUnits.mvv2e * m));
                     const double v[3] = {normal(rng) * sv, normal(rng) * sv,
                                          normal(rng) * sv};
                     f.span(kAtom_x)[i] = std::fmod(com[0] + r[0] + L, L);
@@ -172,7 +173,7 @@ cpu::Frame molecular_lattice(int side, double spacing,
                     f.span(kAtom_type)[i] = type[static_cast<std::size_t>(s)];
                     f.span(kAtom_tag)[i] = i;
                     f.span(kAtom_charge)[i] =
-                        charge[static_cast<std::size_t>(s)] * kQ;
+                        charge[static_cast<std::size_t>(s)];
                     for (int d = 0; d < 3; ++d)
                         p[d] += m * v[d];
                     m_sum += m;
@@ -307,6 +308,7 @@ int main(int argc, char** argv) try {
         // min-lbfgs-ls adds the bounded Armijo line search.
         auto timed = [&](int budget, cpu::Frame& frame) {
             cuda::minimizer::Minimize min;
+            min.set_units("metal");
             min.set_neighbor(cuda::NeighborList{kCutoff});
             min.set_evaluator(cuda::PairLJCut{kEps, kSigma, kCutoff});
             cuda::minimizer::LBFGS lbfgs{5, 0.01, 10};
@@ -355,6 +357,7 @@ int main(int argc, char** argv) try {
                           : make_liquid(side, 0.0177, charged); // side^3 atoms
     cuda::NeighborList neighbor{water || ethane ? kMolCutoff : kCutoff};
     cuda::md::MD sim;
+    sim.set_units("metal");
     sim.set_neighbor_ref(neighbor);
     const bool lj = name.rfind("lj-", 0) == 0;
     if (water || ethane) {
@@ -395,15 +398,15 @@ int main(int argc, char** argv) try {
     if (water || ethane) {
         // Integrator and constraints are mounted with the force field above.
     } else if (name == "lj-npt") {
-        sim.set_integrator(cuda::md::NoseHooverNPT{
-            kTemperature, 100 * kDt, units::bar_to_ev_per_a3, 1000 * kDt, kDt});
+        sim.set_integrator(cuda::md::NoseHooverNPT{kTemperature, 100 * kDt,
+                                                   kPressure, 1000 * kDt, kDt});
     } else if (name == "lj-brownian") {
-        sim.set_integrator(cuda::md::Brownian{kDt, 1e-3, kTemperature, 5});
+        sim.set_integrator(cuda::md::Brownian{kDt, 1.0, kTemperature, 5});
     } else if (name == "lj-nvelimit") {
         sim.set_integrator(cuda::md::NVELimit{kDt, 0.05});
     } else if (name == "lj-sllod") {
         sim.set_integrator(cuda::md::NvtSllod{kTemperature, 100 * kDt, kDt,
-                                              1e-6, md::kFlowXY, 3});
+                                              1e-3, md::kFlowXY, 3});
     } else {
         sim.set_integrator(cuda::md::VelocityVerlet{kDt});
     }
@@ -414,7 +417,7 @@ int main(int argc, char** argv) try {
                                                  100 * kDt, kDt, 5u});
     if (name == "lj-deform")
         sim.on(md::Phase::initial_integrate)
-            .add(cuda::md::Deform{cuda::md::Deform::Mode::erate, 1e-7, kDt, 0},
+            .add(cuda::md::Deform{cuda::md::Deform::Mode::erate, 1e-4, kDt, 0},
                  200);
     sim.build();
 

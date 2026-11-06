@@ -117,9 +117,11 @@ inline cpu::PairLJCut make_pair_lj_cut(const PairLJCutParams& p) {
 /// @param p Typed mirror.
 /// @return The configured component.
 inline cpu::PairCoulCut make_pair_coul_cut(const PairCoulCutParams& p) {
-    return cpu::PairCoulCut{p.cutoff}
-        .set_special_bonds(p.s12, p.s13, p.s14)
-        .set_coulomb_constant(p.coulomb);
+    auto pair =
+        cpu::PairCoulCut{p.cutoff}.set_special_bonds(p.s12, p.s13, p.s14);
+    if (p.coulomb > 0.0)
+        pair.set_coulomb_constant(p.coulomb);
+    return pair;
 }
 
 /// @brief The `cpu::PairLJCutCoulLong` a `PairLJCutCoulLongParams` mirror

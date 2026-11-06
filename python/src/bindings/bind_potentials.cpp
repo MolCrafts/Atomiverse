@@ -41,8 +41,10 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("type_i"), nb::arg("type_j"), nb::arg("epsilon"),
             nb::arg("sigma"), nb::arg("cutoff") = nb::none(),
-            "Construct with the two types, epsilon [eV], sigma [A] and an "
-            "optional per-pair LJ cutoff [A]. An unset cutoff on a listed row "
+            "Construct with the two types, epsilon [energy], sigma [length] "
+            "and an "
+            "optional per-pair LJ cutoff [length]. An unset cutoff on a listed "
+            "row "
             "is the style's global cutoff; a pair with no row at all mixes "
             "its cutoff arithmetically from the diagonals.")
         .def_ro("type_i", &LJTypeCoeff::type_i)
@@ -64,8 +66,9 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("type_i"), nb::arg("type_j"), nb::arg("strength"),
             nb::arg("sigma"), nb::arg("cutoff"),
-            "Construct with the two types, strength S [eV] (S > 0 attracts), "
-            "sigma [A] and the term's own cutoff rc [A].")
+            "Construct with the two types, strength S [energy] (S > 0 "
+            "attracts), "
+            "sigma [length] and the term's own cutoff rc [length].")
         .def_ro("type_i", &R4TypeCoeff::type_i)
         .def_ro("type_j", &R4TypeCoeff::type_j)
         .def_ro("strength", &R4TypeCoeff::strength)
@@ -86,7 +89,8 @@ void bind_potentials(nb::module_& m) {
             nb::arg("epsilon"), nb::arg("sigma"), nb::arg("cutoff"),
             nb::arg("s12") = 1.0, nb::arg("s13") = 1.0, nb::arg("s14") = 1.0,
             nb::arg("energy_shift") = true,
-            "Construct with epsilon [eV], sigma [A], and cutoff [A].\n\n"
+            "Construct with epsilon [energy], sigma [length], and cutoff "
+            "[length].\n\n"
             "s12, s13, s14 are the 1-2 / 1-3 / 1-4 pair weights (LAMMPS "
             "special_bonds). 0 drops that shell, a weight in (0, 1] scales "
             "that pair's energy and force. The default is (1, 1, 1). "
@@ -106,7 +110,8 @@ void bind_potentials(nb::module_& m) {
             nb::arg("energy_shift") = true,
             "Per-type form: a list of LJTypeCoeff rows (types are the frame's "
             "force-field type, molpy atoms.type_id) and the global cutoff "
-            "[A]. Unlisted pairs mix Lorentz-Berthelot (geometric epsilon, "
+            "[length]. Unlisted pairs mix Lorentz-Berthelot (geometric "
+            "epsilon, "
             "arithmetic sigma and cutoff, LAMMPS init_one); a type with no "
             "diagonal row has no LJ site. With energy_shift (default on) "
             "every pair is shifted at its own cutoff.")
@@ -164,8 +169,9 @@ void bind_potentials(nb::module_& m) {
                                                            alpha, cutoff};
             },
             nb::arg("coeffs"), nb::arg("alpha"), nb::arg("cutoff"),
-            "Construct from LJTypeCoeff rows, the Ewald alpha [1/A] and the "
-            "Coulomb (and global LJ) cutoff [A]. Unlisted pairs mix "
+            "Construct from LJTypeCoeff rows, the Ewald alpha [1/length] and "
+            "the "
+            "Coulomb (and global LJ) cutoff [length]. Unlisted pairs mix "
             "Lorentz-Berthelot with arithmetic cutoffs (LAMMPS init_one).")
         .def(
             "set_special_bonds",
@@ -264,8 +270,8 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::PairMorseParams{D, alpha, r0, cutoff};
             },
             nb::arg("D"), nb::arg("alpha"), nb::arg("r0"), nb::arg("cutoff"),
-            "Construct with well depth D [eV], width alpha [1/A], "
-            "equilibrium separation r0 [A], and cutoff [A].");
+            "Construct with well depth D [energy], width alpha [1/length], "
+            "equilibrium separation r0 [length], and cutoff [length].");
 
     nb::class_<cpu::task::PairBuckParams>(
         m, "PairBuck",
@@ -288,8 +294,9 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::PairBuckParams{A, rho, C, cutoff};
             },
             nb::arg("A"), nb::arg("rho"), nb::arg("C"), nb::arg("cutoff"),
-            "Construct with Born-Mayer prefactor A [eV], softness length "
-            "rho [A], dispersion coefficient C [eV*A^6], and cutoff [A].");
+            "Construct with Born-Mayer prefactor A [energy], softness length "
+            "rho [length], dispersion coefficient C [energy*length^6], and "
+            "cutoff [length].");
 
     nb::class_<cpu::task::PairBornParams>(
         m, "PairBorn",
@@ -319,9 +326,10 @@ void bind_potentials(nb::module_& m) {
             nb::arg("type_i"), nb::arg("type_j"), nb::arg("A"), nb::arg("rho"),
             nb::arg("sigma"), nb::arg("C"), nb::arg("D"), nb::arg("cutoff"),
             "Construct from PARALLEL sequences, one entry per table row: "
-            "type_i / type_j (force-field types, atoms.type_id), A [eV], "
-            "rho [A], sigma [A], "
-            "C [eV*A^6], D [eV*A^8], plus the one shared cutoff [A].\n\n"
+            "type_i / type_j (force-field types, atoms.type_id), A [energy], "
+            "rho [length], sigma [length], "
+            "C [energy*length^6], D [energy*length^8], plus the one shared "
+            "cutoff [length].\n\n"
             "All seven sequences are one table seen column-wise and must have "
             "the same length. A single-type model is one row, e.g. "
             "type_i=[18], type_j=[18], A=[1000.0], ...\n\n"
@@ -351,8 +359,9 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::PairYukawaParams{A, kappa, cutoff};
             },
             nb::arg("A"), nb::arg("kappa"), nb::arg("cutoff"),
-            "Construct with amplitude A [eV*A] (positive is repulsive), "
-            "screening wavenumber kappa [1/A], and cutoff [A].");
+            "Construct with amplitude A [energy*length] (positive is "
+            "repulsive), "
+            "screening wavenumber kappa [1/length], and cutoff [length].");
 
     nb::class_<cpu::task::PairWcaParams>(
         m, "PairWCA",
@@ -369,8 +378,9 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::PairWcaParams{epsilon, sigma};
             },
             nb::arg("epsilon"), nb::arg("sigma"),
-            "Construct with the parent LJ well depth epsilon [eV] and length "
-            "scale sigma [A].");
+            "Construct with the parent LJ well depth epsilon [energy] and "
+            "length "
+            "scale sigma [length].");
 
     nb::class_<cpu::task::PairDpdParams>(
         m, "PairDpd",
@@ -380,7 +390,8 @@ void bind_potentials(nb::module_& m) {
         "r = 0) and the degrees of freedom that were coarsened away come back "
         "as a pairwise thermostat. The conservative half is "
         "F^C = a w(r) rhat with w = 1 - r/r_c, rhat the unit vector along "
-        "r_i - r_j; the energy reported for it is U^C = a r_c w^2 / 2 [eV]. "
+        "r_i - r_j; the energy reported for it is U^C = a r_c w^2 / 2 "
+        "[energy]. "
         "The thermostat half is a matched dissipative/random pair with "
         "sigma^2 = 2 gamma k_B T.\n\n"
         "It is a THERMOSTAT as well as a potential — install it instead of, "
@@ -415,10 +426,11 @@ void bind_potentials(nb::module_& m) {
             nb::arg("a"), nb::arg("gamma"), nb::arg("temperature"),
             nb::arg("cutoff"), nb::arg("dt"),
             nb::arg("seed") = std::uint64_t(1),
-            "Construct with soft repulsion amplitude a [eV/A] — a FORCE, the "
+            "Construct with soft repulsion amplitude a [force] — a FORCE, the "
             "value of F^C at contact, not an energy — dissipative friction "
-            "gamma [eV*fs/A^2], thermostat temperature [K], cutoff r_c [A], "
-            "timestep dt [fs], and the random-stream seed "
+            "gamma [energy*time/length^2], thermostat temperature "
+            "[temperature], cutoff r_c [length], "
+            "timestep dt [time], and the random-stream seed "
             "(dimensionless).\n\n"
             "gamma = 0 switches BOTH the dissipative and the random term off "
             "(sigma = sqrt(2 gamma k_B T)), leaving the conservative soft "
@@ -444,8 +456,8 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::BondFeneParams{std::move(K), std::move(R0)};
             },
             nb::arg("K"), nb::arg("R0"),
-            "Construct with spring constants K [eV/A^2] and maximum "
-            "extensions R0 [A] per bond type.");
+            "Construct with spring constants K [energy/length^2] and maximum "
+            "extensions R0 [length] per bond type.");
 
     nb::class_<cpu::task::DihedralCharmmParams>(
         m, "DihedralCharmm",
@@ -464,7 +476,7 @@ void bind_potentials(nb::module_& m) {
                     std::move(K), std::move(n), std::move(delta)};
             },
             nb::arg("K"), nb::arg("n"), nb::arg("delta"),
-            "Construct with force constants K [eV], multiplicities n "
+            "Construct with force constants K [energy], multiplicities n "
             "(integers >= 1) and phase shifts delta [rad] per dihedral type. "
             "n is the number of minima per full turn, so n = 3 is the "
             "threefold barrier of an sp3-sp3 bond; delta shifts where those "
@@ -486,7 +498,7 @@ void bind_potentials(nb::module_& m) {
                                                           std::move(chi0)};
             },
             nb::arg("K"), nb::arg("chi0"),
-            "Construct with force constants K [eV/rad^2] and equilibrium "
+            "Construct with force constants K [energy/rad^2] and equilibrium "
             "angles chi0 [rad] per improper type.");
 
     nb::class_<cpu::task::PairCoulCutParams>(
@@ -501,18 +513,21 @@ void bind_potentials(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::PairCoulCutParams* p, double cutoff, double s12,
-               double s13, double s14, double coulomb) {
+               double s13, double s14, std::optional<double> coulomb) {
+                if (coulomb && !(*coulomb > 0.0))
+                    throw nb::value_error(
+                        "PairCoulCut: coulomb must be finite and > 0");
                 new (p) cpu::task::PairCoulCutParams{cutoff, s12, s13, s14,
-                                                     coulomb};
+                                                     coulomb.value_or(0.0)};
             },
             nb::arg("cutoff"), nb::arg("s12") = 1.0, nb::arg("s13") = 1.0,
-            nb::arg("s14") = 1.0, nb::arg("coulomb") = ATV::units::md_qqr2e,
-            "Construct with the real-space cutoff [A]. The neighbor list "
+            nb::arg("s14") = 1.0, nb::arg("coulomb") = nb::none(),
+            "Construct with the real-space cutoff [length]. The neighbor list "
             "must be built with a cutoff >= this value. s12, s13, s14 are the "
             "1-2 / 1-3 / 1-4 Coulomb weights (LAMMPS special_bonds coul). "
-            "coulomb is the constant k in k q_i q_j / r; the default 1 is "
-            "the LAMMPS lj qqr2e every classical kernel uses (metal: "
-            "14.399645 eV A / e^2).");
+            "coulomb is the constant k in k q_i q_j / r, in the run's units; "
+            "None (default) uses the run's qqrd2e, as LAMMPS coul/cut does "
+            "(real: 332.06371, metal: 14.399645, lj: 1).");
 
     nb::class_<cpu::task::ImproperCvffParams>(
         m, "ImproperCvff",
@@ -526,7 +541,7 @@ void bind_potentials(nb::module_& m) {
                     std::move(K), std::move(d), std::move(n)};
             },
             nb::arg("K"), nb::arg("d"), nb::arg("n"),
-            "Per improper type: K [eV], d (+1 or -1), n (0..6). phi is the "
+            "Per improper type: K [energy], d (+1 or -1), n (0..6). phi is the "
             "torsion angle of the improper 4-tuple in its frame order (Amber "
             "puts the central atom third).");
 
@@ -545,9 +560,9 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::CoulLongParams{alpha, cutoff};
             },
             nb::arg("alpha"), nb::arg("cutoff"),
-            "Construct with the Ewald splitting parameter alpha [1/A] — "
+            "Construct with the Ewald splitting parameter alpha [1/length] — "
             "which must equal the KSpacePME alpha — and the real-space "
-            "cutoff [A]. The neighbor list must be built with a cutoff >= "
+            "cutoff [length]. The neighbor list must be built with a cutoff >= "
             "this value.\n\n"
             "alpha sets where the split between the two halves falls: "
             "larger alpha screens the real-space term harder and moves work "
@@ -579,9 +594,10 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("alpha"), nb::arg("grid_spacing") = double(1),
             nb::arg("order") = 6,
-            "Construct with the Ewald splitting parameter alpha [1/A], which "
+            "Construct with the Ewald splitting parameter alpha [1/length], "
+            "which "
             "must equal the CoulLong alpha.\n\n"
-            "  grid_spacing  target real-space mesh spacing [A] (default "
+            "  grid_spacing  target real-space mesh spacing [length] (default "
             "1.0). The mesh is derived from the box and rounded to "
             "FFT-friendly sizes, so a smaller spacing buys a finer mesh and "
             "a more accurate — costlier — reciprocal sum.\n"
@@ -620,9 +636,10 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("alpha"), nb::arg("grid_spacing") = double(1),
             nb::arg("order") = 6, nb::arg("mesh") = nb::none(),
-            "Construct with alpha [1/A], which must equal the CoulLong "
+            "Construct with alpha [1/length], which must equal the CoulLong "
             "alpha.\n\n"
-            "  grid_spacing  target mesh spacing [A] (default 1.0). Rounded "
+            "  grid_spacing  target mesh spacing [length] (default 1.0). "
+            "Rounded "
             "to sizes whose factors are 2, 3 and 5.\n"
             "  order         B-spline order [count, 3..12; default 6].\n"
             "  mesh          explicit (K0, K1, K2) grid points (LAMMPS "
@@ -632,7 +649,8 @@ void bind_potentials(nb::module_& m) {
             "from_accuracy",
             [](nb::object frame_obj, double accuracy, double cutoff, int order,
                std::optional<double> alpha,
-               std::optional<std::array<int, 3>> mesh) {
+               std::optional<std::array<int, 3>> mesh,
+               const std::string& units_style) {
                 auto frame = borrow_molpy_frame(frame_obj);
                 if (!has_molpy_column(*frame, "atoms", "charge"))
                     throw nb::value_error(
@@ -655,21 +673,25 @@ void bind_potentials(nb::module_& m) {
                 if (mesh)
                     for (int d = 0; d < 3; ++d)
                         req.mesh[d] = (*mesh)[d];
-                // Active LAMMPS row. The engine multiplies lj, so this is
-                // lj unless set_units("lj") selected that same row.
-                req.unit_system = units::active();
+                // The run's LAMMPS row: two_charge and qqrd2e of PPPM::init.
+                try {
+                    req.unit_system = units::from_style(units_style);
+                } catch (const std::invalid_argument& e) {
+                    throw nb::value_error(e.what());
+                }
                 const auto r = longrange::pppm_from_accuracy(req);
                 return cpu::task::KSpacePppmParams{
                     r.alpha, 1.0, r.order, {r.mesh[0], r.mesh[1], r.mesh[2]}};
             },
             nb::arg("frame"), nb::arg("accuracy"), nb::arg("cutoff"),
             nb::arg("order") = 6, nb::arg("alpha") = nb::none(),
-            nb::arg("mesh") = nb::none(),
+            nb::arg("mesh") = nb::none(), nb::arg("units") = "lj",
             "LAMMPS `kspace_style pppm <accuracy>` for this frame: alpha "
             "and mesh from the relative RMS force accuracy, the real-space "
             "Coulomb cutoff, the cell and the charges (PPPM::init: "
             "set_grid_global + adjust_gewald). two_charge and qqrd2e come "
-            "from the active units style (set_units; the engine row is lj). "
+            "from `units`, the LAMMPS style of the run that will use the "
+            "result (pass the driver's units_style). "
             "The mesh counts stay fixed after this call. A later cell change "
             "rebuilds the Green's function only (PPPM::setup), and does not "
             "call set_grid_global. `alpha` / `mesh` fix one of them "
@@ -677,9 +699,9 @@ void bind_potentials(nb::module_& m) {
             "cutoff) with the result; the same parameters run on CPU and "
             "CUDA.")
         .def_ro("alpha", &cpu::task::KSpacePppmParams::alpha,
-                "Ewald alpha [1/A].")
+                "Ewald alpha [1/length].")
         .def_ro("grid_spacing", &cpu::task::KSpacePppmParams::grid_spacing,
-                "Target mesh spacing [A] (unused when mesh is set).")
+                "Target mesh spacing [length] (unused when mesh is set).")
         .def_ro("order", &cpu::task::KSpacePppmParams::order,
                 "Charge-assignment order.")
         .def_prop_ro(
@@ -700,7 +722,10 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::NeighborListParams{cutoff, skin};
             },
             nb::arg("cutoff"), nb::arg("skin") = double(-1),
-            "Construct with cutoff [A] and optional skin distance [A].");
+            "Construct with cutoff and optional skin distance, in the run's "
+            "length unit. Without a skin the run's LAMMPS units default "
+            "applies (lj 0.3, real/metal/electron 2.0, si 0.001, "
+            "cgs/micro/nano 0.1).");
 
     nb::class_<cpu::task::BondHarmonicParams>(
         m, "BondHarmonic", "Harmonic bond potential V = K(r - r0)^2.")
@@ -712,8 +737,10 @@ void bind_potentials(nb::module_& m) {
                     cpu::task::BondHarmonicParams{std::move(K), std::move(r0)};
             },
             nb::arg("K"), nb::arg("r0"),
-            "Construct with force constants K [eV/A^2] and equilibrium "
-            "distances r0 [A], one entry per bond type. The bond type is the "
+            "Construct with force constants K [energy/length^2] and "
+            "equilibrium "
+            "distances r0 [length], one entry per bond type. The bond type is "
+            "the "
             "frame's `bonds` block `type_id` column.");
 
     nb::class_<cpu::task::AngleHarmonicParams>(
@@ -726,7 +753,7 @@ void bind_potentials(nb::module_& m) {
                                                        std::move(theta0)};
             },
             nb::arg("K"), nb::arg("theta0"),
-            "Construct with force constants K [eV/rad^2] and equilibrium "
+            "Construct with force constants K [energy/rad^2] and equilibrium "
             "angles theta0 [rad], one entry per angle type (the frame's "
             "`angles` block `type_id` column).");
 
@@ -742,7 +769,7 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::AngleCosineParams{std::move(K)};
             },
             nb::arg("K"),
-            "Construct with the stiffness K [eV], one entry per angle type "
+            "Construct with the stiffness K [energy], one entry per angle type "
             "(the frame's `angles` block `type_id` column).");
 
     nb::class_<cpu::task::DihedralMultiHarmonicParams>(
@@ -758,6 +785,7 @@ void bind_potentials(nb::module_& m) {
                 new (p) cpu::task::DihedralMultiHarmonicParams{std::move(Cn)};
             },
             nb::arg("Cn"),
-            "Construct with the coefficients Cn [eV] — one inner sequence per "
+            "Construct with the coefficients Cn [energy] — one inner sequence "
+            "per "
             "dihedral type, its k-th entry multiplying cos^k(phi).");
 }

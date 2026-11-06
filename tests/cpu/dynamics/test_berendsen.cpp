@@ -43,8 +43,8 @@ double temperature(const cpu::Frame& f, int n_dof) {
         const double vx = f.span(kAtom_vx)[i];
         ke += f.span(kAtom_mass)[i] * vx * vx;
     }
-    ke *= 0.5 * units::md_mvv2e;
-    return 2.0 * ke / (n_dof * units::md_boltz);
+    ke *= 0.5 * units::UnitSystem::lj().mvv2e;
+    return 2.0 * ke / (n_dof * units::UnitSystem::lj().boltz);
 }
 
 cpu::Context make_ctx(int n_dof) {
@@ -56,7 +56,7 @@ cpu::Context make_ctx(int n_dof) {
 } // namespace
 
 TEST(Berendsen, ScalesVelocitiesByTheBerendsenFactor) {
-    // lj units (md_mvv2e = md_boltz = 1): T_before = 1/3, T₀ = 0.5, so
+    // lj units (mvv2e = boltz = 1): T_before = 1/3, T₀ = 0.5, so
     // λ ≈ 1.0025 stays inside the LAMMPS [0.8, 1.25] clamp.
     constexpr double mass = 1.0;
     constexpr double v = 1.0;

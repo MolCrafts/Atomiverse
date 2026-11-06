@@ -290,7 +290,7 @@ TEST(PairLJCutCoulLongTypedCutoff, CoulombSpecialRemovesThePlainShare) {
     };
     const Result on = coul_long(dimer(0, 0, r, true, q, -q), make(1.0));
     const Result off = coul_long(dimer(0, 0, r, true, q, -q), make(0.0));
-    const double qq = units::md_qqr2e * q * -q;
+    const double qq = units::UnitSystem::lj().qqrd2e() * q * -q;
     EXPECT_NEAR(on.energy - off.energy, qq / r, 1e-10);
     // d/dr of qq/r along x on atom 1: F = qq / r^2.
     EXPECT_NEAR(on.fx1 - off.fx1, qq / (r * r), 1e-10);

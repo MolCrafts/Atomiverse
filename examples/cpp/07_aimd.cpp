@@ -56,7 +56,7 @@ double temperature_K(const cpu::Frame& frame) {
     if (n_dof <= 0)
         return 0.0;
     return 2.0 * static_cast<double>(frame.meta.get(ATV::kKinetic))
-           / (n_dof * units::md_boltz);
+           / (n_dof * units::UnitSystem::lj().boltz);
 }
 
 } // namespace

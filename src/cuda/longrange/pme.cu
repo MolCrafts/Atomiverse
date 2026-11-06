@@ -56,6 +56,7 @@ using PmeComplex = std::conditional_t<std::is_same_v<force_t, double>,
 struct PmeGeom {
     int K[3];
     int order;
+    double qqrd2e; ///< The run's Coulomb constant (LAMMPS `force->qqrd2e`).
 };
 
 // Bookkeeping of the cell-dependent coefficient tables (fixed device
@@ -272,8 +273,8 @@ __global__ void pme_influence(PmeComplex* __restrict__ grid, PmeGeom g,
     const int K2 = g.K[2];
     const int half_z = K2 / 2 + 1;
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    const double escale = ATV::units::md_qqr2e
-                          / (2.0 * ATV::units::pi * box_arg.current().volume());
+    const double escale =
+        g.qqrd2e / (2.0 * ATV::units::pi * box_arg.current().volume());
     constexpr int components = Virial ? 7 : 1;
     ::cuda::std::array<acc_t, components> values{};
     if (idx < nhalf) {
@@ -343,8 +344,7 @@ pme_interp(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
         return;
     const Box box = box_arg.current();
     const double* inv_cell = box.inv_cell;
-    const double fscale =
-        ATV::units::md_qqr2e / (ATV::units::pi * box.volume());
+    const double fscale = g.qqrd2e / (ATV::units::pi * box.volume());
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     const int n = Order > 0 ? Order : g.order;
     constexpr int extent = Order > 0 ? Order : 12;
@@ -434,7 +434,7 @@ __global__ void pppm_energy(const PmeComplex* __restrict__ density,
     const int idx = blockIdx.x * blockDim.x + threadIdx.x;
     const Box box = box_arg.current();
     const double volume = box.volume();
-    const double escale = ATV::units::md_qqr2e / (2.0 * volume);
+    const double escale = g.qqrd2e / (2.0 * volume);
     const double inv_vol = 1.0 / volume;
     constexpr int components = Virial ? 7 : 1;
     ::cuda::std::array<acc_t, components> values{};
@@ -517,7 +517,7 @@ pppm_gather(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
         return;
     const Box box = box_arg.current();
     const double* inv_cell = box.inv_cell;
-    const double coulomb = ATV::units::md_qqr2e;
+    const double coulomb = g.qqrd2e;
     const double rx = double(x[i]), ry = double(y[i]), rz = double(z[i]);
     const int n = Order > 0 ? Order : g.order;
     constexpr int extent = Order > 0 ? Order : 12;
@@ -746,7 +746,8 @@ void KSpacePME::build(const BuildContext& ctx) {
         for (const force_t q : charge)
             net_charge += double(q);
     }
-    background_coef_ = -longrange::background_energy(net_charge, 1.0, alpha_);
+    background_coef_ = -longrange::background_energy(
+        net_charge, 1.0, alpha_, ctx.runtime.units.qqrd2e());
 
     if (pppm) {
         double gf_b[12] = {};
@@ -891,8 +892,10 @@ void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
     geom.K[1] = K_[1];
     geom.K[2] = K_[2];
     geom.order = order_;
+    geom.qqrd2e = ctx.runtime.units.qqrd2e();
 
-    const double self_pref = longrange::self_energy_prefactor(alpha_);
+    const double self_pref =
+        longrange::self_energy_prefactor(alpha_, geom.qqrd2e);
     const double inv_pi2_a2 =
         ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
     const int blk = kDefaultBlock;

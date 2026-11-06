@@ -176,6 +176,7 @@ class NoseHoover : public cpu::Thermostat, public cpu::TimestepConsumer {
     double xi_ = 0;        ///< Thermostat variable (single chain).
     double Q_ = 0;         ///< Thermostat mass.
     int n_dof_global_ = 0; ///< Cached at build() — used by set_T_target.
+    double boltz_ = 1.0;   ///< The run's boltz, cached at build().
 
     // Temperature-ramp run span (LAMMPS `update->beginstep` / `endstep`).
     std::int64_t nfirst_ = 0; ///< First MD step of the run.

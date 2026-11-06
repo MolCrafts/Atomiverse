@@ -56,7 +56,7 @@ void Metadynamics1D::launch(const LaunchContext& ctx) {
         const double Vhere = bias_at_(last_cv_);
         double h = h0_;
         if (gamma_ > 1.0) {
-            const double kT = units::md_boltz * temperature_;
+            const double kT = ctx.runtime.units.boltz * temperature_;
             h = h0_ * std::exp(-Vhere / ((gamma_ - 1.0) * kT));
         }
         centers_.push_back(last_cv_);

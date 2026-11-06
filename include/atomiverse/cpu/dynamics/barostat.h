@@ -83,13 +83,13 @@ class Barostat : public cpu::Barostat, public cpu::TimestepConsumer {
     }
 
     /// @brief LAMMPS `fix press/berendsen`-equivalent isotropic barostat.
-    /// @param P_target     Target pressure [eV/Å³], LAMMPS-standard sign
+    /// @param P_target     Target pressure [style pressure], LAMMPS-standard sign
     ///                     (`+trace(σ)/(3V)`, positive ⇔ compressive).
-    ///                     1 bar ≈ 6.2415e-7 eV/Å³.
+    ///                     Like LAMMPS, the run's pressure unit (metal: bar, real: atm).
     /// @param tau_P        Barostat coupling time constant [fs]
     ///                     (LAMMPS `Pdamp`).
     /// @param dt           MD step size [fs].
-    /// @param bulk_modulus Tunable modulus `β` [eV/Å³] (LAMMPS
+    /// @param bulk_modulus Tunable modulus `β` [style pressure] (LAMMPS
     ///                     `bulkmodulus`). Larger ⇒ smaller per-step
     ///                     rescale ⇒ slower relaxation. Default `1.0`
     ///                     — a documented divergence from LAMMPS's

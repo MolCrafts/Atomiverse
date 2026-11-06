@@ -16,8 +16,8 @@ as a convenience (identity, not copies:
 Canonical deep path                   Top-level re-export         C++ symbol
 =====================================  ==========================  =========================
 ``md.MD``                             ``MD``                      ``cpu::md::MD``
-``md.set_units``                      ``set_units``               ``units::set_style``
-``md.units_style``                    ``units_style``             ``units::active``
+``md.set_units``                      ``set_units``               ``Driver::set_units`` default
+``md.units_style``                    ``units_style``             ``Driver::units`` default
 ``md.integrator.VelocityVerlet``      ``VelocityVerlet``          ``cpu::md::VelocityVerlet``
 ``md.integrator.NoseHooverNPT``       ``NoseHooverNPT``           ``cpu::md::NoseHooverNPT``
 ``md.integrator.ParrinelloRahmanNPT`` ``ParrinelloRahmanNPT``     ``cpu::md::ParrinelloRahmanNPT``

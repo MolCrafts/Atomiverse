@@ -16,7 +16,7 @@ using namespace ATV;
 
 namespace {
 
-constexpr double kFourPiK = 4.0 * units::pi * units::md_qqr2e;
+constexpr double kFourPiK = 4.0 * units::pi * units::UnitSystem::lj().qqrd2e();
 
 /// ±1 e pair on the z axis: +1 at z=6, −1 at z=4, L=10 (V=1000).
 cpu::Frame charge_pair() {
@@ -108,7 +108,7 @@ TEST(FixDfield, FeedbackEnergyIsElectricEnthalpy) {
     const double U = launch_once(d, f);
     const double Ez = 0.5 - kFourPiK * 2.0e-3;
     const double U_want =
-        1000.0 * Ez * Ez / (8.0 * units::pi * units::md_qqr2e);
+        1000.0 * Ez * Ez / (8.0 * units::pi * units::UnitSystem::lj().qqrd2e());
     EXPECT_NEAR(U, U_want, 1e-14);
 }
 

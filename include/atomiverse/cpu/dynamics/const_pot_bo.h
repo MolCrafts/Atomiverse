@@ -259,6 +259,7 @@ class ConstPotBO : public cpu::Component {
     std::vector<double> site_volume;
 
   private:
+    double qqrd2e_ = 1.0; ///< The run's qqrd2e, cached at build().
     /// `ConstPotMaZe` (mass-zero constrained dynamics) reuses the elastance
     /// build / RHS / write-back internals instead of duplicating them.
     friend class ConstPotMaZe;

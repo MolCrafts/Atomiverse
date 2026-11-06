@@ -921,6 +921,15 @@ void read_header(Reader& r, const char (&magic)[4]) {
         throw std::runtime_error("task_codec: bad magic");
 }
 
+/// LAMMPS `units` style byte (`units::Style`).
+units::Style read_units(Reader& r) {
+    const std::uint8_t raw = r.u8();
+    if (raw >= units::kStyleCount)
+        throw std::runtime_error("task_codec: unknown units style "
+                                 + std::to_string(raw));
+    return static_cast<units::Style>(raw);
+}
+
 } // namespace
 
 std::vector<std::byte> pack(const TaskSpec& spec) {
@@ -931,6 +940,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
 
     if (spec.kind() == TaskKind::MD) {
         const auto& task = spec.md();
+        w.u8(static_cast<std::uint8_t>(task.units));
         w.u32(static_cast<std::uint32_t>(task.entries.size()));
         for (const auto& entry : task.entries) {
             w.u16(static_cast<std::uint16_t>(component_id(entry.params)));
@@ -949,6 +959,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
         write(w, spec.single_point().evaluator);
     } else {
         const auto& task = spec.minimize();
+        w.u8(static_cast<std::uint8_t>(task.units));
         w.u32(static_cast<std::uint32_t>(task.entries.size()));
         for (const auto& entry : task.entries) {
             w.u16(static_cast<std::uint16_t>(component_id(entry.params)));
@@ -977,6 +988,7 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
 
     if (kind == TaskKind::MD) {
         MDTask task;
+        task.units = read_units(r);
         const std::uint32_t count = r.u32();
         task.entries.reserve(count);
         for (std::uint32_t i = 0; i < count; ++i) {
@@ -1004,6 +1016,7 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
     }
 
     MinimizeTask task;
+    task.units = read_units(r);
     const std::uint32_t count = r.u32();
     task.entries.reserve(count);
     for (std::uint32_t i = 0; i < count; ++i) {

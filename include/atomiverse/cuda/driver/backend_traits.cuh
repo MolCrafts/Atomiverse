@@ -29,8 +29,9 @@ struct backend_traits<cuda::device_tag> {
 
     static void run(backend_type& backend, frame_type& frame,
                     const Plan<component_type>& plan, timer_type* timer,
-                    int steps) {
+                    const units::UnitSystem& units, int steps) {
         backend.init();
+        backend.context().units = units;
         if (timer)
             backend.set_timer(timer);
         backend.load(plan);

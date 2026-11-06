@@ -25,7 +25,7 @@ namespace md {
 class Barostat : public cuda::Barostat {
   public:
     /// @brief Construct barostat.
-    /// @param P_target Target pressure [eV/Angstrom^3].
+    /// @param P_target Target pressure [style pressure].
     /// @param tau_p    Pressure coupling time [fs].
     /// @param dt       Time step [fs].
     Barostat(double P_target, double tau_p, double dt,

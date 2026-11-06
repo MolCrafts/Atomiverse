@@ -1,10 +1,12 @@
 /// @file cpu/io/lammps_coeffs.h
-/// @brief Parser for LAMMPS `units real` coefficient include files (`.ff`).
+/// @brief Parser for LAMMPS coefficient include files (`.ff`).
 ///
 /// Reads the style/coefficient command subset that a data-file companion
 /// carries (`bond_coeff` / `angle_coeff` / `dihedral_coeff` / `pair_coeff`
-/// plus their `*_style` declarations and `special_bonds`), converting every
-/// value to Atomiverse engineering units (eV, Å, rad) at parse time.
+/// plus their `*_style` declarations and `special_bonds`). Values stay in the
+/// file's own LAMMPS `units` style (a coefficient file does not state it:
+/// run the system with `Driver::set_units` of that style); only angles are
+/// taken from degrees to radians, as LAMMPS does internally.
 ///
 /// **Data only** — the result is plain typed tables shaped for direct
 /// construction of `BondHarmonic` / `AngleHarmonic` / `DihedralCharmm` /
@@ -21,7 +23,7 @@
 namespace ATV {
 namespace cpu {
 
-/// @brief Parsed LAMMPS-real coefficient tables in Atomiverse units.
+/// @brief Parsed LAMMPS coefficient tables, in the file's units style.
 ///
 /// Vectors are indexed by 0-based type (LAMMPS 1-based ids shifted down) and
 /// sized to the largest type id seen. `dihedral_style hybrid` over charmm,
@@ -33,27 +35,27 @@ struct LammpsCoeffs {
     std::string pair_style;      ///< e.g. "lj/cut/coul/long", "lj/cut"
     double pair_cut_lj = 0.0;    ///< global LJ cutoff [Å] (0 = not given)
     double pair_cut_coul = 0.0;  ///< Coulomb cutoff [Å] (0 = same as LJ)
-    std::vector<LJTypeCoeff> lj; ///< pair_coeff rows, ε in eV, σ in Å
+    std::vector<LJTypeCoeff> lj; ///< pair_coeff rows (ε [energy], σ [length])
 
-    std::vector<double> bond_K;  ///< [eV/Å²] (LAMMPS K, energy/length²)
-    std::vector<double> bond_r0; ///< [Å]
+    std::vector<double> bond_K;  ///< LAMMPS K [energy/length²]
+    std::vector<double> bond_r0; ///< [length]
 
-    std::vector<double> angle_K;      ///< [eV/rad²]
+    std::vector<double> angle_K;      ///< [energy/rad²]
     std::vector<double> angle_theta0; ///< [rad]
 
     bool has_charmm = false; ///< any charmm dihedral types present
     bool has_multi = false;  ///< any multi/harmonic dihedral types present
-    std::vector<double> dihedral_charmm_K;     ///< [eV], 0 for non-charmm
+    std::vector<double> dihedral_charmm_K;     ///< [energy], 0 for non-charmm
     std::vector<int> dihedral_charmm_n;        ///< multiplicity, 1 placeholder
     std::vector<double> dihedral_charmm_delta; ///< [rad]
-    std::vector<std::vector<double>> dihedral_multi_Cn; ///< [eV], {0} for
+    std::vector<std::vector<double>> dihedral_multi_Cn; ///< [energy], {0} for
                                                         ///< non-multi types
     bool has_fourier = false; ///< any fourier dihedral types present
-    /// fourier terms per type (K [eV], n, δ [rad]); empty for other styles
+    /// fourier terms per type (K [energy], n, δ [rad]); empty for other styles
     std::vector<std::vector<TorsionTerm>> dihedral_fourier;
 
     bool has_improper_cvff = false; ///< improper_style cvff present
-    std::vector<double> improper_K; ///< cvff K [eV]
+    std::vector<double> improper_K; ///< cvff K [energy]
     std::vector<int> improper_d;    ///< cvff sign d = ±1
     std::vector<int> improper_n;    ///< cvff multiplicity 0..6
 
@@ -72,7 +74,7 @@ struct LammpsCoeffs {
     std::vector<std::string> skipped;
 };
 
-/// @brief Parse a LAMMPS `units real` coefficient/include file.
+/// @brief Parse a LAMMPS coefficient/include file.
 ///
 /// Recognised commands: `pair_style` (lj/cut, lj/cut/coul/long),
 /// `pair_coeff i j ε σ [cut]`, `bond_style harmonic` + `bond_coeff`,
@@ -85,8 +87,8 @@ struct LammpsCoeffs {
 /// Unrecognised commands are collected into `skipped`, never silently
 /// dropped mid-coefficient: malformed rows of a recognised command throw.
 ///
-/// @param path file to parse (LAMMPS `units real`: kcal/mol, Å, degree)
-/// @return typed tables in eV / Å / rad
+/// @param path file to parse (any LAMMPS `units` style; angles in degree)
+/// @return typed tables in the file's units, angles in rad
 /// @throws std::runtime_error on unreadable file or malformed rows
 /// @throws std::invalid_argument on unsupported styles (e.g. a hybrid
 ///         member other than charmm / multi/harmonic / fourier, charmm

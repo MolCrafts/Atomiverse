@@ -105,6 +105,7 @@ class DipoleElectrodeJoint : public cpu::Component {
     std::vector<double> alpha_by_type; ///< \(\alpha\) [Å³] by type index.
 
   private:
+    double qqrd2e_ = 1.0; ///< The run's qqrd2e, cached at build().
     std::vector<ElectrodeGroup> groups_;
 
     std::vector<int> elec_atoms_;

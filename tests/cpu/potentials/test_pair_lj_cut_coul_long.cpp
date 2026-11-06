@@ -138,7 +138,7 @@ TEST(PairLJCutCoulLong, RealSpaceCoulombIsAnalyticErfc) {
         pair.build({context, frame});
         pair.launch({context, frame, 0, 0, true, true});
         const Exact ref = exact(r * r, alpha);
-        const double qq = ATV::units::md_qqr2e * 0.7 * -0.45;
+        const double qq = ATV::units::UnitSystem::lj().qqrd2e() * 0.7 * -0.45;
         const double e_ref = qq * static_cast<double>(ref.e);
         const double f_ref = qq * static_cast<double>(ref.f) * (-r);
         EXPECT_NEAR(frame.meta.get(kEnergy), e_ref, 4e-15 * std::abs(e_ref))

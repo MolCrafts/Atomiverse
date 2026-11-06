@@ -28,15 +28,14 @@ __global__ void initial_integrate(
     const mixed_t* __restrict__ mass, ImageInt* __restrict__ image,
     ForceFault* fault, const std::int64_t* __restrict__ tag,
     const long long* step_ptr, long long step, cuda::Box box, mixed_t dt,
-    int n) {
+    mixed_t ftm2v, int n) {
     if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    const mixed_t scale =
-        mixed_t(0.5) * dt * mixed_t(ATV::units::md_ftm2v) / mass[i];
+    const mixed_t scale = mixed_t(0.5) * dt * ftm2v / mass[i];
     const mixed_t ux = vx[i] + scale * decode_force<mixed_t>(fx[i]);
     const mixed_t uy = vy[i] + scale * decode_force<mixed_t>(fy[i]);
     const mixed_t uz = vz[i] + scale * decode_force<mixed_t>(fz[i]);
@@ -60,14 +59,13 @@ final_integrate(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
                 const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
                 const mixed_t* __restrict__ mass, ForceFault* fault,
                 const std::int64_t* __restrict__ tag, const long long* step_ptr,
-                long long step, mixed_t dt, int n) {
+                long long step, mixed_t dt, mixed_t ftm2v, int n) {
     if (!forces_consumable(fault, tag, step_ptr, step))
         return;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    const mixed_t scale =
-        mixed_t(0.5) * dt * mixed_t(ATV::units::md_ftm2v) / mass[i];
+    const mixed_t scale = mixed_t(0.5) * dt * ftm2v / mass[i];
     vx[i] += scale * decode_force<mixed_t>(fx[i]);
     vy[i] += scale * decode_force<mixed_t>(fy[i]);
     vz[i] += scale * decode_force<mixed_t>(fz[i]);
@@ -87,11 +85,12 @@ void VelocityVerlet::launch(const LaunchContext& ctx) {
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
             a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag,
             ctx.runtime.device_step, ctx.step, ctx.runtime.host_box,
-            mixed_t(dt_), n);
+            mixed_t(dt_), mixed_t(ctx.runtime.units.ftm2v), n);
     } else {
         final_integrate<<<grid, block, 0, stream>>>(
             a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, frame.force_fault,
-            a.tag, ctx.runtime.device_step, ctx.step, mixed_t(dt_), n);
+            a.tag, ctx.runtime.device_step, ctx.step, mixed_t(dt_),
+            mixed_t(ctx.runtime.units.ftm2v), n);
     }
 }
 

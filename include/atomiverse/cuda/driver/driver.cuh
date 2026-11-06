@@ -377,6 +377,10 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         if (!this->backend_)
             this->backend_ = std::make_unique<typename Base::BackendT>();
         this->backend_->init();
+        // LAMMPS `units`: one style for the run, on the Context before any
+        // component builds.
+        this->backend_->context().units = this->units_;
+        this->units_bound_ = true;
         this->backend_->capture().set_budget(this->capture_buffer_bytes_);
         if (this->timer_)
             this->backend_->set_timer(this->timer_.get());
@@ -409,6 +413,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
             flush_new_mounts_();
             return;
         }
+        this->adopt_parent_units_(ctx.units);
         this->build();
         borrowed_backend_ = execution;
         borrowed_frame_ = &frame;

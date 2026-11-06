@@ -176,7 +176,7 @@ RunResult run_case(bool symplectic, double foothold_cg_tol) {
             const double vz = f.span(kAtom_vz)[i];
             ke += 0.5 * kMion * (vx * vx + vy * vy + vz * vz);
         }
-        return units::md_mvv2e * ke + f.meta.get(kEnergy)
+        return units::UnitSystem::lj().mvv2e * ke + f.meta.get(kEnergy)
                - (kPsiBot * q_plate(1) + kPsiTop * q_plate(2));
     };
     auto observe = [&]() {

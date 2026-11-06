@@ -12,7 +12,7 @@
 ///   E_z = -\frac{\mathrm{d}\Psi}{\mathrm{d} z},
 /// \]
 ///
-/// with \(k_{\mathrm{e}}=\texttt{units::md_qqr2e}\) (eV·Å/e²), \(\rho\) [e/Å³],
+/// with \(k_{\mathrm{e}}=\texttt{qqrd2e}\) (eV·Å/e²), \(\rho\) [e/Å³],
 /// \(E_z\) [V/Å], \(\Psi\) [V]. Gauge: \(\Psi(z_{\min})=0\),
 /// \(E_z(z_{\min})=0\) at the left edge of the bin window (ideal neutralized
 /// capacitor / vacuum left of the left wall).

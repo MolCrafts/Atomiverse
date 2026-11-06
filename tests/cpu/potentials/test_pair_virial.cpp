@@ -545,7 +545,7 @@ TEST(PairGaussianCoul, VirialMatchesPairSum) {
     Voigt got;
     run_style(gc, f, e, got);
 
-    const double K = units::md_qqr2e;
+    const double K = units::UnitSystem::lj().qqrd2e();
     const Voigt want =
         reference_virial(f, kCutoff, [&](int i, int j, double r2) {
             const double r = std::sqrt(r2);
@@ -772,7 +772,7 @@ TEST(PairLJCutTip4pCut, VirialMatchesRedistributedAtomicSum) {
                     1e-9 * std::max(1.0, std::fabs(want.v[k])))
             << "Voigt component " << k;
     // Non-vacuity guard: the cluster virial is ~0.045 on the lj row
-    // (md_qqr2e = 1), the Coulomb part 14.4x below its metal value.
+    // (qqrd2e = 1), the Coulomb part 14.4x below its metal value.
     EXPECT_GT(std::fabs(want.trace()), 0.01);
 }
 

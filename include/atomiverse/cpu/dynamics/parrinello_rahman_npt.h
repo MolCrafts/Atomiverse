@@ -47,9 +47,9 @@ class ParrinelloRahmanNPT : public cpu::Integrator,
   public:
     /// @brief Construct a flexible-cell MTK NPT integrator.
     /// @param T_target Target temperature [K].
-    /// @param P_target Target hydrostatic pressure [eV/Å³], LAMMPS-standard
+    /// @param P_target Target hydrostatic pressure [style pressure], LAMMPS-standard
     ///                 sign (`+trace(σ)/(3V)`, positive ⇔ compressive).
-    ///                 1 bar ≈ 6.2415e-7 eV/Å³.
+    ///                 Like LAMMPS, the run's pressure unit (metal: bar, real: atm).
     /// @param tau_T    Thermostat coupling time [fs] (LAMMPS `Tdamp`).
     /// @param tau_P    Barostat coupling time [fs] (LAMMPS `Pdamp`).
     /// @param dt       Timestep [fs].
@@ -99,6 +99,7 @@ class ParrinelloRahmanNPT : public cpu::Integrator,
     const Mat3& cell_velocity() const { return eps_dot_; }
 
   private:
+    double nktv2p_ = 1.0; ///< The run's nktv2p (pressure → energy/volume).
     double T_target_;
     double P_target_;
     double tau_T_;

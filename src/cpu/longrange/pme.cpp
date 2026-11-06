@@ -209,7 +209,8 @@ void KSpacePME::compute(const LaunchContext& ctx) {
                          reinterpret_cast<fftw_complex*>(grid_.data()),
                          reinterpret_cast<fftw_complex*>(grid_.data()));
         longrange::pme_apply_influence_tables(grid_.data(), ntot, influence_,
-                                              vol, e_recip, stress);
+                                              vol, ctx.runtime.units.qqrd2e(),
+                                              e_recip, stress);
         fftw_execute_dft(static_cast<fftw_plan>(plan_bwd_),
                          reinterpret_cast<fftw_complex*>(grid_.data()),
                          reinterpret_cast<fftw_complex*>(grid_.data()));
@@ -223,8 +224,9 @@ void KSpacePME::compute(const LaunchContext& ctx) {
     // ── Interpolate reciprocal forces onto owned atoms ─────────────────
     if (ctx.forces_requested)
         longrange::pme_interpolate_forces(
-            q, n_local, order_, K_, ic, vol, base_.data(), theta_.data(),
-            dtheta_.data(), grid_.data(), sp_fx, sp_fy, sp_fz);
+            q, n_local, order_, K_, ic, vol, ctx.runtime.units.qqrd2e(),
+            base_.data(), theta_.data(), dtheta_.data(), grid_.data(), sp_fx,
+            sp_fy, sp_fz);
 
     // ── Self energy (per-rank owned) + net-charge (rank 0) ─────────────
     double qsq_local = 0, q_local = 0;
@@ -232,7 +234,9 @@ void KSpacePME::compute(const LaunchContext& ctx) {
         qsq_local += q[i] * q[i];
         q_local += q[i];
     }
-    const double e_self = longrange::self_energy_prefactor(alpha_) * qsq_local;
+    const double e_self =
+        longrange::self_energy_prefactor(alpha_, ctx.runtime.units.qqrd2e())
+        * qsq_local;
     f.meta.get(kEnergy) += e_self;
     f.meta.get(kEnergyPair) += e_self;
 
@@ -243,7 +247,8 @@ void KSpacePME::compute(const LaunchContext& ctx) {
                       dd->cart_comm);
 #endif
     if (first_rank) {
-        const double e_net = longrange::background_energy(q_total, vol, alpha_);
+        const double e_net = longrange::background_energy(
+            q_total, vol, alpha_, ctx.runtime.units.qqrd2e());
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
         if (ctx.stress_requested) {

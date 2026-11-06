@@ -94,7 +94,8 @@ TEST(CudaMinimizerImageFlags, SteepestDescentCountsTheCrossing) {
     {
         Device dev(host);
         // Δx = α F / m · force_to_accel = 0.2 Å.
-        ATV::cuda::minimizer::SteepestDescent sd(0.2 / units::md_ftm2v);
+        ATV::cuda::minimizer::SteepestDescent sd(
+            0.2 / units::UnitSystem::lj().ftm2v);
         sd.build({dev.context, dev.frame});
         sd.launch(dev.at(minimizer::Phase::search_direction));
         dev.retrieve(host);

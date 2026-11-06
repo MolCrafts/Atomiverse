@@ -39,6 +39,7 @@
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
 #include "atomiverse/cuda/record/pressure_series.cuh"
+#include "units_binding.h"
 #ifdef ATV_HAS_IO
 #include "atomiverse/cuda/record/mrec_recorder.cuh"
 #endif
@@ -314,6 +315,11 @@ void bind_cuda(nb::module_& m) {
     bind_nddo_method<cuda::semiempirical::PM3>(m, "_CudaPM3", "cuda");
 #endif
     nb::class_<CudaEvaluateHandle> eval(m, "_CudaEvaluate");
+    ATV::python::bind_units(
+        eval, [](CudaEvaluateHandle& h) -> cuda::Evaluate& { return h.driver; },
+        [](const CudaEvaluateHandle& h, const char*) {
+            h.require_configurable();
+        });
     eval.def(nb::init<>())
         .def("build", [](CudaEvaluateHandle& self) { self.driver.build(); })
         .def("run", &CudaEvaluateHandle::run, nb::arg("frame"));
@@ -343,19 +349,10 @@ void bind_cuda(nb::module_& m) {
         },
         nb::arg("evaluator"));
     nb::class_<CudaMdHandle> md(m, "_CudaMD");
+    ATV::python::bind_units(
+        md, [](CudaMdHandle& h) -> cuda::md::MD& { return h.driver; },
+        [](const CudaMdHandle& h, const char*) { h.require_configurable(); });
     md.def(nb::init<>())
-        .def(
-            "set_units",
-            [](CudaMdHandle&, const std::string& style) {
-                try {
-                    units::set_style(style);
-                } catch (const std::invalid_argument& e) {
-                    throw nb::value_error(e.what());
-                }
-            },
-            nb::arg("style"),
-            "LAMMPS `units` for this process. Only \"lj\" runs on the "
-            "engine. Same function as the module-level set_units.")
         .def("build", [](CudaMdHandle& self) { self.driver.build(); })
         .def(
             "set_capture_buffer_bytes",
@@ -559,6 +556,14 @@ void bind_cuda(nb::module_& m) {
         m, "_CudaSteepestDescent")
         .def(nb::init<double>(), nb::arg("alpha"));
     nb::class_<CudaMinimizeHandle> opt(m, "_CudaMinimize");
+    ATV::python::bind_units(
+        opt,
+        [](CudaMinimizeHandle& h) -> cuda::minimizer::Minimize& {
+            return h.driver;
+        },
+        [](const CudaMinimizeHandle& h, const char*) {
+            h.require_configurable();
+        });
     opt.def(nb::init<>())
         .def("build", [](CudaMinimizeHandle& self) { self.driver.build(); })
         .def(

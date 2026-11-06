@@ -471,18 +471,16 @@ def _kinetic_from_columns(frame: "molpy.Frame") -> float:
     return float(0.5 * np.sum(mass * v_sq))
 
 
-#: The classical engine runs on the LAMMPS lj row with eV, Å and amu: one fs
-#: is 1/sqrt(103.6427) time units and temperatures are k_B·T in eV.
-_FS: float = 0.09822694585667956
-_KB: float = 8.617333262e-5  # eV/K
+#: These cases run in LAMMPS ``units metal`` (eV, Å, g/mol, ps, K, bar):
+#: one fs is 1e-3 ps.
+_FS: float = 1.0e-3
 
 
 class TestThermostatsAndNpt:
     """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`).
 
-    The engine runs on the LAMMPS lj row with eV, Å and amu, so times are in
-    sqrt(amu·Å²/eV) (``_FS`` per fs) and temperatures are k_B·T in eV
-    (``_KB`` per K). The physical choices below are stated in fs and K.
+    The argon recipe is in LAMMPS ``units metal``: temperatures in K,
+    pressures in bar, times in ps (``_FS`` per fs).
     """
 
 
@@ -498,52 +496,52 @@ class TestThermostatsAndNpt:
     def _lj_no_integrator(self) -> MD:
         """Ar LJ recipe + seeded velocities; the caller installs the
         integrator (plain, NPT, or plain-plus-barostat)."""
-        sim = MD()
-        sim.set_observer(InitVelocity(10.0 * _KB, 42))
+        sim = MD(units="metal")
+        sim.set_observer(InitVelocity(10.0, 42))
         sim.set_neighbor(NeighborList(self._CUTOFF))
         sim.set_evaluator(LJCut(0.0104, 3.4, self._CUTOFF))
         return sim
 
     def _lj_nvt(self, thermostat) -> MD:
         cutoff = 8.5
-        sim = MD()
+        sim = MD(units="metal")
         sim.set_integrator(VelocityVerlet(0.001 * _FS))
-        sim.set_observer(InitVelocity(10.0 * _KB, 42))
+        sim.set_observer(InitVelocity(10.0, 42))
         sim.set_thermostat(thermostat)
         sim.set_neighbor(NeighborList(cutoff))
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
         return sim
 
     def test_langevin_nvt_smoke(self, argon_frame):
-        sim = self._lj_nvt(Langevin(10.0 * _KB, 10.0 * _KB, 100.0 * _FS, 0.001 * _FS, 7))
+        sim = self._lj_nvt(Langevin(10.0, 10.0, 100.0 * _FS, 0.001 * _FS, 7))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
         assert argon_frame.meta["kinetic"] > 0.0
 
     def test_csvr_nvt_smoke(self, argon_frame):
-        sim = self._lj_nvt(CSVR(10.0 * _KB, 50.0 * _FS, 0.001 * _FS, 7))
+        sim = self._lj_nvt(CSVR(10.0, 50.0 * _FS, 0.001 * _FS, 7))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
         assert argon_frame.meta["kinetic"] > 0.0
 
     def test_npt_smoke(self, argon_frame):
         cutoff = 8.5
-        sim = MD()
-        sim.set_integrator(NoseHooverNPT(10.0 * _KB, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.001 * _FS))
-        sim.set_observer(InitVelocity(10.0 * _KB, 42))
+        sim = MD(units="metal")
+        sim.set_integrator(NoseHooverNPT(10.0, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.001 * _FS))
+        sim.set_observer(InitVelocity(10.0, 42))
         sim.set_neighbor(NeighborList(cutoff))
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
 
     def test_set_thermostat_rejects_unknown_type(self, argon_frame):
-        sim = MD()
+        sim = MD(units="metal")
         with pytest.raises(TypeError, match="NoseHoover, Langevin, or CSVR"):
             sim.set_thermostat(VelocityVerlet(0.001 * _FS))
 
     def test_set_integrator_accepts_npt(self):
-        sim = MD()
-        sim.set_integrator(NoseHooverNPT(300.0 * _KB, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.5 * _FS))
+        sim = MD(units="metal")
+        sim.set_integrator(NoseHooverNPT(300.0, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.5 * _FS))
 
     # ── py-md-npt: PR-NPT, Berendsen, and the NoseHooverNPT knob tail ──
 
@@ -559,7 +557,7 @@ class TestThermostatsAndNpt:
         # ctor order is T, P_target, tau_T, tau_P, dt — NOT NoseHooverNPT's
         # T, tau_T, P_target, tau_P, dt.
         sim.set_integrator(ParrinelloRahmanNPT(
-                10.0 * _KB, 0.0, 100.0 * _FS, 1000.0 * _FS, self._DT
+                10.0, 0.0, 100.0 * _FS, 1000.0 * _FS, self._DT
             ))
         sim.run(argon_frame, 10)
         assert np.isfinite(argon_frame.meta["energy"])
@@ -577,7 +575,9 @@ class TestThermostatsAndNpt:
         volume_before = argon_frame.box.volume()
         sim = self._lj_no_integrator()
         sim.set_integrator(VelocityVerlet(self._DT))
-        sim.set_barostat(BerendsenBarostat(0.0, 1000.0 * _FS, self._DT))
+        # The modulus is in the run's pressure unit like the target: an
+        # argon-like 1e4 bar (the old 1.0 meant 1 eV/A^3 in lj).
+        sim.set_barostat(BerendsenBarostat(0.0, 1000.0 * _FS, self._DT, 1.0e4))
         sim.run(argon_frame, 10)
         assert np.isfinite(argon_frame.meta["energy"])
         volume_after = argon_frame.box.volume()
@@ -588,13 +588,13 @@ class TestThermostatsAndNpt:
         )
 
     def test_set_barostat_rejects_unknown_type(self):
-        sim = MD()
+        sim = MD(units="metal")
         with pytest.raises(TypeError, match="BerendsenBarostat"):
             sim.set_barostat(VelocityVerlet(self._DT))
 
     def test_set_integrator_accepts_pr_npt(self):
-        sim = MD()
-        sim.set_integrator(ParrinelloRahmanNPT(300.0 * _KB, 0.0, 100.0 * _FS, 1000.0 * _FS, 0.5 * _FS))
+        sim = MD(units="metal")
+        sim.set_integrator(ParrinelloRahmanNPT(300.0, 0.0, 100.0 * _FS, 1000.0 * _FS, 0.5 * _FS))
 
     def test_npt_couple_axis_freezes_axis(self, argon_frame):
         """couple_axis[2] = False freezes the z edge exactly while the
@@ -603,7 +603,7 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         sim.set_integrator(
             NoseHooverNPT(
-                10.0 * _KB,
+                10.0,
                 100.0 * _FS,
                 0.0,
                 1000.0 * _FS,
@@ -642,7 +642,7 @@ class TestThermostatsAndNpt:
         flat = self._lj_no_integrator()
         flat.set_integrator(
             NoseHooverNPT(
-                10.0 * _KB, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=10.0 * _KB
+                10.0, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=10.0
             )
         )
         flat.run(frame_flat, 25)
@@ -650,7 +650,7 @@ class TestThermostatsAndNpt:
         ramped = self._lj_no_integrator()
         ramped.set_integrator(
             NoseHooverNPT(
-                10.0 * _KB, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=1000.0 * _KB
+                10.0, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=1000.0
             )
         )
         ramped.run(frame_ramped, 25)
@@ -669,7 +669,7 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         sim.set_integrator(
             NoseHooverNPT(
-                10.0 * _KB,
+                10.0,
                 100.0 * _FS,
                 0.0,
                 1000.0 * _FS,
@@ -709,9 +709,9 @@ _ARGON_ALPHA: float = 3.5 / 3.0
 #: Theory of Solids*, 2nd ed., Cambridge 1972, §2.3). Not measured here.
 _MADELUNG: float = 1.747564594633182
 
-#: HARD-CODED GOLDEN — the engine's Coulomb conversion, `md_qqr2e`
-#: (LAMMPS lj `qqr2e` = 1): E = k_e q_i q_j / r.
-_COULOMB_EV_A: float = 1.0
+#: HARD-CODED GOLDEN — LAMMPS `units metal` `qqr2e` (src/update.cpp), the
+#: Coulomb constant of the run: E = k_e q_i q_j / r [eV].
+_COULOMB_EV_A: float = 14.399645
 
 
 def _nacl_frame(d: float = _NACL_D) -> "molpy.Frame":
@@ -768,12 +768,13 @@ class TestCoulombPme:
     def _md_with(*evaluators: object, cutoff: float = _NACL_CUTOFF) -> MD:
         """MD carrying *evaluators* plus the regression's neighbor list.
 
-        The integrator is a 0.001 fs VelocityVerlet with no InitVelocity:
-        perfect rock salt has zero net force on every ion by symmetry, so
-        one step is a static single point on stationary atoms.
+        Units metal (eV, Å, e). The integrator is a 1e-6 ps VelocityVerlet
+        with no InitVelocity: perfect rock salt has zero net force on every
+        ion by symmetry, so one step is a static single point on stationary
+        atoms.
         """
-        sim = MD()
-        sim.set_integrator(VelocityVerlet(0.001))
+        sim = MD(units="metal")
+        sim.set_integrator(VelocityVerlet(1.0e-6))
         sim.set_neighbor(NeighborList(cutoff, 0.3))
         for evaluator in evaluators:
             sim.set_evaluator(evaluator)
@@ -858,11 +859,9 @@ class TestCoulombPme:
 
         40 alternating ±1 charges in a 12 × 13 × 14 cell,
         ``pair_style coul/long 6.0``, ``kspace_style pppm 1e-4``,
-        ``kspace_modify order 6``. The active row is lj. For these unit
-        charges the mesh and alpha match the metal oracle (12³,
-        G = 0.46340394) because two_charge and qqrd2e scale together
-        (tests/core/test_pppm_accuracy.cpp, case ortho_o6). The parameters
-        then run as an explicit-mesh solver.
+        ``kspace_modify order 6``, ``units metal`` (the oracle's: 12³,
+        G = 0.46340394; tests/core/test_pppm_accuracy.cpp, case ortho_o6).
+        The parameters then run as an explicit-mesh solver.
         """
         from atomiverse.longrange import CoulLong, KSpacePPPM
 
@@ -889,11 +888,13 @@ class TestCoulombPme:
         frame["atoms"] = atoms
         frame.box = molpy.Box.ortho(lengths)
 
-        p = KSpacePPPM.from_accuracy(frame, 1e-4, 6.0, order=6)
+        p = KSpacePPPM.from_accuracy(frame, 1e-4, 6.0, order=6, units="metal")
         assert tuple(p.mesh) == (12, 12, 12)
         assert p.order == 6
         assert abs(p.alpha - 0.46340394) <= 6e-8 * 0.46340394
-        fixed = KSpacePPPM.from_accuracy(frame, 1e-4, 6.0, order=6, alpha=0.3)
+        fixed = KSpacePPPM.from_accuracy(
+            frame, 1e-4, 6.0, order=6, alpha=0.3, units="metal"
+        )
         assert fixed.alpha == 0.3
         with pytest.raises(ValueError):
             KSpacePPPM(0.3, mesh=(12, 0, 12))

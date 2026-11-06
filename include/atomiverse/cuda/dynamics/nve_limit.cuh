@@ -26,31 +26,34 @@ namespace md {
 /// Component/LaunchContext path (used by the multi-GPU PE driver, which owns
 /// raw per-subdomain SoA pointers rather than a single Frame). `xmax` is the
 /// per-step displacement cap [Å]; `vmax = xmax/dt` is computed internally.
-/// These mirror LAMMPS `fix nve/limit` exactly (ATV::units::md_ftm2v units, Euclidean speed
+/// These mirror LAMMPS `fix nve/limit` exactly (ftm2v units, Euclidean speed
 /// cap, orthorhombic PBC wrap on the position update).
 /// @brief First NVE/limit half-step on rows [0, n) of `frame`.
 /// @param frame Device frame (positions, velocities, fixed-point forces).
 /// @param n Number of integrated (owned) rows.
 /// @param box Cell kernel argument (resolved in stream order).
 /// @param dt Time step [fs].
+/// @param ftm2v The run's LAMMPS `force->ftm2v`.
 /// @param xmax Maximum displacement per step [Angstrom].
 /// @param step Step index stamped on a force fault.
 /// @param stream CUDA stream.
 /// @param step_ptr Device step copy read instead of `step` (null: `step`).
 void launch_nve_limit_initial(Frame& frame, int n, const cuda::Box& box,
-                              mixed_t dt, mixed_t xmax, long long step,
-                              cudaStream_t stream = 0,
+                              mixed_t dt, mixed_t ftm2v, mixed_t xmax,
+                              long long step, cudaStream_t stream = 0,
                               const long long* step_ptr = nullptr);
 /// @brief Second NVE/limit half-step on rows [0, n) of `frame`.
 /// @param frame Device frame (velocities, fixed-point forces).
 /// @param n Number of integrated (owned) rows.
 /// @param dt Time step [fs].
+/// @param ftm2v The run's LAMMPS `force->ftm2v`.
 /// @param xmax Maximum displacement per step [Angstrom].
 /// @param step Step index stamped on a force fault.
 /// @param stream CUDA stream.
 /// @param step_ptr Device step copy read instead of `step` (null: `step`).
-void launch_nve_limit_final(Frame& frame, int n, mixed_t dt, mixed_t xmax,
-                            long long step, cudaStream_t stream = 0,
+void launch_nve_limit_final(Frame& frame, int n, mixed_t dt, mixed_t ftm2v,
+                            mixed_t xmax, long long step,
+                            cudaStream_t stream = 0,
                             const long long* step_ptr = nullptr);
 
 class NVELimit : public cuda::Integrator, public cuda::TimestepProvider {

@@ -19,15 +19,15 @@ namespace minimizer {
 /// @brief Joint isotropic cell + atom steepest-descent Optimizer.
 class JointIsotropicRelax : public Optimizer {
   public:
-    double P_target = 0.0;   ///< Target pressure [eV/Å³].
+    double P_target = 0.0;   ///< Target pressure [style pressure].
     double atom_step = 0.01; ///< Atom step along unit force [Å].
     double alpha0 = 0.05;    ///< Relative scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per step.
-    double bulk_mod = 1.0;   ///< Soft bulk modulus [eV/Å³].
+    double bulk_mod = 1.0;   ///< Soft bulk modulus [style pressure].
 
     JointIsotropicRelax() = default;
 
-    /// @param P_target_ev_a3 Target pressure [eV/Å³].
+    /// @param P_target_ev_a3 Target pressure [style pressure].
     /// @param atom_step_a Atom step length [Å].
     explicit JointIsotropicRelax(double P_target_ev_a3,
                                  double atom_step_a = 0.01);

@@ -51,6 +51,7 @@
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "units_binding.h"
 // The eighteen force sources this file used to spell out are registered from
 // `evaluator_setters.h`, which owns their build gates. The four headers below
 // are still included HERE because the `PhaseBuilder` escape hatch at the
@@ -316,9 +317,9 @@ struct MdHandle {
             throw std::runtime_error(
                 "MD.run: the MPI launcher task payload cannot carry "
                 + unmirrored_.front() + "; run without the launcher");
-        cpu::task::TaskSpec spec(
-            cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps),
-                              driver.capture_buffer_bytes()});
+        cpu::task::TaskSpec spec(cpu::task::MDTask{
+            mirror, static_cast<std::int64_t>(n_steps),
+            driver.capture_buffer_bytes(), driver.units().style});
         auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
         cpu::Frame work = cpu::from_molpy(*fref);
@@ -357,24 +358,6 @@ struct MdPhaseBuilder {
 } // namespace
 
 void bind_md(nb::module_& m) {
-    m.def(
-        "set_units",
-        [](const std::string& style) {
-            try {
-                units::set_style(style);
-            } catch (const std::invalid_argument& e) {
-                throw nb::value_error(e.what());
-            }
-        },
-        nb::arg("style"),
-        "LAMMPS `units` for the classical engine. Only \"lj\" is accepted: "
-        "pair, k-space and integrators multiply that row. Other styles are "
-        "from_style rows for an explicit PPPM estimate. Process-global; "
-        "call it before KSpacePPPM.from_accuracy and before run.");
-    m.def(
-        "units_style", []() { return std::string(units::active().style); },
-        "Active LAMMPS units style. The engine coupling is the lj row.");
-
     nb::enum_<md::Phase>(m, "Phase", "MD phase sequence (LAMMPS-style).")
         .value("initial_integrate", md::Phase::initial_integrate)
         .value("pre_force", md::Phase::pre_force)
@@ -392,7 +375,7 @@ void bind_md(nb::module_& m) {
             [](cpu::task::VelocityVerletParams* p, double dt) {
                 new (p) cpu::task::VelocityVerletParams{dt};
             },
-            nb::arg("dt"), "Construct with timestep dt [fs].");
+            nb::arg("dt"), "Construct with timestep dt [time].");
 
     nb::class_<ATV::md::NvtSllodSpec>(
         m, "NvtSllod",
@@ -401,7 +384,7 @@ void bind_md(nb::module_& m) {
         "Replaces VelocityVerlet and thermostats peculiar velocities itself. "
         "Do not add NoseHoover or Langevin beside it. `direction` is the "
         "Voigt index 0..5: x, y, z, yz, xz, xy. `rate` is the engineering "
-        "strain rate [1/fs]. The strain clock is internal and restarts when "
+        "strain rate [1/time]. The strain clock is internal and restarts when "
         "the driver is built again. `tchain` is the Nose-Hoover chain "
         "length (LAMMPS `tchain`; `fix nvt/sllod` defaults it to 1). A tilt "
         "beyond half its box length flips the cell (LAMMPS `flip yes`).\n\n"
@@ -416,8 +399,8 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("temperature"), nb::arg("tau"), nb::arg("dt"),
             nb::arg("rate"), nb::arg("direction"), nb::arg("tchain") = 1,
-            "temperature [K], tau [fs] (LAMMPS Tdamp), dt [fs], "
-            "engineering rate [1/fs], direction 0..5, chain length tchain.");
+            "temperature [temperature], tau [time] (LAMMPS Tdamp), dt [time], "
+            "engineering rate [1/time], direction 0..5, chain length tchain.");
 
     nb::class_<cpu::task::FixEfieldParams>(
         m, "FixEfield",
@@ -450,7 +433,7 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::InitVelocityParams{temperature, seed};
             },
             nb::arg("temperature"), nb::arg("seed"),
-            "Construct with target temperature [K] and RNG seed.");
+            "Construct with target temperature [temperature] and RNG seed.");
 
     nb::class_<cpu::task::NoseHooverParams>(
         m, "NoseHoover", "Nose-Hoover thermostat (LAMMPS `fix nvt`).")
@@ -461,8 +444,8 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::NoseHooverParams{T_target, tau_T, dt};
             },
             nb::arg("T_target"), nb::arg("tau_T"), nb::arg("dt"),
-            "Construct with target temperature [K], coupling time "
-            "tau_T [fs] (LAMMPS `Tdamp`), and timestep [fs].");
+            "Construct with target temperature [temperature], coupling time "
+            "tau_T [time] (LAMMPS `Tdamp`), and timestep [time].");
 
     nb::class_<cpu::task::FixLangevinParams>(
         m, "Langevin", "Langevin thermostat (LAMMPS `fix langevin`).")
@@ -475,8 +458,10 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("T_start"), nb::arg("T_stop"), nb::arg("damp"),
             nb::arg("dt"), nb::arg("seed"),
-            "Construct with ramp temperatures T_start/T_stop [K], damping "
-            "time damp [fs] (LAMMPS `damp`), timestep dt [fs], and RNG seed.");
+            "Construct with ramp temperatures T_start/T_stop [temperature], "
+            "damping "
+            "time damp [time] (LAMMPS `damp`), timestep dt [time], and RNG "
+            "seed.");
 
     nb::class_<cpu::task::FixCsvrParams>(
         m, "CSVR",
@@ -488,8 +473,9 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::FixCsvrParams{T_start, tau, dt, seed};
             },
             nb::arg("T_start"), nb::arg("tau"), nb::arg("dt"), nb::arg("seed"),
-            "Construct with target temperature [K], coupling time tau [fs] "
-            "(CP2K `TIMECON`), timestep dt [fs], and RNG seed.");
+            "Construct with target temperature [temperature], coupling time "
+            "tau [time] "
+            "(CP2K `TIMECON`), timestep dt [time], and RNG seed.");
 
     nb::class_<cpu::task::NoseHooverNptParams>(
         m, "NoseHooverNPT",
@@ -521,11 +507,14 @@ void bind_md(nb::module_& m) {
             nb::arg("mtchain") = 3, nb::arg("mpchain") = 3,
             nb::arg("couple_axis") = std::array<bool, 3>{true, true, true},
             nb::arg("T_stop") = double(-1),
-            "Construct with target temperature T_target [K], thermostat "
-            "coupling time tau_T [fs] (LAMMPS `Tdamp`), target pressure "
-            "P_target [eV/A^3] (LAMMPS sign, positive compressive; 1 bar ~ "
-            "6.2415e-7 eV/A^3), barostat coupling time tau_P [fs] (LAMMPS "
-            "`Pdamp`), and timestep dt [fs]. A coupling time is the "
+            "Construct with target temperature T_target [temperature], "
+            "thermostat "
+            "coupling time tau_T [time] (LAMMPS `Tdamp`), target pressure "
+            "P_target [pressure] (LAMMPS sign, positive compressive; in the "
+            "run's "
+            "pressure unit: metal bar, real atm), barostat coupling time tau_P "
+            "[time] (LAMMPS "
+            "`Pdamp`), and timestep dt [time]. A coupling time is the "
             "timescale on which that setpoint is enforced; both are usually "
             "tens (tau_T) to hundreds (tau_P) of timesteps.\n\n"
             "Optional LAMMPS `fix npt` knobs, all defaulted to the C++ "
@@ -537,7 +526,8 @@ void bind_md(nb::module_& m) {
             "  couple_axis per-axis barostat enable {x, y, z}; a False axis "
             "is frozen (its cell edge never rescales, so that direction "
             "stays NVT).\n"
-            "  T_stop      end temperature [K] of a linear setpoint ramp "
+            "  T_stop      end temperature [temperature] of a linear setpoint "
+            "ramp "
             "across the run span, as in LAMMPS. Any value >= 0 is taken as "
             "the ramp end (equal to T_target means a constant setpoint); "
             "< 0 folds to T_target. The run span itself is wired "
@@ -570,11 +560,11 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("T_target"), nb::arg("P_target"), nb::arg("tau_T"),
             nb::arg("tau_P"), nb::arg("dt"),
-            "Construct with target temperature T_target [K], target "
-            "hydrostatic pressure P_target [eV/A^3] (LAMMPS sign, positive "
-            "compressive; 1 bar ~ 6.2415e-7 eV/A^3), thermostat coupling "
-            "time tau_T [fs] (LAMMPS `Tdamp`), barostat coupling time "
-            "tau_P [fs] (LAMMPS `Pdamp`), and timestep dt [fs].\n\n"
+            "Construct with target temperature T_target [temperature], target "
+            "hydrostatic pressure P_target [pressure] (LAMMPS sign, positive "
+            "compressive; metal bar, real atm), thermostat coupling "
+            "time tau_T [time] (LAMMPS `Tdamp`), barostat coupling time "
+            "tau_P [time] (LAMMPS `Pdamp`), and timestep dt [time].\n\n"
             "Mind the order: it is (T_target, P_target, tau_T, tau_P, dt) — "
             "both setpoints first, then both coupling times — whereas "
             "NoseHooverNPT pairs each setpoint with its own coupling time "
@@ -603,11 +593,11 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("P_target"), nb::arg("tau_P"), nb::arg("dt"),
             nb::arg("bulk_modulus") = double(1),
-            "Construct with target pressure P_target [eV/A^3] (LAMMPS sign, "
-            "positive compressive; 1 bar ~ 6.2415e-7 eV/A^3), barostat "
-            "coupling time tau_P [fs] (LAMMPS `Pdamp`), and timestep dt "
-            "[fs].\n\n"
-            "bulk_modulus is the tunable modulus beta [eV/A^3] (LAMMPS "
+            "Construct with target pressure P_target [pressure] (LAMMPS sign, "
+            "positive compressive; metal bar, real atm), barostat "
+            "coupling time tau_P [time] (LAMMPS `Pdamp`), and timestep dt "
+            "[time].\n\n"
+            "bulk_modulus is the tunable modulus beta [pressure] (LAMMPS "
             "`modulus`). It divides the per-step rescale, so a larger value "
             "means a gentler box change and slower pressure relaxation. The "
             "default is 1.0, deliberately NOT LAMMPS's 10.0 — see "
@@ -638,7 +628,8 @@ void bind_md(nb::module_& m) {
     nb::class_<cpu::task::XyzRecorderParams>(
         m, "XYZ",
         "XYZ trajectory output at end_of_step.\n\n"
-        "Writes one frame — element symbol plus x y z [A] per atom, under a "
+        "Writes one frame — element symbol plus x y z [length] per atom, under "
+        "a "
         "comment line carrying the cell and the typed frame metadata — every "
         "`freq` steps. The symbol is derived from the frame's per-atom "
         "`atomic_number` column (Z), so Z=18 is written as Ar.\n\n"
@@ -680,12 +671,13 @@ void bind_md(nb::module_& m) {
         "molrec (`*.mrec`) trajectory output at end_of_step, on the CPU and "
         "the CUDA MD driver alike, and under the MPI launcher.\n\n"
         "Every `every` steps one frame is appended to the store: positions "
-        "[A], velocities [A/fs], forces [eV/A], charges [e], images (int32 "
+        "[length], velocities [A/fs], forces [force], charges [e], images "
+        "(int32 "
         "ix/iy/iz, so unwrapped = x + ix*a + iy*b + iz*c), tags, mass "
-        "[amu], the identity columns the frame carries (force-field type as "
+        "[mass], the identity columns the frame carries (force-field type as "
         "`type_id`, species as `atomic_number`; an absent one stays absent), "
         "the cell, the energies/virial in the frame metadata, the step and "
-        "— with an integrator — time = step*dt [fs]. The step is the number "
+        "— with an integrator — time = step*dt [time]. The step is the number "
         "of completed MD steps and the frame is the state after exactly that "
         "many steps (LAMMPS `dump`): a run() of n steps at every=k records "
         "steps 0, k, 2k, ..., up to and including n. Rows are in ascending "
@@ -742,20 +734,10 @@ void bind_md(nb::module_& m) {
         "compiled exactly once, so every setter — and on(phase) — raises "
         "RuntimeError afterwards. A different configuration means a new MD "
         "object. Running again with the same configuration stays legal.");
+    ATV::python::bind_units(
+        md, [](MdHandle& h) -> cpu::md::MD& { return h.driver; },
+        [](const MdHandle& h, const char* s) { h.require_configurable_(s); });
     md.def(nb::init<>())
-        .def(
-            "set_units",
-            [](MdHandle&, const std::string& style) {
-                try {
-                    units::set_style(style);
-                } catch (const std::invalid_argument& e) {
-                    throw nb::value_error(e.what());
-                }
-            },
-            nb::arg("style"),
-            "LAMMPS `units` for this process. Only \"lj\" runs on the "
-            "engine. Same function as the module-level set_units; call it "
-            "before KSpacePPPM.from_accuracy and before run.")
         .def(
             "set_capture_buffer_bytes",
             [](MdHandle& self, std::uint64_t bytes) {
@@ -876,7 +858,7 @@ void bind_md(nb::module_& m) {
         "Ewald + Kleinman-Bylander) taken at the converged density. "
         "Takes no NeighborList (a plane-wave Hamiltonian is not a pair "
         "style) and reads the frame's 'atomic_number' column [Z]. Like "
-        "any MD run it needs a per-atom 'mass' column [amu], and like "
+        "any MD run it needs a per-atom 'mass' column [mass], and like "
         "any plane-wave run it needs a box.\n\n"
         "A force-producing step uses one electronic solve and contracts its "
         "accepted state for forces. The driver borrows this same method and "

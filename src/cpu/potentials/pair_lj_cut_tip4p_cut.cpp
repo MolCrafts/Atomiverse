@@ -265,7 +265,7 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
     AccReal* __restrict fy_ptr = f.span(kAtom_fy);
     AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
-    const double qqr2e = ATV::units::md_qqr2e;
+    const double qqr2e = ctx.runtime.units.qqrd2e();
     const double eps4 = 4.0 * epsilon_;
     const double eps24 = 24.0 * epsilon_;
     const double sig6 = sigma6_;

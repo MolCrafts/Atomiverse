@@ -26,7 +26,7 @@ using namespace ATV;
 
 namespace {
 
-// Classical MD runs on the LAMMPS lj row (md_boltz = md_mvv2e = md_ftm2v =
+// Classical MD runs on the LAMMPS lj row (boltz = mvv2e = ftm2v =
 // 1): with the RHF energies in eV, lengths in Å and masses in amu the time
 // unit is sqrt(amu·Å²/eV) ≈ 10.18 fs and temperatures are k_B·T in eV.
 constexpr double kFs = 0.09822694585667956; // 1 fs = 1/sqrt(103.6427)

@@ -59,6 +59,7 @@ class PressureSeries : public AsyncRecorder {
     int every_ = 10;
     double epsilon_ev_ = 0;
     int direction_ = 0;
+    double mvv2e_ = 1.0; ///< The run's mvv2e, cached at build.
     double cell0_[9]{};
     std::ofstream file_;
 };

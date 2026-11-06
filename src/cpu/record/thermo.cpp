@@ -68,6 +68,8 @@ void Thermo::print_(const cpu::LaunchContext& ctx, BigInt step, bool header) {
     }
     // Ndof has ONE owner (Driver::publish_dof_): 3N - 3 - n_constraints.
     sample.ndof = ctx.runtime.md.n_dof_global;
+    sample.boltz = ctx.runtime.units.boltz;
+    sample.nktv2p = ctx.runtime.units.nktv2p;
     if (header) {
         ATV_INFO("{}", style_.header());
         header_printed_ = true;
