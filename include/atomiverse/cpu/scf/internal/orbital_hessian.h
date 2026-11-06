@@ -97,28 +97,35 @@ class OrbitalHessian {
     /// @param v  Trial vector, length n_ov(), composite index a·n_occ + i
     ///           (dimensionless amplitudes).
     /// @param ch Excitation channel (singlet or triplet).
+    /// @param alpha_hf Exact-exchange fraction in [0, 1] (1 = HF; a global
+    ///        hybrid's \(\alpha_{\mathrm{hf}}\) for KS response).
     /// @return (A + B)·v [Hartree].
     /// @throws std::invalid_argument when v.size() != n_ov().
-    RealVector sigma_plus(const RealVector& v, Channel ch) const;
+    RealVector sigma_plus(const RealVector& v, Channel ch,
+                          double alpha_hf = 1.0) const;
 
     /// @brief Matrix-free product σ = (A − B)_ch · v. For real closed-shell
     ///        orbitals (A − B) is channel-independent; `ch` is kept so the
     ///        RPA-facing interface stays uniform for CPHF/TDHF reuse.
     /// @param v  Trial vector, length n_ov() (dimensionless amplitudes).
     /// @param ch Excitation channel (singlet or triplet).
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return (A − B)·v [Hartree].
     /// @throws std::invalid_argument when v.size() != n_ov().
-    RealVector sigma_minus(const RealVector& v, Channel ch) const;
+    RealVector sigma_minus(const RealVector& v, Channel ch,
+                           double alpha_hf = 1.0) const;
 
     /// @brief Explicit dense (A + B)_ch — small systems and validation.
     /// @param ch Excitation channel.
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return Symmetric n_ov × n_ov matrix [Hartree].
-    RealMatrix dense_plus(Channel ch) const;
+    RealMatrix dense_plus(Channel ch, double alpha_hf = 1.0) const;
 
     /// @brief Explicit dense (A − B)_ch — small systems and validation.
     /// @param ch Excitation channel.
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return Symmetric n_ov × n_ov matrix [Hartree].
-    RealMatrix dense_minus(Channel ch) const;
+    RealMatrix dense_minus(Channel ch, double alpha_hf = 1.0) const;
 
     /// @brief Explicit dense Casida **A** matrix with global-hybrid exact-
     ///        exchange fraction `alpha_hf` (dimensionless in [0, 1]).
@@ -156,8 +163,9 @@ class OrbitalHessian {
     ///        for the matrix-free lowest-root solve (also reusable by the
     ///        CPHF/TDHF iterative solvers).
     /// @param ch Excitation channel.
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return Length-n_ov diagonal [Hartree].
-    RealVector diagonal_plus(Channel ch) const;
+    RealVector diagonal_plus(Channel ch, double alpha_hf = 1.0) const;
 
     /// @brief Dense direct-RPA / Casida Hermitian reduction on this reference:
     ///        \(A=\)`dense_A(ch,alpha_hf)`, \(B=\)`dense_B(ch,alpha_hf)`,

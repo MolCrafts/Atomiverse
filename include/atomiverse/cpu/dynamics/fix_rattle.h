@@ -199,7 +199,7 @@ class FixRattle : public cpu::Constraint,
     /// @brief LAMMPS `FixRattle` packer mode (`fix_rattle.cpp:652-678`).
     enum class CommMode { XSHAKE, VP, V };
 
-    /// @brief Select the packer mode (XSHAKE applies \(p_d L_d\) [Å]).
+    /// @brief Select the packer mode (XSHAKE adds the lattice translation H·pbc [Å]).
     /// @param mode Packer mode.
     void set_comm_mode(CommMode mode) { comm_mode_ = mode; }
 
@@ -207,7 +207,7 @@ class FixRattle : public cpu::Constraint,
     /// @return 3.
     int comm_forward() const override { return 3; }
 
-    /// @brief Pack sendlist rows. XSHAKE applies \(p_d L_d\) [Å]; VP/V do not.
+    /// @brief Pack sendlist rows. XSHAKE adds the lattice translation H·pbc [Å]; VP/V do not.
     /// @param n Number of local rows in `list` [dimensionless].
     /// @param list Local row indices to pack.
     /// @param buf Output buffer.

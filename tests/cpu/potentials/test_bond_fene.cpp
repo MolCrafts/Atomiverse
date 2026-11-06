@@ -127,34 +127,3 @@ TEST(BondFene, RequestsAreIndependentAndFrameRebindingRefreshesTuples) {
         }
     bond.destroy({ctx, reordered});
 }
-
-TEST(BondedForceScratch, ReductionUsesTheActualTeam) {
-    cpu::Frame f(2);
-    cpu::md::BondedForceScratch scratch;
-    scratch.build(2, f.capacity());
-    scratch.bind(f);
-#ifdef _OPENMP
-    const int old_dynamic = omp_get_dynamic();
-    omp_set_dynamic(0);
-#endif
-#pragma omp parallel num_threads(2)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        auto force = scratch.begin_thread(tid, 2);
-        force.fx[0] = 100 + tid;
-    }
-    // A later serialized/nested team must ignore the prior thread 1 buffer.
-    auto force = scratch.begin_thread(0, 2);
-    force.fx[0] = 3;
-    force.fx[1] = 4;
-    f.span(kAtom_fx)[0] = f.span(kAtom_fx)[1] = 0;
-    scratch.reduce_into(2);
-    EXPECT_EQ(f.span(kAtom_fx)[0], 3);
-    EXPECT_EQ(f.span(kAtom_fx)[1], 4);
-#ifdef _OPENMP
-    omp_set_dynamic(old_dynamic);
-#endif
-}

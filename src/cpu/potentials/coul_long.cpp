@@ -9,6 +9,7 @@
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -51,9 +52,8 @@ void CoulLong::build(const BuildContext& ctx) {
     n_threads_ = omp_get_max_threads();
 #endif
     const int n = ctx.frame.capacity();
-    fx_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fy_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fz_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads_, n);
 
     special_.s12 = s12_;
     special_.s13 = s13_;
@@ -76,16 +76,6 @@ void CoulLong::launch(const LaunchContext& ctx) {
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
 
-    const int n_force = cpu::force_count(ctx);
-
-    if (static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size()) < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, 0.0);
-            fy_thr_[t].resize(n_force, 0.0);
-            fz_thr_[t].resize(n_force, 0.0);
-        }
-    }
-
     if (any_special_ && pairs.version != special_version_) {
         special_.s12 = s12_;
         special_.s13 = s13_;
@@ -105,9 +95,6 @@ void CoulLong::launch(const LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
     const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
     const double alpha = alpha_;
     const double rc_sq = cutoff_sq_;
@@ -116,21 +103,20 @@ void CoulLong::launch(const LaunchContext& ctx) {
     double energy_total = 0;
     double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
 
-#pragma omp parallel num_threads(n_threads_) reduction(+ : energy_total)       \
-    reduction(+ : v_xx) reduction(+ : v_yy) reduction(+ : v_zz)                \
-    reduction(+ : v_xy) reduction(+ : v_xz) reduction(+ : v_yz)
+    const md::ForcePass forces(ctx);
+#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
+    reduction(+ : energy_total) reduction(+ : v_xx) reduction(+ : v_yy)        \
+    reduction(+ : v_zz) reduction(+ : v_xy) reduction(+ : v_xz)                \
+    reduction(+ : v_yz)
     {
-        int tid = 0, team_size = 1;
+        int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
-        team_size = omp_get_num_threads();
 #endif
-        double* __restrict fxt = fx_thr_[tid].data();
-        double* __restrict fyt = fy_thr_[tid].data();
-        double* __restrict fzt = fz_thr_[tid].data();
-        std::fill(fx_thr_[tid].begin(), fx_thr_[tid].begin() + n_force, 0.0);
-        std::fill(fy_thr_[tid].begin(), fy_thr_[tid].begin() + n_force, 0.0);
-        std::fill(fz_thr_[tid].begin(), fz_thr_[tid].begin() + n_force, 0.0);
+        const md::ThreadForce tf = forces.thread(tid);
+        double* __restrict fxt = tf.fx;
+        double* __restrict fyt = tf.fy;
+        double* __restrict fzt = tf.fz;
 
 #pragma omp for schedule(static)
         for (int ii = 0; ii < pairs.inum; ++ii) {
@@ -204,17 +190,6 @@ void CoulLong::launch(const LaunchContext& ctx) {
                 fzt[i] += fi_z;
             }
         }
-
-#pragma omp for schedule(static)
-        for (int i = 0; i < n_force; ++i) {
-            for (int t = 0; t < team_size; ++t) {
-                if (ctx.forces_requested) {
-                    fx_ptr[i] += fx_thr_[t][i];
-                    fy_ptr[i] += fy_thr_[t][i];
-                    fz_ptr[i] += fz_thr_[t][i];
-                }
-            }
-        }
     }
 
     f.meta.get(kEnergy) += energy_total;
@@ -230,9 +205,6 @@ void CoulLong::launch(const LaunchContext& ctx) {
 }
 
 void CoulLong::destroy(const DestroyContext&) {
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
     special_.clear();
     any_special_ = false;
     special_version_ = 0;

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/periodic_torsion.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/potentials/bonded_cache.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
@@ -26,12 +27,7 @@
 namespace ATV {
 namespace cpu {
 
-/// @brief One periodic term K (1 + cos(n φ − δ)).
-struct TorsionTerm {
-    double K = 0.0;     ///< Amplitude [eV].
-    int n = 1;          ///< Multiplicity, 0 ≤ n ≤ 6 (n = 0 is a constant).
-    double delta = 0.0; ///< Phase [rad].
-};
+using ATV::TorsionTerm;
 
 namespace md {
 
@@ -69,19 +65,12 @@ class PeriodicTorsionSet {
   private:
     void rebuild_tuples_(const LaunchContext& ctx);
 
-    // CSR over types: terms of type t are [offset_[t], offset_[t+1]).
-    std::vector<int> offset_;
-    std::vector<double> K_;
-    std::vector<int> n_;
-    std::vector<double> cos_delta_;
-    std::vector<double> sin_delta_;
-    std::vector<char> active_; ///< type has at least one K ≠ 0 term
+    TorsionTable table_;
 
     Topology topology_;
     const char* style_;
     bool compute_stress_ = true;
 
-    BondedForceScratch scratch_;
     DropTally drops_;
     BondedTupleCache cache_;
 };

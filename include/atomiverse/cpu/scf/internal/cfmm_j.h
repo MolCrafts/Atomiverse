@@ -22,7 +22,6 @@
 #include "atomiverse/cpu/longrange/gaussian_extent.h"
 #include "atomiverse/cpu/longrange/multipole_expansion.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
-#include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 
 namespace ATV {
@@ -47,7 +46,7 @@ class CfmmJ {
     ///                   (member `cfmm_threshold`, default 1e-9). Sets
     ///                   r_ext = √(2/ζ)·erfc⁻¹(ε) [Bohr] per WJGH 1994.
     /// @param schwarz_thr Cauchy–Schwarz pair threshold [Hartree^{1/2}],
-    ///                   default 1e-10 (matches ShellPairList).
+    ///                   default 1e-10.
     /// @throws std::invalid_argument on bad order/threshold; std::runtime_error
     ///         if shells is empty.
     CfmmJ(const std::vector<native::Shell>& shells, int order, double threshold,
@@ -68,23 +67,12 @@ class CfmmJ {
     /// canonical (d1 ≥ d2) distribution-pair space — no double counting.
     void prepare();
 
-    /// @brief Build the Coulomb matrix J[P] = Σ_λσ (μν|λσ) P_λσ [Hartree].
-    ///
-    /// Starts from the exact Schwarz-screened direct J (ShellPairList::j),
-    /// then for each far pair replaces the ERI contribution with the multipole
-    /// M2L of P_μν-weighted s|s product charges. When #far_pairs is empty the
-    /// result is exactly the Direct J.
-    ///
-    /// @param P_total Total density in the Cartesian engine AO space
-    ///                [n_ao × n_ao, dimensionless] (RHF: includes occupation 2).
-    /// @return Coulomb matrix [n_ao × n_ao, Hartree], symmetric.
-    RealMatrix j(const RealMatrix& P_total) const;
-
     /// @brief Replace far-pair ERI contributions in an existing exact J with
     ///        multipole (M2L) contributions. No-op when #far_pairs is empty.
     ///
-    /// Used by the RHF production path which builds the exact J via the fast
-    /// shell-block route (G + ½K) then applies this correction.
+    /// The Fock builder takes the exact J from `ExactJK` (the near-field
+    /// baseline) and adds this correction, so CFMM J equals Direct J when the
+    /// far list is empty.
     ///
     /// @param P_total Total density [n_ao × n_ao, dimensionless].
     /// @param J       Exact Coulomb matrix to correct in place [Hartree].
@@ -140,9 +128,6 @@ class CfmmJ {
     std::vector<std::pair<int, int>> near_pairs_;
     std::vector<std::pair<int, int>> far_pairs_;
     longrange::M2L m2l_;
-    /// Schwarz pair list used for the exact near-field baseline (and the
-    /// full-matrix path when every pair is near).
-    ShellPairList sp_;
     bool prepared_ = false;
 };
 

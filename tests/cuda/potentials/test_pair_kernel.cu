@@ -18,8 +18,8 @@
 #include <xsimd/xsimd.hpp>
 #endif
 
+#include "atomiverse/core/pair_kernel.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cuda/potentials/pair_kernel.h"
 
 using namespace ATV;
 using potentials::CoulKernel;

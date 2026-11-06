@@ -4,6 +4,7 @@
 #include "atomiverse/cpu/frame/frame.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <limits>
 #include <queue>
@@ -539,7 +540,16 @@ int Frame::cols_for_(const FieldSpec& spec, const MetaMap& meta) {
     return 0;
 }
 
+namespace {
+std::atomic<std::uint64_t> g_row_revision{0};
+} // namespace
+
+void Frame::touch_rows_() noexcept {
+    row_revision_ = g_row_revision.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
 Frame::Frame(int n_atoms) {
+    touch_rows_();
     if (n_atoms < 0)
         throw std::invalid_argument("Frame atom count must be non-negative");
 
@@ -581,6 +591,7 @@ Frame::Frame(int n_atoms) {
 
 Frame::Frame(const Frame& other)
     : blocks(other.blocks), meta(other.meta), box(other.box) {
+    touch_rows_();
     bind_resolution_state_();
 }
 
@@ -590,6 +601,7 @@ Frame& Frame::operator=(const Frame& other) {
     blocks = other.blocks;
     meta = other.meta;
     box = other.box;
+    touch_rows_();
     bind_resolution_state_();
     return *this;
 }
@@ -597,6 +609,8 @@ Frame& Frame::operator=(const Frame& other) {
 Frame::Frame(Frame&& other)
     : blocks(std::move(other.blocks)), meta(std::move(other.meta)),
       box(std::move(other.box)) {
+    touch_rows_();
+    other.touch_rows_();
     bind_resolution_state_();
 }
 
@@ -606,6 +620,8 @@ Frame& Frame::operator=(Frame&& other) {
     blocks = std::move(other.blocks);
     meta = std::move(other.meta);
     box = std::move(other.box);
+    touch_rows_();
+    other.touch_rows_();
     bind_resolution_state_();
     return *this;
 }
@@ -685,12 +701,14 @@ void Frame::set_nlocal(int n) {
     if (n < 0 || n + nghost() > capacity())
         throw std::out_of_range("Frame nlocal violates capacity");
     meta.set(kNLocal, static_cast<std::int64_t>(n));
+    touch_rows_();
 }
 
 void Frame::set_nghost(int n) {
     if (n < 0 || nlocal() + n > capacity())
         throw std::out_of_range("Frame nghost violates capacity");
     meta.set(kNGhost, static_cast<std::int64_t>(n));
+    touch_rows_();
 }
 
 void Frame::grow(int target_capacity) {
@@ -711,12 +729,17 @@ void Frame::set_capacity(int new_capacity) {
         return;
     atoms_block_().set_rows(new_capacity);
     meta.set(kNMax, static_cast<std::int64_t>(new_capacity));
+    touch_rows_();
 }
 
-void Frame::copy_row(int dst, int src) { atoms_block_().copy_row(dst, src); }
+void Frame::copy_row(int dst, int src) {
+    atoms_block_().copy_row(dst, src);
+    touch_rows_();
+}
 
 void Frame::copy_row_from(const Frame& source, int dst, int src) {
     atoms_block_().copy_row_from(source.atoms_block_(), dst, src);
+    touch_rows_();
 }
 
 void Frame::ensure_bonded_storage() { meta.set(kHasBonded, std::int64_t{1}); }
@@ -840,7 +863,12 @@ TagInt Frame::acquire_tag() {
     return static_cast<TagInt>(next.get()++);
 }
 
-void Frame::clear_tag_index() { meta.get(kTagIndex).clear(); }
+void Frame::clear_tag_index() {
+    meta.get(kTagIndex).clear();
+    // Republishing the index is how a reorder done through raw columns
+    // announces itself (md::notify_sorted).
+    touch_rows_();
+}
 
 void Frame::release_tag_index() {
     TagIndex fresh;
@@ -850,6 +878,7 @@ void Frame::release_tag_index() {
 void Frame::rebuild_tag_index(int begin, int end) {
     if (begin < 0 || end < begin || end > n_total())
         throw std::out_of_range("Frame tag-index range is invalid");
+    touch_rows_();
     auto& index = meta.get(kTagIndex);
     const TagInt* tags = span(kAtom_tag).data();
     index.reserve(index.size() + static_cast<std::size_t>(end - begin));
@@ -1081,6 +1110,7 @@ bool Frame::restore_import_order(const TagInt* original, int n) {
     if (already)
         return true;
 
+    touch_rows_();
     auto refs = atoms_block_().resolve_columns(kColMigrate);
     struct Snapshot {
         ColumnRef ref;

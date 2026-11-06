@@ -582,9 +582,15 @@ MO-product ALDA \(f^{\mathrm{xc}}\) on the SG0 (50×110) grid.
 
 ### Oracle
 
-Atomiverse `RKS::tda` full-grid ALDA path (Dirac-exchange second derivative),
-2026-07-23. Not a third-party live oracle — value is hard-coded in the
-regression binary after calibration against this engine.
+External: PySCF 2.14.0, `dft.RKS(mol)` with `mf.xc = "lda,vwn"`
+(≡ `XCType::LSDA`, Slater + VWN5), `conv_tol = 1e-12`, then `tdscf.TDA(mf)`,
+`nstates = 1`: S₁ = **26.44300291 eV** (1 Ha = 27.211386245988 eV). The same
+value is the "LSDA pure TDA" context row of the B3LYP section above.
+
+The earlier self-pin 7.653049 eV was not an oracle: that kernel kept the full
+HF exchange of CIS in A and added only the Dirac-exchange part of
+\(f^{\mathrm{xc}}\) (no VWN5, wrong spin scaling). Atomiverse now gives
+26.44300 eV on the PySCF grid.
 
 ### Gate
 

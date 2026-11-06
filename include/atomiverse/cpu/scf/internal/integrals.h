@@ -163,7 +163,7 @@ struct IntegralWorkspace {
     /// charges from `kAtom_atomic_number`. Converts to Bohr internally.
     ///
     /// By default the two-electron ERI tensor is NOT computed (`compute_eri=false`).
-    /// The CPU SCF solver uses direct SCF via ShellPairList::g_rhf,
+    /// The CPU SCF solver builds J/K with internal::ExactJK from the shells,
     /// so storing the full O(n^4) ERI tensor is unnecessary for CPU calculations.
     /// Pass `compute_eri=true` when the caller explicitly needs `ERI`:
     ///   - CUDA RHFFock (uploads ERI to device)

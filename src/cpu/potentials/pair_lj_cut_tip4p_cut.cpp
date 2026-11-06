@@ -101,14 +101,6 @@ void PairLJCutTip4pCut::compute_newsite(double xO, double yO, double zO,
 
 void PairLJCutTip4pCut::build(const BuildContext& ctx) {
     filtered_source_ = nullptr;
-    n_threads_ = 1;
-#ifdef _OPENMP
-    n_threads_ = omp_get_max_threads();
-#endif
-    const int n = ctx.frame.capacity();
-    fx_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fy_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fz_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
 
     special_.s12 = s12_;
     special_.s13 = s13_;
@@ -244,16 +236,6 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
 
-    const int n_force = cpu::force_count(ctx);
-
-    if (static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size()) < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, 0.0);
-            fy_thr_[t].resize(n_force, 0.0);
-            fz_thr_[t].resize(n_force, 0.0);
-        }
-    }
-
     ensure_sites_(f, pairs);
 
     const bool use_filtered = any_special_;
@@ -315,13 +297,10 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
     // so a simple single-thread walk avoids OMP races on H force rows.
     // Multi-thread would need atomics or full per-thread buffers + careful
     // partner coverage; keep serial for correctness of the E9 foothold.
-    (void)n_threads_;
-    std::fill(fx_thr_[0].begin(), fx_thr_[0].begin() + n_force, 0.0);
-    std::fill(fy_thr_[0].begin(), fy_thr_[0].begin() + n_force, 0.0);
-    std::fill(fz_thr_[0].begin(), fz_thr_[0].begin() + n_force, 0.0);
-    double* __restrict fxt = fx_thr_[0].data();
-    double* __restrict fyt = fy_thr_[0].data();
-    double* __restrict fzt = fz_thr_[0].data();
+    // The walk is serial, so it accumulates straight into the frame columns.
+    double* __restrict fxt = fx_ptr;
+    double* __restrict fyt = fy_ptr;
+    double* __restrict fzt = fz_ptr;
 
     for (int ii = 0; ii < k_inum; ++ii) {
         const int i = use_filtered ? ii : ilist[ii];
@@ -479,14 +458,6 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
         }
     }
 
-    for (int i = 0; i < n_force; ++i) {
-        if (ctx.forces_requested) {
-            fx_ptr[i] += fxt[i];
-            fy_ptr[i] += fyt[i];
-            fz_ptr[i] += fzt[i];
-        }
-    }
-
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
     if (ctx.stress_requested)
@@ -494,9 +465,6 @@ void PairLJCutTip4pCut::compute(const LaunchContext& ctx) {
 }
 
 void PairLJCutTip4pCut::destroy(const DestroyContext&) {
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
     special_.clear();
     h1_.clear();
     h2_.clear();

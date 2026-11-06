@@ -5,6 +5,9 @@
 
 #include "atomiverse/cpu/scf/internal/density_fitting.h"
 
+#include "atomiverse/cpu/linalg/internal/blas.h"
+
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
@@ -354,44 +357,47 @@ RealMatrix DensityFitting::j_fitted(const RealMatrix& P_total) const {
 }
 
 RealMatrix DensityFitting::k_fitted(const RealMatrix& C_occ) const {
+    return k_signed_(C_occ, static_cast<int>(C_occ.shape()[1]));
+}
+
+RealMatrix DensityFitting::k_signed_(const RealMatrix& C, int n_pos) const {
     const std::size_t n = static_cast<std::size_t>(n_ao_);
     const std::size_t naux = static_cast<std::size_t>(n_aux_);
-    const std::size_t nocc = C_occ.shape()[1];
-    if (nocc == 0)
-        return xt::zeros<double>({n, n});
-    // Per-P half transform T^P_μi = Σ_ν B^P_μν C_νi followed by the
-    // outer-product accumulation K += T^P·(T^P)ᵀ. B_ is column-major
-    // (n², n_aux), so column P is one contiguous n² slice bp with
-    // bp[μ·n + ν] = B^P_μν. OpenMP over P with thread-local
-    // accumulators, then a lower-triangle reduce + symmetrize.
+    const std::size_t ncol = C.shape()[1];
     RealMatrix K = xt::zeros<double>({n, n});
-    const double* bd = B_.data();
-#pragma omp parallel
-    {
-        std::vector<double> t(n * nocc);
-        std::vector<double> k_loc(n * n, 0.0);
-#pragma omp for schedule(static)
-        for (std::ptrdiff_t p = 0; p < static_cast<std::ptrdiff_t>(naux); ++p) {
-            const double* bp = bd + static_cast<std::size_t>(p) * n * n;
-            for (std::size_t mu = 0; mu < n; ++mu)
-                for (std::size_t i = 0; i < nocc; ++i) {
-                    double s = 0.0;
-                    for (std::size_t nu = 0; nu < n; ++nu)
-                        s += bp[mu * n + nu] * C_occ(nu, i);
-                    t[mu * nocc + i] = s;
-                }
-            for (std::size_t mu = 0; mu < n; ++mu)
-                for (std::size_t nu = 0; nu <= mu; ++nu) {
-                    double s = 0.0;
-                    for (std::size_t i = 0; i < nocc; ++i)
-                        s += t[mu * nocc + i] * t[nu * nocc + i];
-                    k_loc[mu * n + nu] += s;
-                }
-        }
-#pragma omp critical(atv_df_k_reduce)
-        for (std::size_t mu = 0; mu < n; ++mu)
-            for (std::size_t nu = 0; nu <= mu; ++nu)
-                K(mu, nu) += k_loc[mu * n + nu];
+    if (ncol == 0 || naux == 0)
+        return K;
+    if (C.shape()[0] != n)
+        throw std::invalid_argument(
+            "DensityFitting::k_fitted: coefficient rows != n_ao");
+    // Two level-3 calls per auxiliary block (Weigend 2002 exchange):
+    //   S = Xᵀ C, with X the (n, n·nb) column-major view of the block's
+    //   contiguous B columns, X(ν, μ + n P) = B^P_μν, so
+    //   S(μ + n P, i) = Σ_ν B^P_μν C_νi = T^P_μi;
+    //   the same memory read as Z (n, nb·ncol), Z(μ, P + nb i) = T^P_μi,
+    //   gives K ±= Z Zᵀ = Σ_P T^P (T^P)ᵀ over the positive / negative
+    //   column ranges i < n_pos / i ≥ n_pos.
+    // The block bounds the half-transformed buffer to ~256 MB.
+    constexpr std::size_t kBufferDoubles = std::size_t(1) << 25;
+    const std::size_t nb_block =
+        std::min(naux, std::max<std::size_t>(1, kBufferDoubles / (n * ncol)));
+    std::vector<double> S(n * nb_block * ncol);
+    const int in = static_cast<int>(n), ic = static_cast<int>(ncol);
+    const int n_neg = ic - n_pos;
+    for (std::size_t p0 = 0; p0 < naux; p0 += nb_block) {
+        const int nb = static_cast<int>(std::min(nb_block, naux - p0));
+        const int rows = in * nb;
+        linalg::internal::gemm('T', 'N', rows, ic, in, 1.0,
+                               B_.data() + p0 * n * n, in, C.data(), in, 0.0,
+                               S.data(), rows);
+        if (n_pos > 0)
+            linalg::internal::syrk_lower('N', in, nb * n_pos, 1.0, S.data(), in,
+                                         1.0, K.data(), in);
+        if (n_neg > 0)
+            linalg::internal::syrk_lower(
+                'N', in, nb * n_neg, -1.0,
+                S.data() + static_cast<std::size_t>(rows) * n_pos, in, 1.0,
+                K.data(), in);
     }
     for (std::size_t mu = 0; mu < n; ++mu)
         for (std::size_t nu = mu + 1; nu < n; ++nu)
@@ -408,29 +414,24 @@ RealMatrix DensityFitting::k_fitted_from_density(const RealMatrix& P) const {
     for (std::size_t i = 0; i < n; ++i)
         amax = std::max(amax, std::fabs(lam(i)));
     const double eps = 1e-14 * amax;
-    std::vector<std::size_t> pos, neg;
-    for (std::size_t i = 0; i < n; ++i) {
-        if (lam(i) > eps)
-            pos.push_back(i);
-        else if (lam(i) < -eps)
-            neg.push_back(i);
-    }
-    RealMatrix K = xt::zeros<double>({n, n});
-    const auto accumulate = [&](const std::vector<std::size_t>& idx,
-                                double sign) {
-        if (idx.empty())
-            return;
-        RealMatrix C = xt::zeros<double>({n, idx.size()});
-        for (std::size_t c = 0; c < idx.size(); ++c) {
-            const double s = std::sqrt(std::fabs(lam(idx[c])));
-            for (std::size_t r = 0; r < n; ++r)
-                C(r, c) = s * U(r, idx[c]);
+    std::vector<std::size_t> cols;
+    int n_pos = 0;
+    for (std::size_t i = 0; i < n; ++i)
+        if (lam(i) > eps) {
+            cols.push_back(i);
+            ++n_pos;
         }
-        K += sign * k_fitted(C);
-    };
-    accumulate(pos, 1.0);
-    accumulate(neg, -1.0);
-    return K;
+    for (std::size_t i = 0; i < n; ++i)
+        if (lam(i) < -eps)
+            cols.push_back(i);
+    // One pass over B: K = K[C+] − K[C−] with C± = √|λ±| v±.
+    RealMatrix C = xt::zeros<double>({n, cols.size()});
+    for (std::size_t c = 0; c < cols.size(); ++c) {
+        const double sc = std::sqrt(std::fabs(lam(cols[c])));
+        for (std::size_t r = 0; r < n; ++r)
+            C(r, c) = sc * U(r, cols[c]);
+    }
+    return k_signed_(C, n_pos);
 }
 
 } // namespace internal

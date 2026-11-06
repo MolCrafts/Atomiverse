@@ -183,9 +183,26 @@ class Backend {
     void forget_graphs_() noexcept;
     long long* device_step_ = nullptr; ///< context_.device_step storage.
     BigInt device_step_next_ = -1;     ///< Value the device copy holds next.
-    /// Step graphs keyed by the ordered (component, phase, flags) segment.
+    /// Step graphs keyed by the ordered (component, epoch, phase, flags)
+    /// segment.
     std::map<std::vector<std::uintptr_t>, GraphRing> step_graphs_;
-    std::vector<EvaluationDemand> demands_; ///< MD plans only.
+    /// One captured launch of a segment.
+    struct SegmentEntry {
+        Component* component; ///< Null: the device step advance.
+        int phase;
+        bool forces, energy, stress, box;
+    };
+    /// The ring a segment ordinal of the step resolved to last time, with
+    /// the key it resolved: a steady step re-resolves every segment by one
+    /// key comparison, with no allocation and no map lookup.
+    struct SegmentMemo {
+        std::vector<std::uintptr_t> key;
+        GraphRing* ring = nullptr;
+    };
+    std::vector<SegmentEntry> segment_;       ///< Reused per step.
+    std::vector<std::uintptr_t> segment_key_; ///< Reused per segment.
+    std::vector<SegmentMemo> segment_memo_;   ///< Indexed by segment ordinal.
+    std::vector<EvaluationDemand> demands_;   ///< MD plans only.
     bool gate_evaluation_ = false;
     bool virial_demanded_ = false;
     /// A loaded component `tilts_box()`: kernels must take the general-cell

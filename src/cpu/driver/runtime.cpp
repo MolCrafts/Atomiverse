@@ -133,6 +133,15 @@ void Runtime::init() {
     // first run starts with consumers subscribed).
     context_.capture.buffer = capture_.get();
     capture_->reset_stats();
+
+    // Threaded force kernels share these per-thread accumulators; every slot
+    // walk below ends in flush_thread_forces_().
+    context_.md.thread_forces = thread_forces_.get();
+}
+
+void Runtime::flush_thread_forces_() {
+    if (thread_forces_) // null in a moved-from Runtime
+        thread_forces_->flush();
 }
 
 void Runtime::set_frame(cpu::Frame& frame) {
@@ -408,6 +417,7 @@ void Runtime::walk_slot_(int phase, BigInt step_idx, bool skip_engine) {
             continue;
         launch_op_(s, o, step_idx);
     }
+    flush_thread_forces_();
 }
 
 void Runtime::launch_engine_(cpu::Component* c, int slot, int op, int phase,
@@ -449,6 +459,7 @@ void Runtime::launch_engine_(cpu::Component* c, int slot, int op, int phase,
         c->launch(ctx);
     }
     frame_->end_resolution_window(c->name().c_str());
+    flush_thread_forces_();
 }
 
 void Runtime::cache_verlet_comm_() {
@@ -703,6 +714,7 @@ void Runtime::comm_before_force_(int slot, BigInt step_idx) {
 }
 
 void Runtime::comm_after_force_(int slot, BigInt step_idx) {
+    flush_thread_forces_();
     cpu::Comm* comm = context_.md.comm;
     if (!comm)
         return;
@@ -740,6 +752,7 @@ void Runtime::step_linear_(BigInt step_idx) {
                 continue;
             for (std::size_t o = 0; o < plan_->slots[s].ops.size(); ++o)
                 launch_op_(s, o, step_idx);
+            flush_thread_forces_();
         }
         return;
     }
@@ -928,6 +941,7 @@ void Runtime::prepare_run(BigInt step_idx) {
                 op.component->initialize_forces(ctx);
             frame_->end_resolution_window(op.component->name().c_str());
         }
+        flush_thread_forces_();
     }
     force_box_revision_ = frame_->box.revision();
     forces_ready_ = true;
@@ -969,6 +983,7 @@ void Runtime::output_pass_(BigInt step_idx, bool final) {
             component->setup_output(ctx);
         frame_->end_resolution_window(component->name().c_str());
     }
+    flush_thread_forces_();
 }
 
 bool single_pass_output(const LaunchContext& ctx) {
@@ -1157,6 +1172,9 @@ Runtime::ScopedPlan::ScopedPlan(Runtime& rt, const Plan<cpu::Component>& plan,
                 || linear_force_slot(plan.kind) >= 0) {
     if (!changed_)
         return;
+    // Forces the parent's slot accumulated so far belong to the parent's
+    // frame state; land them before the child pass starts its own.
+    rt.flush_thread_forces_();
     if (physical_ && rt.physical_pipeline_active_)
         throw std::runtime_error(
             "a nested physical driver cannot replace geometry/accumulators "
@@ -1345,6 +1363,7 @@ void Runtime::run_slot_(int slot_index, BigInt step_idx) {
             frame_->end_resolution_window(op.component->name().c_str());
         }
     }
+    flush_thread_forces_();
     if (wrap)
         comm_after_force_(slot_index, step_idx);
 }
@@ -1419,6 +1438,9 @@ void Runtime::shutdown() {
     if (capture_) // null in a moved-from Runtime
         capture_->stop();
     context_.capture.buffer = nullptr;
+    if (thread_forces_)
+        thread_forces_->clear();
+    context_.md.thread_forces = nullptr;
     context_.exec.runtime =
         nullptr; // the Runtime is gone; no node may reach it
     domain_.release_comm(context_);

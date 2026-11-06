@@ -179,6 +179,9 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
     const double* __restrict my = tab.my.data();
     const double* __restrict mz = tab.mz.data();
     const double* __restrict inv_msq = tab.inv_msq.data();
+    double e = 0.0;
+    double st[6] = {0, 0, 0, 0, 0, 0};
+#pragma omp parallel for schedule(static) reduction(+ : e, st[ : 6])
     for (int idx = 0; idx < ntot; ++idx) {
         const double h = H[idx];
         if (h == 0.0) {
@@ -188,11 +191,14 @@ inline void pme_apply_influence_tables(std::complex<double>* grid, int ntot,
         }
         const std::complex<double> Qm = grid[idx];
         const double q2 = Qm.real() * Qm.real() + Qm.imag() * Qm.imag();
-        e_recip += h * q2;
+        e += h * q2;
         pme_mode_virial(h * q2, mx[idx], my[idx], mz[idx], inv_msq[idx],
-                        vt_const, stress);
+                        vt_const, st);
         grid[idx] = h * Qm;
     }
+    e_recip = e;
+    for (int d = 0; d < 6; ++d)
+        stress[d] = st[d];
     const double escale =
         ATV::units::md_qqr2e / (2.0 * ATV::units::pi * volume);
     e_recip *= escale;
@@ -239,6 +245,7 @@ inline void pme_interpolate_forces(const StorageReal* q, int n_atoms, int order,
             g += Km;
         return g;
     };
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < n_atoms; ++i) {
         const double qi = q[i];
         if (qi == 0.0)

@@ -32,7 +32,6 @@ class BondFene : public Bond {
 
   private:
     std::vector<double> K_, R0_;
-    md::BondedForceScratch scratch_;
     md::DropTally drops_;
     md::BondedTupleCache cache_;
 };

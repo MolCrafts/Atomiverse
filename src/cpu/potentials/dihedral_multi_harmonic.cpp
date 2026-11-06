@@ -2,7 +2,7 @@
 /// @brief CPU DihedralMultiHarmonic — V = Σₙ Cₙ cosⁿ(φ) implementation.
 
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
-#include "atomiverse/cpu/potentials/dihedral_geom.h"
+#include "atomiverse/core/dihedral_geom.h"
 #include "atomiverse/cpu/potentials/resolve_view.h"
 
 #include <cstddef>
@@ -32,7 +32,8 @@ void DihedralMultiHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
@@ -43,7 +44,6 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
 
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int n_force = rv.n_force();
 
     // Tuple cache: tag→local hash resolution happens only when row
     // indices may have moved (migration / halo full rebuild), not every
@@ -87,11 +87,11 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    // Resolve the frame's force spans ONCE, before the parallel region opens
-    // (never inside it — see BondedForceScratch::bind).
-    scratch_.bind(f);
+    // Open this launch's share of the Runtime's per-thread accumulators once,
+    // before the parallel region (see md::ForcePass).
+    const md::ForcePass forces(ctx);
 
-    const int team = scratch_.team(n_tuples);
+    const int team = forces.team(n_tuples);
 
 // Thread-private virial combined under a critical section (no per-step heap
 // alloc, unlike an OMP user-defined reduction on Voigt6).
@@ -101,7 +101,7 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
 #ifdef _OPENMP
         tid = omp_get_thread_num();
 #endif
-        const md::ThreadForce tf = scratch_.begin_thread(tid, n_force);
+        const md::ThreadForce tf = forces.thread(tid);
         md::Voigt6 vir_local;
 
         // Hot loop over pre-resolved tuples: atom `i2` (2nd of the
@@ -179,9 +179,6 @@ void DihedralMultiHarmonic::compute(const LaunchContext& ctx) {
         vir += vir_local;
     }
 
-    if (ctx.forces_requested)
-        scratch_.reduce_into(n_force);
-
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyDihedral) += energy_total;
     if (ctx.stress_requested)
@@ -194,7 +191,6 @@ void DihedralMultiHarmonic::destroy(const DestroyContext& /*ctx*/) {
     drops_.report("DihedralMultiHarmonic");
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
 }
 
 } // namespace cpu

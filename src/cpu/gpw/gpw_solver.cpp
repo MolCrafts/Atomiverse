@@ -69,10 +69,7 @@
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/views/xview.hpp>
 
-#ifdef ATV_GPW_FFTW_THREADS
-#include <fftw3.h>
-#include <omp.h>
-#endif
+#include "atomiverse/cpu/device/fftw_threads.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -4065,14 +4062,9 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                   const std::vector<linalg::CplxMatrix>* guess_P_k,
                   const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
     const GpwDft& cfg = *this;
-#ifdef ATV_GPW_FFTW_THREADS
-    // One-time global FFTW threading init; fftw_plan_with_nthreads is a global
-    // setting, so every FFT plan created downstream (Poisson, GGA grad/div, MT)
-    // runs multithreaded. The density-grid FFTs dominate GPW's wall time.
-    static const int kFftwThreadsOk = fftw_init_threads();
-    if (kFftwThreadsOk)
-        fftw_plan_with_nthreads(omp_get_max_threads());
-#endif
+    // Every FFT plan created downstream (Poisson, GGA grad/div, MT) runs on
+    // the OpenMP team; the density-grid FFTs dominate GPW's wall time.
+    device::ensure_fftw_threads();
     const bool periodic = !cfg.nonperiodic;
     const double eps_default = cfg.eps_default;
     // Flattened basis, Gaussian-tail radii, and the Γ pair-image extent —

@@ -18,6 +18,8 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
+#include <unordered_set>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/communication/comm.h"
@@ -97,8 +99,15 @@ bool FixSettle::try_resolve_rows_(const Frame& f) {
 }
 
 void FixSettle::resolve_rows_(Frame& f) {
-    if (try_resolve_rows_(f))
+    // Rows move only when the Frame's row identity does (sort, exchange,
+    // borders); between those the cached rows are current.
+    if (rows_frame_ == &f && rows_revision_ == f.row_revision())
         return;
+    if (try_resolve_rows_(f)) {
+        rows_frame_ = &f;
+        rows_revision_ = f.row_revision();
+        return;
+    }
     // The index is published and maintained by the engine: this component
     // declares `requires_tag_index()`, so `DomainRuntime` keeps it alive for
     // the run (and rebuilds it for the owned rows after the initial partition),
@@ -126,6 +135,20 @@ void FixSettle::resolve_rows_(Frame& f) {
 void FixSettle::build(const BuildContext& ctx) {
     if (waters_.empty())
         throw std::runtime_error("FixSettle: no waters registered");
+    // Waters are solved concurrently; an atom in two of them would be written
+    // by two threads and constrained twice.
+    {
+        std::unordered_set<TagInt> seen;
+        seen.reserve(3 * waters_.size());
+        for (const auto& w : waters_)
+            for (const TagInt t : {w.o, w.h1, w.h2})
+                if (!seen.insert(t).second)
+                    throw std::invalid_argument(
+                        "FixSettle: atom tag "
+                        + std::to_string(static_cast<long long>(t))
+                        + " belongs to more than one water");
+    }
+    rows_frame_ = nullptr;
     resolve_rows_(ctx.frame);
 
     // The closed form exists because the triangle is isosceles about the
@@ -187,8 +210,14 @@ void FixSettle::settle_positions_(Frame& f) const {
     auto z = f.span(kAtom_z);
     const auto mass = f.span(kAtom_mass);
 
-    for (std::size_t k = 0; k < waters_.size(); ++k) {
-        const Water& w = waters_[k];
+    // Waters are disjoint (checked at build), so each is solved by one
+    // thread; failures are flagged and thrown after the region.
+    const std::ptrdiff_t n_waters = static_cast<std::ptrdiff_t>(waters_.size());
+    int out_of_plane = 0, degenerate = 0;
+#pragma omp parallel for schedule(static)                                      \
+    reduction(max : out_of_plane, degenerate)
+    for (std::ptrdiff_t k = 0; k < n_waters; ++k) {
+        const Water& w = waters_[static_cast<std::size_t>(k)];
         const int o = w.io, a = w.ih1, b = w.ih2;
         const double m_o = mass[o], m_h = mass[a];
         const double m_total = m_o + 2.0 * m_h;
@@ -235,11 +264,10 @@ void FixSettle::settle_positions_(Frame& f) const {
         // Rotations φ (about x′) and ψ (about y′) — eq. A6/A7.
         const double sinphi = za1d / ra;
         const double cosphi = safe_sqrt(1.0 - sinphi * sinphi);
-        if (!(cosphi > 0.0))
-            throw std::runtime_error(
-                "FixSettle: the unconstrained oxygen left the plane by more "
-                "than the molecule's own size — the timestep is far too large "
-                "for this constraint");
+        if (!(cosphi > 0.0)) {
+            out_of_plane = 1;
+            continue;
+        }
         const double sinpsi = (zb1d - zc1d) / (2.0 * rc * cosphi);
         const double cospsi = safe_sqrt(1.0 - sinpsi * sinpsi);
 
@@ -257,9 +285,10 @@ void FixSettle::settle_positions_(Frame& f) const {
         const double gamma =
             xb0d * yb1d - xb1d * yb0d + xc0d * yc1d - xc1d * yc0d;
         const double al2be2 = alpha * alpha + beta * beta;
-        if (!(al2be2 > 0.0))
-            throw std::runtime_error(
-                "FixSettle: degenerate reference triangle (α² + β² = 0)");
+        if (!(al2be2 > 0.0)) {
+            degenerate = 1;
+            continue;
+        }
         const double sinthe =
             (alpha * gamma - beta * safe_sqrt(al2be2 - gamma * gamma)) / al2be2;
         const double costhe = safe_sqrt(1.0 - sinthe * sinthe);
@@ -287,10 +316,24 @@ void FixSettle::settle_positions_(Frame& f) const {
         place(xb3d, yb3d, zb3d, a);
         place(xc3d, yc3d, zc3d, b);
     }
+    if (out_of_plane)
+        throw std::runtime_error(
+            "FixSettle: the unconstrained oxygen left the plane by more "
+            "than the molecule's own size — the timestep is far too large "
+            "for this constraint");
+    if (degenerate)
+        throw std::runtime_error(
+            "FixSettle: degenerate reference triangle (α² + β² = 0)");
 }
 
 void FixSettle::settle_velocities_(Frame& f) const {
-    // Coupled 3-bond velocity constraints: iterate RATTLE-style projections.
+    // SETTLE velocity stage (Miyamoto & Kollman 1992, §II.B): the three
+    // bond-direction impulses τ that zero every bond's relative velocity
+    // solve one 3×3 linear system per water, exactly — no iteration. With
+    // e_c the unit bond of constraint c = (p_c, q_c) and v_c its relative
+    // velocity along e_c, A τ = −v with
+    //   A_cd = e_c·e_d [(δ(p_c,p_d) − δ(p_c,q_d))/m_{p_c}
+    //                  − (δ(q_c,p_d) − δ(q_c,q_d))/m_{q_c}].
     auto vx = f.span(kAtom_vx);
     auto vy = f.span(kAtom_vy);
     auto vz = f.span(kAtom_vz);
@@ -298,39 +341,103 @@ void FixSettle::settle_velocities_(Frame& f) const {
     const auto y = f.span(kAtom_y);
     const auto z = f.span(kAtom_z);
     const auto mass = f.span(kAtom_mass);
-    for (int iter = 0; iter < 20; ++iter) {
-        double max_rv = 0;
-        for (const auto& w : waters_) {
-            const int idxs[3][2] = {
-                {w.io, w.ih1}, {w.io, w.ih2}, {w.ih1, w.ih2}};
-            for (int c = 0; c < 3; ++c) {
-                const int i = idxs[c][0], j = idxs[c][1];
-                double dx = x[i] - x[j];
-                double dy = y[i] - y[j];
-                double dz = z[i] - z[j];
-                f.box.min_image(dx, dy, dz);
-                const double dvx = vx[i] - vx[j];
-                const double dvy = vy[i] - vy[j];
-                const double dvz = vz[i] - vz[j];
-                const double r2 = dx * dx + dy * dy + dz * dz;
-                if (r2 < 1e-30)
-                    continue;
-                const double rv = dx * dvx + dy * dvy + dz * dvz;
-                max_rv = std::max(max_rv, std::fabs(rv));
-                const double mi = mass[i], mj = mass[j];
-                const double inv_mu = 1.0 / mi + 1.0 / mj;
-                const double lam = -rv / (r2 * inv_mu);
-                vx[i] += static_cast<StorageReal>(lam * dx / mi);
-                vy[i] += static_cast<StorageReal>(lam * dy / mi);
-                vz[i] += static_cast<StorageReal>(lam * dz / mi);
-                vx[j] -= static_cast<StorageReal>(lam * dx / mj);
-                vy[j] -= static_cast<StorageReal>(lam * dy / mj);
-                vz[j] -= static_cast<StorageReal>(lam * dz / mj);
-            }
+    const std::ptrdiff_t n_waters = static_cast<std::ptrdiff_t>(waters_.size());
+    int singular = 0;
+    double worst = 0.0; // largest |e·Δv| / |Δv| left after the solve
+#pragma omp parallel for schedule(static) reduction(max : singular, worst)
+    for (std::ptrdiff_t k = 0; k < n_waters; ++k) {
+        const Water& w = waters_[static_cast<std::size_t>(k)];
+        const int atom[3] = {w.io, w.ih1, w.ih2};
+        // Constraints as (plus, minus) local indices into atom[]: O–H1,
+        // O–H2, H1–H2.
+        const int pc[3] = {0, 0, 1}, qc[3] = {1, 2, 2};
+        double inv_m[3];
+        for (int a = 0; a < 3; ++a)
+            inv_m[a] = 1.0 / mass[atom[a]];
+        double e[3][3], v[3];
+        for (int c = 0; c < 3; ++c) {
+            const int i = atom[pc[c]], j = atom[qc[c]];
+            double dx = x[i] - x[j], dy = y[i] - y[j], dz = z[i] - z[j];
+            f.box.min_image(dx, dy, dz);
+            const double inv_r = 1.0 / std::sqrt(dx * dx + dy * dy + dz * dz);
+            e[c][0] = dx * inv_r;
+            e[c][1] = dy * inv_r;
+            e[c][2] = dz * inv_r;
+            v[c] = e[c][0] * (vx[i] - vx[j]) + e[c][1] * (vy[i] - vy[j])
+                   + e[c][2] * (vz[i] - vz[j]);
         }
-        if (max_rv < 1e-12)
-            break;
+        double A[3][3];
+        for (int c = 0; c < 3; ++c)
+            for (int d = 0; d < 3; ++d) {
+                const double ee =
+                    e[c][0] * e[d][0] + e[c][1] * e[d][1] + e[c][2] * e[d][2];
+                const double sp =
+                    ((pc[c] == pc[d]) - (pc[c] == qc[d])) * inv_m[pc[c]];
+                const double sq =
+                    ((qc[c] == pc[d]) - (qc[c] == qc[d])) * inv_m[qc[c]];
+                A[c][d] = ee * (sp - sq);
+            }
+        // Cramer on the symmetric positive-definite 3×3.
+        const double c00 = A[1][1] * A[2][2] - A[1][2] * A[2][1];
+        const double c01 = A[1][2] * A[2][0] - A[1][0] * A[2][2];
+        const double c02 = A[1][0] * A[2][1] - A[1][1] * A[2][0];
+        const double det = A[0][0] * c00 + A[0][1] * c01 + A[0][2] * c02;
+        if (!(std::fabs(det) > 1e-14 * A[0][0] * A[1][1] * A[2][2])) {
+            singular = 1;
+            continue;
+        }
+        const double inv_det = 1.0 / det;
+        const double b0 = -v[0], b1 = -v[1], b2 = -v[2];
+        const double tau[3] = {
+            (b0 * c00 + b1 * (A[0][2] * A[2][1] - A[0][1] * A[2][2])
+             + b2 * (A[0][1] * A[1][2] - A[0][2] * A[1][1]))
+                * inv_det,
+            (b0 * c01 + b1 * (A[0][0] * A[2][2] - A[0][2] * A[2][0])
+             + b2 * (A[0][2] * A[1][0] - A[0][0] * A[1][2]))
+                * inv_det,
+            (b0 * c02 + b1 * (A[0][1] * A[2][0] - A[0][0] * A[2][1])
+             + b2 * (A[0][0] * A[1][1] - A[0][1] * A[1][0]))
+                * inv_det};
+        double dv[3][3] = {};
+        for (int c = 0; c < 3; ++c)
+            for (int d = 0; d < 3; ++d) {
+                dv[pc[c]][d] += tau[c] * e[c][d] * inv_m[pc[c]];
+                dv[qc[c]][d] -= tau[c] * e[c][d] * inv_m[qc[c]];
+            }
+        double vnew[3][3];
+        for (int a = 0; a < 3; ++a) {
+            const int r = atom[a];
+            vx[r] += static_cast<StorageReal>(dv[a][0]);
+            vy[r] += static_cast<StorageReal>(dv[a][1]);
+            vz[r] += static_cast<StorageReal>(dv[a][2]);
+            vnew[a][0] = vx[r];
+            vnew[a][1] = vy[r];
+            vnew[a][2] = vz[r];
+        }
+        // The solve is exact up to round-off; a residual well above it means
+        // a corrupted (NaN / degenerate) molecule, never an approximation.
+        for (int c = 0; c < 3; ++c) {
+            double rel[3], norm2 = 0.0;
+            for (int d = 0; d < 3; ++d) {
+                rel[d] = vnew[pc[c]][d] - vnew[qc[c]][d];
+                norm2 += rel[d] * rel[d];
+            }
+            const double along =
+                e[c][0] * rel[0] + e[c][1] * rel[1] + e[c][2] * rel[2];
+            const double r = std::fabs(along) / std::sqrt(norm2 + 1e-300);
+            worst = std::max(worst, std::isfinite(r) ? r : 1e300);
+        }
     }
+    if (singular)
+        throw std::runtime_error(
+            "FixSettle: singular velocity-constraint system (collinear "
+            "water)");
+    if (!(worst < 1e-8))
+        throw std::runtime_error(
+            "FixSettle: the velocity stage left a bond-direction velocity of "
+            + std::to_string(worst)
+            + " of the relative speed; a constraint that does not hold is a "
+              "corrupted molecule, not an approximation");
 }
 
 int FixSettle::pack_forward_comm(int n, const int* list, double* buf,
@@ -342,11 +449,16 @@ int FixSettle::pack_forward_comm(int n, const int* list, double* buf,
         const auto x = frame_->span(kAtom_x);
         const auto y = frame_->span(kAtom_y);
         const auto z = frame_->span(kAtom_z);
+        // The image translation is the lattice combination H·pbc, which
+        // has off-axis components in a tilted cell.
         double dx = 0.0, dy = 0.0, dz = 0.0;
         if (pbc_flag != 0) {
-            dx = static_cast<double>(pbc[0]) * frame_->box.length(0);
-            dy = static_cast<double>(pbc[1]) * frame_->box.length(1);
-            dz = static_cast<double>(pbc[2]) * frame_->box.length(2);
+            const ATV::Vec3 shift = frame_->box.to_cartesian(
+                {static_cast<double>(pbc[0]), static_cast<double>(pbc[1]),
+                 static_cast<double>(pbc[2])});
+            dx = shift[0];
+            dy = shift[1];
+            dz = shift[2];
         }
         for (int i = 0; i < n; ++i) {
             const int j = list[i];

@@ -38,6 +38,7 @@
 #include "atomiverse/cpu/device/device_runtime.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/frame/input_snapshot.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 namespace ATV {
 namespace cpu {
@@ -271,6 +272,8 @@ class Runtime {
     void comm_before_force_(int slot, BigInt step_idx);
     /// @brief Newton-on reverse of ghost forces [eV/Å].
     void comm_after_force_(int slot, BigInt step_idx);
+    /// Reduce the shared per-thread force accumulators into the frame.
+    void flush_thread_forces_();
     /// @brief LAMMPS Verlet::setup: `comm->exchange` then `borders` then
     ///        neighbor build (MPI only). Ghost positions in Å.
     void setup_verlet_comm_(BigInt step_idx = 0);
@@ -326,6 +329,11 @@ class Runtime {
     device::DeviceRuntime device_{};
     /// Heap-held so a moved Runtime keeps the address its Context publishes.
     std::unique_ptr<CaptureBuffer> capture_ = std::make_unique<CaptureBuffer>();
+    /// Per-thread force accumulators shared by every threaded kernel; reduced
+    /// once per slot walk (`flush_thread_forces_`). Heap-held for the same
+    /// address-stability reason as `capture_`.
+    std::unique_ptr<md::ThreadForces> thread_forces_ =
+        std::make_unique<md::ThreadForces>();
 
     /// Per-slot, per-op dense timing handles, precomputed in `build_components()`
     /// so the hot `step()` loop never calls `component->name()`.

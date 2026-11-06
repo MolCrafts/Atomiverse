@@ -21,6 +21,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/lj_type_table.h"
+#include "atomiverse/core/pair_kernel.h"
 #include "atomiverse/cuda/component/context.cuh"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
@@ -30,7 +31,6 @@
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/lj_kernel.cuh"
-#include "atomiverse/cuda/potentials/pair_kernel.h"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "internal/lj_tail.cuh"
 #include <algorithm>

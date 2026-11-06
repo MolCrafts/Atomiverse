@@ -13,6 +13,7 @@
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -44,17 +45,12 @@ void PairCoulSoft::build(const BuildContext& ctx) {
     n_threads_ = omp_get_max_threads();
 #endif
     const int n = ctx.frame.capacity();
-    fx_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fy_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fz_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
+    if (md::ThreadForces* arena = ctx.runtime.md.thread_forces)
+        arena->reserve(n_threads_, n);
     dU_dlambda_ = 0;
 }
 
-void PairCoulSoft::destroy(const DestroyContext&) {
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
-}
+void PairCoulSoft::destroy(const DestroyContext&) {}
 
 void PairCoulSoft::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
@@ -63,16 +59,6 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
             "PairCoulSoft::compute: runtime.md.pair_list is null");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-
-    const int n_force = cpu::force_count(ctx);
-
-    if (static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size()) < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, 0.0);
-            fy_thr_[t].resize(n_force, 0.0);
-            fz_thr_[t].resize(n_force, 0.0);
-        }
-    }
 
     const int k_inum = pairs.inum;
     const int* __restrict ilist = pairs.ilist.data();
@@ -84,9 +70,6 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
     const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
     const double rc_sq = cutoff_sq_;
     const double inv_rc = inv_rc_;
@@ -111,35 +94,20 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
         return;
     }
 
-#pragma omp parallel num_threads(n_threads_) reduction(+ : energy_total)       \
-    reduction(+ : dU_total) reduction(+ : v_xx) reduction(+ : v_yy)            \
-    reduction(+ : v_zz) reduction(+ : v_xy) reduction(+ : v_xz)                \
-    reduction(+ : v_yz)
+    const md::ForcePass forces(ctx);
+#pragma omp parallel num_threads(forces.team()) if (forces.team() > 1)         \
+    reduction(+ : energy_total) reduction(+ : dU_total) reduction(+ : v_xx)    \
+    reduction(+ : v_yy) reduction(+ : v_zz) reduction(+ : v_xy)                \
+    reduction(+ : v_xz) reduction(+ : v_yz)
     {
-        int tid = 0, team_size = 1;
+        int tid = 0;
 #ifdef _OPENMP
         tid = omp_get_thread_num();
-        team_size = omp_get_num_threads();
 #endif
-        const bool direct = (n_threads_ == 1);
-        double* __restrict fxt_ptr;
-        double* __restrict fyt_ptr;
-        double* __restrict fzt_ptr;
-        if (direct) {
-            fxt_ptr = fx_ptr;
-            fyt_ptr = fy_ptr;
-            fzt_ptr = fz_ptr;
-        } else {
-            auto& fxt = fx_thr_[tid];
-            auto& fyt = fy_thr_[tid];
-            auto& fzt = fz_thr_[tid];
-            std::fill(fxt.begin(), fxt.begin() + n_force, 0.0);
-            std::fill(fyt.begin(), fyt.begin() + n_force, 0.0);
-            std::fill(fzt.begin(), fzt.begin() + n_force, 0.0);
-            fxt_ptr = fxt.data();
-            fyt_ptr = fyt.data();
-            fzt_ptr = fzt.data();
-        }
+        const md::ThreadForce tf = forces.thread(tid);
+        double* __restrict fxt_ptr = tf.fx;
+        double* __restrict fyt_ptr = tf.fy;
+        double* __restrict fzt_ptr = tf.fz;
 
 #pragma omp for schedule(static)
         for (int ii = 0; ii < k_inum; ++ii) {
@@ -209,19 +177,6 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
                 fxt_ptr[i] += fi_x;
                 fyt_ptr[i] += fi_y;
                 fzt_ptr[i] += fi_z;
-            }
-        }
-
-        if (!direct) {
-#pragma omp for schedule(static)
-            for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < team_size; ++t) {
-                    if (ctx.forces_requested) {
-                        fx_ptr[i] += fx_thr_[t][i];
-                        fy_ptr[i] += fy_thr_[t][i];
-                        fz_ptr[i] += fz_thr_[t][i];
-                    }
-                }
             }
         }
     }

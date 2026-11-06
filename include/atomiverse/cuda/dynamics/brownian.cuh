@@ -77,6 +77,9 @@ class Brownian : public cuda::Integrator, public cuda::TimestepProvider {
                 ATV::make_binding(ATV::md::Phase::final_integrate, 0)};
     }
 
+    /// @brief The noise counter reads the device step: replayable.
+    bool graph_capturable() const override { return true; }
+
     /// @brief Advance positions on the device, or throw if the kernel
     ///        is not in this build.
     /// @param ctx Launch context. Only `initial_integrate` does work.

@@ -22,6 +22,12 @@
 /// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 #include "atomiverse/cpu/longrange/pppm.h"
 
+#include "atomiverse/cpu/device/fftw_threads.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -153,7 +159,8 @@ KSpacePPPM::KSpacePPPM(KSpacePPPM&& other) noexcept
       // The serial FFTW plans are bound to these two buffers; a vector move
       // keeps the storage they point at.
       dens_full_(std::move(other.dens_full_)), work_(std::move(other.work_)),
-      green_(std::move(other.green_)), ik_coef_(std::move(other.ik_coef_)),
+      density_(std::move(other.density_)), green_(std::move(other.green_)),
+      ik_coef_(std::move(other.ik_coef_)),
       virial_coef_(std::move(other.virial_coef_)), plan_fwd_(other.plan_fwd_),
       plan_bwd_(other.plan_bwd_), mpi_fft_ready_(other.mpi_fft_ready_),
       mpi_local_n0_(other.mpi_local_n0_),
@@ -310,8 +317,9 @@ void KSpacePPPM::fill_stencils_(const StorageReal* x, const StorageReal* y,
     // B-spline: θ[a] at grid point nx + nlower + a is rho1d[nlower + a].
     const int n = order_;
     const int nlower = longrange::pppm_stencil_lower(n);
-    double dtheta[12];
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < n_local; ++i) {
+        double dtheta[12];
         const double r[3] = {x[i], y[i], z[i]};
         for (int d = 0; d < 3; ++d) {
             const double s = inv_cell(d, 0) * r[0] + inv_cell(d, 1) * r[1]
@@ -378,6 +386,8 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         dens_full_.assign(static_cast<std::size_t>(ntot), 0.0);
         work_.assign(static_cast<std::size_t>(ncomplex),
                      std::complex<double>(0, 0));
+        density_.assign(static_cast<std::size_t>(ncomplex),
+                        std::complex<double>(0, 0));
         green_.assign(static_cast<std::size_t>(ncomplex), 0.0);
         ik_coef_.assign(3 * static_cast<std::size_t>(ncomplex), 0.0);
         virial_coef_.assign(6 * static_cast<std::size_t>(ncomplex), 0.0);
@@ -386,6 +396,8 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         // FFTW_ESTIMATE, as LAMMPS: a MEASURE plan is picked by timing, so two
         // processes could run different FFT algorithms and round differently;
         // a minimization then followed a different path from identical input.
+        // Plans run on the OpenMP team (fftw_threads.h).
+        device::ensure_fftw_threads();
         plan_fwd_ = fftw_plan_dft_r2c_3d(
             K_[0], K_[1], K_[2], dens_full_.data(),
             reinterpret_cast<fftw_complex*>(work_.data()), FFTW_ESTIMATE);
@@ -866,29 +878,47 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             std::fill(dens_full_.begin(), dens_full_.end(), 0.0);
             // LAMMPS make_rho on the periodic full mesh: θ[a] lands on grid
             // point base + a (base = nx + nlower), folded into [0, K).
+            // Threads own disjoint slabs of x planes and each walks every
+            // atom, so every grid point still sums its atoms in index order
+            // (bitwise the serial result) with no private grids.
             double* __restrict dens = dens_full_.data();
-            for (int i = 0; i < n_local; ++i) {
-                const double qi = q[i];
-                if (qi == 0.0)
-                    continue;
-                const double* thx = &theta_[(3 * i + 0) * n];
-                const double* thy = &theta_[(3 * i + 1) * n];
-                const double* thz = &theta_[(3 * i + 2) * n];
-                const int b0 = base_[3 * i + 0];
-                const int b1 = base_[3 * i + 1];
-                const int b2 = base_[3 * i + 2];
-                for (int a = 0; a < n; ++a) {
-                    const int g0 = wrap_k(b0 + a, K0);
-                    const double wa = qi * thx[a];
-                    for (int b = 0; b < n; ++b) {
-                        const int g1 = wrap_k(b1 + b, K1);
-                        const double wab = wa * thy[b];
-                        const int plane = K2 * (g1 + K1 * g0);
-                        for (int c = 0; c < n; ++c)
-                            dens[plane + wrap_k(b2 + c, K2)] += wab * thz[c];
+#pragma omp parallel
+            {
+                int tid = 0, team = 1;
+#ifdef _OPENMP
+                tid = omp_get_thread_num();
+                team = omp_get_num_threads();
+#endif
+                const int lo =
+                    static_cast<int>(static_cast<long long>(K0) * tid / team);
+                const int hi = static_cast<int>(static_cast<long long>(K0)
+                                                * (tid + 1) / team);
+                for (int i = 0; i < n_local; ++i) {
+                    const double qi = q[i];
+                    if (qi == 0.0)
+                        continue;
+                    const double* thx = &theta_[(3 * i + 0) * n];
+                    const double* thy = &theta_[(3 * i + 1) * n];
+                    const double* thz = &theta_[(3 * i + 2) * n];
+                    const int b0 = base_[3 * i + 0];
+                    const int b1 = base_[3 * i + 1];
+                    const int b2 = base_[3 * i + 2];
+                    for (int a = 0; a < n; ++a) {
+                        const int g0 = wrap_k(b0 + a, K0);
+                        if (g0 < lo || g0 >= hi)
+                            continue;
+                        const double wa = qi * thx[a];
+                        for (int b = 0; b < n; ++b) {
+                            const int g1 = wrap_k(b1 + b, K1);
+                            const double wab = wa * thy[b];
+                            const int plane = K2 * (g1 + K1 * g0);
+                            for (int c = 0; c < n; ++c)
+                                dens[plane + wrap_k(b2 + c, K2)] +=
+                                    wab * thz[c];
+                        }
                     }
                 }
-            }
+            } // omp parallel
         }
 #ifdef ATV_HAS_MPI
         if (mpi) {
@@ -911,7 +941,12 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             const int m2_nyquist = (K2 % 2 == 0) ? (K2 / 2) : -1;
             const double inv_vol = 1.0 / vol;
             // ρ̂/V; the ik field of axis a is i·ik_a·ρ̂/V (pppm_half_mode).
-            std::vector<std::complex<double>> density(work_.size());
+            std::complex<double>* __restrict density = density_.data();
+            const bool do_virial = ctx.stress_requested;
+            const double* __restrict vcoef = virial_coef_.data();
+            double s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0;
+#pragma omp parallel for schedule(static) collapse(2)                          \
+    reduction(+ : e_recip, s0, s1, s2, s3, s4, s5)
             for (int m0 = 0; m0 < K0; ++m0)
                 for (int m1 = 0; m1 < K1; ++m1)
                     for (int m2 = 0; m2 < n2; ++m2) {
@@ -927,18 +962,38 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                         const double herm =
                             (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
                         e_recip += herm * G * q2;
-                        tally_mode(u, herm * q2);
+                        if (do_virial) {
+                            const double ug = herm * q2;
+                            s0 += ug * vcoef[0 * nhalf + u];
+                            s1 += ug * vcoef[1 * nhalf + u];
+                            s2 += ug * vcoef[2 * nhalf + u];
+                            s3 += ug * vcoef[3 * nhalf + u];
+                            s4 += ug * vcoef[4 * nhalf + u];
+                            s5 += ug * vcoef[5 * nhalf + u];
+                        }
                     }
+            stress[0] += s0;
+            stress[1] += s1;
+            stress[2] += s2;
+            stress[3] += s3;
+            stress[4] += s4;
+            stress[5] += s5;
             e_recip *= energy_scale;
             if (ctx.forces_requested) {
                 const double* dens = dens_full_.data();
                 AccReal* fout[3] = {fx, fy, fz};
                 for (int axis = 0; axis < 3; ++axis) {
                     const double* ik = &ik_coef_[axis * nhalf];
-                    for (std::size_t u = 0; u < nhalf; ++u)
-                        work_[u] = {-ik[u] * density[u].imag(),
-                                    ik[u] * density[u].real()};
+                    std::complex<double>* __restrict wk = work_.data();
+                    const std::ptrdiff_t nh =
+                        static_cast<std::ptrdiff_t>(nhalf);
+#pragma omp parallel for schedule(static)
+                    for (std::ptrdiff_t u = 0; u < nh; ++u)
+                        wk[u] = {-ik[u] * density[u].imag(),
+                                 ik[u] * density[u].real()};
                     fftw_execute(static_cast<fftw_plan>(plan_bwd_));
+                    AccReal* __restrict fa = fout[axis];
+#pragma omp parallel for schedule(static)
                     for (int i = 0; i < n_local; ++i) {
                         const double qi = q[i];
                         if (qi == 0.0)
@@ -963,8 +1018,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                                 }
                             }
                         }
-                        fout[axis][i] +=
-                            static_cast<AccReal>(-coulomb * qi * acc);
+                        fa[i] += static_cast<AccReal>(-coulomb * qi * acc);
                     }
                 }
             }
@@ -997,29 +1051,44 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                                   "'out of range atoms - cannot compute "
                                   "PPPM')"));
             }
-            for (int i = 0; i < n_local; ++i) {
-                const double qi = q[i];
-                if (qi == 0.0)
-                    continue;
-                const double* thx = &theta_[(3 * i + 0) * n];
-                const double* thy = &theta_[(3 * i + 1) * n];
-                const double* thz = &theta_[(3 * i + 2) * n];
-                const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
-                const int by = stencil_min_[3 * i + 1] - nylo_out_;
-                const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
-                for (int a = 0; a < n; ++a) {
-                    const double wa = qi * thx[a];
-                    const int xoff = (bx + a) * nyl_;
-                    for (int b = 0; b < n; ++b) {
-                        const double wab = wa * thy[b];
-                        double* __restrict row =
-                            &brick_[static_cast<std::size_t>(
-                                (xoff + by + b) * nzl_ + bz)];
-                        for (int c = 0; c < n; ++c)
-                            row[c] += wab * thz[c];
+            // Disjoint x-plane slabs per thread, as in the full-mesh arm.
+#pragma omp parallel
+            {
+                int tid = 0, team = 1;
+#ifdef _OPENMP
+                tid = omp_get_thread_num();
+                team = omp_get_num_threads();
+#endif
+                const int lo =
+                    static_cast<int>(static_cast<long long>(nxl_) * tid / team);
+                const int hi = static_cast<int>(static_cast<long long>(nxl_)
+                                                * (tid + 1) / team);
+                for (int i = 0; i < n_local; ++i) {
+                    const double qi = q[i];
+                    if (qi == 0.0)
+                        continue;
+                    const double* thx = &theta_[(3 * i + 0) * n];
+                    const double* thy = &theta_[(3 * i + 1) * n];
+                    const double* thz = &theta_[(3 * i + 2) * n];
+                    const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
+                    const int by = stencil_min_[3 * i + 1] - nylo_out_;
+                    const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
+                    for (int a = 0; a < n; ++a) {
+                        if (bx + a < lo || bx + a >= hi)
+                            continue;
+                        const double wa = qi * thx[a];
+                        const int xoff = (bx + a) * nyl_;
+                        for (int b = 0; b < n; ++b) {
+                            const double wab = wa * thy[b];
+                            double* __restrict row =
+                                &brick_[static_cast<std::size_t>(
+                                    (xoff + by + b) * nzl_ + bz)];
+                            for (int c = 0; c < n; ++c)
+                                row[c] += wab * thz[c];
+                        }
                     }
                 }
-            }
+            } // omp parallel
         }
 
         // Mesh-halo and remap exchanges are plan-based point-to-point
@@ -1287,6 +1356,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                 {
                     ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage,
                                       kTimerCategory);
+                    AccReal* __restrict fa = fout[axis];
+#pragma omp parallel for schedule(static)
                     for (int i = 0; i < n_local; ++i) {
                         const double qi = q[i];
                         if (qi == 0.0)
@@ -1310,8 +1381,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                                     acc += row[c] * txy * thz[c];
                             }
                         }
-                        fout[axis][i] +=
-                            static_cast<AccReal>(-coulomb * qi * acc);
+                        fa[i] += static_cast<AccReal>(-coulomb * qi * acc);
                     }
                 }
             }

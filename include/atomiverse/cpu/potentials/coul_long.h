@@ -82,7 +82,6 @@ class CoulLong : public cpu::Potential,
     unsigned long long special_version_ = 0;
 
     int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
 };
 
 } // namespace cpu

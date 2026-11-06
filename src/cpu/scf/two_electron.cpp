@@ -29,7 +29,7 @@ internal::IntegralWorkspace::eri_dense(const ShellList& shells) {
     // p → 3, d → 6, …) so the amortized Rys/xsimd native::eri_block kernel
     // replaces the per-AO scalar native::eri: one Boys/R-table build per
     // shell-block primitive quartet instead of one per AO integral. This is
-    // the same ShellBlock machinery that ShellBlockPairList::g_rhf uses.
+    // the same ShellBlock machinery that ExactJK uses.
     const std::vector<native::ShellBlock> blocks =
         blocks_from_shells(shells.shells);
     const int n_blocks = static_cast<int>(blocks.size());
@@ -52,7 +52,7 @@ internal::IntegralWorkspace::eri_dense(const ShellList& shells) {
     // `left`, so a cell's "owning left" is uniquely max, its "owning right" is
     // min). Distinct `left` iterations therefore touch mutually exclusive
     // tensor cells → plain assignment, NO thread-local buffer, NO atomics, NO
-    // reduction (unlike g_rhf, which ACCUMULATES J/K and so needs one). Within
+    // reduction (unlike a J/K build, which ACCUMULATES and so needs one). Within
     // a single diagonal (left == right) quartet the 8-fold scatter may re-write
     // a cell, but with the identical value on the same thread — benign.
 #ifdef _OPENMP
@@ -70,7 +70,7 @@ internal::IntegralWorkspace::eri_dense(const ShellList& shells) {
 
             // Max block size (ff|ff) = 10⁴ doubles; zero only the actually-used
             // na*nb*nc*nd prefix (eri_block accumulates into it), matching the
-            // g_rhf convention rather than `= {}`-clearing the whole buffer.
+            // ExactJK convention rather than `= {}`-clearing the whole buffer.
             double blk[kMaxNCartOrbital * kMaxNCartOrbital * kMaxNCartOrbital
                        * kMaxNCartOrbital];
             const int blk_size = na * nb * nc * nd;

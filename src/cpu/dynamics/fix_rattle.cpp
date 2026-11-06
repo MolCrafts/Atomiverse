@@ -385,11 +385,16 @@ int FixRattle::pack_forward_comm(int n, const int* list, double* buf,
     // swap, and per-swap lookups would count against the resolution budget.
     int m = 0;
     if (comm_mode_ == CommMode::XSHAKE) {
+        // The image translation is the lattice combination H·pbc, which
+        // has off-axis components in a tilted cell.
         double dx = 0.0, dy = 0.0, dz = 0.0;
         if (pbc_flag != 0) {
-            dx = static_cast<double>(pbc[0]) * frame_->box.length(0);
-            dy = static_cast<double>(pbc[1]) * frame_->box.length(1);
-            dz = static_cast<double>(pbc[2]) * frame_->box.length(2);
+            const Vec3 shift = frame_->box.to_cartesian(
+                {static_cast<double>(pbc[0]), static_cast<double>(pbc[1]),
+                 static_cast<double>(pbc[2])});
+            dx = shift[0];
+            dy = shift[1];
+            dz = shift[2];
         }
         for (int i = 0; i < n; ++i) {
             const int j = list[i];
