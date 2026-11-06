@@ -203,13 +203,18 @@ class PairLoop {
     void reset() noexcept { source_ = nullptr; }
 
   private:
+    // Row types are spelled through declval, not through the parameter `k`:
+    // nvcc's front end (cudafe++) asserts on a requires-parameter whose type
+    // names an earlier parameter, and CUDA translation units include this.
+    template <class K>
+    using row_t_ = decltype(std::declval<const K&>().row(0));
     template <class K>
     static constexpr bool has_prepare_ =
-        requires(const K& k, const decltype(k.row(0))& r, const double* p,
+        requires(const K& k, const row_t_<K>& r, const double* p,
                  PairChunk& c) { k.prepare(r, p, 0, c); };
     template <class K>
     static constexpr bool has_skip_ =
-        requires(const K& k, const decltype(k.row(0))& r) { bool(k.skip(r)); };
+        requires(const K& k, const row_t_<K>& r) { bool(k.skip(r)); };
     template <class K>
     static constexpr bool has_walk_ =
         requires(const K& k, const PairRows& L, ForceRows f, PairAcc& a) {

@@ -16,7 +16,8 @@
 /// cutoff branch-free (multiply by a 0/1 `T`), so combined styles with
 /// different LJ/Coulomb cutoffs compose correctly and vectorize.
 ///
-/// Both backends include it from core: the CUDA Verlet kernels and the CPU
+/// Both backends include it from core: the CUDA cluster-tile engine (through
+/// the tile terms of `cuda/potentials/pair_kernel.cuh`) and the CPU
 /// `md::PairLoop` kernels (WCA uses `LJKernel` there).
 ///
 /// The header is CUDA-safe: in a `.cu` translation unit only the scalar/device
@@ -90,6 +91,26 @@ ATV_PAIR_HD inline float av_erfc(float x) {
 #endif
 }
 
+/// @brief erfc(x) for a caller that already holds exp(-x²): on the device
+/// `erfcx(x)·exp(-x²)` reuses that exponential (erfc would evaluate its
+/// own); on the host plain erfc.
+ATV_PAIR_HD inline double av_erfc_exp(double x, double expm2) {
+#if defined(__CUDA_ARCH__)
+    return ::erfcx(x) * expm2;
+#else
+    (void)expm2;
+    return std::erfc(x);
+#endif
+}
+ATV_PAIR_HD inline float av_erfc_exp(float x, float expm2) {
+#if defined(__CUDA_ARCH__)
+    return ::erfcxf(x) * expm2;
+#else
+    (void)expm2;
+    return std::erfc(x);
+#endif
+}
+
 /// @brief Cutoff indicator as a 0/1 value of type `T`: 1 where `r2 < rc2`.
 ATV_PAIR_HD inline double pair_inside(double r2, double rc2) {
     return r2 < rc2 ? 1.0 : 0.0;
@@ -107,6 +128,10 @@ inline xsimd::batch<double> av_exp(xsimd::batch<double> x) {
     return xsimd::exp(x);
 }
 inline xsimd::batch<double> av_erfc(xsimd::batch<double> x) {
+    return xsimd::erfc(x);
+}
+inline xsimd::batch<double> av_erfc_exp(xsimd::batch<double> x,
+                                        xsimd::batch<double> /*expm2*/) {
     return xsimd::erfc(x);
 }
 inline xsimd::batch<double> pair_inside(xsimd::batch<double> r2,
@@ -172,12 +197,22 @@ struct CoulKernel {
 
     template <class T>
     ATV_PAIR_HD PairContribution<T> raw(T r2, T qi, T qj) const {
+#if defined(__CUDA_ARCH__)
+        // One reciprocal square root instead of a square root and two
+        // divisions; a combined tile term shares it with its LJ part.
+        const T inv_r = ::rsqrt(r2);
+        const T inv_r2 = inv_r * inv_r;
+        const T r = r2 * inv_r;
+        const T qq = T(qqr2e) * qi * qj * inv_r;
+#else
         const T inv_r2 = T(1.0) / r2;
         const T r = av_sqrt(r2);
+        const T qq = T(qqr2e) * qi * qj / r;
+#endif
         const T grij = T(alpha) * r;
         const T expm2 = av_exp(-grij * grij);
-        const T erfcv = av_erfc(grij);
-        const T prefactor = T(qqr2e) * qi * qj / r;
+        const T erfcv = av_erfc_exp(grij, expm2);
+        const T prefactor = qq;
         const T forcecoul = prefactor * (erfcv + T(kEwaldF) * grij * expm2);
         return {forcecoul * inv_r2, prefactor * erfcv};
     }

@@ -1,11 +1,12 @@
 /// @file cuda/potentials/coul_long.cuh
 /// @brief Real-space screened Coulomb (LAMMPS `pair_style coul/long`) — CUDA.
 ///
-/// Short-range half of an Ewald/PME split: `erfc(αr)/r` on the **OpenMM
-/// cluster** neighbor CSR (`cl_*`), matching `PairLJCut`. Must share α with
+/// Short-range half of an Ewald/PME split: `erfc(αr)/r` on the cluster-tile
+/// engine shared with `PairLJCut` and `PairLJCutCoulLong`. Must share α with
 /// `cuda::KSpaceEwald` / `cuda::KSpacePME`.
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "atomiverse/core/precision.h"
@@ -22,6 +23,9 @@ class CoulLong : public Pair, public LongRangeParticipant {
     /// @param alpha  Ewald splitting parameter α [1/Å]. Must match reciprocal.
     /// @param cutoff Real-space cutoff [Å] (≤ the neighbor-list cutoff).
     CoulLong(double alpha, double cutoff);
+    ~CoulLong() override;
+    CoulLong(CoulLong&&) noexcept;
+    CoulLong& operator=(CoulLong&&) noexcept;
 
     std::string name() const override { return "coul/long"; }
     bool graph_capturable() const override { return true; }
@@ -40,6 +44,8 @@ class CoulLong : public Pair, public LongRangeParticipant {
     }
 
     void build(const BuildContext& ctx) override;
+    void invalidate_inputs(InputChange changes,
+                           const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
   protected:
@@ -48,13 +54,10 @@ class CoulLong : public Pair, public LongRangeParticipant {
   private:
     double alpha_;
 
-    // Cluster-sorted positions and charge, allocated to padded Frame capacity
-    // in build(). compute() only gathers into the standing scratch.
-    force_t* spx_ = nullptr;
-    force_t* spy_ = nullptr;
-    force_t* spz_ = nullptr;
-    force_t* spq_ = nullptr;
-    int spos_cap_ = 0;
+    /// Cluster-tile engine (packed tiles, slot charges, partials), sized in
+    /// build(); compute() only launches.
+    struct State;
+    std::unique_ptr<State> state_;
 };
 
 } // namespace cuda

@@ -16,8 +16,14 @@
 /// depend on device state. Host touch points per iteration:
 ///   - `convergence_check` runs the shared `ConvCheck` bridge (the
 ///     metrics must reach the host, where the driver polls its
-///     handlers). Optional line search reads three origin scalars and one
-///     energy per bounded trial; all geometry and force arrays stay on device.
+///     handlers).
+///   - The optional Armijo line search decides on the device: the
+///     direction graph opens it (origin slope and energy), and each bounded
+///     trial — one force evaluation, then the device verdict and the next
+///     trial's move, replayed as a graph — ends in one stream sync after
+///     which the host reads the verdict from a mapped host word (the CUDA
+///     RHF convergence-flag pattern). No scalar is copied back; all
+///     geometry and force arrays stay on device.
 ///
 /// **Tolerances are not here.** They belong to the termination policy —
 /// `cuda::ForceConverged`, which `cuda::minimizer::Minimize` attaches by default and
@@ -149,11 +155,15 @@ class LBFGS : public cuda::Optimizer {
     int* d_ring_state_ = nullptr;
     acc_t* d_rho_ = nullptr; ///< 1/(y·s) then y·y per pair buffer.
     acc_t* d_ls_ =
-        nullptr; ///< Device {applied α, g·d, origin energy} line-search scalars.
-    acc_t* h_ls_ = nullptr; ///< Pinned mirror of d_ls_.
+        nullptr; ///< Device {trial α, g·d, origin energy} line-search scalars.
+    void* d_line_state_ = nullptr; ///< Device line-search state.
+    int* h_verdict_ = nullptr;     ///< Mapped host word: the device verdict.
+    int* d_verdict_ = nullptr;     ///< Device alias of `h_verdict_`.
     /// The search-direction iteration, captured once without and once with
     /// a candidate pair.
     GraphRing graphs_[2];
+    /// One line-search verdict (judge + next trial's move).
+    GraphRing trial_graph_;
 
     BigInt step_ = 0;
     bool has_prev_ = false;
@@ -163,9 +173,6 @@ class LBFGS : public cuda::Optimizer {
     double ls_c1_ = 1e-4;
     double ls_contract_ = 0.5;
     double ls_min_alpha_ = 1e-6;
-    double ls_alpha_ = 0;         ///< α of the most recent trial (host copy).
-    double ls_gd_ = 0;            ///< g·d at the trial origin (host copy).
-    double ls_origin_energy_ = 0; ///< Energy at the trial origin [eV].
 
     ConvCheck conv_;
     std::vector<ATV::minimizer::OptRecord> trace_;

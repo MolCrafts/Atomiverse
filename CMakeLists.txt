@@ -588,6 +588,8 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/dynamics/velocity_verlet.cu
                 src/cuda/dynamics/nve_limit.cu
                 src/cuda/dynamics/fix_langevin.cu
+                src/cuda/dynamics/fix_rattle.cu
+                src/cuda/dynamics/fix_settle.cu
                 src/cuda/dynamics/fix_efield.cu
                 src/cuda/dynamics/brownian.cu
                 src/cuda/dynamics/nose_hoover_npt.cu

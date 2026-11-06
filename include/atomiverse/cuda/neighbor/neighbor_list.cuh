@@ -58,6 +58,18 @@ openmm_mask_jbits(const std::uint64_t* mask, int pair_idx, int i_slot) {
 /// per-rebuild state (packed tiles) runs exactly when the list changes,
 /// without a separate device decision or launch. Owners remove their hook
 /// before they are destroyed.
+/// @brief Single periodic copy of one cluster for the step (OpenMM
+///        `singlePeriodicCopy`), from its live coordinates.
+///
+/// `single` = 1 when every atom within the list cutoff of any cluster atom
+/// lies strictly inside the half cell centred at `center`: wrapping both the
+/// cluster and its partners to the image nearest `center` then replaces the
+/// per-pair minimum image. Orthorhombic cells only; zero otherwise.
+struct ClusterImage {
+    force_t center[3];
+    int single;
+};
+
 struct RebuildHooks {
     struct Hook {
         const void* owner;
@@ -89,12 +101,17 @@ struct PairList {
     /// Per-CSR-entry multi-word interaction mask: `kOpenmmMaskWords` uint64s
     /// per entry (32×32 bitflags). See `openmm_mask_jbits`. Null until rebuild.
     const uint64_t* cl_mask = nullptr;
-    /// Optional Hilbert-sorted cluster SoA positions (Å), length
-    /// `num_clusters * kOpenmmClusterSize`. When non-null, force kernels use
-    /// these directly and skip a per-step gather from `frame.atoms.x/y/z`.
+    /// Live cluster-slot positions (Å, the primary coordinate), length
+    /// `num_clusters * kOpenmmClusterSize`. Every `launch()` refreshes them:
+    /// the skin gate reads each slot's atom once and stores it here (and a
+    /// rebuild re-sorts them), so force kernels read their tiles coalesced
+    /// without a gather of their own. Pad slots hold 1e30.
     const pos_t* cl_x = nullptr;
     const pos_t* cl_y = nullptr;
     const pos_t* cl_z = nullptr;
+    /// Per-cluster single-copy image of the step (`ClusterImage`), refreshed
+    /// with `cl_x`; meaningful in orthorhombic cells.
+    const ClusterImage* cl_image = nullptr;
     int num_clusters = 0;          ///< cluster count (host scalar).
     int cluster_pair_capacity = 0; ///< Build-time directed CSR reserve.
     /// Device word: nonzero when the current step rebuilt the CSR. The live

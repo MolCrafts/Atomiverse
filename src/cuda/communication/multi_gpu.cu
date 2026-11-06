@@ -1480,8 +1480,13 @@ void MultiGpu::compute_forces(bool read_energy) {
         cuda::LaunchContext lc{ctx_[s], frames_[s]};
         // Multi-GPU: the neighbor list was rebuilt CONCURRENTLY in reneighbor()
         // (rebuild_issue/finalize), so first_launch is cleared and this launch
-        // only republishes the pair list — no per-step rebuild here (which, in
-        // this per-device loop, would serialize the GPUs on its overflow syncs).
+        // only republishes the pair list and its live cluster positions — no
+        // per-step rebuild here (which, in this per-device loop, would
+        // serialize the GPUs on its overflow syncs). Those positions include
+        // the ghosts, so the launch waits for the landed halo.
+        if (N > 1)
+            CKM(cudaStreamWaitEvent(static_cast<cudaStream_t>(ctx_[s].stream),
+                                    ev_ghosts_[s], 0));
         nlist_[s]->launch(lc); // neighbor refresh (driver-cadence rebuild)
         if (N > 1) {
             // Pair force over OWNED rows only. Ghost pair rows are (a) wasted
@@ -1865,6 +1870,10 @@ void MultiGpu::compute_lj_nlist() {
         CKM(cudaMemsetAsync(a.fy, 0, na * sizeof(fixed_t), st));
         CKM(cudaMemsetAsync(a.fz, 0, na * sizeof(fixed_t), st));
         cuda::LaunchContext lc{ctx_[s], frames_[s]};
+        // The list publishes live cluster positions, ghosts included: wait
+        // for the landed halo first.
+        if (N > 1)
+            CKM(cudaStreamWaitEvent(st, ev_ghosts_[s], 0));
         nlist_[s]->launch(lc); // skin-gated rebuild + republish pair_list
         if (N > 1) {
             // Owned rows only, interior/boundary split when available —

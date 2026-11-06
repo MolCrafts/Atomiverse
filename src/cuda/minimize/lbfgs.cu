@@ -1,12 +1,14 @@
 /// @file cuda/minimize/lbfgs.cu
-/// @brief L-BFGS kernels: device-resident two-loop recursion +
-///        multi-criteria convergence via the shared ConvCheck.
+/// @brief L-BFGS kernels: device-resident two-loop recursion, device-side
+///        Armijo line search, multi-criteria convergence via the shared
+///        ConvCheck.
 
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/graph_ring.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/minimize/lbfgs.cuh"
 #include <algorithm>
@@ -330,6 +332,139 @@ rollback(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
     wrap_store(x, y, z, xc, yc, zc, row, i, pos, box);
 }
 
+/// Line-search verdicts, written by the device into the mapped host word.
+enum LineVerdict : int {
+    kSearching = 0,       ///< Rejected: the next trial is in place.
+    kAccepted = 1,        ///< Armijo holds at the current trial.
+    kNoDescent = 2,       ///< g·d ≥ 0: back at the origin, no search.
+    kNonfiniteOrigin = 3, ///< Origin energy or slope is not finite.
+    kNonfiniteEnergy = 4, ///< A trial energy is not finite.
+    kExhausted = 5,       ///< Trial budget or α floor reached.
+    kFault = 6,           ///< A trial evaluation raised a force fault.
+};
+
+/// Device state of one line search (the α of the trial is `ls[0]`).
+struct LineState {
+    int verdict;
+    int attempt;
+    int move;     ///< 1: `line_move` re-takes the trial at `target`.
+    acc_t target; ///< α of that trial from x_prev (0 = the origin).
+};
+
+/// @brief Open the search at the tail of the direction phase: classify the
+///        origin (finite energy and slope, g·d < 0). A search that cannot
+///        start is sent back to the origin by the following `line_move`.
+__global__ void line_begin(const acc_t* __restrict__ ls, LineState* state,
+                           volatile int* verdict) {
+    const acc_t gd = ls[1], e0 = ls[2];
+    int v = kSearching;
+    if (!isfinite(e0) || !isfinite(gd))
+        v = kNonfiniteOrigin;
+    else if (!(gd < acc_t(0)))
+        v = kNoDescent;
+    state->verdict = v;
+    state->attempt = 0;
+    state->move = v != kSearching;
+    state->target = acc_t(0);
+    *verdict = v;
+}
+
+/// @brief Armijo acceptance of the evaluated trial on the device: accept
+///        `E − E0 <= c1 α g·d`, or contract α (to the floor) and schedule the
+///        next trial, or stop at the budget / floor, a nonfinite energy or a
+///        force fault. Publishes the verdict to the mapped host word.
+__global__ void line_judge(const acc_t* __restrict__ energy,
+                           const ForceFault* __restrict__ fault, acc_t* ls,
+                           LineState* state, acc_t c1, acc_t contract,
+                           acc_t min_alpha, int max_ls, volatile int* verdict) {
+    if (state->verdict != kSearching) {
+        // line_begin decided; its move to the origin already ran.
+        state->move = 0;
+        *verdict = state->verdict;
+        return;
+    }
+    const acc_t e = *energy;
+    int v = kSearching;
+    if (fault != nullptr && fault->kinds != 0)
+        v = kFault;
+    else if (!isfinite(e))
+        v = kNonfiniteEnergy;
+    else if (e - ls[2] <= c1 * ls[0] * ls[1])
+        v = kAccepted;
+    else if (ls[0] <= min_alpha || state->attempt + 1 == max_ls)
+        v = kExhausted;
+    state->move = 0;
+    if (v == kSearching) {
+        ls[0] = fmax(min_alpha, ls[0] * contract);
+        ++state->attempt;
+        state->move = 1;
+        state->target = ls[0];
+    }
+    state->verdict = v;
+    *verdict = v;
+}
+
+/// @brief Re-take the scheduled trial (`LineState::move`) from x_prev with
+///        α = `target` along the stored direction — the rollback below with
+///        a device-decided α.
+__global__ void
+line_move(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+          pos_t* __restrict__ xc, pos_t* __restrict__ yc,
+          pos_t* __restrict__ zc, ImageInt* __restrict__ image,
+          const ImageInt* __restrict__ image_prev,
+          const mixed_t* __restrict__ x_prev, const mixed_t* __restrict__ dir,
+          const LineState* __restrict__ state, cuda::Box box, int n) {
+    if (!state->move)
+        return;
+    box = box.current();
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
+    const mixed_t alpha = mixed_t(state->target);
+    mixed_t pos[3];
+#pragma unroll
+    for (int c = 0; c < 3; ++c)
+        pos[c] = x_prev[c * n + i] + alpha * dir[c * n + i];
+    ImageInt* row = nullptr;
+    if (image != nullptr) {
+        row = image + 3 * i;
+#pragma unroll
+        for (int c = 0; c < 3; ++c)
+            row[c] = image_prev[3 * i + c];
+    }
+    wrap_store(x, y, z, xc, yc, zc, row, i, pos, box);
+}
+
+/// Enqueue directly on the legacy default stream or inside an enclosing
+/// capture; otherwise capture once into `ring` and replay.
+template <class Enqueue>
+void replay(GraphRing& ring, cudaStream_t stream, Enqueue&& enqueue) {
+    cudaStreamCaptureStatus capturing = cudaStreamCaptureStatusNone;
+    if (stream != nullptr)
+        ATV_CUDA_CHECK(cudaStreamIsCapturing(stream, &capturing));
+    if (stream == nullptr || capturing != cudaStreamCaptureStatusNone) {
+        enqueue();
+        return;
+    }
+    if (!ring.ready())
+        ring.build([&]() -> cudaGraph_t {
+            cudaGraph_t graph = nullptr;
+            ATV_CUDA_CHECK(cudaStreamBeginCapture(
+                stream, cudaStreamCaptureModeThreadLocal));
+            try {
+                enqueue();
+            } catch (...) {
+                cudaStreamEndCapture(stream, &graph);
+                if (graph)
+                    cudaGraphDestroy(graph);
+                throw;
+            }
+            ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
+            return graph;
+        });
+    ATV_CUDA_CHECK(ring.launch(stream));
+}
+
 } // anonymous namespace
 
 void LBFGS::build(const BuildContext& ctx) {
@@ -368,14 +503,19 @@ void LBFGS::build(const BuildContext& ctx) {
     cudaMemset(d_gprev_, 0, bytes3n);
     cudaMemset(d_dir_, 0, bytes3n);
     cudaMemset(d_ls_, 0, 3 * sizeof(acc_t));
-    cudaMallocHost(&h_ls_, 3 * sizeof(acc_t));
+    cudaMalloc(&d_line_state_, sizeof(LineState));
+    cudaMemset(d_line_state_, 0, sizeof(LineState));
+    ATV_CUDA_CHECK(cudaHostAlloc(reinterpret_cast<void**>(&h_verdict_),
+                                 sizeof(int), cudaHostAllocMapped));
+    *h_verdict_ = kSearching;
+    ATV_CUDA_CHECK(cudaHostGetDevicePointer(
+        reinterpret_cast<void**>(&d_verdict_), h_verdict_, 0));
     for (auto& g : graphs_)
         g.reset();
+    trial_graph_.reset();
 
     step_ = 0;
     has_prev_ = false;
-    ls_alpha_ = 0;
-    ls_gd_ = 0;
     trace_.clear();
     conv_.build(n_);
 }
@@ -399,52 +539,67 @@ void LBFGS::launch(const LaunchContext& ctx) {
             ~RestoreTrial() { context.exec.trial_evaluation = saved; }
         } guard{ctx.runtime, ctx.runtime.exec.trial_evaluation};
         ctx.runtime.exec.trial_evaluation = true;
-        auto& a = ctx.frame.atoms;
-        auto set_trial = [&](double alpha) {
+        auto& frame = ctx.frame;
+        auto& a = frame.atoms;
+        auto* state = static_cast<LineState*>(d_line_state_);
+        // The search opened at the tail of the direction graph (line_begin);
+        // each trial is one force evaluation and the device verdict
+        // (line_judge, then the next trial's move), replayed as a graph.
+        // The only host exchange per trial is the stream sync that makes
+        // the mapped verdict visible.
+        auto judge = [&] {
+            line_judge<<<1, 1, 0, stream>>>(
+                &frame.scalars->energy, frame.force_fault, d_ls_, state,
+                acc_t(ls_c1_), acc_t(ls_contract_), acc_t(ls_min_alpha_),
+                max_ls_, d_verdict_);
+            line_move<<<cuda::grid_size(n_), cuda::kDefaultBlock, 0, stream>>>(
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
+                d_image_prev_, d_xprev_, d_dir_, state, ctx.runtime.host_box,
+                n_);
+        };
+        auto restore_origin = [&] {
             rollback<<<cuda::grid_size(n_), cuda::kDefaultBlock, 0, stream>>>(
                 a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
-                d_image_prev_, d_xprev_, d_dir_, static_cast<mixed_t>(alpha),
+                d_image_prev_, d_xprev_, d_dir_, mixed_t(0),
                 ctx.runtime.host_box, n_);
         };
         try {
-            ATV_CUDA_CHECK(cudaMemcpyAsync(h_ls_, d_ls_, 3 * sizeof(acc_t),
-                                           cudaMemcpyDeviceToHost, stream));
-            ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
-            ls_alpha_ = static_cast<double>(h_ls_[0]);
-            ls_gd_ = static_cast<double>(h_ls_[1]);
-            ls_origin_energy_ = static_cast<double>(h_ls_[2]);
-            if (!std::isfinite(ls_origin_energy_) || !std::isfinite(ls_gd_))
-                throw std::runtime_error(
-                    "CUDA LBFGS nonfinite line-search origin");
-            if (!(ls_gd_ < 0)) {
-                set_trial(0);
-                ATV_CUDA_CHECK(cudaGetLastError());
-                return;
-            }
-            for (int attempt = 0; attempt < max_ls_; ++attempt) {
+            // line_judge stops the search by the budget at the latest.
+            for (int trial = 0; trial < max_ls_; ++trial) {
                 ctx.runtime.opt.reeval_forces(true);
-                ATV_CUDA_CHECK(cudaMemcpyAsync(
-                    h_ls_, &ctx.frame.scalars->energy, sizeof(double),
-                    cudaMemcpyDeviceToHost, stream));
+                replay(trial_graph_, stream, judge);
                 ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
-                const double energy = static_cast<double>(h_ls_[0]);
-                if (!std::isfinite(energy))
+                switch (*h_verdict_) {
+                case kSearching:
+                    continue;
+                case kAccepted:
+                case kNoDescent:
+                    // The normal force phase evaluates this accepted point
+                    // (the origin after a non-descent direction).
+                    return;
+                case kFault:
+                    cuda::throw_if_force_fault(frame);
+                    throw std::logic_error(
+                        "CUDA LBFGS line search: fault verdict without a "
+                        "device fault");
+                case kNonfiniteOrigin:
+                    throw std::runtime_error(
+                        "CUDA LBFGS nonfinite line-search origin");
+                case kNonfiniteEnergy:
                     throw std::runtime_error(
                         "CUDA LBFGS nonfinite trial energy");
-                if (energy - ls_origin_energy_ <= ls_c1_ * ls_alpha_ * ls_gd_)
-                    return; // The normal force phase evaluates this accepted point.
-                if (ls_alpha_ <= ls_min_alpha_ || attempt + 1 == max_ls_)
-                    break;
-                ls_alpha_ = std::max(ls_min_alpha_, ls_alpha_ * ls_contract_);
-                set_trial(ls_alpha_);
-                ATV_CUDA_CHECK(cudaGetLastError());
+                default:
+                    throw std::runtime_error(
+                        "CUDA LBFGS line search exhausted its trial budget or "
+                        "alpha floor");
+                }
             }
-            throw std::runtime_error("CUDA LBFGS line search exhausted its "
-                                     "trial budget or alpha floor");
+            throw std::logic_error("CUDA LBFGS line search: no verdict within "
+                                   "the trial budget");
         } catch (...) {
             // No failed candidate is returned. The outer driver discards device
             // results and the evaluation-history transaction on this exception.
-            set_trial(0);
+            restore_origin();
             cudaStreamSynchronize(stream);
             throw;
         }
@@ -487,34 +642,18 @@ void LBFGS::launch(const LaunchContext& ctx) {
             d_dot_ + kDirMax, static_cast<mixed_t>(alpha0_), d_ls_, ls_enabled_,
             frame.force_fault, a.tag, ctx.runtime.device_step,
             static_cast<long long>(ctx.step), ctx.runtime.host_box, n);
+        if (ls_enabled_) {
+            auto* state = static_cast<LineState*>(d_line_state_);
+            line_begin<<<1, 1, 0, stream>>>(d_ls_, state, d_verdict_);
+            line_move<<<grid, block, 0, stream>>>(
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
+                d_image_prev_, d_xprev_, d_dir_, state, ctx.runtime.host_box,
+                n);
+        }
     };
-    cudaStreamCaptureStatus capturing = cudaStreamCaptureStatusNone;
-    if (stream != nullptr)
-        ATV_CUDA_CHECK(cudaStreamIsCapturing(stream, &capturing));
     // The legacy default stream cannot be captured (component tests drive
     // the optimizer on it); an enclosing capture records the kernels itself.
-    if (stream == nullptr || capturing != cudaStreamCaptureStatusNone) {
-        enqueue();
-    } else {
-        GraphRing& ring_graph = graphs_[with_pair ? 1 : 0];
-        if (!ring_graph.ready())
-            ring_graph.build([&]() -> cudaGraph_t {
-                cudaGraph_t graph = nullptr;
-                ATV_CUDA_CHECK(cudaStreamBeginCapture(
-                    stream, cudaStreamCaptureModeThreadLocal));
-                try {
-                    enqueue();
-                } catch (...) {
-                    cudaStreamEndCapture(stream, &graph);
-                    if (graph)
-                        cudaGraphDestroy(graph);
-                    throw;
-                }
-                ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
-                return graph;
-            });
-        ATV_CUDA_CHECK(ring_graph.launch(stream));
-    }
+    replay(graphs_[with_pair ? 1 : 0], stream, enqueue);
     ATV_CUDA_CHECK(cudaGetLastError());
 
     has_prev_ = true;
@@ -524,6 +663,7 @@ void LBFGS::launch(const LaunchContext& ctx) {
 void LBFGS::destroy(const DestroyContext& ctx) {
     for (auto& g : graphs_)
         g.reset();
+    trial_graph_.reset();
     cudaFree(d_x_);
     cudaFree(d_g_);
     cudaFree(d_xprev_);
@@ -539,12 +679,14 @@ void LBFGS::destroy(const DestroyContext& ctx) {
     cudaFree(d_ring_state_);
     cudaFree(d_rho_);
     cudaFree(d_ls_);
-    cudaFreeHost(h_ls_);
+    cudaFree(d_line_state_);
+    cudaFreeHost(h_verdict_);
     d_x_ = d_g_ = d_xprev_ = d_gprev_ = d_q_ = d_dir_ = nullptr;
     d_s_ = d_y_ = d_alpha_ = nullptr;
     d_dot_ = d_rho_ = d_ls_ = nullptr;
     d_ring_state_ = nullptr;
-    h_ls_ = nullptr;
+    d_line_state_ = nullptr;
+    h_verdict_ = d_verdict_ = nullptr;
     conv_.destroy();
 }
 

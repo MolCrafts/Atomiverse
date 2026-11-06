@@ -172,6 +172,9 @@ class Backend {
 
   private:
     void publish_box_();
+    /// `Ndof = 3N - 3 - n_constraints` over the loaded plan's constraint
+    /// providers, before any component builds (thermostats cache it).
+    void publish_dof_(const cpu::Frame& frame);
     void observe_fault_(BigInt step_idx);
     void apply_demand_(LaunchContext& ctx, BigInt step) const;
     void execute_step_graphed_(BigInt step_idx);

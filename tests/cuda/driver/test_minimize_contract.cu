@@ -3,6 +3,10 @@
 #include "atomiverse/cuda/minimize/lbfgs.cuh"
 #include "atomiverse/cuda/minimize/minimize.cuh"
 #include <gtest/gtest.h>
+#include <limits>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
 using namespace ATV;
 namespace {
@@ -277,4 +281,83 @@ TEST(CudaMinimizeContract, ArmijoBudgetRestoresOriginAndTrialFlag) {
     optimizer.destroy({ctx, device});
     cudaFree(d_force);
     backend.shutdown();
+}
+
+namespace {
+
+/// One atom with a downhill origin force, an L-BFGS line search after its
+/// first direction, and a trial evaluation that `trial` fakes on the device.
+/// Returns the line-search exception text ("" when none) and the atom's x.
+template <class Trial>
+std::pair<std::string, double> one_trial(Trial trial) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_x)[0] = 1.0;
+    frame.meta.get(kEnergy) = 100.0;
+    cuda::Backend backend;
+    backend.init();
+    backend.materialize(frame);
+    double* d_force = nullptr;
+    EXPECT_EQ(cudaMalloc(&d_force, 3 * sizeof(double)), cudaSuccess);
+    const double force[3] = {1.0, 0.0, 0.0};
+    EXPECT_EQ(cudaMemcpy(d_force, force, sizeof(force), cudaMemcpyHostToDevice),
+              cudaSuccess);
+    auto& ctx = backend.context();
+    auto& device = backend.frame();
+    cuda::store_forces(device, d_force, d_force + 1, d_force + 2, 1,
+                       ctx.stream);
+    cuda::minimizer::LBFGS optimizer(5, .01, 3);
+    optimizer.line_search();
+    optimizer.build({ctx, device});
+    optimizer.launch(
+        {ctx, device, slot_of(minimizer::Phase::search_direction), 0});
+    ctx.opt.reeval_forces = [&](bool) { trial(device, ctx); };
+    std::string what;
+    try {
+        optimizer.launch(
+            {ctx, device, slot_of(minimizer::Phase::line_search), 0});
+    } catch (const std::runtime_error& e) {
+        what = e.what();
+    }
+    backend.sync();
+    // The retrieve would rethrow a recorded fault; read x directly.
+    double x = 0.0;
+    EXPECT_EQ(
+        cudaMemcpy(&x, device.atoms.x, sizeof(double), cudaMemcpyDeviceToHost),
+        cudaSuccess);
+    optimizer.destroy({ctx, device});
+    cudaFree(d_force);
+    backend.shutdown();
+    return {what, x};
+}
+
+} // namespace
+
+TEST(CudaMinimizeContract, ArmijoNonfiniteTrialEnergyThrowsAndRestoresOrigin) {
+    const auto [what, x] =
+        one_trial([](cuda::Frame& device, cuda::Context& ctx) {
+            const double nan = std::numeric_limits<double>::quiet_NaN();
+            EXPECT_EQ(cudaMemcpyAsync(&device.scalars->energy, &nan,
+                                      sizeof(double), cudaMemcpyHostToDevice,
+                                      static_cast<cudaStream_t>(ctx.stream)),
+                      cudaSuccess);
+        });
+    EXPECT_NE(what.find("nonfinite trial energy"), std::string::npos) << what;
+    EXPECT_DOUBLE_EQ(x, 1.0);
+}
+
+TEST(CudaMinimizeContract, ArmijoTrialForceFaultThrowsTheFault) {
+    // The device verdict sees the trial's fault; the host then reports it.
+    const auto [what, x] =
+        one_trial([](cuda::Frame& device, cuda::Context& ctx) {
+            cuda::ForceFault fault{};
+            fault.kinds = cuda::ForceFault::kConversion;
+            fault.row = 0;
+            EXPECT_EQ(cudaMemcpyAsync(device.force_fault, &fault, sizeof(fault),
+                                      cudaMemcpyHostToDevice,
+                                      static_cast<cudaStream_t>(ctx.stream)),
+                      cudaSuccess);
+        });
+    EXPECT_NE(what.find("CUDA force fault"), std::string::npos) << what;
+    EXPECT_DOUBLE_EQ(x, 1.0);
 }

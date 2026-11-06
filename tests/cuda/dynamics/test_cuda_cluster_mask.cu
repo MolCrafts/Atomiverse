@@ -390,17 +390,28 @@ TEST(CudaClusterMask, SkinGateDecidesCurrentPeriodicMotionOnDevice) {
     using namespace ATV::cuda::md::nlist;
     using ATV::cuda::force_t;
     constexpr int n = 257;
-    DeviceVector<force_t> x(n), ref(n), zero(n);
+    // Slot k holds atom k; the slots of the last cluster past n are pads.
+    constexpr int slots = ((n + 31) / 32) * 32;
+    DeviceVector<force_t> x(n), ref(slots), zero(slots);
+    DeviceVector<force_t> cl_x(slots), cl_y(slots), cl_z(slots);
+    DeviceVector<int> orig(slots);
+    DeviceVector<ATV::cuda::ClusterImage> images(slots / 32);
+    std::vector<int> host_orig(slots, -1);
+    for (int k = 0; k < n; ++k)
+        host_orig[k] = k;
+    ASSERT_EQ(cudaSuccess,
+              cudaMemcpy(orig.data(), host_orig.data(), slots * sizeof(int),
+                         cudaMemcpyHostToDevice));
     DeviceVector<Control> control(1);
     DeviceVector<int> body_ran(1);
-    std::vector<force_t> host(n, 0), reference(n, 0);
+    std::vector<force_t> host(n, 0), reference(slots, 0);
     reference[0] = force_t(9.9);
     host[0] = force_t(0.1);     // Only 0.2 A across the periodic face.
     host[n - 1] = force_t(0.6); // The partial final block must request rebuild.
     ASSERT_EQ(cudaSuccess,
-              cudaMemcpy(ref.data(), reference.data(), n * sizeof(force_t),
+              cudaMemcpy(ref.data(), reference.data(), slots * sizeof(force_t),
                          cudaMemcpyHostToDevice));
-    ASSERT_EQ(cudaSuccess, cudaMemset(zero.data(), 0, n * sizeof(force_t)));
+    ASSERT_EQ(cudaSuccess, cudaMemset(zero.data(), 0, slots * sizeof(force_t)));
     ASSERT_EQ(cudaSuccess, cudaMemset(control.data(), 0, sizeof(Control)));
     ATV::cuda::Box box{};
     box.ortho = true;
@@ -423,9 +434,19 @@ TEST(CudaClusterMask, SkinGateDecidesCurrentPeriodicMotionOnDevice) {
     cudaGraph_t captured = nullptr;
     ASSERT_EQ(cudaSuccess, cudaStreamBeginCaptureToGraph(cs, graph, nullptr,
                                                          nullptr, 0, mode));
-    launch_skin_gate<force_t>(x.data(), zero.data(), zero.data(), ref.data(),
-                              zero.data(), zero.data(), n, 1.0, box, nullptr,
-                              control.data(), handle, cs);
+    ClusterSlots cluster;
+    cluster.orig_index = orig.data();
+    cluster.num_slots = slots;
+    cluster.ref_x = ref.data();
+    cluster.ref_y = zero.data();
+    cluster.ref_z = zero.data();
+    cluster.cl_x = cl_x.data();
+    cluster.cl_y = cl_y.data();
+    cluster.cl_z = cl_z.data();
+    cluster.images = images.data();
+    cluster.image_cut = 1.0;
+    launch_skin_gate<force_t>(cluster, x.data(), zero.data(), zero.data(), 1.0,
+                              box, nullptr, control.data(), handle, cs);
     ASSERT_EQ(cudaSuccess, cudaStreamEndCapture(cs, &captured));
     cudaGraphNode_t gate = nullptr;
     std::size_t roots = 1;
@@ -469,6 +490,12 @@ TEST(CudaClusterMask, SkinGateDecidesCurrentPeriodicMotionOnDevice) {
         EXPECT_GT(c.generation, 0ULL);
         EXPECT_EQ(c.motion, 0);
         EXPECT_EQ(c.done, 0u);
+        // The same read published every slot's live position.
+        std::vector<force_t> published(n);
+        ASSERT_EQ(cudaSuccess,
+                  cudaMemcpy(published.data(), cl_x.data(), n * sizeof(force_t),
+                             cudaMemcpyDeviceToHost));
+        EXPECT_EQ(published, host);
         host[n - 1] = 0;
     }
     ASSERT_EQ(cudaSuccess, cudaGraphExecDestroy(exec));

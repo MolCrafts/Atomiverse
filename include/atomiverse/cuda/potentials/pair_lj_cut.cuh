@@ -4,6 +4,7 @@
 /// Was `ATV::cuda::LJ` before the LAMMPS-naming refactor.
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -44,6 +45,9 @@ class PairLJCut : public Pair {
     /// @throws std::invalid_argument on an empty list, a negative type,
     ///         ε < 0, or a σ / cutoff <= 0.
     PairLJCut(std::vector<LJTypeCoeff> coeffs, double cutoff);
+    ~PairLJCut() override;
+    PairLJCut(PairLJCut&&) noexcept;
+    PairLJCut& operator=(PairLJCut&&) noexcept;
 
     /// @brief Change ONE entry of the coefficient table after construction,
     ///        the CUDA twin of `cpu::PairLJCut::set_type_coeff`.
@@ -151,8 +155,9 @@ class PairLJCut : public Pair {
     double sigma() const { return sigma_; }
     double cutoff() const { return cutoff_; }
 
-    /// @brief Cluster force writes owned atoms in one pass. Arbitrary
-    ///        interior/boundary row subsets are not supported.
+    /// @brief The tile engine writes every owned atom of each tile it
+    ///        evaluates. Arbitrary interior/boundary row subsets are not
+    ///        supported.
     bool supports_force_rows() const override { return false; }
 
   protected:
@@ -165,7 +170,6 @@ class PairLJCut : public Pair {
     /// one-record table used only by the exception pass.
     void* d_table_ = nullptr;
     int n_types_ = 0;
-    int* spt_ = nullptr; ///< Cluster-sorted atom types (typed path only).
 
     double epsilon_; ///< Well depth [eV].
     double sigma_;   ///< Collision diameter [Å].
@@ -173,7 +177,7 @@ class PairLJCut : public Pair {
 
     // Special-bonds configuration (host-side).
     double s12_ = 1.0, s13_ = 1.0, s14_ = 1.0;
-    double s_excl_ = 1.0; ///< Single scale used by kernel when collapsed.
+    double s_excl_ = 1.0; ///< Scale of the CSR partners the masks drop (0).
     bool has_exclusions_ = false;
 
     /// Fractional-weight exceptions (i < j, weight, table index), evaluated
@@ -195,14 +199,10 @@ class PairLJCut : public Pair {
     int* d_excl_partners_ = nullptr;
     int n_excl_total_ = 0;
 
-    // Cluster-sorted current-position scratch (gathered each compute() so the
-    // force kernel reads neighbour positions coalesced). Sized to
-    // padded Frame capacity in build(), with no allocation in compute().
-    // Freed in destroy(). Runtime container — not part of the frame.
-    force_t* spx_ = nullptr;
-    force_t* spy_ = nullptr;
-    force_t* spz_ = nullptr;
-    int spos_cap_ = 0;
+    /// Cluster-tile engine (packed tiles, slot types, partials), sized in
+    /// build(); compute() only launches.
+    struct State;
+    std::unique_ptr<State> state_;
 };
 
 } // namespace cuda

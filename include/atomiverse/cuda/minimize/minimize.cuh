@@ -101,11 +101,11 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
         try {
             setup_pass(frame);
             this->backend_->prepare_run();
+            // Enqueue only: the caller (the L-BFGS line search) judges the
+            // trial on the device, the force fault included.
             this->backend_->context().opt.reeval_forces = [this](bool) {
                 const int phase = slot_of(ATV::minimizer::Phase::force);
                 this->backend_->execute_phases(0, phase, phase + 1);
-                this->backend_->sync();
-                cuda::throw_if_force_fault(this->backend_->frame());
             };
             // LAMMPS src/min.cpp Min::setup → Output::setup, e8c4c278a8
             // (Copyright (2003) Sandia Corporation, GPL-2.0-only): the
