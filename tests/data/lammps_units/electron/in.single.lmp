@@ -1,0 +1,13 @@
+# units electron, case single. Reference: ref.single.thermo / ref.single.dump (make_refs.sh).
+units electron
+atom_style full
+read_data data.lmp
+include system.ff
+neighbor 1.0 bin
+neigh_modify every 1 delay 0 check no
+timestep 2.0
+thermo_style custom step pe ke temp press pxx pyy pzz pxy pxz pyz evdwl ecoul elong ebond eangle edihed eimp etotal
+thermo_modify norm no format float %.17g
+dump d all custom 1 ref.single.dump id type fx fy fz
+dump_modify d format float %.17g sort id
+run 0

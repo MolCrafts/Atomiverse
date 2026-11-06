@@ -1,0 +1,6 @@
+# units metal: LAMMPS style/coefficient commands (included by every in.*.lmp)
+pair_style lj/cut/coul/long 5.5 5.5
+pair_coeff 1 1 0.01529018315565901 2.159
+pair_coeff 1 2 0.0029132417050168175 3.4945
+pair_coeff 2 2 0.000555060534295052 4.83
+kspace_style pppm 1.0e-5

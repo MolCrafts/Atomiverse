@@ -1,0 +1,17 @@
+# units lj, case npt. Reference: ref.npt.thermo / ref.npt.dump (make_refs.sh).
+units lj
+atom_style full
+read_data data.lmp
+include system.ff
+pair_modify table 0
+kspace_modify gewald 1.30068 mesh 24 24 24 order 5
+neighbor 0.3 bin
+neigh_modify every 1 delay 0 check no
+timestep 0.005
+fix 1 all npt temp 1.2 1.2 0.5 iso 0.0 0.0 5.0
+thermo_style custom step temp pe ke etotal press econserve vol lx
+thermo_modify norm no format float %.17g
+thermo 10
+dump d all custom 100 ref.npt.dump id type xu yu zu vx vy vz fx fy fz
+dump_modify d format float %.17g sort id delay 1
+run 100
