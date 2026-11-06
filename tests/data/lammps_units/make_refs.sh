@@ -15,7 +15,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 thermo_table() { # log -> header + rows between "Step" and "Loop time"
-    awk '/^ *Step /{on=1} /^Loop time/{on=0} on' "$1"
+    awk '/^ *Step /{on=1} /^Loop time/{on=0} on' "$1" | sed 's/[[:space:]]*$//'
 }
 
 for style in lj real metal si electron; do
