@@ -147,15 +147,15 @@ jobs:
             --prefix "$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
       - name: Validate the benchmark framework and public bindings
         run: python -m pytest tests/benchmarks python/tests/test_hf_bindings.py -q
-      - name: Run independent HF comparisons
+      - name: Run independent SCF and post-HF comparisons
         id: benchmark
         env:
           BENCHMARK_TIER: ${{ inputs.hf_benchmark_tier }}
         run: |
-          # SCF methods only: forcefield.gaff needs SEMIEMPIRICAL and AmberTools.
+          # GAFF needs SEMIEMPIRICAL and AmberTools.
           python -m benchmarks run --tier "$BENCHMARK_TIER" --threads 1 \
             --method rhf --method uhf --method rohf --method ghf \
-            --method rks --method uks \
+            --method rks --method uks --method rmp2 --method rmp3 \
             --repeats 1 --warmup 0 --timeout 600 \
             --build-receipt build/hf-build-receipt.json --out build/hf-benchmark-results
       - name: Rebuild and validate the report after scientific failures

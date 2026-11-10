@@ -9,6 +9,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
@@ -247,7 +248,16 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
             "MP2::run: a GHF (spinor) reference is not supported — the MP2 "
             "pack has no spinor transformation. Use RHF or UHF.");
     drive_converged(mf, frame, guess, "MP2::run");
-    if (mf.ri == RI::None)
+    const internal::ExactJK* cached_jk = nullptr;
+    if constexpr (std::is_same_v<Method, RHF>) {
+        if (mf.ri == RI::None && mf.coulomb == Coulomb::Direct && mf.fock_stage_
+            && mf.ints_ERI_.size() == 0) {
+            const auto& engine = mf.fock_stage_->hamiltonian_.coulomb_engine();
+            if (engine.cached())
+                cached_jk = &engine;
+        }
+    }
+    if (mf.ri == RI::None && !cached_jk)
         mf.materialize_eri_();
     if ((mf.spin_ == SpinType::Unrestricted
          || mf.spin_ == SpinType::RestrictedOpen)
@@ -274,7 +284,7 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
                              os_scale, ss_scale);
     } else {
         result = mp2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                            frozen, os_scale, ss_scale);
+                            frozen, os_scale, ss_scale, cached_jk);
     }
     frame.meta.get(kEnergy) = result.e_tot * units::kHartreeInEv;
     return result;
@@ -347,8 +357,10 @@ MP3Result MP3<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
             "MP3::run: RI-MP3 is not implemented — set ri=RI::None");
     drive_converged(mf, frame, guess, "MP3::run");
     mf.materialize_eri_();
-    return mp3_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                      frozen);
+    const MP3Result result =
+        mp3_energy(mf.integral_view_(), mf.determinant(), mf.energy(), frozen);
+    frame.meta.get(kEnergy) = result.e_tot * units::kHartreeInEv;
+    return result;
 }
 
 template <typename Method>

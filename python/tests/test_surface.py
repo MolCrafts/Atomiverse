@@ -77,7 +77,9 @@ _HAS_HF: bool = extension_available() and hasattr(_cpp, "RHF")
 _HAS_CUDA_HF: bool = extension_available() and hasattr(_cpp, "CudaRHF")
 
 # The concrete Gaussian SCF methods (spec py-scf-single-point).
-_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "ROHF", "GHF", "RKS", "UKS")
+_SCF_METHODS: tuple[str, ...] = (
+    "RHF", "UHF", "ROHF", "GHF", "RKS", "UKS", "MP2", "MP2Result", "MP3", "MP3Result",
+)
 _CUDA_SCF_METHODS: tuple[str, ...] = ("CudaRHF", "CudaUHF")
 
 # ── Shared surface definitions ──────────────────────────────────────
@@ -163,6 +165,10 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "UHF",
         "ROHF",
         "GHF",
+        "MP2",
+        "MP2Result",
+        "MP3",
+        "MP3Result",
         "RKS",
         "UKS",
         "CudaRHF",
@@ -308,7 +314,7 @@ class TestCanonicalSurface:
 
     def test_public_names_are_the_honest_surface(self) -> None:
         """The public candidate list is fixed; availability filters __all__."""
-        assert len(_CANONICAL_ALL) == 84
+        assert len(_CANONICAL_ALL) == 88
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:

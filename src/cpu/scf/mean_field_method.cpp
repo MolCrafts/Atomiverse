@@ -1226,9 +1226,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         } else if (want_minao) {
             // pyscf.scf.uhf.UHF.init_guess_by_minao: dma = dmb = ½ P_MINAO.
             // _break_dm_spin_symm acts only when mol.spin == 0, so an open
-            // shell keeps the spin-averaged projection. Replacing it with
-            // Hcore orbitals plus HOMO–LUMO mixing is init_guess_by_1e and
-            // drops triplet O2 onto the higher local solution.
+            // shell keeps the spin-averaged projection.
             P_alpha = 0.5 * P_minao;
             P_beta = 0.5 * P_minao;
         } else if (restricted) {
@@ -1238,7 +1236,12 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
             RealMatrix C_alpha_init = C0;
             const bool is_ks = (method_ == MeanFieldType::KS);
             // See the MINAO branch: ROHF skips the UHF symmetry-breaking guess.
-            const bool skip_mixing = (is_ks && (n_alpha == n_beta)) || rohf;
+            // Different spin occupations already give a polarized Hcore
+            // density, so preserve its Aufbau orbitals.
+            const bool polarized_hcore =
+                is_hf && n_alpha != n_beta && init_guess == InitGuess::Hcore;
+            const bool skip_mixing =
+                (is_ks && (n_alpha == n_beta)) || rohf || polarized_hcore;
             if (n_alpha > 0 && n_beta > 0 && !skip_mixing)
                 apply_homo_lumo_mixing(C_alpha_init, n_alpha, n);
             P_alpha = density.step(C_alpha_init, n_alpha, n);

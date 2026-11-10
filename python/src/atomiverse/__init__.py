@@ -79,6 +79,10 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``scf.UHF``                           ``UHF``                     ``cpu::scf::UHF``
 ``scf.ROHF``                          ``ROHF``                    ``cpu::scf::ROHF``
 ``scf.GHF``                           ``GHF``                     ``cpu::scf::GHF``
+``scf.MP2``                           ``MP2``                     ``cpu::scf::MP2<RHF>``
+``scf.MP2Result``                     ``MP2Result``               ``cpu::scf::MP2Result``
+``scf.MP3``                           ``MP3``                     ``cpu::scf::MP3<RHF>``
+``scf.MP3Result``                     ``MP3Result``               ``cpu::scf::MP3Result``
 ``scf.CudaRHF``                       ``CudaRHF``                 ``cuda::scf::RHF``
 ``scf.CudaUHF``                       ``CudaUHF``                 ``cuda::scf::UHF``
 ``scf.RKS``                           ``RKS``                     ``cpu::scf::RKS``
@@ -304,6 +308,10 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "UHF": ("atomiverse.scf", "UHF"),
     "ROHF": ("atomiverse.scf", "ROHF"),
     "GHF": ("atomiverse.scf", "GHF"),
+    "MP2": ("atomiverse.scf", "MP2"),
+    "MP2Result": ("atomiverse.scf", "MP2Result"),
+    "MP3": ("atomiverse.scf", "MP3"),
+    "MP3Result": ("atomiverse.scf", "MP3Result"),
     "CudaRHF": ("atomiverse.scf", "CudaRHF"),
     "CudaUHF": ("atomiverse.scf", "CudaUHF"),
     "RKS": ("atomiverse.scf", "RKS"),
@@ -401,6 +409,10 @@ _PUBLIC: tuple[str, ...] = (
     "UHF",
     "ROHF",
     "GHF",
+    "MP2",
+    "MP2Result",
+    "MP3",
+    "MP3Result",
     "RKS",
     "UKS",
     "CudaRHF",

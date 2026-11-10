@@ -7,7 +7,7 @@ of them is registered with CTest. The tree has one axis per directory:
 benchmarks/
   README.md  __init__.py  __main__.py  framework/  roadmap.toml  requirements.txt
   systems/      hf.json dft.json gaff.json
-  scf/          bench_{rhf,uhf,rohf,ghf,rks,uks}.py  hf.py  dft.py
+  scf/          bench_{rhf,uhf,rohf,ghf,rks,uks,rmp2,rmp3}.py  hf.py  dft.py
   forcefield/   bench_gaff.py
   perf/         CMakeLists.txt  md/  scf/  pw/  semiempirical/{nddo_energy,nddo_forces}/
   compare/      lj-lammps/  gaff-liquid/  gaff-peo-openmm/  gaff-peo-lammps/  am1-sqm/

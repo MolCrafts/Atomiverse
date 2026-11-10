@@ -13,6 +13,30 @@ cuda = "not_implemented"
 reason = "Only fresh public-API CPU executions of the declared fixed-geometry inputs qualify; local dirty/unattested builds retain provisional roadmap status."
 
 [[capabilities]]
+id = "post-hf.rmp2.energy"
+chapter = "post-hf.md"
+label = "Canonical molecular RMP2 energy"
+scope = "Fresh RHF and all-electron canonical MP2 for water and eight waters in Cartesian STO-3G; total, reference, correlation and spin-channel energies against live PySCF."
+rows = ["rmp2.sto3g.energy"]
+cpu_rows = ["rmp2.sto3g.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "pending_migration"
+reason = "CPU uses the public Python MP2 binding. The native CUDA energy solver is covered by C++ regressions and awaits a public Python binding."
+
+[[capabilities]]
+id = "post-hf.rmp3.energy"
+chapter = "post-hf.md"
+label = "Canonical molecular RMP3 energy"
+scope = "Fresh RHF and all-electron canonical MP3 on water and eight waters in Cartesian STO-3G. Compares RHF, second-order and third-order corrections, correlation and total energies with live PySCF RHF and NumPy spatial MP3 diagrams."
+rows = ["rmp3.sto3g.energy"]
+cpu_rows = ["rmp3.sto3g.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "The independent CPU oracle combines PySCF orbitals and integrals with the spatial MP3 diagram sum."
+
+[[capabilities]]
 id = "hf.rhf.energy"
 chapter = "hartree-fock.md"
 label = "RHF molecular energy"

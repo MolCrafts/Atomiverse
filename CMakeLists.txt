@@ -676,6 +676,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/internal/sap_guess.cpp
             src/cpu/scf/internal/hamiltonian_builder.cpp
             src/cpu/scf/internal/exact_jk.cpp
+            src/cpu/scf/internal/exact_jk_screened_cache.cpp
             src/cpu/scf/internal/periodic_hf.cpp
             src/cpu/scf/internal/kpoint_hf.cpp
             src/cpu/scf/internal/cfmm_j.cpp
@@ -1136,6 +1137,13 @@ if(NOT ATV_DOCS_ONLY)
 
     if(ATV_BUILD_CUDA)
         target_include_directories(atomiverse PRIVATE src/cuda/neighbor)
+    endif()
+    if(ATV_BUILD_HF)
+        # Append the specialized cache workers to preserve the existing source order.
+        target_sources(atomiverse PRIVATE
+            src/cpu/scf/internal/exact_jk_dense_cache.cpp
+            src/cpu/scf/internal/exact_jk_screened_symmetric_cache.cpp
+        )
     endif()
     include(GNUInstallDirs)
     target_include_directories(atomiverse PUBLIC

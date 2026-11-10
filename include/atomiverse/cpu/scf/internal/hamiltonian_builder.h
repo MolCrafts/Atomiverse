@@ -86,6 +86,8 @@ class HamiltonianBuilder {
         exact_.step(requests);
     }
 
+    [[nodiscard]] const ExactJK& coulomb_engine() const { return exact_; }
+
     /// @brief Build F from the current α/β densities.
     /// @details Method-dispatched F = Hcore + J − αK + V_xc.
     /// @param integrals Same IntegralView passed to prepare() (refs still live).

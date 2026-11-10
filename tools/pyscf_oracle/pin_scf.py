@@ -978,148 +978,21 @@ def main() -> int:
         out["c_os"] = c_os
         out["c_ss"] = c_ss
     elif m == "mp3":
-        # Closed-shell RMP3. PySCF 2.x has no mp.MP3 — rebuild Szabo/Ostlund
-        # (Psi4NumPy MP3.py) spatial diagrams on PySCF RHF MOs + ao2mo ERIs.
-        # E_corr = E^(2) + E^(3); E^(2) must match mp.MP2.
-        from pyscf import ao2mo
-        import numpy as np
+        if __package__:
+            from .mp3 import rmp3_corrections
+        else:
+            from mp3 import rmp3_corrections
 
         m2 = mp.MP2(mf).run()
-        C = np.asarray(mf.mo_coeff)
-        eps = np.asarray(mf.mo_energy)
-        nmo = C.shape[1]
-        ndocc = mol.nelectron // 2
-        eri_chem = ao2mo.restore(1, ao2mo.full(mol, C), nmo)
-        # Physicist <pq|rs> = (pr|qs)
-        MO = np.einsum("prqs->pqrs", eri_chem)
-        o = slice(0, ndocc)
-        v = slice(ndocc, nmo)
-        eocc = eps[:ndocc]
-        evirt = eps[ndocc:]
-        den = (
-            eocc.reshape(-1, 1, 1, 1)
-            + eocc.reshape(-1, 1, 1)
-            - evirt.reshape(-1, 1)
-            - evirt
-        )
-        if np.any(den >= 0.0):
-            print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": "mp3: non-negative orbital-energy denominator",
-                    }
-                )
-            )
+        try:
+            e2, e3 = rmp3_corrections(mf)
+        except ValueError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}))
             return 2
-        eps_inv = 1.0 / den
-        e2 = 2.0 * np.einsum(
-            "abrs,rsab,abrs", MO[o, o, v, v], MO[v, v, o, o], eps_inv
-        )
-        e2 -= np.einsum(
-            "abrs,rsba,abrs", MO[o, o, v, v], MO[v, v, o, o], eps_inv
-        )
-        # 12 third-order diagrams (Psi4NumPy / Szabo Table 6.2).
-        e3 = 2.0 * np.einsum(
-            "abru,ruts,tsab,abru,abts",
-            MO[o, o, v, v],
-            MO[v, v, v, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "adrs,cbad,rscb,adrs,cbrs",
-            MO[o, o, v, v],
-            MO[o, o, o, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "acrt,rbsc,stab,acrt,abst",
-            MO[o, o, v, v],
-            MO[v, o, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "bcrt,rasb,stac,bcrt,acst",
-            MO[o, o, v, v],
-            MO[v, o, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 8.0 * np.einsum(
-            "acrt,btsc,rsab,acrt,abrs",
-            MO[o, o, v, v],
-            MO[o, v, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "cbrt,atsc,rsab,cbrt,abrs",
-            MO[o, o, v, v],
-            MO[o, v, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -1.0 * np.einsum(
-            "acrs,dbac,srdb,acrs,dbrs",
-            MO[o, o, v, v],
-            MO[o, o, o, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -1.0 * np.einsum(
-            "abrt,trus,usab,abtr,abus",
-            MO[o, o, v, v],
-            MO[v, v, v, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "bcrt,arbs,tsac,cbrt,acst",
-            MO[o, o, v, v],
-            MO[o, v, o, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "cbrt,rasb,stac,cbrt,acst",
-            MO[o, o, v, v],
-            MO[v, o, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "abrs,scat,rtbc,abrs,cbrt",
-            MO[o, o, v, v],
-            MO[v, o, o, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "bcrt,atsc,rsab,bctr,abrs",
-            MO[o, o, v, v],
-            MO[o, v, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e_corr = float(e2 + e3)
+        e_corr = e2 + e3
         out["e_hf_ha"] = float(e)
-        out["e_corr_mp2_ha"] = float(e2)
-        out["e_corr_mp3_ha"] = float(e3)
+        out["e_corr_mp2_ha"] = e2
+        out["e_corr_mp3_ha"] = e3
         out["e_corr_ha"] = e_corr
         out["e_tot_mp3_ha"] = float(e) + e_corr
         out["e_corr_mp2_pyscf_ha"] = float(m2.e_corr)

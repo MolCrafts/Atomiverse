@@ -27,9 +27,12 @@
 #include "atomiverse/cpu/scf/rys_roots.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -70,7 +73,7 @@ static void check_root_budget(const ShellBlock& A, const ShellBlock& B,
     }
 }
 
-static void fill_cart_comps_struct(int l, CartComp* out) {
+static constexpr void fill_cart_comps_struct(int l, CartComp* out) {
     int tmp[kMaxNCart][3];
     fill_cart_comps(l, tmp);
     const int n = n_cart_of(l);
@@ -111,12 +114,15 @@ struct RysEnv {
     bool k_base;             // true: 2D-VRR along lk direction.
 };
 
-static void init_env(RysEnv& env, const ShellBlock& A, const ShellBlock& B,
-                     const ShellBlock& C, const ShellBlock& D) {
-    env.li = A.l;
-    env.lj = B.l;
-    env.lk = C.l;
-    env.ll = D.l;
+// For a fixed s/p quartet, its four momenta are the four bits of Shape.
+template <int Shape = -1>
+static constexpr void init_env(RysEnv& env, const ShellBlock& A,
+                               const ShellBlock& B, const ShellBlock& C,
+                               const ShellBlock& D) {
+    env.li = Shape < 0 ? A.l : (Shape >> 3) & 1;
+    env.lj = Shape < 0 ? B.l : (Shape >> 2) & 1;
+    env.lk = Shape < 0 ? C.l : (Shape >> 1) & 1;
+    env.ll = Shape < 0 ? D.l : Shape & 1;
     env.nfi = n_cart_of(env.li);
     env.nfj = n_cart_of(env.lj);
     env.nfk = n_cart_of(env.lk);
@@ -155,6 +161,14 @@ static void init_env(RysEnv& env, const ShellBlock& A, const ShellBlock& B,
     }
 }
 
+template <int Shape>
+static constexpr RysEnv fixed_sp_layout = [] {
+    RysEnv env{};
+    ShellBlock shell{};
+    init_env<Shape>(env, shell, shell, shell, shell);
+    return env;
+}();
+
 // ── 2D Rys intermediate (VRR) ────────────────────────────────────────
 //
 // Ports libcint's `CINTg0_2e_2d` almost verbatim, adapted to our layout.
@@ -167,8 +181,11 @@ struct Rys2eCoeff {
     double b00[kRysMaxRoots], b10[kRysMaxRoots], b01[kRysMaxRoots];
 };
 
-static void g0_2e_2d(double* g, const Rys2eCoeff& bc, const RysEnv& env) {
-    const int nroots = env.nroots;
+template <int Roots = 0, int Shape = -1>
+static void g0_2e_2d(double* g, const Rys2eCoeff& bc,
+                     const RysEnv& runtime_env) {
+    const auto& env = Shape < 0 ? runtime_env : fixed_sp_layout<Shape>;
+    const int nroots = Roots ? Roots : env.nroots;
     const int nmax = env.nmax;
     const int mmax = env.mmax;
     const int di = env.di;
@@ -320,30 +337,33 @@ static void g0_2e_2d(double* g, const Rys2eCoeff& bc, const RysEnv& env) {
 //   g(k,l)     = rkrl · g(k, l-1) + g(k+1, l-1)
 //   g(i,j)     = rirj · g(i, j-1) + g(i+1, j-1)
 
-static void g_shift_kl(double* gaxis, const RysEnv& env, double rkrl_d) {
+template <int Shape = -1>
+static void g_shift_kl(double* gaxis, const RysEnv& runtime_env,
+                       double rkrl_d) {
+    const auto& env = Shape < 0 ? runtime_env : fixed_sp_layout<Shape>;
     if (env.ll == 0)
         return;
-    const int di = env.di;
     const int dk = env.dk;
     const int dl = env.dl;
-    const int nroots = env.nroots;
-    const int nmax = env.nmax;
     const int mmax = env.mmax;
+    // The roots for consecutive bra indices occupy a contiguous span.
+    const int n_end = env.nroots * (env.nmax + 1);
 
     for (int l = 1; l <= env.ll; ++l) {
         for (int k = 0; k <= mmax - l; ++k) {
-            for (int i = 0; i <= nmax; ++i) {
-                const int ptr = l * dl + k * dk + i * di;
-                for (int r = 0; r < nroots; ++r) {
-                    gaxis[ptr + r] =
-                        rkrl_d * gaxis[ptr + r - dl] + gaxis[ptr + r - dl + dk];
-                }
+            const int ptr = l * dl + k * dk;
+            for (int n = 0; n < n_end; ++n) {
+                gaxis[ptr + n] =
+                    rkrl_d * gaxis[ptr + n - dl] + gaxis[ptr + n - dl + dk];
             }
         }
     }
 }
 
-static void g_shift_ij(double* gaxis, const RysEnv& env, double rirj_d) {
+template <int Shape = -1>
+static void g_shift_ij(double* gaxis, const RysEnv& runtime_env,
+                       double rirj_d) {
+    const auto& env = Shape < 0 ? runtime_env : fixed_sp_layout<Shape>;
     if (env.lj == 0)
         return;
     const int di = env.di;
@@ -379,15 +399,99 @@ static void g_shift_ij(double* gaxis, const RysEnv& env, double rirj_d) {
 // its own buffer.
 static thread_local std::vector<double> tls_g_buf;
 
-// Precomputed angular index offsets for one canonical quartet. Each worker
-// thread reuses one buffer across calls (resize-if-smaller), so the millions
-// of shell-block quartets in a direct-SCF Fock build stop heap-allocating a
-// fresh vector per quartet. Fully overwritten each call (no zeroing needed);
-// per-thread storage keeps the Fock builder's `#pragma omp parallel` race-free.
+// Each index is an absolute offset in the three-axis recurrence buffer.
+// Bound all supported layouts, including the uncached f/g-shell fallback.
+constexpr int kMaxRysAxisWidth = 2 * kRysMaxL + 1;
+constexpr int kMaxRysShiftWidth = kRysMaxL + 1;
+static_assert(3 * kRysMaxRoots * kMaxRysAxisWidth * kMaxRysAxisWidth
+                  * kMaxRysShiftWidth * kMaxRysShiftWidth
+              <= std::numeric_limits<std::uint32_t>::max());
 struct AngIdx {
-    int ox, oy, oz, out_idx;
+    std::uint32_t ox, oy, oz;
 };
 static thread_local std::vector<AngIdx> tls_ang_idx;
+
+// Reuse an immutable layout table for s/p/d shells across geometries and
+// threads. Each entry maps the canonical recurrence to the quartet's AO order.
+static constexpr void fill_ang_indices(const RysEnv& env, AngIdx* ang_idx,
+                                       bool swap_ab = false,
+                                       bool swap_cd = false) {
+    CartComp ci[kMaxNCart], cj[kMaxNCart], ck[kMaxNCart], cl[kMaxNCart];
+    fill_cart_comps_struct(env.li, ci);
+    fill_cart_comps_struct(env.lj, cj);
+    fill_cart_comps_struct(env.lk, ck);
+    fill_cart_comps_struct(env.ll, cl);
+
+    const int nb = env.nfj;
+    const int nc = env.nfk;
+    const int nd = env.nfl;
+    const int out_nb = swap_ab ? env.nfi : nb;
+    const int out_nc = swap_cd ? nd : nc;
+    const int out_nd = swap_cd ? nc : nd;
+    for (int ia = 0; ia < env.nfi; ++ia)
+        for (int ib = 0; ib < nb; ++ib)
+            for (int ic = 0; ic < nc; ++ic)
+                for (int id = 0; id < nd; ++id) {
+                    const int a = swap_ab ? ib : ia;
+                    const int b = swap_ab ? ia : ib;
+                    const int k = swap_cd ? id : ic;
+                    const int l = swap_cd ? ic : id;
+                    const int out =
+                        ((a * out_nb + b) * out_nc + k) * out_nd + l;
+                    ang_idx[out] = {
+                        static_cast<std::uint32_t>(
+                            ci[ia].nx * env.di + cj[ib].nx * env.dj
+                            + ck[ic].nx * env.dk + cl[id].nx * env.dl),
+                        static_cast<std::uint32_t>(
+                            ci[ia].ny * env.di + cj[ib].ny * env.dj
+                            + ck[ic].ny * env.dk + cl[id].ny * env.dl
+                            + env.g_size),
+                        static_cast<std::uint32_t>(
+                            ci[ia].nz * env.di + cj[ib].nz * env.dj
+                            + ck[ic].nz * env.dk + cl[id].nz * env.dl
+                            + 2 * env.g_size),
+                    };
+                }
+}
+
+constexpr int kCachedAngularKinds = 3;
+constexpr int angular_key(int a, int b, int c, int d) {
+    return ((a * kCachedAngularKinds + b) * kCachedAngularKinds + c)
+               * kCachedAngularKinds
+           + d;
+}
+
+static constexpr auto angular_layouts = [] {
+    constexpr int kinds = kCachedAngularKinds;
+    constexpr auto pair_width = [] {
+        int sum = 0;
+        for (int i = 0; i < kinds; ++i)
+            for (int j = 0; j < kinds; ++j)
+                sum += n_cart_of(i) * n_cart_of(j);
+        return sum;
+    }();
+    struct Table {
+        std::array<std::size_t, kinds * kinds * kinds * kinds> offset{};
+        std::array<AngIdx, pair_width * pair_width> indices{};
+    };
+    Table table;
+    std::size_t offset = 0;
+    ShellBlock A{}, B{}, C{}, D{};
+    for (A.l = 0; A.l < kinds; ++A.l)
+        for (B.l = 0; B.l < kinds; ++B.l)
+            for (C.l = 0; C.l < kinds; ++C.l)
+                for (D.l = 0; D.l < kinds; ++D.l) {
+                    RysEnv env{};
+                    const bool swap_ab = A.l < B.l, swap_cd = C.l < D.l;
+                    init_env(env, swap_ab ? B : A, swap_ab ? A : B,
+                             swap_cd ? D : C, swap_cd ? C : D);
+                    table.offset[angular_key(A.l, B.l, C.l, D.l)] = offset;
+                    fill_ang_indices(env, table.indices.data() + offset,
+                                     swap_ab, swap_cd);
+                    offset += env.nfi * env.nfj * env.nfk * env.nfl;
+                }
+    return table;
+}();
 
 // Scratch for the non-canonical wrapper's canonical-kernel output. Reused
 // per thread (resize-if-smaller); the used prefix is zeroed before each
@@ -402,57 +506,40 @@ static thread_local std::vector<double> tls_swap_scratch;
 // omega == 0 is the bare 1/r path (bit-identical to the pre-RSH kernel).
 // omega > 0 evaluates the erf(ω r)/r operator by the standard ρ-rescale
 // (libcint / PySCF): θ = ω²/(ω²+ρ), ρ ← θ ρ. VRR/HRR are unchanged.
+enum class SingleP { none, bra, ket };
+
+template <bool Attenuated, int Roots, SingleP P = SingleP::none, int Shape = -1>
 static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
                                     const ShellBlock& C, const ShellBlock& D,
-                                    double omega, double* out) {
+                                    double omega, double* out,
+                                    int output_key = -1) {
     RysEnv env;
-    init_env(env, A, B, C, D);
+    int nroots = Roots;
+    double* g = nullptr;
+    int n_out = 0;
+    const AngIdx* ang_idx = nullptr;
+    if constexpr (P == SingleP::none) {
+        init_env<Shape>(env, A, B, C, D);
+        nroots = Roots ? Roots : env.nroots;
 
-    const size_t need = static_cast<size_t>(env.g_size) * 3;
-    if (tls_g_buf.size() < need)
-        tls_g_buf.resize(need);
-    double* g = tls_g_buf.data();
+        const size_t need = static_cast<size_t>(env.g_size) * 3;
+        if (tls_g_buf.size() < need)
+            tls_g_buf.resize(need);
+        g = tls_g_buf.data();
 
-    CartComp ci[kMaxNCart], cj[kMaxNCart], ck[kMaxNCart], cl[kMaxNCart];
-    fill_cart_comps_struct(env.li, ci);
-    fill_cart_comps_struct(env.lj, cj);
-    fill_cart_comps_struct(env.lk, ck);
-    fill_cart_comps_struct(env.ll, cl);
-
-    const int nb = env.nfj;
-    const int nc = env.nfk;
-    const int nd = env.nfl;
-    const int ncd = nc * nd;
-    const int nbcd = nb * ncd;
-    const int n_out = env.nfi * nbcd;
-
-    // ── Precompute angular index offsets (invariant across primitives) ──
-    // d-shell quartets need up to 6^4 = 1296 entries. The buffer is a
-    // per-thread thread_local reused across quartets (resize-if-smaller),
-    // fully overwritten below (indices 0..n_out-1), so no zeroing is required
-    // and no heap allocation happens on the hot path.
-    if (tls_ang_idx.size() < static_cast<size_t>(n_out))
-        tls_ang_idx.resize(static_cast<size_t>(n_out));
-    AngIdx* ang_idx = tls_ang_idx.data();
-    {
-        int c = 0;
-        for (int ia = 0; ia < env.nfi; ++ia)
-            for (int ib = 0; ib < nb; ++ib)
-                for (int ic = 0; ic < nc; ++ic)
-                    for (int id = 0; id < nd; ++id) {
-                        ang_idx[c].ox = ci[ia].nx * env.di + cj[ib].nx * env.dj
-                                        + ck[ic].nx * env.dk
-                                        + cl[id].nx * env.dl;
-                        ang_idx[c].oy = ci[ia].ny * env.di + cj[ib].ny * env.dj
-                                        + ck[ic].ny * env.dk
-                                        + cl[id].ny * env.dl;
-                        ang_idx[c].oz = ci[ia].nz * env.di + cj[ib].nz * env.dj
-                                        + ck[ic].nz * env.dk
-                                        + cl[id].nz * env.dl;
-                        ang_idx[c].out_idx =
-                            ia * nbcd + ib * ncd + ic * nd + id;
-                        ++c;
-                    }
+        n_out = env.nfi * env.nfj * env.nfk * env.nfl;
+        if (env.li < kCachedAngularKinds && env.lk < kCachedAngularKinds) {
+            const int key = output_key >= 0
+                                ? output_key
+                                : angular_key(env.li, env.lj, env.lk, env.ll);
+            ang_idx =
+                angular_layouts.indices.data() + angular_layouts.offset[key];
+        } else {
+            if (tls_ang_idx.size() < static_cast<std::size_t>(n_out))
+                tls_ang_idx.resize(n_out);
+            fill_ang_indices(env, tls_ang_idx.data());
+            ang_idx = tls_ang_idx.data();
+        }
     }
 
     // ── Precompute ket geometry (invariant across bra primitives) ──────
@@ -517,7 +604,7 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
                 const double delta = aij + akl;
                 double a0 = a1 / delta;
                 const double theta =
-                    omega > 0.0 ? 1.0 / (1.0 + a0 / (omega * omega)) : 1.0;
+                    Attenuated ? 1.0 / (1.0 + a0 / (omega * omega)) : 1.0;
                 a0 *= theta;
                 const double rijkl[3] = {
                     rij[0] - rkl[0],
@@ -539,16 +626,38 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
                 const double gz_seed = fac1 * prim_coeff;
 
                 double u[kRysMaxRoots], w[kRysMaxRoots];
-                rys_roots(env.nroots, x, u, w);
+                rys_roots(nroots, x, u, w);
+
+                if constexpr (P != SingleP::none) {
+                    // With one p shell the first VRR coefficient gives the
+                    // three Cartesian integrals directly.
+                    const double u2 = a0 * u[0];
+                    const double tmp4 = 0.5 / (u2 * delta + a1);
+                    const double tmp1 = 2.0 * (u2 * tmp4);
+                    const double weight = w[0] * gz_seed;
+                    for (int axis = 0; axis < 3; ++axis) {
+                        if constexpr (P == SingleP::bra)
+                            out[axis] += ((rij[axis] - A.center[axis])
+                                          - (tmp1 * akl) * rijkl[axis])
+                                         * weight;
+                        else
+                            out[axis] += ((rkl[axis] - C.center[axis])
+                                          + (tmp1 * aij) * rijkl[axis])
+                                         * weight;
+                    }
+                    continue;
+                }
 
                 Rys2eCoeff bc;
-                for (int irys = 0; irys < env.nroots; ++irys) {
+                for (int irys = 0; irys < nroots; ++irys) {
                     // Rys roots store u=t^2/(1-t^2). Attenuation maps
                     // t^2 -> theta*t^2, hence u -> theta*u /
                     // (1+(1-theta)*u); rescaling rho alone is insufficient
                     // for off-center angular integrals and their derivatives.
                     const double u2 =
-                        a0 * u[irys] / (1.0 + (1.0 - theta) * u[irys]);
+                        Attenuated
+                            ? a0 * u[irys] / (1.0 + (1.0 - theta) * u[irys])
+                            : a0 * u[irys];
                     const double tmp4 = 0.5 / (u2 * delta + a1);
                     const double tmp5 = u2 * tmp4;
                     const double tmp1 = 2.0 * tmp5;
@@ -571,33 +680,34 @@ static void rys_eri_block_canonical(const ShellBlock& A, const ShellBlock& B,
                 // every slot they touch, so the rest of the buffer
                 // does not need to be memset — stale values live in
                 // slots that the final contraction never reads.
-                for (int irys = 0; irys < env.nroots; ++irys) {
+                for (int irys = 0; irys < nroots; ++irys) {
                     g[env.g_size * 2 + irys] = w[irys] * gz_seed;
                 }
 
-                g0_2e_2d(g, bc, env);
+                g0_2e_2d<Roots, Shape>(g, bc, env);
 
                 // HRR: first kl-shift (fills ll > 0 slots), then
                 // ij-shift (reads all (k,l) slots). Matches the
                 // order used by libcint's CINTg0_ik2d_4d.
-                for (int ax = 0; ax < 3; ++ax) {
-                    double* ga = g + ax * env.g_size;
-                    g_shift_kl(ga, env, env.rkrl[ax]);
-                    g_shift_ij(ga, env, env.rirj[ax]);
-                }
+                if (env.ll)
+                    for (int ax = 0; ax < 3; ++ax)
+                        g_shift_kl<Shape>(g + ax * env.g_size, env,
+                                          env.rkrl[ax]);
+                if (env.lj)
+                    for (int ax = 0; ax < 3; ++ax)
+                        g_shift_ij<Shape>(g + ax * env.g_size, env,
+                                          env.rirj[ax]);
 
                 // Contract to ERI(a,b,c,d) using precomputed angular indices.
-                const int gs = env.g_size;
                 for (int c = 0; c < n_out; ++c) {
-                    const int ox = ang_idx[c].ox;
-                    const int oy = ang_idx[c].oy;
-                    const int oz = ang_idx[c].oz;
+                    const double* gx = g + ang_idx[c].ox;
+                    const double* gy = g + ang_idx[c].oy;
+                    const double* gz = g + ang_idx[c].oz;
                     double val = 0.0;
-                    for (int irys = 0; irys < env.nroots; ++irys) {
-                        val += g[ox + irys] * g[gs + oy + irys]
-                               * g[gs * 2 + oz + irys];
+                    for (int irys = 0; irys < nroots; ++irys) {
+                        val += gx[irys] * gy[irys] * gz[irys];
                     }
-                    out[ang_idx[c].out_idx] += val;
+                    out[c] += val;
                 }
             }
         }
@@ -1103,6 +1213,7 @@ void rys_eri_erf_block_deriv(const ShellBlock& A, const ShellBlock& B,
 
 // ── Public API ───────────────────────────────────────────────────────
 
+template <bool Attenuated, int Roots = 0>
 static void rys_eri_dispatch(const ShellBlock& A, const ShellBlock& B,
                              const ShellBlock& C, const ShellBlock& D,
                              double omega, double* out) {
@@ -1110,8 +1221,47 @@ static void rys_eri_dispatch(const ShellBlock& A, const ShellBlock& B,
     const bool swap_ab = A.l < B.l;
     const bool swap_cd = C.l < D.l;
 
+    if constexpr (!Attenuated && Roots == 1) {
+        // A single p shell always has the same flat xyz order after
+        // canonicalizing either shell pair.
+        if (A.l + B.l == 1 && C.l == 0 && D.l == 0)
+            return rys_eri_block_canonical<false, 1, SingleP::bra>(
+                swap_ab ? B : A, swap_ab ? A : B, C, D, omega, out);
+        if (C.l + D.l == 1 && A.l == 0 && B.l == 0)
+            return rys_eri_block_canonical<false, 1, SingleP::ket>(
+                A, B, swap_cd ? D : C, swap_cd ? C : D, omega, out);
+    }
+
+    if constexpr (!Attenuated && Roots == 2) {
+        if ((A.l | B.l | C.l | D.l) <= 1) {
+            const ShellBlock& Ae = swap_ab ? B : A;
+            const ShellBlock& Be = swap_ab ? A : B;
+            const ShellBlock& Ce = swap_cd ? D : C;
+            const ShellBlock& De = swap_cd ? C : D;
+            const int output_key = angular_key(A.l, B.l, C.l, D.l);
+            const int shape = (Ae.l << 3) | (Be.l << 2) | (Ce.l << 1) | De.l;
+            switch (shape) {
+            case 0b0011: // (ss|pp)
+                return rys_eri_block_canonical<false, 2, SingleP::none, 0b0011>(
+                    Ae, Be, Ce, De, omega, out, output_key);
+            case 0b1010: // (ps|ps)
+                return rys_eri_block_canonical<false, 2, SingleP::none, 0b1010>(
+                    Ae, Be, Ce, De, omega, out, output_key);
+            case 0b1011: // (ps|pp)
+                return rys_eri_block_canonical<false, 2, SingleP::none, 0b1011>(
+                    Ae, Be, Ce, De, omega, out, output_key);
+            case 0b1100: // (pp|ss)
+                return rys_eri_block_canonical<false, 2, SingleP::none, 0b1100>(
+                    Ae, Be, Ce, De, omega, out, output_key);
+            case 0b1110: // (pp|ps)
+                return rys_eri_block_canonical<false, 2, SingleP::none, 0b1110>(
+                    Ae, Be, Ce, De, omega, out, output_key);
+            }
+        }
+    }
+
     if (!swap_ab && !swap_cd) {
-        rys_eri_block_canonical(A, B, C, D, omega, out);
+        rys_eri_block_canonical<Attenuated, Roots>(A, B, C, D, omega, out);
         return;
     }
 
@@ -1125,6 +1275,16 @@ static void rys_eri_dispatch(const ShellBlock& A, const ShellBlock& B,
     const ShellBlock& Ce = swap_cd ? D : C;
     const ShellBlock& De = swap_cd ? C : D;
 
+    // The layout table maps canonical recurrence offsets to the original
+    // output order for s/p/d, so these blocks can accumulate directly.
+    if constexpr (!Attenuated) {
+        if (Ae.l < kCachedAngularKinds && Ce.l < kCachedAngularKinds) {
+            const int key = angular_key(A.l, B.l, C.l, D.l);
+            return rys_eri_block_canonical<Attenuated, Roots>(Ae, Be, Ce, De,
+                                                              omega, out, key);
+        }
+    }
+
     const int nae = Ae.n_cart;
     const int nbe = Be.n_cart;
     const int nce = Ce.n_cart;
@@ -1136,7 +1296,7 @@ static void rys_eri_dispatch(const ShellBlock& A, const ShellBlock& B,
         tls_swap_scratch.resize(sc_need);
     double* scratch = tls_swap_scratch.data();
     std::fill(scratch, scratch + sc_need, 0.0);
-    rys_eri_block_canonical(Ae, Be, Ce, De, omega, scratch);
+    rys_eri_block_canonical<Attenuated, Roots>(Ae, Be, Ce, De, omega, scratch);
 
     const int na = A.n_cart;
     const int nb = B.n_cart;
@@ -1161,7 +1321,18 @@ static void rys_eri_dispatch(const ShellBlock& A, const ShellBlock& B,
 
 void rys_eri_block(const ShellBlock& A, const ShellBlock& B,
                    const ShellBlock& C, const ShellBlock& D, double* out) {
-    rys_eri_dispatch(A, B, C, D, /*omega=*/0.0, out);
+    // A fixed root count lets the compiler unroll the short recurrence
+    // and contraction loops without changing quadrature or summation order.
+    switch ((A.l + B.l + C.l + D.l) / 2 + 1) {
+    case 1:
+        return rys_eri_dispatch<false, 1>(A, B, C, D, 0.0, out);
+    case 2:
+        return rys_eri_dispatch<false, 2>(A, B, C, D, 0.0, out);
+    case 3:
+        return rys_eri_dispatch<false, 3>(A, B, C, D, 0.0, out);
+    default:
+        return rys_eri_dispatch<false>(A, B, C, D, 0.0, out);
+    }
 }
 
 void rys_eri_erf_block(const ShellBlock& A, const ShellBlock& B,
@@ -1174,11 +1345,11 @@ void rys_eri_erf_block(const ShellBlock& A, const ShellBlock& B,
     }
     // omega == 0 is the documented identity: go through the same public
     // 1/r entry so the ω→0 gate is bit-identical, not just numerically close.
-    if (omega == 0.0) {
+    if (!(omega > 0.0)) {
         rys_eri_block(A, B, C, D, out);
         return;
     }
-    rys_eri_dispatch(A, B, C, D, omega, out);
+    rys_eri_dispatch<true>(A, B, C, D, omega, out);
 }
 
 } // namespace native

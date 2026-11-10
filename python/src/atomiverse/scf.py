@@ -73,6 +73,21 @@ Constructors
     initial moment rotation [radians]. After convergence,
     ``spin_density_block("alpha", "beta")`` returns an owned AO density block.
 
+``MP2(rhf, frozen=0)``
+    Canonical CPU MP2 on an ``RHF`` reference. Each ``run(frame)`` performs
+    fresh RHF followed by MP2. It returns an ``MP2Result`` with total,
+    correlation, opposite-spin and same-spin energies in Hartree and writes
+    the correlated total in eV to ``frame.meta["energy"]``. ``rhf.energy()``
+    gives the RHF reference energy in Hartree. ``frozen`` excludes that many
+    of the lowest occupied orbitals from the correlation sum.
+
+``MP3(rhf, frozen=0)``
+    Canonical CPU MP3 on an ``RHF`` reference. Each ``run(frame)`` performs
+    fresh RHF followed by MP3. It returns an ``MP3Result`` with total energy,
+    total correlation energy and its second- and third-order contributions
+    in Hartree. The correlated total is written to ``frame.meta["energy"]``
+    in eV. ``frozen`` excludes the lowest occupied orbitals as in ``MP2``.
+
 ``CudaRHF`` / ``CudaUHF`` take the same constructor arguments as ``RHF`` /
 ``UHF``. They forward the existing public CUDA methods; unsupported basis,
 element or force envelopes raise without a CPU fallback. ``run`` computes
@@ -151,6 +166,16 @@ ROHF = _cpp.ROHF
 GHF = _cpp.GHF
 backend_info = _cpp.hf_backend_info
 __all__ = ["RHF", "UHF", "ROHF", "GHF", "RKS", "UKS", "backend_info"]
+
+if hasattr(_cpp, "MP2") and hasattr(_cpp, "MP2Result"):
+    MP2 = _cpp.MP2
+    MP2Result = _cpp.MP2Result
+    __all__ += ["MP2", "MP2Result"]
+
+if hasattr(_cpp, "MP3") and hasattr(_cpp, "MP3Result"):
+    MP3 = _cpp.MP3
+    MP3Result = _cpp.MP3Result
+    __all__ += ["MP3", "MP3Result"]
 
 if hasattr(_cpp, "CudaRHF"):
     CudaRHF = _cpp.CudaRHF

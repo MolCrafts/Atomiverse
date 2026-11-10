@@ -31,8 +31,12 @@ cpu::Frame water() {
 
 // Independent literal four-index contractions test every symmetry degeneracy
 // and, unlike symmetric-only comparisons, detect transposed GHF exchange.
-void check(BasisSet basis, bool nonsymmetric) {
+void check(BasisSet basis, bool nonsymmetric, bool separated = false) {
     auto f = water();
+    if (separated) {
+        f.span(kAtom_x)[1] = -30.0;
+        f.span(kAtom_x)[2] = 30.0;
+    }
     internal::IntegralWorkspace ints(f, basis, 0, true);
     const int n = ints.n_basis;
     RealMatrix P = xt::zeros<double>({n, n});
@@ -75,6 +79,11 @@ void check(BasisSet basis, bool nonsymmetric) {
 TEST(ExactJK, SymmetricDensity) { check(BasisSet::STO3G, false); }
 TEST(ExactJK, NonsymmetricDensity) { check(BasisSet::STO3G, true); }
 TEST(ExactJK, SphericalDShells) { check(BasisSet::Def2SVP, true); }
+TEST(ExactJK, ScreenedCartesianPairs) { check(BasisSet::STO3G, true, true); }
+TEST(ExactJK, ScreenedSphericalPairs) { check(BasisSet::Def2SVP, true, true); }
+TEST(ExactJK, ScreenedSymmetricSphericalPairs) {
+    check(BasisSet::Def2SVP, false, true);
+}
 TEST(ExactJK, MultipleThreads) {
 #ifdef _OPENMP
     const int previous = omp_get_max_threads();
@@ -180,6 +189,27 @@ TEST(ExactJK, MultiDensityJOnlyScaledKOnly) {
         expect_close(Jc, J2, 2e-10);
         expect_close(Kc, RealMatrix(0.5 * K2), 2e-10);
     }
+}
+
+TEST(ExactJK, CachedSeparateDensitiesWithSymmetricExchange) {
+    auto f = water();
+    internal::IntegralWorkspace ints(f, BasisSet::Def2SVP, 0, true);
+    const RealMatrix PJ = test_density(ints.n_basis, 0.7);
+    const RealMatrix PK = PJ + xt::transpose(PJ);
+    RealMatrix Jref, Kref, unused;
+    literal_jk(ints.ERI, PJ, Jref, unused);
+    literal_jk(ints.ERI, PK, unused, Kref);
+    ints.ERI = {};
+
+    internal::ExactJK engine;
+    engine.prepare(ints.view(), 4000.0);
+    ASSERT_TRUE(engine.cached());
+    RealMatrix J, K;
+    const internal::JKRequest requests[] = {{&PJ, &J, nullptr, 1.0, 0},
+                                            {&PK, nullptr, &K, -0.3, 1}};
+    engine.compute(requests);
+    expect_close(J, Jref, 2e-10);
+    expect_close(K, RealMatrix(-0.3 * Kref), 2e-10);
 }
 
 // Per-block-pair density screening must keep every quartet a sparse density
