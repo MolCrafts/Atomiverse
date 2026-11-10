@@ -3,6 +3,7 @@ from benchmarks.framework.specification import Check, Method, Row
 from benchmarks.scf.hf import eight_water_chain, row
 
 _rhf = row("RHF", "sto3g.energy", "energy", "STO-3G", ["water"])
+_rhf.systems[0].tiers.insert(0, "smoke")
 _cpu, _cuda, _oracle, _ = _rhf.participants
 _cuda.available = False
 _cuda.unavailable_reason = "Native CUDA RMP3 is not implemented"
