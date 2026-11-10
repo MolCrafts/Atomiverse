@@ -86,8 +86,10 @@ struct RunOut {
 RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
     RunOut o;
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                       kEcutRy, 1, cpu::xc::XCType::LSDA};
+        cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>(upf)},
+                       kEcutRy,
+                       1,
+                       cpu::xc::XCType::LSDA};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
@@ -101,8 +103,10 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
         o.converged = r.converged;
         o.iterations = r.iterations;
     } else {
-        cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                        kEcutRy, 1, cpu::xc::XCType::LSDA};
+        cuda::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>(upf)},
+                        kEcutRy,
+                        1,
+                        cpu::xc::XCType::LSDA};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;

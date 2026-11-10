@@ -63,7 +63,7 @@ void force(const PW& method, const cpu::Frame& frame) {
 // qualification remains the independent QE pin at the reference geometry.
 void same_as_fresh(const PW& method, const cpu::Frame& frame) {
     auto copy = frame;
-    PW fresh(method.potential, method.ecut_ry, method.k_mesh, method.xc);
+    PW fresh(method.potentials, method.ecut_ry, method.k_mesh, method.xc);
     controls(fresh);
     fresh.forces(copy);
     if (!method.last_result().converged || !fresh.last_result().converged)
@@ -123,9 +123,9 @@ int main(int argc, char** argv) {
             reference.span(kAtom_y)[i] = xyz[i][1];
             reference.span(kAtom_z)[i] = xyz[i][2];
         }
-        PW method(provider, 12, 1, cpu::xc::XCType::PBE);
+        PW method({provider}, 12, 1, cpu::xc::XCType::PBE);
         controls(method);
-        if (method.potential.get() != provider.get())
+        if (method.potentials.front().get() != provider.get())
             throw std::runtime_error(
                 "PW replaced the external physics instance");
         auto frame = reference;
@@ -250,9 +250,10 @@ int main(int argc, char** argv) {
             method.run(frame);
             energy(method, frame);
             const auto accepted = method.last_result();
-            PW peer(provider, 12, 1, cpu::xc::XCType::PBE);
+            PW peer({provider}, 12, 1, cpu::xc::XCType::PBE);
             controls(peer);
-            if (peer.potential.get() != method.potential.get())
+            if (peer.potentials.front().get()
+                != method.potentials.front().get())
                 throw std::runtime_error(
                     "independent methods did not share provider");
             auto changed = reference;
@@ -292,7 +293,7 @@ int main(int argc, char** argv) {
             method.forces(frame);
             force(method, frame);
         }
-        if (method.potential.get() != provider.get())
+        if (method.potentials.front().get() != provider.get())
             throw std::runtime_error(
                 "workflow replaced physical provider identity");
         const double wall = std::chrono::duration<double>(

@@ -38,7 +38,7 @@ namespace ATV {
 namespace cpu {
 namespace pw {
 namespace internal {
-struct PWProblem; ///< Defined in cpu/planewave/internal/pw_setup.h.
+struct PWKMesh; ///< Defined in cpu/planewave/internal/pw_setup.h.
 } // namespace internal
 } // namespace pw
 } // namespace cpu
@@ -115,7 +115,7 @@ class DeviceBandSolver {
     /// Everything this uploads is a pure function of the geometry — the
     /// G→FFT index map, T(G), q = k+G, the KB projector descriptors and
     /// radial f_G, and the initial Davidson subspace (`init_subspace`, which
-    /// reads only T_G / atom_wfc / gvec / atom_pos_bohr). None of it depends
+    /// reads the k-point operators, ionic positions and any trial orbitals). None of it depends
     /// on V_eff or ρ, so rebuilding it per SCF iteration — as the loop did
     /// before — was repeating identical work `max_iter` times.
     ///
@@ -124,10 +124,13 @@ class DeviceBandSolver {
     /// against free device memory and throws a message naming the figure
     /// rather than surfacing a bare cudaMalloc failure.
     ///
-    /// @param prob Problem assembled by `setup_pw_problem`. `prob.ws` is
-    ///        temporarily rebound to each k-sphere and left bound to the
-    ///        density sphere (`prob.gv0`) on return.
-    void build_kpoints(cpu::pw::internal::PWProblem& prob);
+    /// @param mesh Assembled wavefunction modes and operator tables.
+    /// @param positions Ionic positions [Bohr] in projector order.
+    /// @param volume Cell volume [Bohr³].
+    /// @param trial Optional trial wavefunctions.
+    void build_kpoints(const cpu::pw::internal::PWKMesh& mesh,
+                       std::span<const Vec3> positions, AccReal volume,
+                       const xt::xarray<std::complex<AccReal>>& trial);
 
     /// @brief Select a k-point built by `build_kpoints`.
     ///
@@ -137,21 +140,20 @@ class DeviceBandSolver {
     /// because it is the one \f$O(n_G n_\mathrm{proj})\f$ array here, and
     /// caching it over all k would dominate device memory on any real cell.
     ///
-    /// @param ik k-point index into `prob.gv_k` (0-based).
+    /// @param ik k-point index into the mesh (0-based).
     void bind_kpoint(int ik);
 
     /// @brief Block-Davidson diagonalization for the bound k-point,
     /// algorithmically identical to `cpu::pw::internal::DavidsonSolver::step`,
-    /// including its fixed |R|² residual threshold. Writes ws.eigenvalues;
+    /// including its fixed |R|² residual threshold. Writes the host eigenvalues;
     /// band wavefunctions stay device-resident.
     ///
     /// The starting subspace is copied device→device from the table
     /// `build_kpoints` produced, so no O(n_G) array crosses PCIe here.
     ///
-    /// @param ws       Workspace, used only to receive `eigenvalues`; the
-    ///                 k-sphere comes from `bind_kpoint`, not from `ws`.
+    /// @param eigenvalues Output eigenvalues for the bound k-point.
     /// @param max_iter Maximum Davidson expansion rounds (capped at 20).
-    void solve(cpu::pw::internal::PWWorkspace& ws, int max_iter);
+    void solve(xt::xarray<AccReal>& eigenvalues, int max_iter);
 
     /// @brief rho_accum += weight·occ·|ψ_b(r)|²/Ω over the first `n_occ`
     /// bands of the most recent solve(). Restricted closed-shell default is
@@ -244,7 +246,7 @@ class DeviceBandSolver {
 
     // Reapply the actual bound physical H, certify the existing 1e-6-Ha
     // residual policy, then D2D-copy the completed block. No new solver flag.
-    FinalBandStatus solve_final_bands(cpu::pw::internal::PWWorkspace&,
+    FinalBandStatus solve_final_bands(xt::xarray<AccReal>& eigenvalues,
                                       FinalBandDestination, int max_iter = 20);
 
   private:

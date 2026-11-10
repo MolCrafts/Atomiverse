@@ -29,6 +29,7 @@ using ATV::cpu::gpw::internal::CplxMatrix;
 using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
+using ATV::cuda::gpw::internal::KpointBasisDevice;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
 namespace {
@@ -106,10 +107,10 @@ TEST(CudaGpwKpointHAssemble, MatchesHostH0PlusV) {
                           cudaMemcpyHostToDevice),
                "H2D V");
 
+    const KpointBasisDevice device_basis(nullptr, kbg);
     KpointIntegrateDevice kint;
-    kint.build(/*stream=*/nullptr, nb, npts, nk);
+    kint.build(device_basis);
     for (int ik = 0; ik < nk; ++ik) {
-        kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
         // Synthetic Hermitian H0 (stand-in for T+Vnl): diagonal + small phase.
         CplxMatrix H0 = xt::zeros<Cplx>({nb, nb});
         for (int u = 0; u < nb; ++u) {
@@ -177,8 +178,13 @@ TEST(CudaGpwKpointHAssemble, MatchesHostH0PlusV) {
 }
 
 TEST(CudaGpwKpointHAssemble, UploadH0Reject) {
+    ATV::cpu::gpw::internal::KpointBasisGrid kbg;
+    kbg.nb = 2;
+    kbg.npts = 10;
+    kbg.chi.resize(1, std::vector<Cplx>(20));
+    const KpointBasisDevice device_basis(nullptr, kbg);
     KpointIntegrateDevice kint;
-    kint.build(nullptr, 2, 10, 1);
+    kint.build(device_basis);
     EXPECT_THROW(kint.upload_H0(1, nullptr), std::invalid_argument);
     EXPECT_THROW(kint.upload_H0(0, nullptr), std::invalid_argument);
     EXPECT_THROW(kint.assemble_H(1), std::invalid_argument);

@@ -6,6 +6,7 @@
 ///        internal::direct_rpa_uhf (Γ URPA@UKS), and
 ///        internal::direct_rpa_uhf_energy_kpoints (multi-k URPA).
 
+#include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -58,7 +59,8 @@ int count_basis_rpa_(const std::vector<GpwAtom>& atoms) {
 } // namespace
 
 const RpaResult& GpwDft::direct_rpa() {
-    const std::vector<GpwAtom>& atoms = last_atoms_;
+    const std::vector<GpwAtom>& atoms =
+        internal::GpwDftAccess::geometry(*this).atoms;
     if (!built_)
         throw std::logic_error(
             "GpwDft::direct_rpa called before build() — validate the "

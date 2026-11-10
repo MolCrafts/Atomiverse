@@ -870,14 +870,14 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                 "PeriodicWannier::compute: multiplicity must be >= 1 when "
                 "spin_polarized");
 
-        internal::PWProblem prob;
-        internal::setup_pw_problem(frame, *method.potential, method.ecut_ry,
-                                   method.k_mesh, prob);
-        internal::PWWorkspace& ws = prob.ws;
+        internal::PWSetup prob;
+        internal::PWWorkspace ws;
+        internal::setup_pw_problem(frame, method.potentials, method.ecut_ry,
+                                   method.k_mesh, prob, ws);
         auto& gv0 = prob.gv0;
-        const int n_kpts_scf = static_cast<int>(prob.kg.kpoints.size());
+        const int n_kpts_scf = static_cast<int>(prob.mesh.kg.kpoints.size());
         const int ng0 = gv0.count();
-        const int n_elec = prob.n_elec;
+        const int n_elec = prob.ions.n_elec;
         const int mag = method.multiplicity - 1;
         if ((n_elec + mag) % 2 != 0 || mag > n_elec)
             throw std::invalid_argument(
@@ -936,33 +936,21 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
 
             xt::xarray<std::complex<AccReal>> rho_out[2];
             e_band_last = AccReal(0);
-            auto* saved_gvec = ws.gvec;
+            const auto saved_point = ws.point();
             for (int s = 0; s < 2; ++s) {
                 for (int ig = 0; ig < ng0; ++ig)
                     ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
                 veff.step(ws);
                 density.begin(ws);
                 for (int ik = 0; ik < n_kpts_scf; ++ik) {
-                    auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                    ws.gvec = &gvk;
-                    ws.n_g = gvk.count();
-                    ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                    for (int ig = 0; ig < ws.n_g; ++ig)
-                        ws.T_G[ig] = gvk.ekin[ig];
-                    if (!prob.kb_proj_k.empty())
-                        ws.kb_proj =
-                            prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                    if (!prob.atom_wfc_k.empty())
-                        ws.atom_wfc =
-                            prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                    ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
                     davidson.step(ws);
                     const AccReal weight =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     for (int b = 0; b < n_occ[s]; ++b)
                         e_band_last += weight * ws.eigenvalues[b];
                     density.accumulate_kpoint(ws, weight, n_occ[s], AccReal(1));
-                    ws.gvec = saved_gvec;
-                    ws.n_g = ng0;
+                    ws.bind(saved_point);
                 }
                 density.extract(ws, rho_out[s]);
             }
@@ -1019,7 +1007,8 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
         kvec.reserve(static_cast<std::size_t>(nk));
         for (const auto& kf : kg.kpoints)
             kvec.push_back(kf);
-        internal::rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
+        const auto mesh = internal::make_pw_k_mesh(prob.ions, frame.box,
+                                                   method.ecut_ry, kvec);
 
         for (int s = 0; s < 2; ++s) {
             if (n_occ[s] < 1)
@@ -1034,18 +1023,9 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
             dav_s.prepare(ws);
             std::vector<std::vector<std::complex<AccReal>>> coef(
                 static_cast<std::size_t>(nk));
-            auto* saved_gvec = ws.gvec;
+            const auto saved_point = ws.point();
             for (int ik = 0; ik < nk; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                ws.gvec = &gvk;
-                ws.n_g = gvk.count();
-                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.T_G[ig] = gvk.ekin[ig];
-                if (!prob.kb_proj_k.empty())
-                    ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                ws.bind(mesh.point(static_cast<std::size_t>(ik)));
                 dav_s.step(ws);
                 auto& c = coef[static_cast<std::size_t>(ik)];
                 c.resize(static_cast<std::size_t>(n_occ[s] * ws.n_g));
@@ -1054,13 +1034,12 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                         c[static_cast<std::size_t>(b * ws.n_g + ig)] =
                             ws.wfc(b, ig);
             }
-            ws.gvec = saved_gvec;
-            ws.n_g = ng0;
+            ws.bind(saved_point);
 
             const auto trials = resolve_trials(trial_centers, n_occ[s], frame);
             const ChannelLoc ch = localize_channel(
-                coef, prob.gv_k, n_occ[s], N, recip,
-                static_cast<double>(prob.vol_bohr), trials, use_projection,
+                coef, mesh.gv_k, n_occ[s], N, recip,
+                static_cast<double>(prob.ions.vol_bohr), trials, use_projection,
                 proj_alpha_ang, max_iter, tol, step);
 
             for (std::size_t i = 0; i < ch.centers.size(); ++i) {
@@ -1082,8 +1061,9 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
     }
 
     // ── Restricted closed-shell path ────────────────────────────────────
-    internal::PWProblem prob;
-    const PWResult scf = internal::run_restricted_scf(frame, method, prob);
+    internal::PWSetup prob;
+    internal::PWWorkspace ws;
+    const PWResult scf = internal::run_restricted_scf(frame, method, prob, ws);
     const int n_wann = prob.n_bands;
     if (n_wann < 1)
         throw std::invalid_argument(
@@ -1104,26 +1084,16 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
     for (const auto& kf : kg.kpoints)
         kvec.push_back(kf);
 
-    internal::rebuild_k_tables(prob, frame, method.ecut_ry, kvec);
+    const auto mesh =
+        internal::make_pw_k_mesh(prob.ions, frame.box, method.ecut_ry, kvec);
 
-    internal::PWWorkspace& ws = prob.ws;
     std::vector<std::vector<std::complex<AccReal>>> coef(
         static_cast<std::size_t>(nk));
     DavidsonSolver davidson(n_wann, AccReal(method.tol) * AccReal(0.1), 50);
     davidson.prepare(ws);
-    auto* saved_gvec = ws.gvec;
-    const int n_g0 = ws.n_g;
+    const auto saved_point = ws.point();
     for (int ik = 0; ik < nk; ++ik) {
-        auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        ws.bind(mesh.point(static_cast<std::size_t>(ik)));
 
         davidson.step(ws);
 
@@ -1133,12 +1103,12 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
             for (int ig = 0; ig < ws.n_g; ++ig)
                 c[static_cast<std::size_t>(b * ws.n_g + ig)] = ws.wfc(b, ig);
     }
-    ws.gvec = saved_gvec;
-    ws.n_g = n_g0;
+    ws.bind(saved_point);
 
-    const ChannelLoc ch = localize_channel(
-        coef, prob.gv_k, n_wann, N, recip, static_cast<double>(prob.vol_bohr),
-        trials, use_projection, proj_alpha_ang, max_iter, tol, step);
+    const ChannelLoc ch =
+        localize_channel(coef, mesh.gv_k, n_wann, N, recip,
+                         static_cast<double>(prob.ions.vol_bohr), trials,
+                         use_projection, proj_alpha_ang, max_iter, tol, step);
     out.centers = std::move(ch.centers);
     out.spreads = std::move(ch.spreads);
     out.total_spread = ch.total_spread;

@@ -95,7 +95,7 @@ frame.span(kAtom_z)[0] = 0.0;
 frame.span(kAtom_z)[1] = 1.2075;         // R(O–O) [Å]
 frame.box = cpu::Box::cubic(8.0);
 
-PW pw{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/O_ONCV_PBE-1.2.upf"),
+PW pw{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/O_ONCV_PBE-1.2.upf")},
       12.0, 1 /* Γ */, cpu::scf::XCType::PBE};   // true collinear spin-GGA
 pw.tol = 5e-4;                           // density L2
 pw.max_iter = 60;
@@ -243,8 +243,8 @@ v_{\rho_\sigma}
 This is **not** PBE called with forced \(\sigma=0\) per spin channel.
 
 ```cpp
-PW pbe{std::make_shared<UpfPseudopotential>(upf), 12.0, 1, cpu::scf::XCType::PBE};    // members as in Common setup
-PW lsda{std::make_shared<UpfPseudopotential>(upf), 12.0, 1, cpu::scf::XCType::LSDA};  // GGA activation twin
+PW pbe{{std::make_shared<UpfPseudopotential>(upf)}, 12.0, 1, cpu::scf::XCType::PBE};    // members as in Common setup
+PW lsda{{std::make_shared<UpfPseudopotential>(upf)}, 12.0, 1, cpu::scf::XCType::LSDA};  // GGA activation twin
 const double de = std::fabs(r_pbe.energy_ha - r_lsda.energy_ha);    // gate: > 1e-4 Ha
 ```
 
@@ -302,7 +302,7 @@ below are offline pins on the CPU path; no section gates them.
 
 ```cpp
 frame.box = cpu::Box::cubic(5.5);
-PW pw{std::make_shared<UpfPseudopotential>("tests/data/pw/O_ONCV_PBE-1.2.upf"), 5.0, 2};  // multi-k UKS
+PW pw{{std::make_shared<UpfPseudopotential>("tests/data/pw/O_ONCV_PBE-1.2.upf")}, 5.0, 2};  // multi-k UKS
 pw.tol = 2e-3;
 pw.max_iter = 20;
 pw.mix_beta = 0.5;

@@ -44,7 +44,7 @@ class DavidsonSolver {
     void set_tolerance(AccReal tol) noexcept { tol_ = tol; }
 
     /// @brief Diagonalize at the workspace's current k-point G-sphere.
-    /// @param ws Plane-wave workspace (`gvec`/`n_g`/`T_G` set per k-point).
+    /// @param ws Plane-wave workspace (bound to the current k-point).
     void step(PWWorkspace& ws);
 
   private:

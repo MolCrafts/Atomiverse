@@ -96,7 +96,7 @@ double value_local(const internal_data& d, const GList& g,
 double value_nl(const internal_data& d, const GList& g, std::span<const Vec3> r,
                 Orbitals o, double volume) {
     std::vector<Vec3> atoms(r.begin(), r.end());
-    std::vector<std::vector<PWWorkspace::KBProjG>> proj;
+    std::vector<std::vector<KBProjector>> proj;
     setup_kb_projectors(proj, g, d, atoms, volume);
     double e = 0;
     for (std::size_t b = 0; b < o.occupations.size(); ++b)
@@ -202,6 +202,7 @@ PackedOutput run_gpu(const internal_data& d, const GList& g,
         occupation(state.occupations.begin(), state.occupations.end());
     std::vector<cufftDoubleComplex> coefficients, density_values, structure;
     std::vector<FrozenProjectorColumn> columns;
+    const std::vector<FrozenProjectorSpecies> species{{0, 0, d.n_proj()}};
     for (const auto& r : atoms)
         for (int k = 0; k < 3; ++k)
             positions.push_back(r[k]);
@@ -242,7 +243,7 @@ PackedOutput run_gpu(const internal_data& d, const GList& g,
                         radial.push_back(p);
                 for (int p : radial)
                     columns.push_back(
-                        {int(atom), l, m, p, start, int(radial.size())});
+                        {int(atom), l, m, p, start, int(radial.size()), 0});
             }
     std::array<ATV::cuda::pw::internal::FrozenOperatorVirial, 4> downloaded;
     std::vector<double> downloaded_force(3 * atoms.size());
@@ -255,7 +256,7 @@ PackedOutput run_gpu(const internal_data& d, const GList& g,
                                        int(occupation.size()), state.k_weight};
     const FrozenLocalDeviceView lv{device.upload(local_value),
                                    device.upload(local_slope),
-                                   device.upload(structure)};
+                                   device.upload(structure), 1};
     const auto* density = device.upload(density_values);
     auto* output =
         device.allocate<ATV::cuda::pw::internal::FrozenOperatorVirial>(4);
@@ -271,7 +272,8 @@ PackedOutput run_gpu(const internal_data& d, const GList& g,
                                     device.upload(d.d_ij),
                                     device.upload(positions),
                                     device.upload(columns),
-                                    d.n_proj(),
+                                    device.upload(species),
+                                    1,
                                     int(columns.size()),
                                     4 * M_PI / std::sqrt(volume)};
     const std::size_t bc = columns.size() * occupation.size();

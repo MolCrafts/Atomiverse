@@ -5,9 +5,12 @@
 #include "atomiverse/electronic/norm_conserving_potential.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace ATV::cpu::pw::internal {
 
@@ -17,33 +20,64 @@ void require_finite(std::span<const AccReal> values, const char* message) {
         if (!std::isfinite(value))
             throw std::invalid_argument(message);
 }
-void validate_frame_species(const cpu::Frame& frame, int z, int valence) {
-    if (z < 1 || z > 118 || valence < 1 || valence > z)
-        throw std::invalid_argument(
-            "NC potential: invalid atomic number or valence");
+template <class Potentials, class Identity>
+NcComposition assign_species(const cpu::Frame& frame,
+                             const Potentials& potentials, Identity identity) {
     if (frame.nlocal() == 0)
-        throw std::invalid_argument(
-            "PW requires a nonempty single-species Frame");
-    const auto types = frame.span(kAtom_atomic_number);
-    for (std::size_t i = 0; i < frame.nlocal(); ++i)
-        if (types[i] != z)
-            throw std::invalid_argument(
-                "PW requires every Frame species to match the NC potential "
-                "atomic number; mixed species are unsupported");
-}
+        throw std::invalid_argument("PW requires a nonempty Frame");
+    if (potentials.empty())
+        throw std::invalid_argument("PW requires at least one NC potential");
 
+    std::array<int, 119> index;
+    index.fill(-1);
+    std::array<int, 119> valence_by_z{};
+    for (std::size_t i = 0; i < potentials.size(); ++i) {
+        if (!potentials[i])
+            throw std::invalid_argument("PW: null NC potential");
+        const auto [z, valence] = identity(*potentials[i]);
+        if (z < 1 || z > 118 || valence < 1 || valence > z)
+            throw std::invalid_argument(
+                "NC potential: invalid atomic number or valence");
+        if (index[z] >= 0)
+            throw std::invalid_argument("PW: duplicate NC potential for Z="
+                                        + std::to_string(z));
+        index[z] = static_cast<int>(i);
+        valence_by_z[z] = valence;
+    }
+
+    NcComposition out;
+    out.atom_species.reserve(frame.nlocal());
+    out.ionic_charges.reserve(frame.nlocal());
+    const auto types = frame.span(kAtom_atomic_number);
+    for (std::size_t i = 0; i < frame.nlocal(); ++i) {
+        const int z = types[i];
+        if (z < 1 || z > 118 || index[z] < 0)
+            throw std::invalid_argument("PW: missing NC potential for Z="
+                                        + std::to_string(z));
+        const int valence = valence_by_z[z];
+        if (out.n_elec > std::numeric_limits<int>::max() - valence)
+            throw std::invalid_argument("PW: too many valence electrons");
+        out.atom_species.push_back(static_cast<std::size_t>(index[z]));
+        out.ionic_charges.push_back(static_cast<AccReal>(valence));
+        out.n_elec += valence;
+    }
+    return out;
+}
 } // namespace
 
-void validate_potential_frame(
-    const cpu::Frame& frame,
-    const ::ATV::electronic::NormConservingPotential& potential) {
-    validate_frame_species(frame, potential.atomic_number(),
-                           potential.valence());
+NcComposition assign_nc_species(const cpu::Frame& frame,
+                                NcProviders potentials) {
+    return assign_species(frame, potentials, [](const auto& p) {
+        return std::pair{p.atomic_number(), p.valence()};
+    });
 }
 
-void validate_potential_frame(const cpu::Frame& frame,
-                              const NcPotentialData& potential) {
-    validate_frame_species(frame, potential.atomic_number, potential.z_val);
+NcComposition assign_nc_species(
+    const cpu::Frame& frame,
+    std::span<const std::shared_ptr<const NcPotentialData>> species) {
+    return assign_species(frame, species, [](const auto& p) {
+        return std::pair{p.atomic_number, p.z_val};
+    });
 }
 
 NcPotentialData::NcPotentialData(

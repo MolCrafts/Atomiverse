@@ -71,14 +71,16 @@ ATV::cpu::Frame make_si_fcc() {
     return f;
 }
 
-void build_problem(cpupw::PWProblem& prob) {
+void build_problem(cpupw::PWSetup& prob, cpupw::PWWorkspace& ws) {
     ATV::cpu::Frame f = make_si_fcc();
     // Analytic GTH: a real published potential with no file dependency. The
     // density side under test does not touch the pseudopotential beyond
     // V_loc(G), but it must be a physical V_loc(G).
-    const ATV::cpu::pw::GthPseudopotential potential{molrs::Element::Si,
-                                                     "GTH-PBE-q4"};
-    cpupw::setup_pw_problem(f, potential, /*ecut_ry=*/6.0, /*k_mesh=*/1, prob);
+    const std::shared_ptr<const ATV::electronic::NormConservingPotential>
+        potential = std::make_shared<ATV::cpu::pw::GthPseudopotential>(
+            molrs::Element::Si, "GTH-PBE-q4");
+    cpupw::setup_pw_problem(f, std::span{&potential, 1}, /*ecut_ry=*/6.0,
+                            /*k_mesh=*/1, prob, ws);
 }
 
 /// Synthetic real-space density accumulator for pseudo-iteration `t`.
@@ -111,9 +113,9 @@ double max_abs(const std::vector<std::complex<double>>& v) {
 // its extra FFT depth (3 gradient c2r + 3 flux r2c + 1 divergence c2r on
 // BOTH backends) stays well inside the same envelope.
 static void expect_stage_parity(XCType xc, bool high_frequency = false) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    auto& ws = prob.ws;
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
     ASSERT_GT(ng, 0);
@@ -139,7 +141,7 @@ static void expect_stage_parity(XCType xc, bool high_frequency = false) {
     }
 
     // Device stages on the atomic seed density uploaded by the constructor.
-    DeviceDensity den(prob, kMixBeta, kDepth, xc);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth, xc);
     den.hartree();
     den.exchange_correlation();
     den.assemble_veff();
@@ -212,7 +214,7 @@ static void expect_stage_parity(XCType xc, bool high_frequency = false) {
             << "V_eff(r) mismatch at ir=" << i;
 
     // E_xc from the same fused reduction the SCF loop reads.
-    const auto s = den.reduce(static_cast<double>(prob.vol_bohr));
+    const auto s = den.reduce(static_cast<double>(prob.ions.vol_bohr));
     EXPECT_NEAR(s.e_xc, static_cast<double>(ws.E_xc),
                 1e-12 * std::max(1.0, std::abs(static_cast<double>(ws.E_xc))));
 }
@@ -235,13 +237,14 @@ TEST(CudaPWDensity, HartreeXcVeffMatchCpuPbeFamily) {
 
 // ── Pulay mixing parity, including the ring wrap ─────────────────────────
 TEST(CudaPWDensity, MixingMatchesCpuPulay) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    auto& ws = prob.ws;
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
 
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
 
     // The CPU builder keeps no ctor snapshot: finish() honours the LIVE
     // workspace mixing parameters, so pin them to match DeviceDensity.
@@ -291,13 +294,14 @@ TEST(CudaPWDensity, MixingMatchesCpuPulay) {
 
 // ── Fused reductions vs iteration_energy / ConvergenceCheck ──────────────
 TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    auto& ws = prob.ws;
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
 
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
 
     // One pseudo-iteration, host and device in lockstep.
     den.hartree();
@@ -333,12 +337,12 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
     den.collect();
     den.mix(0);
 
-    const double vol = static_cast<double>(prob.vol_bohr);
+    const double vol = static_cast<double>(prob.ions.vol_bohr);
     const auto s = den.reduce(vol);
 
     const AccReal e_band_synth = AccReal(-1.234); // arbitrary; host-only term
-    const auto ref =
-        cpupw::iteration_energy(ws, e_band_synth, prob.ew_total, prob.vol_bohr);
+    const auto ref = cpupw::iteration_energy(
+        ws, e_band_synth, prob.ions.ew_total, prob.ions.vol_bohr);
 
     auto rel = [](double ref_v) {
         return 1e-10 * std::max(1.0, std::abs(ref_v));
@@ -363,11 +367,13 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
 
 // ── Reductions are reproducible run to run (fixed launch geometry) ───────
 TEST(CudaPWDensity, ReductionsAreBitwiseReproducible) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
 
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
-    const double vol = static_cast<double>(prob.vol_bohr);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
+    const double vol = static_cast<double>(prob.ions.vol_bohr);
 
     // Re-run the WHOLE XC pass each time so the E_xc reduction is exercised
     // too — that is the one that used to be an atomicAdd.
@@ -390,25 +396,27 @@ TEST(CudaPWDensity, ReductionsAreBitwiseReproducible) {
 // Density owns a non-default stream; the band solver can borrow it so both
 // SCF halves share one serial chain. Physics-free: only the handle identity.
 TEST(CudaPWDensity, NonDefaultStreamOwnedAndShareable) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
     ASSERT_NE(den.stream(), static_cast<cudaStream_t>(nullptr));
 
-    DeviceBandSolver solver(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz,
-                            prob.n_bands, den.stream());
+    DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, prob.n_bands,
+                            den.stream());
     EXPECT_EQ(solver.stream(), den.stream());
 
     // Stand-alone solver (diagnostics) still refuses the default stream.
-    DeviceBandSolver own(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz,
-                         prob.n_bands);
+    DeviceBandSolver own(ws.fft_nx, ws.fft_ny, ws.fft_nz, prob.n_bands);
     ASSERT_NE(own.stream(), static_cast<cudaStream_t>(nullptr));
     EXPECT_NE(own.stream(), den.stream());
 }
 
 TEST(CudaPWDensity, BorrowedStreamSurvivesDensityDestruction) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     cudaStream_t parent = nullptr;
     ASSERT_EQ(cudaStreamCreate(&parent), cudaSuccess);
     struct Release {
@@ -418,8 +426,8 @@ TEST(CudaPWDensity, BorrowedStreamSurvivesDensityDestruction) {
     // Run one actual density stage on the borrowed stream, then destroy all
     // density buffers and plans. The parent must retain a usable stream.
     {
-        DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA, false, 0, 0, 0,
-                          parent);
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                          XCType::LSDA, false, 0, 0, 0, parent);
         ASSERT_EQ(den.stream(), parent);
         den.hartree();
     }
@@ -434,8 +442,8 @@ TEST(CudaPWDensity, BorrowedStreamSurvivesDensityDestruction) {
     // A second independent density stage can acquire that same execution
     // stream after the first owner of scientific scratch has gone away.
     {
-        DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA, false, 0, 0, 0,
-                          parent);
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                          XCType::LSDA, false, 0, 0, 0, parent);
         den.hartree();
     }
     ASSERT_EQ(cudaEventRecord(event, parent), cudaSuccess);
@@ -447,11 +455,12 @@ TEST(CudaPWDensity, BorrowedStreamSurvivesDensityDestruction) {
 TEST(CudaPWDensity, PaddedSpinXcMatchesCpu) {
     for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
                           XCType::RevPBE, XCType::RPBE}) {
-        cpupw::PWProblem prob;
-        build_problem(prob);
-        auto& ws = prob.ws;
+        cpupw::PWSetup prob;
+        cpupw::PWWorkspace ws;
+        build_problem(prob, ws);
         const int ng = prob.gv0.count();
-        DeviceDensity den(prob, kMixBeta, kDepth, xc, true, 5, 3, 8);
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth, xc,
+                          true, 5, 3, 8);
         den.hartree();
         den.exchange_correlation_spin();
         ws.nspin = 2;
@@ -477,7 +486,7 @@ TEST(CudaPWDensity, PaddedSpinXcMatchesCpu) {
                     << " ig=" << i;
         }
         const auto scalars =
-            den.reduce_spin(static_cast<double>(prob.vol_bohr));
+            den.reduce_spin(static_cast<double>(prob.ions.vol_bohr));
         EXPECT_NEAR(scalars.e_xc, static_cast<double>(ws.E_xc), 1e-10);
         EXPECT_NEAR(scalars.e_xc_int, static_cast<double>(ws.e_xc_int_spin),
                     1e-10);
@@ -490,9 +499,9 @@ TEST(CudaPWDensity, PaddedSpinXcMatchesCpu) {
 TEST(CudaPWDensity, NegativeSpinRingingMatchesCpuClamp) {
     for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
                           XCType::RevPBE, XCType::RPBE}) {
-        cpupw::PWProblem prob;
-        build_problem(prob);
-        auto& ws = prob.ws;
+        cpupw::PWSetup prob;
+        cpupw::PWWorkspace ws;
+        build_problem(prob, ws);
         const int ng = prob.gv0.count();
         int mode = 1;
         for (int i = 1; i < ng; ++i)
@@ -510,7 +519,8 @@ TEST(CudaPWDensity, NegativeSpinRingingMatchesCpuClamp) {
         ws.rho_G[0] = 0.01;
         ws.rho_G[mode] = ws.rho_G[mirror] = 0.04;
 
-        DeviceDensity den(prob, kMixBeta, kDepth, xc, true, 5, 3, 8);
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth, xc,
+                          true, 5, 3, 8);
         std::vector<double> channel(static_cast<std::size_t>(ws.nr));
         den.fetch_rho_spin_r(0, channel.data());
         double lo = channel[0];
@@ -547,7 +557,7 @@ TEST(CudaPWDensity, NegativeSpinRingingMatchesCpuClamp) {
                     << " ig=" << i;
         }
         const auto scalars =
-            den.reduce_spin(static_cast<double>(prob.vol_bohr));
+            den.reduce_spin(static_cast<double>(prob.ions.vol_bohr));
         EXPECT_NEAR(scalars.e_xc, static_cast<double>(ws.E_xc), 1e-8);
         EXPECT_NEAR(scalars.e_xc_int, static_cast<double>(ws.e_xc_int_spin),
                     1e-8);
@@ -566,10 +576,12 @@ TEST(CudaPWDensity, PaddedXcResolvesHighFrequencyDensity) {
 // still prevent convergence, and its norm must not depend on the mixing beta.
 TEST(CudaPWDensity, OppositeSpinUpdatesHaveJointUnmixedResidual) {
     for (const double beta : {0.2, 0.7}) {
-        cpupw::PWProblem prob;
-        build_problem(prob);
-        const int nr = prob.ws.nr, ng = prob.gv0.count();
-        DeviceDensity den(prob, beta, kDepth, XCType::LSDA, true, 4, 4, 8);
+        cpupw::PWSetup prob;
+        cpupw::PWWorkspace ws;
+        build_problem(prob, ws);
+        const int nr = ws.nr, ng = prob.gv0.count();
+        DeviceDensity den(prob.grid(), ws.density().total, beta, kDepth,
+                          XCType::LSDA, true, 4, 4, 8);
         den.hartree();
         den.exchange_correlation_spin();
         constexpr double delta = 0.001;
@@ -585,7 +597,8 @@ TEST(CudaPWDensity, OppositeSpinUpdatesHaveJointUnmixedResidual) {
             den.collect_spin_out(spin);
         }
         den.mix_spin(0);
-        const auto values = den.reduce_spin(static_cast<double>(prob.vol_bohr));
+        const auto values =
+            den.reduce_spin(static_cast<double>(prob.ions.vol_bohr));
         // A constant real-space update changes only G=0, so the independent
         // analytic joint norm is sqrt(delta²+(-delta)²), before mixing.
         EXPECT_NEAR(values.resid, std::sqrt(2.0) * delta, 1e-12)
@@ -593,33 +606,35 @@ TEST(CudaPWDensity, OppositeSpinUpdatesHaveJointUnmixedResidual) {
         std::vector<std::complex<double>> total(static_cast<std::size_t>(ng));
         den.fetch_g(GField::rho, total.data());
         for (int ig = 0; ig < ng; ++ig)
-            EXPECT_NEAR(std::abs(total[static_cast<std::size_t>(ig)]
-                                 - prob.ws.rho_G[ig]),
-                        0.0, 1e-12);
+            EXPECT_NEAR(
+                std::abs(total[static_cast<std::size_t>(ig)] - ws.rho_G[ig]),
+                0.0, 1e-12);
     }
 }
 
 TEST(CudaPWDensity, FrozenSpinDensityRetainsEveryModeAndVolumeScale) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA, true, 5, 3, 8);
-    std::vector<double> alpha(static_cast<std::size_t>(prob.ws.nr)),
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA, true, 5, 3, 8);
+    std::vector<double> alpha(static_cast<std::size_t>(ws.nr)),
         beta(alpha.size());
     den.fetch_rho_spin_r(0, alpha.data());
     den.fetch_rho_spin_r(1, beta.data());
     constexpr double scale = 0.83;
-    den.load_rho_spin_r_scaled(alpha.data(), beta.data(), prob.ws.nr, scale);
+    den.load_rho_spin_r_scaled(alpha.data(), beta.data(), ws.nr, scale);
     std::vector<std::complex<double>> total(
         static_cast<std::size_t>(prob.gv0.count()));
     den.fetch_g(GField::rho, total.data());
     for (int ig = 0; ig < prob.gv0.count(); ++ig)
         EXPECT_NEAR(std::abs(total[static_cast<std::size_t>(ig)]
-                             - scale * prob.ws.rho_G[ig]),
+                             - scale * ws.rho_G[ig]),
                     0.0, 1e-12);
-    EXPECT_THROW(den.load_rho_spin_r_scaled(alpha.data(), beta.data(),
-                                            prob.ws.nr - 1, scale),
-                 std::invalid_argument);
-    EXPECT_THROW(den.load_rho_r_scaled(alpha.data(), prob.ws.nr - 1, scale),
+    EXPECT_THROW(
+        den.load_rho_spin_r_scaled(alpha.data(), beta.data(), ws.nr - 1, scale),
+        std::invalid_argument);
+    EXPECT_THROW(den.load_rho_r_scaled(alpha.data(), ws.nr - 1, scale),
                  std::invalid_argument);
 }
 
@@ -629,11 +644,12 @@ TEST(CudaPWDensity, JointSpinPulayMatchesCpuThroughHistoryWrap) {
         for (const double beta : {0.2, 0.7}) {
             SCOPED_TRACE(depth);
             SCOPED_TRACE(beta);
-            cpupw::PWProblem prob;
-            build_problem(prob);
-            auto& ws = prob.ws;
+            cpupw::PWSetup prob;
+            cpupw::PWWorkspace ws;
+            build_problem(prob, ws);
             const int ng = prob.gv0.count(), nr = ws.nr;
-            DeviceDensity den(prob, beta, depth, XCType::LSDA, true, 5, 3, 8);
+            DeviceDensity den(prob.grid(), ws.density().total, beta, depth,
+                              XCType::LSDA, true, 5, 3, 8);
             ws.nspin = 2;
             ws.mix_beta = beta;
             ws.pulay_depth = depth;
@@ -666,7 +682,7 @@ TEST(CudaPWDensity, JointSpinPulayMatchesCpuThroughHistoryWrap) {
                 const double expected_residual =
                     db.mix_spin(ws, out[0], out[1]);
                 den.mix_spin(t);
-                EXPECT_NEAR(den.reduce_spin(prob.vol_bohr).resid,
+                EXPECT_NEAR(den.reduce_spin(prob.ions.vol_bohr).resid,
                             expected_residual, 1e-11);
                 for (int spin = 0; spin < 2; ++spin) {
                     den.fetch_rho_spin_r(spin, fetched.data());

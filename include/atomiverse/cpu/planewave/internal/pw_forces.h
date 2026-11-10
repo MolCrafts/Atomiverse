@@ -5,6 +5,8 @@
 /// cell-fixed (no AO Pulay). See `pw-breadth-01-analytic-forces` spec.
 #pragma once
 
+#include "atomiverse/cpu/planewave/internal/pw_setup.h"
+
 #include <array>
 #include <vector>
 
@@ -22,28 +24,11 @@ class EwaldSummation;
 /// Forces from one completed unstrained final-band state; no SCF or band solve.
 /// The state and optional ionic terms must belong to this exact geometry.
 /// Inputs are immutable; only local nonlocal-band contributions are MPI summed.
-std::vector<std::array<double, 3>>
-pw_forces_from_bands(const cpu::Frame& frame, const PWProblem& problem,
-                     const FinalBandState& bands,
-                     const EwaldSummation* ionic = nullptr);
-
-/// @brief Analytic forces F_a = −dE/dR_a [eV/Å] after a full SCF.
-///
-/// Local Hellmann–Feynman + Ewald + nonlocal Kleinman–Bylander (UPF).
-/// Toy path has F_nl = 0. Non-converged SCF still returns forces at the
-/// last density (with a warning).
-///
-/// @param frame Geometry [Å]; not mutated.
-/// @param method Plane-wave method carrying cutoff, k-mesh and SCF settings.
-/// @param solved Optional state from PW::run; scf_out must hold its result.
-/// @param scf_out Optional: the SCF result this force evaluation ran (energy
-///        [Ry], convergence, iterations), so a caller needing both quantities
-///        pays for one SCF.
-/// @return Forces [eV/Å], one xyz triple per atom.
-std::vector<std::array<double, 3>>
-pw_forces_analytic_impl(const cpu::Frame& frame, const PW& method,
-                        PWResult* scf_out = nullptr,
-                        PWProblem* solved = nullptr);
+std::vector<std::array<double, 3>> pw_forces_from_bands(
+    const cpu::Frame& frame, const PWIons& ions,
+    const GVectorList& density_modes, std::span<const GVectorList> modes,
+    std::span<const KBProjectors> projectors, const FinalBandState& bands,
+    const EwaldSummation* ionic = nullptr);
 
 } // namespace internal
 } // namespace pw

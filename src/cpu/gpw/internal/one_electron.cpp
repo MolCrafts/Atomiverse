@@ -1186,6 +1186,28 @@ double kinetic(const GridBasisFunction& a, const GridBasisFunction& b,
     return t;
 }
 
+double internal::pair_overlap_bound(const GridBasisFunction& mu,
+                                    const GridBasisFunction& nu,
+                                    const double L[3], bool periodic) {
+    double best = 0.0;
+    for (const auto& p : mu)
+        for (const auto& q : nu) {
+            const double a = p.alpha, b = q.alpha;
+            double d2 = 0.0;
+            for (int k = 0; k < 3; ++k) {
+                double e = p.center[k] - q.center[k];
+                // Min-image: a pair straddling a periodic boundary is a true near
+                // neighbour through its nearest image — keep it past the screen.
+                if (periodic && L[k] > 0.0)
+                    e -= L[k] * std::nearbyint(e / L[k]);
+                d2 += e * e;
+            }
+            best = std::max(best, std::abs(p.coeff * q.coeff)
+                                      * std::exp(-a * b / (a + b) * d2));
+        }
+    return best;
+}
+
 } // namespace gpw
 } // namespace cpu
 } // namespace ATV

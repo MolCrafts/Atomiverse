@@ -66,7 +66,7 @@ ewald_dynamical_matrix_q(const std::vector<Vec3>& pos_ang,
 /// orthonormal) defines `P_c = 1 − Σ_j |ψ_j⟩⟨ψ_j|`. Positive definite on
 /// the conduction space for insulating fillings (ε an occupied eigenvalue).
 ///
-/// @param ws       Workspace with `gvec`/`n_g`/`T_G`/`V_eff_r`/`kb_proj` bound.
+/// @param ws       Workspace bound to the active k-point and effective potential.
 /// @param occ_wfc  Occupied wavefunctions at this k [G-normalized].
 /// @param n_occ    Number of occupied bands.
 /// @param eps      Eigenvalue of the band being perturbed [Hartree].

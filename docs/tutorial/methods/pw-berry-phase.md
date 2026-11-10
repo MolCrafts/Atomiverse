@@ -140,7 +140,7 @@ constexpr double kDelta = 0.02;   // fractional displacement of atom 1 along a_3
 // a/4.0 (1,1,1) + delta_frac * a_3
 cpu::Frame make_si_diamond(double a_ang, double delta_frac_a3);
 
-PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
+PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf")}, /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;

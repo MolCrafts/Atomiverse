@@ -1475,23 +1475,22 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // ignored the field) would silently run PBE and the twin below — which
     // names the enumerator — would disagree. It is also the cheaper
     // functional, no gradient corrections.
-    entries.push_back(MDComponentEntry{PWParams{/*upf_path=*/"",
-                                                /*gth_name=*/"GTH-PBE-q4",
-                                                /*atomic_number=*/14,
-                                                /*ecut_ry=*/kPwEcut,
-                                                /*k_mesh=*/kPwKMesh,
-                                                /*tol=*/kPwTol,
-                                                /*max_iter=*/kPwMaxIter,
-                                                /*mix_beta=*/kPwMixBeta,
-                                                /*pulay_depth=*/kPwPulayDepth,
-                                                /*xc=*/0,
-                                                /*spin_polarized=*/false,
-                                                /*multiplicity=*/1,
-                                                /*smearing=*/0,
-                                                /*degauss=*/kPwDegauss,
-                                                /*mp_order=*/kPwMpOrder,
-                                                /*extra_bands=*/kPwExtraBands},
-                                       std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PWParams{/*potentials=*/{{14, PWPotentialFormat::gth, "GTH-PBE-q4"}},
+                 /*ecut_ry=*/kPwEcut,
+                 /*k_mesh=*/kPwKMesh,
+                 /*tol=*/kPwTol,
+                 /*max_iter=*/kPwMaxIter,
+                 /*mix_beta=*/kPwMixBeta,
+                 /*pulay_depth=*/kPwPulayDepth,
+                 /*xc=*/0,
+                 /*spin_polarized=*/false,
+                 /*multiplicity=*/1,
+                 /*smearing=*/0,
+                 /*degauss=*/kPwDegauss,
+                 /*mp_order=*/kPwMpOrder,
+                 /*extra_bands=*/kPwExtraBands},
+        std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kPwSteps});
 
     cpu::Frame materialized_frame = make_si2_bomd_frame();
@@ -1507,9 +1506,11 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // bitwise mismatch rather than as a silent default. The method is
     // mounted directly; the MD force phase requests its forces.
     cpu::Frame direct_frame = make_si2_bomd_frame();
-    cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
-                       molrs::Element::Si, "GTH-PBE-q4"),
-                   kPwEcut, kPwKMesh, cpu::xc::XCType::LSDA};
+    cpu::pw::PW pw{{std::make_shared<cpu::pw::GthPseudopotential>(
+                       molrs::Element::Si, "GTH-PBE-q4")},
+                   kPwEcut,
+                   kPwKMesh,
+                   cpu::xc::XCType::LSDA};
     pw.tol = kPwTol;
     pw.max_iter = kPwMaxIter;
     pw.mix_beta = kPwMixBeta;

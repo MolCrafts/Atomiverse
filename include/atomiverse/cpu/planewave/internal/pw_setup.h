@@ -19,34 +19,53 @@ namespace cpu {
 namespace pw {
 namespace internal {
 
-/// @brief Fully-assembled plane-wave SCF problem: workspace, G-spheres,
-///        k-mesh and the density-independent Ewald energy.
-///
-/// Non-copyable: `ws.gvec` points at `gv0`, so the object must stay put
-/// after `setup_pw_problem()` fills it.
-struct PWProblem {
-    PWWorkspace ws;
-    GVectorList gv0;               ///< Γ-centred G-sphere at ecut.
-    std::vector<GVectorList> gv_k; ///< Per-k-point G-spheres.
-    KPointGrid kg;
-    AccReal ew_total = 0; ///< Ewald energy incl. QE G=0 term [Hartree].
-    AccReal vol_bohr = 0; ///< Cell volume [Bohr³].
+/// Geometry and radial data admitted for this solve, in frame order.
+struct PWIons {
+    std::vector<Vec3> positions; ///< Bohr.
+    std::vector<std::shared_ptr<const NcPotentialData>> species;
+    std::vector<std::size_t> atom_species;
+    std::vector<AccReal> ionic_charges;
+    AccReal ew_total = 0; ///< Includes the QE G=0 term [Ha].
+    AccReal vol_bohr = 0;
     int n_elec = 0;
+};
+
+/// One owner for each k-dependent operator table. Keep separate owners for
+/// different meshes, such as k and k+q, while their views are in use.
+struct PWKMesh {
+    KPointGrid kg;
+    std::vector<GVectorList> gv_k;
+    std::vector<KBProjectors> kb_proj_k;
+    std::vector<AtomicOrbitals> atom_wfc_k;
+
+    PWKPointView point(std::size_t ik) const& {
+        return {gv_k.at(ik), kb_proj_k.at(ik), atom_wfc_k.at(ik)};
+    }
+    PWKPointView point(std::size_t) const&& = delete;
+};
+
+struct PWStrainReference {
+    const PWIons& ions;
+    const GVectorList& density_modes;
+    const KPointGrid& grid;
+    std::span<const GVectorList> wavefunction_modes;
+};
+
+/// Static data assembled once for a frame. Consumers borrow it as const;
+/// the independent PWWorkspace owns all writable SCF buffers.
+struct PWSetup {
+    PWIons ions;
+    GVectorList gv0; ///< Γ-centred density sphere at four times the PW cutoff.
+    std::vector<std::complex<AccReal>> V_loc_G;
+    PWKMesh mesh;
     int n_bands = 0;
-    /// Admitted immutable radial data shared by setup, force and response.
-    std::shared_ptr<const NcPotentialData> potential;
 
-    /// Per-k-point nonlocal projector / atomic-wfc tables, evaluated on
-    /// q = k+G of each sphere (size and values are k-dependent). The SCF
-    /// loop copies entry ik into ws.kb_proj / ws.atom_wfc before solving
-    /// that k-point. Empty when the potential carries no projectors
-    /// (e.g. GTH-PBE-q1 for hydrogen, which is purely local).
-    std::vector<std::vector<std::vector<PWWorkspace::KBProjG>>> kb_proj_k;
-    std::vector<std::vector<std::vector<PWWorkspace::AtomWfc>>> atom_wfc_k;
-
-    PWProblem() = default;
-    PWProblem(const PWProblem&) = delete;
-    PWProblem& operator=(const PWProblem&) = delete;
+    PWGridView grid() const& { return {gv0, V_loc_G, ions.vol_bohr}; }
+    PWGridView grid() const&& = delete;
+    PWStrainReference strain_reference() const& {
+        return {ions, gv0, mesh.kg, mesh.gv_k};
+    }
+    PWStrainReference strain_reference() const&& = delete;
 };
 
 /// @brief Refuse an odd valence-electron count on the restricted,
@@ -85,6 +104,11 @@ void require_closed_shell(int n_elec, const char* where);
 std::vector<AccReal> nc_vloc_to_gspace(const NcPotentialData& upf,
                                        const GVectorList& gv, AccReal omega);
 
+/// Radial local form factors indexed by species and then by G.
+std::vector<std::vector<AccReal>> nc_vloc_to_gspace(
+    std::span<const std::shared_ptr<const NcPotentialData>> species,
+    const GVectorList& gv, AccReal omega);
+
 /// @brief Transform a spherical NC nonlocal potential to diagonal KB channels.
 /// @param out Per-atom projectors: angular momentum, strength [Hartree], and
 ///        radial Fourier integrals and normalized complex β_lm(G) columns.
@@ -94,8 +118,8 @@ std::vector<AccReal> nc_vloc_to_gspace(const NcPotentialData& upf,
 /// @param omega Cell volume [Bohr^3], for physical projector normalization.
 /// @throws std::invalid_argument for incomplete/nonfinite/asymmetric D_ij or
 ///         couplings between distinct angular momenta.
-void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
-                         const GVectorList& gv, const NcPotentialData& upf,
+void setup_kb_projectors(KBProjectors& out, const GVectorList& gv,
+                         const NcPotentialData& upf,
                          const std::vector<Vec3>& pos_bohr, AccReal omega);
 
 /// @brief Assemble the complete SCF problem from a Frame: Ewald energy,
@@ -107,27 +131,14 @@ void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
 ///
 /// @param frame     Input structure: geometry (positions [Å]), species
 ///                  (atomic_number = Z) and cell.
-/// @param potential Immutable scalar norm-conserving physical provider.
+/// @param potentials Immutable scalar NC providers, keyed by atomic number.
 /// @param ecut_ry   Wavefunction cutoff [Ry].
 /// @param k_mesh    Monkhorst-Pack mesh size per dimension.
-/// @param out       Problem to fill (must outlive the SCF loop).
-void setup_pw_problem(
-    const cpu::Frame& frame,
-    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
-    int k_mesh, PWProblem& out);
-
-/// @brief Assemble geometry-dependent operators from admitted NC physics.
-///
-/// Reuses the immutable snapshot for frozen-density strain samples without
-/// invoking the provider or copying its radial data.
-/// @param frame Geometry [Angstrom], species and cell.
-/// @param potential Non-null admitted radial snapshot, shared with the reference.
-/// @param ecut_ry Wavefunction cutoff [Ry].
-/// @param k_mesh Monkhorst-Pack mesh per dimension.
-/// @param out Problem to fill (must outlive its electronic operations).
-void setup_pw_problem(const cpu::Frame& frame,
-                      std::shared_ptr<const NcPotentialData> potential,
-                      double ecut_ry, int k_mesh, PWProblem& out);
+/// @param out       Operator data to assemble (must outlive the workspace).
+/// @param workspace Mutable SCF state seeded on the density sphere.
+void setup_pw_problem(const cpu::Frame& frame, NcProviders potentials,
+                      double ecut_ry, int k_mesh, PWSetup& out,
+                      PWWorkspace& workspace);
 
 /// @brief Rebuild geometry-dependent operators at a fixed reference PW basis.
 ///
@@ -135,26 +146,17 @@ void setup_pw_problem(const cpu::Frame& frame,
 /// are retained. Cartesian G/k vectors, kinetic energies and ionic operators
 /// are recomputed for the strained cell. This defines the smooth finite-basis
 /// strain derivative without modes entering/leaving the energy cutoff.
-/// The immutable admitted potential is shared without repeating admission or
+/// The immutable admitted species data is shared without repeating admission or
 /// copying radial tables. Its form factors are evaluated at the new vectors.
-/// @param reference Reference problem (must differ from out).
+/// @param reference Reference modes and ionic data with independent owners.
 void setup_pw_problem_fixed_basis(const cpu::Frame& frame,
-                                  const PWProblem& reference, double ecut_ry,
-                                  int k_mesh, PWProblem& out);
+                                  PWStrainReference reference, double ecut_ry,
+                                  int k_mesh, PWSetup& out,
+                                  PWWorkspace& workspace);
 
-/// @brief Replace only the k-mesh tables on an assembled problem.
-///
-/// Keeps density-side fields on `out.ws` (ρ, \(V_\mathrm{eff}\), \(V_\mathrm{loc}\),
-/// FFT) frozen for NSCF band / DOS diagonalization. Rebuilds
-/// `out.kg`, `out.gv_k`, `out.kb_proj_k`, `out.atom_wfc_k` for the given
-/// fractional k-list.
-///
-/// @param out      Problem from a prior `setup_pw_problem` (density frozen).
-/// @param frame    Geometry (positions [Å], types); used for KB structure factors.
-/// @param ecut_ry  Wavefunction cutoff [Ry] (same as SCF).
-/// @param kfrac    Fractional (crystal) k-coordinates.
-void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,
-                      const std::vector<Vec3>& kfrac);
+/// Assemble a separate wavefunction mesh for frozen-density calculations.
+PWKMesh make_pw_k_mesh(const PWIons& ions, const cpu::Box& box, double ecut_ry,
+                       const std::vector<Vec3>& kfrac);
 
 /// @brief Solve the Pulay/DIIS constrained least-squares coefficients.
 ///

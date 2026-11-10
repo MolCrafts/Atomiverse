@@ -59,41 +59,40 @@ TEST_P(PwFinalState, PreservesReferenceAndFillsOneFrozenHamiltonianSweep) {
     const auto frame = silicon();
     auto potential = std::make_shared<cpu::pw::GthPseudopotential>(
         molrs::Element::Si, "GTH-PBE-q4");
-    cpu::pw::PW method{potential, 12, c.mesh, cpu::xc::XCType::LSDA};
+    cpu::pw::PW method{{potential}, 12, c.mesh, cpu::xc::XCType::LSDA};
     method.tol = 1e-10;
     method.spin_polarized = c.style != 0;
     method.multiplicity = c.style == 2 ? 9 : 1;
     method.smearing = c.smearing;
     method.degauss = .08; // Ry; finite-temperature component fixture only.
     method.extra_bands = 2;
-    PWProblem problem;
-    setup_pw_problem(frame, *potential, 12, c.mesh, problem);
-    ASSERT_EQ(problem.n_elec, 8);
-    ASSERT_EQ(problem.potential->n_proj(), 3);
+    PWSetup problem;
+    PWWorkspace ws;
+    setup_pw_problem(frame, method.potentials, 12, c.mesh, problem, ws);
+    ASSERT_EQ(problem.ions.n_elec, 8);
+    ASSERT_EQ(problem.ions.species.front()->n_proj(), 3);
     if (c.style) {
-        problem.ws.nspin = 2;
-        problem.ws.rho_spin_G.resize(2);
-        problem.ws.rho_spin_G[0] = (c.style == 2 ? 1. : .65) * problem.ws.rho_G;
-        problem.ws.rho_spin_G[1] = (c.style == 2 ? 0. : .35) * problem.ws.rho_G;
+        ws.nspin = 2;
+        ws.rho_spin_G.resize(2);
+        ws.rho_spin_G[0] = (c.style == 2 ? 1. : .65) * ws.rho_G;
+        ws.rho_spin_G[1] = (c.style == 2 ? 0. : .35) * ws.rho_G;
     }
     // Stale last-k orbital/potential scratch must neither be treated as the
     // accepted all-k eigenset nor be overwritten during derivative extraction.
-    problem.ws.wfc = xt::ones<Complex>({std::size_t(1), std::size_t(1)});
-    problem.ws.eigenvalues = xt::ones<AccReal>({std::size_t(1)});
-    problem.ws.V_H_G.fill(7);
-    problem.ws.V_xc_G.fill(-5);
+    ws.wfc = xt::ones<Complex>({std::size_t(1), std::size_t(1)});
+    ws.eigenvalues = xt::ones<AccReal>({std::size_t(1)});
+    ws.V_H_G.fill(7);
+    ws.V_xc_G.fill(-5);
     // These stale caches are audit sentinels, not initialized physical inputs.
-    problem.ws.rho_G_old.fill(Complex(.75, -.25));
-    problem.ws.V_eff_G.fill(Complex(1.25, -.5));
-    problem.ws.T_G.fill(3.5);
-    const auto rho = problem.ws.rho_G, old = problem.ws.rho_G_old,
-               vh = problem.ws.V_H_G, vxc = problem.ws.V_xc_G,
-               veff = problem.ws.V_eff_G, coeff = problem.ws.wfc;
-    const auto eigenvalues = problem.ws.eigenvalues;
-    const auto spin_rho = problem.ws.rho_spin_G;
-    const auto* binding = problem.ws.gvec;
-    const auto* fft = problem.ws.fft.get();
-    const int ng = problem.ws.n_g;
+    ws.rho_G_old.fill(Complex(.75, -.25));
+    ws.V_eff_G.fill(Complex(1.25, -.5));
+    const auto rho = ws.rho_G, old = ws.rho_G_old, vh = ws.V_H_G,
+               vxc = ws.V_xc_G, veff = ws.V_eff_G, coeff = ws.wfc;
+    const auto eigenvalues = ws.eigenvalues;
+    const auto spin_rho = ws.rho_spin_G;
+    const auto* binding = ws.gvec;
+    const auto* fft = ws.fft.get();
+    const int ng = ws.n_g;
     cpu::pw::PWResult reference;
     reference.energy = 17;
     reference.energy_ha = 8.5;
@@ -105,8 +104,9 @@ TEST_P(PwFinalState, PreservesReferenceAndFillsOneFrozenHamiltonianSweep) {
     reference.magnetization = .3;
     reference.n_kpts = 11;
     reference.n_kpts_local = 3;
-    const auto state =
-        extract_final_bands(problem, method, reference, c.style == 2 ? 8 : 6);
+    const auto state = extract_final_bands(
+        problem.grid(), problem.ions, problem.mesh, ws.density(), ws.wfc,
+        method, reference, c.style == 2 ? 8 : 6);
     expect_same_result(state.reference_result, reference);
     EXPECT_EQ(state.reference_density_G,
               std::vector<Complex>(rho.begin(), rho.end()));
@@ -115,19 +115,19 @@ TEST_P(PwFinalState, PreservesReferenceAndFillsOneFrozenHamiltonianSweep) {
         EXPECT_EQ(
             state.reference_spin_density_G[spin],
             std::vector<Complex>(spin_rho[spin].begin(), spin_rho[spin].end()));
-    EXPECT_EQ(problem.ws.gvec, binding);
-    EXPECT_EQ(problem.ws.fft.get(), fft);
-    EXPECT_EQ(problem.ws.n_g, ng);
-    expect_same_array(problem.ws.rho_G, rho);
-    expect_same_array(problem.ws.rho_G_old, old);
-    expect_same_array(problem.ws.V_H_G, vh);
-    expect_same_array(problem.ws.V_xc_G, vxc);
-    expect_same_array(problem.ws.V_eff_G, veff);
-    expect_same_array(problem.ws.wfc, coeff);
-    expect_same_array(problem.ws.eigenvalues, eigenvalues);
-    ASSERT_EQ(problem.ws.rho_spin_G.size(), spin_rho.size());
+    EXPECT_EQ(ws.gvec, binding);
+    EXPECT_EQ(ws.fft.get(), fft);
+    EXPECT_EQ(ws.n_g, ng);
+    expect_same_array(ws.rho_G, rho);
+    expect_same_array(ws.rho_G_old, old);
+    expect_same_array(ws.V_H_G, vh);
+    expect_same_array(ws.V_xc_G, vxc);
+    expect_same_array(ws.V_eff_G, veff);
+    expect_same_array(ws.wfc, coeff);
+    expect_same_array(ws.eigenvalues, eigenvalues);
+    ASSERT_EQ(ws.rho_spin_G.size(), spin_rho.size());
     for (std::size_t s = 0; s < spin_rho.size(); ++s)
-        expect_same_array(problem.ws.rho_spin_G[s], spin_rho[s]);
+        expect_same_array(ws.rho_spin_G[s], spin_rho[s]);
 
     const int nk = c.mesh * c.mesh * c.mesh;
     ASSERT_EQ(state.local_blocks.size(), std::size_t(nk * (c.style ? 2 : 1)));
@@ -136,11 +136,12 @@ TEST_P(PwFinalState, PreservesReferenceAndFillsOneFrozenHamiltonianSweep) {
     for (const auto& block : state.local_blocks) {
         ASSERT_GE(block.ik, 0);
         ASSERT_LT(block.ik, nk);
-        EXPECT_DOUBLE_EQ(block.k_weight, problem.kg.weights[block.ik]);
+        EXPECT_DOUBLE_EQ(block.k_weight, problem.mesh.kg.weights[block.ik]);
         ASSERT_EQ(block.occupations.size(), block.epsilon_ha.size());
         ASSERT_EQ(block.coefficients.dimension(), 2);
         EXPECT_EQ(block.coefficients.shape(0), block.occupations.size());
-        EXPECT_EQ(block.coefficients.shape(1), problem.gv_k[block.ik].g.size());
+        EXPECT_EQ(block.coefficients.shape(1),
+                  problem.mesh.gv_k[block.ik].g.size());
         EXPECT_TRUE(
             std::is_sorted(block.epsilon_ha.begin(), block.epsilon_ha.end()));
         double orthogonality_error = 0;
@@ -171,14 +172,14 @@ TEST_P(PwFinalState, PreservesReferenceAndFillsOneFrozenHamiltonianSweep) {
     EXPECT_NEAR(state.auxiliary_electron_count, number, 1e-10);
     EXPECT_LT(state.max_local_eigen_residual_ha, 1e-8);
     ASSERT_EQ(state.orbital_density_G.size(), problem.gv0.g.size());
-    EXPECT_NEAR(state.orbital_density_G[0].real() * problem.ws.omega, 8, 1e-7);
+    EXPECT_NEAR(state.orbital_density_G[0].real() * ws.omega, 8, 1e-7);
     if (c.style) {
         ASSERT_EQ(state.orbital_spin_density_G.size(), 2);
         const double density_magnetization =
             (state.orbital_spin_density_G[0][0]
              - state.orbital_spin_density_G[1][0])
                 .real()
-            * problem.ws.omega;
+            * ws.omega;
         EXPECT_NEAR(density_magnetization, magnetization, 1e-7);
         EXPECT_NEAR(density_magnetization, state.auxiliary_magnetization, 1e-7);
         if (c.smearing != electronic::Smearing::none)

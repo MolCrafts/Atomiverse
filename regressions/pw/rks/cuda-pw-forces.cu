@@ -91,9 +91,11 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
     forces.clear();
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
-                               molrs::Element::Si, "GTH-PBE-q4"),
-                           kEcutRy, kMesh, cpu::xc::XCType::LSDA};
+        cpu::pw::PW method{{std::make_shared<cpu::pw::GthPseudopotential>(
+                               molrs::Element::Si, "GTH-PBE-q4")},
+                           kEcutRy,
+                           kMesh,
+                           cpu::xc::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;
@@ -113,9 +115,11 @@ int run_on_device(Device dev, std::vector<std::array<double, 3>>& forces) {
                              static_cast<double>(fz[i])};
         }
     } else {
-        cuda::pw::PW method{std::make_shared<cpu::pw::GthPseudopotential>(
-                                molrs::Element::Si, "GTH-PBE-q4"),
-                            kEcutRy, kMesh, cpu::xc::XCType::LSDA};
+        cuda::pw::PW method{{std::make_shared<cpu::pw::GthPseudopotential>(
+                                molrs::Element::Si, "GTH-PBE-q4")},
+                            kEcutRy,
+                            kMesh,
+                            cpu::xc::XCType::LSDA};
         method.tol = 1e-6;
         method.max_iter = 40;
         method.mix_beta = 0.5;

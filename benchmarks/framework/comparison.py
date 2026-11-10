@@ -93,6 +93,8 @@ def evaluate(bundle: Bundle) -> Bundle:
                 reason = None
                 if cell.numerical != "pass" or ref.numerical != "pass":
                     reason = "numerical acceptance incomplete or failed"
+                elif row.model.get("comparison_class") == "numerical_only":
+                    reason = "different derivative work; raw timings only"
                 elif len(cell.timing["samples_seconds"]) < 5 or len(ref.timing["samples_seconds"]) < 5:
                     reason = "at least five samples per participant required"
                 elif any(o.metadata.get("resource_mismatch") for c in (cell, ref) for o in c.observations):

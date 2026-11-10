@@ -477,6 +477,50 @@ TEST(GpwMultigridCells, TimeReversalDStackFoldsExactly) {
     }
 }
 
+TEST(GpwMultigridCells, CenterGradientMatchesDisplacedProductDensity) {
+    using namespace ATV::cpu::gpw;
+    using namespace ATV::cpu::gpw::internal;
+    const double cell[3] = {7, 8, 9};
+    constexpr double eps = 1e-12;
+    const auto mg = make_multigrid(cell, 60, 2, 20);
+    const auto& grid = mg.levels.front();
+    const std::vector<KPoint> points{{{0.23, 0, 0}, 1.0}};
+    using Cplx = std::complex<double>;
+    const CplxMatrix P{{Cplx(0.9), Cplx(0.3, 0.2)},
+                       {Cplx(0.3, -0.2), Cplx(0.4)}};
+    std::vector<double> potential(grid.npts());
+    for (long g = 0; g < grid.npts(); ++g) {
+        double r[3];
+        grid.point(g, r);
+        potential[g] = std::sin(2 * M_PI * r[0] / cell[0]);
+    }
+    auto sample = [&](double displacement) {
+        auto products = build_products(
+            mg,
+            {s_gauss(0.6, 0.6 + displacement, 4, 4), s_gauss(0.9, 6.1, 4, 4)},
+            cell, 20, eps, true);
+        const auto phases = build_bloch_cell_phases(points, products.cells);
+        std::vector<std::vector<double>> D(products.cells.size(),
+                                           std::vector<double>(4));
+        accumulate_bloch_density_stack(P, 1.0, phases.front(), D);
+        return std::pair{std::move(products), std::move(D)};
+    };
+    auto energy = [&](double displacement) {
+        const auto [products, D] = sample(displacement);
+        const auto rho = multigrid_collocate_rho_cells(mg, products, 2, D, eps);
+        return grid.weight()
+               * std::inner_product(rho.begin(), rho.end(), potential.begin(),
+                                    0.0);
+    };
+    const auto [products, D] = sample(0.0);
+    ASSERT_GT(products.cells.size(), 1u);
+    const auto gradient = multigrid_density_center_gradient_cells(
+        mg, products, 2, D, potential, {0, 1}, 2, eps);
+    constexpr double step = 1e-4;
+    const double numerical = (energy(step) - energy(-step)) / (2 * step);
+    EXPECT_NEAR(gradient[0][0], numerical, 2e-8);
+}
+
 // Phase conventions against the independent pre-summed χ^k machinery: on one
 // shared grid, the D-stack product density matches collocate_density_k and the
 // phase-summed V_t stack matches integrate_potential_k (Hermitian per k).

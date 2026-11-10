@@ -41,9 +41,10 @@ int run() {
     frame.box = cpu::Box::cubic(6.0);
 
     // Analytic GTH for H (see REFERENCE.md).
-    cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
-                       molrs::Element::H, "GTH-PBE-q1"),
-                   5.0, 1};
+    cpu::pw::PW pw{{std::make_shared<cpu::pw::GthPseudopotential>(
+                       molrs::Element::H, "GTH-PBE-q1")},
+                   5.0,
+                   1};
     pw.tol = 1e-4;
     pw.max_iter = 12;
     pw.mix_beta = 0.5;

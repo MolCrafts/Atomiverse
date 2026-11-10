@@ -31,7 +31,8 @@ Mat3 cell() {
     h(1, 2) = .3;
     return h;
 }
-void configure(PWWorkspace& ws, int spin, bool clipped, bool uniform = false) {
+void configure(PWWorkspace& ws, GVectorList& modes, int spin, bool clipped,
+               bool uniform = false) {
     ws.fft_nx = ws.fft_ny = ws.fft_nz = 6;
     ws.nr = 216;
     ws.nc = 4 * 6 * 6;
@@ -39,7 +40,7 @@ void configure(PWWorkspace& ws, int spin, bool clipped, bool uniform = false) {
     ws.nspin = spin;
     ws.omega = cell().det();
     const auto reciprocal = cell().inverse().transpose() * (2 * pi);
-    constexpr int modes[5][3] = {
+    constexpr int miller[5][3] = {
         {0, 0, 0}, {1, 1, 0}, {0, 1, 1}, {1, 0, 1}, {2, -1, 1}};
     constexpr Complex alpha[5] = {
         {.04, 0}, {.006, .002}, {-.004, .001}, {.002, -.001}, {.0015, .0007}};
@@ -50,14 +51,13 @@ void configure(PWWorkspace& ws, int spin, bool clipped, bool uniform = false) {
         for (int sign : {1, -1}) {
             if (m == 0 && sign < 0)
                 continue;
-            const auto& n = modes[m];
-            ws.gvec0.h.push_back(sign * n[0]);
-            ws.gvec0.k.push_back(sign * n[1]);
-            ws.gvec0.l.push_back(sign * n[2]);
-            ws.gvec0.g.push_back(reciprocal
-                                 * Vec3{double(sign * n[0]),
-                                        double(sign * n[1]),
-                                        double(sign * n[2])});
+            const auto& n = miller[m];
+            modes.h.push_back(sign * n[0]);
+            modes.k.push_back(sign * n[1]);
+            modes.l.push_back(sign * n[2]);
+            modes.g.push_back(reciprocal
+                              * Vec3{double(sign * n[0]), double(sign * n[1]),
+                                     double(sign * n[2])});
             ca.push_back(sign > 0 ? alpha[m] : std::conj(alpha[m]));
             cb.push_back(sign > 0 ? beta[m] : std::conj(beta[m]));
             if (m == 0 && clipped)
@@ -67,7 +67,7 @@ void configure(PWWorkspace& ws, int spin, bool clipped, bool uniform = false) {
             }
         }
     ws.n_g = static_cast<int>(ca.size());
-    ws.gvec = &ws.gvec0;
+    ws.gvec = &modes;
     ws.rho_G = xt::zeros<Complex>({ca.size()});
     ws.V_xc_G = xt::zeros<Complex>({ca.size()});
     for (std::size_t g = 0; g < ca.size(); ++g)
@@ -157,7 +157,7 @@ struct Frozen {
     explicit Frozen(const PWWorkspace& ws)
         : omega(ws.omega), metric(ws.gvec->g), rho(ws.rho_G),
           spins(ws.rho_spin_G) {}
-    void apply(PWWorkspace& ws, int lane, double h) const {
+    void apply(PWWorkspace& ws, GVectorList& modes, int lane, double h) const {
         Mat3 f;
         for (int k = 0; k < 3; ++k)
             f(k, k) = 1;
@@ -168,7 +168,7 @@ struct Frozen {
         ws.omega = omega * j;
         const auto inverse = f.inverse().transpose();
         for (std::size_t g = 0; g < metric.size(); ++g)
-            ws.gvec0.g[g] = inverse * metric[g];
+            modes.g[g] = inverse * metric[g];
         ws.rho_G = rho / j;
         if (ws.nspin == 2)
             for (int s = 0; s < 2; ++s)
@@ -178,8 +178,9 @@ struct Frozen {
 class PwXcVirial : public ::testing::TestWithParam<Case> {};
 TEST_P(PwXcVirial, ExactExistingDiscreteEnergyMatchesAllSixAffineDerivatives) {
     const auto c = GetParam();
+    GVectorList modes;
     PWWorkspace ws;
-    configure(ws, c.spin, c.clipped);
+    configure(ws, modes, c.spin, c.clipped);
     XCBuilder builder;
     builder.prepare(ws);
     evaluate(ws, builder, c.xc);
@@ -203,7 +204,7 @@ TEST_P(PwXcVirial, ExactExistingDiscreteEnergyMatchesAllSixAffineDerivatives) {
             double energies[4];
             const double offsets[4] = {h, -h, 2 * h, -2 * h};
             for (int s = 0; s < 4; ++s) {
-                reference.apply(ws, lane, offsets[s]);
+                reference.apply(ws, modes, lane, offsets[s]);
                 evaluate(ws, builder, c.xc);
                 energies[s] = ws.E_xc;
             }
@@ -215,7 +216,7 @@ TEST_P(PwXcVirial, ExactExistingDiscreteEnergyMatchesAllSixAffineDerivatives) {
             EXPECT_NEAR(fd, virial[lane], 1e-8)
                 << "h=" << h << " lane=" << lane;
         }
-    reference.apply(ws, 0, 0);
+    reference.apply(ws, modes, 0, 0);
     evaluate(ws, builder, c.xc);
     for (int k = 0; k < 6; ++k)
         EXPECT_DOUBLE_EQ(builder.virial_ha()[k], virial[k]);
@@ -246,9 +247,10 @@ TEST(PwXcVirialStandalone, UniformLdaPressureAndRestrictedSpinCollapse) {
     for (auto xc :
          {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
           cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
+        GVectorList modes_r, modes_s;
         PWWorkspace r, s;
-        configure(r, 1, false, true);
-        configure(s, 2, false, true);
+        configure(r, modes_r, 1, false, true);
+        configure(s, modes_s, 2, false, true);
         s.rho_spin_G[0] = .5 * r.rho_G;
         s.rho_spin_G[1] = .5 * r.rho_G;
         s.rho_G = r.rho_G;
@@ -270,8 +272,9 @@ TEST(PwXcVirialStandalone, UniformLdaPressureAndRestrictedSpinCollapse) {
     }
 }
 TEST(PwXcVirialStandalone, ResponsePreservesLastCompletedVirial) {
+    GVectorList modes;
     PWWorkspace ws;
-    configure(ws, 2, false);
+    configure(ws, modes, 2, false);
     XCBuilder builder;
     builder.prepare(ws);
     evaluate(ws, builder, cpu::xc::XCType::PBE);
@@ -290,8 +293,9 @@ TEST(PwXcVirialStandalone, ResponsePreservesLastCompletedVirial) {
 }
 TEST(PwXcVirialStandalone,
      InvalidOrIncompleteEvaluationPreservesCompletedVirial) {
+    GVectorList modes;
     PWWorkspace ws;
-    configure(ws, 2, false);
+    configure(ws, modes, 2, false);
     XCBuilder builder;
     builder.prepare(ws);
     evaluate(ws, builder, cpu::xc::XCType::PBE);

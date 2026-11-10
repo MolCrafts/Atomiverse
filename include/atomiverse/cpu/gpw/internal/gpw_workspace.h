@@ -1,53 +1,21 @@
 /// @file cpu/gpw/internal/gpw_workspace.h
-/// @brief GpwWorkspace — solver-private scratch for one GPW SCF `run()`.
-///
-/// Owned by the GPW SCF runners in `gpw_solver.cpp` (Γ RKS/UKS and multi-k
-/// RKS/UKS), never by `cpu::Frame` and never threaded through Build/Launch
-/// contexts. Mirrors `cpu::pw::internal::PWWorkspace`: the workspace is the
-/// solver's private state bag for geometry-fixed grids / product lists and
-/// per-iteration effective potential. Step helpers and the forthcoming
-/// `KsGridBuild` take it as an explicit parameter.
-///
-/// FFT plans stay in `fft_cache` (thread-local by grid shape), not here.
+/// @brief Mutable GPW SCF potentials retained for accepted-state derivatives.
 #pragma once
 
 #include <vector>
 
-#include "atomiverse/cpu/gpw/internal/collocate.h"
-#include "atomiverse/cpu/gpw/internal/kpoints.h"
-#include "atomiverse/cpu/gpw/internal/multigrid.h"
+#include "atomiverse/cpu/linalg/matrix.h"
 
-namespace ATV {
-namespace cpu {
-namespace gpw {
-namespace internal {
+namespace ATV::cpu::gpw::internal {
 
-/// @brief Private GPW SCF workspace (one instance per SCF path / `run()`).
-///
-/// Default-constructible. Callers fill geometry-fixed members once after
-/// setup, then update `last_veff` each KS build. Empty `kbg` /
-/// `products` / `mg.levels` means that path is unused for the current run
-/// (e.g. single-grid leaves `products` empty). The Γ compact basis table
-/// belongs to GpwResult and is borrowed by SCF before force reuse.
 struct GpwWorkspace {
-    /// Density / Poisson / XC fine grid (or multigrid finest level twin).
-    UniformGrid grid{};
-
-    /// CP2K-style multigrid levels (empty / single level when ngrids==1).
-    MultiGrid mg{};
-
-    /// Geometry-fixed primitive-pair product list (multigrid collocate path).
-    ProductSet products{};
-
-    /// Pre-summed χ^k on the fine grid (multi-k single-grid; empty under MG).
-    KpointBasisGrid kbg{};
-
-    /// Last fine-grid effective potential from the KS build [Hartree].
-    /// RKS: length `grid.npts()`. UKS paths may pack α then β (length 2·npts).
-    std::vector<double> last_veff{};
+    std::vector<double> veff;   ///< Restricted fine-grid potential [Ha].
+    std::vector<double> veff_a; ///< Collinear alpha potential [Ha].
+    std::vector<double> veff_b; ///< Collinear beta potential [Ha].
+    std::vector<double> v_es;   ///< Electrostatic potential [Ha].
+    /// Final Bloch density (total for RKS, alpha for UKS).
+    std::vector<linalg::CplxMatrix> accepted_P_k;
+    std::vector<linalg::CplxMatrix> accepted_P_k_beta;
 };
 
-} // namespace internal
-} // namespace gpw
-} // namespace cpu
-} // namespace ATV
+} // namespace ATV::cpu::gpw::internal

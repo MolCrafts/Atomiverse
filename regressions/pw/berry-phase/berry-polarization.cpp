@@ -76,9 +76,11 @@ int run() {
     constexpr double kSymTol = 0.05; // distance to {0, Q/2} lattice [e]
     constexpr double kBornTol = 0.5; // |Z*| upper bound [e]
 
-    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
-                                                   "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMeshScf, cpu::xc::XCType::LSDA};
+    PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                    "/pw/Si_lda_nc.upf")},
+              kEcutRy,
+              kMeshScf,
+              cpu::xc::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 50;
 

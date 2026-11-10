@@ -394,19 +394,17 @@ inline void require_bound(const void* rho_accum, const void* veff_r) {
 }
 } // namespace
 
-void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
-    const int n_k = static_cast<int>(prob.gv_k.size());
+void DeviceBandSolver::build_kpoints(
+    const cpu::pw::internal::PWKMesh& mesh, std::span<const Vec3> positions,
+    AccReal volume, const xt::xarray<std::complex<AccReal>>& trial) {
+    const int n_k = static_cast<int>(mesh.gv_k.size());
     if (n_k <= 0)
         throw std::runtime_error(
-            "DeviceBandSolver::build_kpoints: prob.gv_k is empty — "
+            "DeviceBandSolver::build_kpoints: mesh.gv_k is empty — "
             "setup_pw_problem() must run first");
 
-    auto& ws = prob.ws;
-    auto* saved_gvec = ws.gvec;
-    const int saved_ng = ws.n_g;
-
     n_kpts_ = n_k;
-    pref_ = 4.0 * M_PI / std::sqrt(static_cast<double>(ws.omega));
+    pref_ = 4.0 * M_PI / std::sqrt(static_cast<double>(volume));
 
     k_ng_.assign(n_k, 0);
     k_ncol_.assign(n_k, 0);
@@ -425,20 +423,9 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
     int max_ng = 0, max_ncol = 0;
 
     for (int ik = 0; ik < n_k; ++ik) {
-        // Bind this k-sphere exactly as the SCF loop used to, so the host
-        // helpers (init_subspace) see what they saw before.
-        const int ng = prob.gv_k[ik].count();
-        ws.gvec = &prob.gv_k[ik];
-        ws.n_g = ng;
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[ik];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[ik];
-        ws.T_G.resize({static_cast<std::size_t>(ng)});
-        for (int ig = 0; ig < ng; ++ig)
-            ws.T_G[ig] = prob.gv_k[ik].ekin[ig];
-
-        const auto& gv = *ws.gvec;
+        const auto point = mesh.point(ik);
+        const auto& gv = point.modes;
+        const int ng = gv.count();
         k_ng_[ik] = ng;
         k_goff_[ik] = h_idx.size();
         max_ng = std::max(max_ng, ng);
@@ -449,7 +436,7 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
             const int iy = ((gv.k[ig] % ny_) + ny_) % ny_;
             const int iz = ((gv.l[ig] % nz_) + nz_) % nz_;
             h_idx.push_back(ix + nx_ * (iy + ny_ * iz));
-            h_tg.push_back(static_cast<double>(ws.T_G[ig]));
+            h_tg.push_back(static_cast<double>(gv.ekin[ig]));
             // Bloch states live on q = k+G (Y_lm direction, phase).
             h_qx.push_back(gv.g[ig][0] + gv.kvec[0]);
             h_qy.push_back(gv.g[ig][1] + gv.kvec[1]);
@@ -463,10 +450,10 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
         k_coff_[ik] = h_cl.size();
         k_fgoff_[ik] = h_fg.size();
         const std::size_t fg_base = h_fg.size();
-        for (std::size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
-            const auto& pos = ws.atom_pos_bohr[ia];
-            for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
-                const auto& proj = ws.kb_proj[ia][ip];
+        for (std::size_t ia = 0; ia < point.projectors.size(); ++ia) {
+            const auto& pos = positions[ia];
+            for (std::size_t ip = 0; ip < point.projectors[ia].size(); ++ip) {
+                const auto& proj = point.projectors[ia][ip];
                 if (proj.d == AccReal(0))
                     continue;
                 const int fg_off = static_cast<int>(h_fg.size() - fg_base);
@@ -496,13 +483,11 @@ void DeviceBandSolver::build_kpoints(cpu::pw::internal::PWProblem& prob) {
         // the geometry: identical in every SCF iteration, so it is built and
         // uploaded once here instead of once per k per iteration.
         std::vector<std::complex<AccReal>> sub_host;
-        k_nsub_[ik] = cpu::pw::internal::init_subspace(ws, n_bands_, sub_host);
+        k_nsub_[ik] = cpu::pw::internal::init_subspace(
+            gv, point.orbitals, positions, trial, n_bands_, sub_host);
         k_soff_[ik] = h_sub0.size();
         h_sub0.insert(h_sub0.end(), sub_host.begin(), sub_host.end());
     }
-
-    ws.gvec = saved_gvec;
-    ws.n_g = saved_ng;
 
     // Fail with the figure rather than a bare cudaMalloc error. The subspace
     // block dominates; k-batching is the answer if a cell ever exceeds this.
@@ -692,7 +677,7 @@ void DeviceBandSolver::apply_h(const cufftDoubleComplex* psi,
     }
 }
 
-void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
+void DeviceBandSolver::solve(xt::xarray<AccReal>& eigenvalues, int max_iter) {
     require_bound(rho_accum_, veff_r_);
     if (bound_k_ < 0)
         throw std::runtime_error(
@@ -701,7 +686,7 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
     int ng = ng_;
     int nb = n_bands_;
 
-    ws.eigenvalues.resize({static_cast<std::size_t>(nb)});
+    eigenvalues.resize({static_cast<std::size_t>(nb)});
 
     // ── Initial subspace ──
     // Identical to the CPU solver, but built once per k-point by
@@ -813,7 +798,7 @@ void DeviceBandSolver::solve(cpu::pw::internal::PWWorkspace& ws, int max_iter) {
             "Zgemm Hritz");
 
         for (int b = 0; b < nb; ++b)
-            ws.eigenvalues[b] = sub_eig[b];
+            eigenvalues[b] = sub_eig[b];
 
         // Append preconditioned residuals (same policy/order as CPU).
         if (idavid < max_david - 1 && n_sub < ng - 1) {
@@ -1188,7 +1173,7 @@ final_residual_in_place(cufftDoubleComplex* hpsi,
 }
 } // namespace
 FinalBandStatus
-DeviceBandSolver::solve_final_bands(cpu::pw::internal::PWWorkspace& ws,
+DeviceBandSolver::solve_final_bands(xt::xarray<AccReal>& eigenvalues,
                                     FinalBandDestination out, int max_iter) {
     if (max_iter < 1 || out.expected_k != bound_k_ || out.ng != ng_
         || out.bands != n_bands_ || !out.coefficients || !out.residual_work
@@ -1196,9 +1181,8 @@ DeviceBandSolver::solve_final_bands(cpu::pw::internal::PWWorkspace& ws,
         || out.host_norms.size() != static_cast<std::size_t>(2 * n_bands_))
         throw std::invalid_argument(
             "final-band fresh solve binding/dimensions/budget");
-    solve(ws, max_iter);
-    return copy_final_bands(out,
-                            {ws.eigenvalues.data(), ws.eigenvalues.size()});
+    solve(eigenvalues, max_iter);
+    return copy_final_bands(out, {eigenvalues.data(), eigenvalues.size()});
 }
 FinalBandStatus
 DeviceBandSolver::copy_final_bands(FinalBandDestination out,

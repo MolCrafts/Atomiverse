@@ -37,8 +37,8 @@
 #include "atomiverse/cpu/gpw/internal/dftd3.h"
 #include "atomiverse/cpu/gpw/internal/fft_cache.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
+#include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
 #include "atomiverse/cpu/gpw/internal/gpw_stress.h"
-#include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
 #include "atomiverse/cpu/gpw/internal/grid_fft.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h"
 #include "atomiverse/cpu/gpw/internal/hartree_grid.h"
@@ -100,6 +100,24 @@ struct GpwMpiLayout {
 #else
         (void)values;
         (void)count;
+#endif
+    }
+
+    void gather_density(std::vector<linalg::CplxMatrix>& density,
+                        int nb) const {
+#ifdef ATV_HAS_MPI
+        if (active)
+            for (std::size_t k = 0; k < density.size(); ++k) {
+                const int owner = static_cast<int>(k) % nprocs;
+                if (rank != owner)
+                    density[k].resize({static_cast<std::size_t>(nb),
+                                       static_cast<std::size_t>(nb)});
+                MPI_Bcast(reinterpret_cast<double*>(density[k].data()),
+                          2 * nb * nb, MPI_DOUBLE, owner, MPI_COMM_WORLD);
+            }
+#else
+        (void)density;
+        (void)nb;
 #endif
     }
 };
@@ -589,31 +607,6 @@ void add_nonlocal_kb(RealMatrix& Vpp,
     }
 }
 
-// Max Gaussian-product prefactor over all primitive pairs of (mu,nu): bounds the
-// magnitude of S, T, and Vpp for this pair. Below kBuildScreen the whole (i,j)
-// element is negligible and can be skipped (overlap pair screening).
-double pair_overlap_bound(const GridBasisFunction& mu,
-                          const GridBasisFunction& nu, const double L[3],
-                          bool periodic) {
-    double best = 0.0;
-    for (const auto& p : mu)
-        for (const auto& q : nu) {
-            const double a = p.alpha, b = q.alpha;
-            double d2 = 0.0;
-            for (int k = 0; k < 3; ++k) {
-                double e = p.center[k] - q.center[k];
-                // Min-image: a pair straddling a periodic boundary is a true near
-                // neighbour through its nearest image — keep it past the screen.
-                if (periodic && L[k] > 0.0)
-                    e -= L[k] * std::nearbyint(e / L[k]);
-                d2 += e * e;
-            }
-            best = std::max(best, std::abs(p.coeff * q.coeff)
-                                      * std::exp(-a * b / (a + b) * d2));
-        }
-    return best;
-}
-
 // Geometry-derived AO setup plus the image-summed Γ one-electron loop — the
 // SINGLE definition shared by the SCF (`run_gpw_scf_impl`) and the standalone
 // public entry points `GpwDft::overlap` / `GpwDft::overlap_k`. The SCF asks for
@@ -623,118 +616,80 @@ double pair_overlap_bound(const GridBasisFunction& mu,
 // is bit-identical — which is what lets a CPMD step align its propagated
 // coefficients against a standalone overlap and then evaluate the KS matrix
 // exactly ONCE instead of twice (esmm-cpmd-06-single-eval).
-struct OneElectronSetup {
-    std::vector<GridBasisFunction> basis; ///< flattened AO basis.
-    std::vector<double> radii; ///< per-AO Gaussian-tail radius [Bohr].
-    double rmax = 0.0;         ///< widest AO radius [Bohr].
-    int mimg[3] = {0, 0, 0};   ///< Γ pair-image half-counts per axis.
-
-    // Γ-point lattice-image extent, shared by the analytic S/T/Vpp lattice sums
-    // and the grid collocation. A Gaussian *pair* reaches up to twice the largest
-    // single-function radius; images within that distance contribute. EPS_DEFAULT
-    // sets the radius (CP2K's Gaussian-tail tolerance).
-    OneElectronSetup(const std::vector<GpwAtom>& atoms, const double cell[3],
-                     bool periodic, double eps_default)
-        : basis(global_basis(atoms)), radii(basis.size(), 0.0) {
-        for (std::size_t i = 0; i < basis.size(); ++i) {
-            radii[i] = basis_function_radius(basis[i], eps_default);
-            rmax = std::max(rmax, radii[i]);
+// Real Γ lattice sums into pre-zeroed nb × nb matrices. `S` is always
+// written; `T` and `Vpp` only when the caller supplies them. Vpp covers the
+// analytic local GTH term (skipped when `grid_loc`, i.e. V_loc^SR is
+// collocated instead) plus the separable Kleinman-Bylander nonlocal.
+void assemble_gamma(const internal::GpwAoBasis& ao,
+                    const std::vector<GpwAtom>& atoms, const double cell[3],
+                    bool periodic, bool grid_loc, RealMatrix& S, RealMatrix* T,
+                    RealMatrix* Vpp) {
+    const auto& basis = ao.basis;
+    const auto& radii = ao.radii;
+    const auto* mimg = ao.mimg;
+    const double rmax = ao.rmax;
+    const int n = ao.nb();
+    // Atom cell list + widest PP width, for the O(nb²) (was O(nb²·natoms))
+    // GTH build: each basis-pair queries only atoms near its product centre.
+    double rmax_pp = 0.0;
+    AtomCells acells;
+    if (Vpp != nullptr) {
+        for (const auto& at : atoms) {
+            double r = at.rloc;
+            for (const auto& ch : at.nonlocal)
+                r = std::max(r, ch.r);
+            rmax_pp = std::max(rmax_pp, r);
         }
-        pair_image_counts(cell, periodic, 2.0 * rmax, mimg);
-    }
-
-    int nb() const { return static_cast<int>(basis.size()); }
-
-    // Real Γ lattice sums into pre-zeroed nb × nb matrices. `S` is always
-    // written; `T` and `Vpp` only when the caller supplies them. Vpp covers the
-    // analytic local GTH term (skipped when `grid_loc`, i.e. V_loc^SR is
-    // collocated instead) plus the separable Kleinman-Bylander nonlocal.
-    void gamma(const std::vector<GpwAtom>& atoms, const double cell[3],
-               bool periodic, bool grid_loc, RealMatrix& S, RealMatrix* T,
-               RealMatrix* Vpp) const {
-        const int n = nb();
-        // Atom cell list + widest PP width, for the O(nb²) (was O(nb²·natoms))
-        // GTH build: each basis-pair queries only atoms near its product centre.
-        double rmax_pp = 0.0;
-        AtomCells acells;
-        if (Vpp != nullptr) {
-            for (const auto& at : atoms) {
-                double r = at.rloc;
-                for (const auto& ch : at.nonlocal)
-                    r = std::max(r, ch.r);
-                rmax_pp = std::max(rmax_pp, r);
-            }
-            // ATV_GPW_NOCELLS forces one giant cell (query returns all atoms) —
-            // the pre-cell-list path, for bit-identity A/B verification.
-            acells.build(atoms, cell,
-                         std::getenv("ATV_GPW_NOCELLS") ? 1e30 : 3.0, periodic);
-        }
-        // Basis-center cell list: the outer S/T/Vpp build is O(nb²) only because
-        // every pair is screened; the overlaps are short-ranged, so visit only
-        // neighbours. ATV_GPW_NOCELLS forces one giant cell (query returns all j).
-        BasisCells bcells;
-        bcells.build(basis, cell, std::getenv("ATV_GPW_NOCELLS") ? 1e30 : rmax,
+        // ATV_GPW_NOCELLS forces one giant cell (query returns all atoms) —
+        // the pre-cell-list path, for bit-identity A/B verification.
+        acells.build(atoms, cell, std::getenv("ATV_GPW_NOCELLS") ? 1e30 : 3.0,
                      periodic);
+    }
+    // Basis-center cell list: the outer S/T/Vpp build is O(nb²) only because
+    // every pair is screened; the overlaps are short-ranged, so visit only
+    // neighbours. ATV_GPW_NOCELLS forces one giant cell (query returns all j).
+    BasisCells bcells;
+    bcells.build(basis, cell, std::getenv("ATV_GPW_NOCELLS") ? 1e30 : rmax,
+                 periodic);
 #pragma omp parallel for schedule(dynamic, 8)
-        for (int i = 0; i < n; ++i) {
-            if (basis[i].empty())
-                continue;
-            const double* ci = basis[i][0].center;
-            const double Rq =
-                radii[static_cast<std::size_t>(i)] + rmax; // conservative
-            bcells.query(ci, Rq, [&](int j) {
-                // Overlap pair screening: S, T, Vpp are all bounded by the
-                // Gaussian product magnitude of (i,j). If even the best
-                // primitive pair is below the screen, the whole element is
-                // negligible -> leave 0.
-                if (pair_overlap_bound(basis[i], basis[j], cell, periodic)
-                    < kBuildScreen)
-                    return;
-                const double reach = radii[static_cast<std::size_t>(i)]
-                                     + radii[static_cast<std::size_t>(j)];
-                // Fused S+T over the live image set (xsimd s–s image axis on
-                // pure s shells). Avoids a second image sweep when T is wanted.
-                if (T != nullptr) {
-                    double s_ij = 0.0, t_ij = 0.0;
-                    contracted_ST_periodic(basis[i], basis[j], cell, mimg,
-                                           reach, s_ij, t_ij);
-                    S(i, j) = s_ij;
-                    (*T)(i, j) = t_ij;
-                } else {
-                    S(i, j) = overlap(basis[i], basis[j], cell, mimg, reach);
-                }
-                if (Vpp != nullptr && !grid_loc) // analytic local PP only when
-                                                 // the grid route is disabled
-                    (*Vpp)(i, j) =
-                        gth_matrix_element(basis[i], basis[j], atoms, acells,
-                                           rmax_pp, cell, mimg, reach);
-            });
-        }
-        // GTH nonlocal V_nl via the separable Kleinman-Bylander form
-        // (projectors computed once per (basis,atom)) — adds onto Vpp.
-        if (Vpp != nullptr)
-            add_nonlocal_kb(*Vpp, basis, atoms, radii, cell, mimg, bcells);
+    for (int i = 0; i < n; ++i) {
+        if (basis[i].empty())
+            continue;
+        const double* ci = basis[i][0].center;
+        const double Rq =
+            radii[static_cast<std::size_t>(i)] + rmax; // conservative
+        bcells.query(ci, Rq, [&](int j) {
+            // Overlap pair screening: S, T, Vpp are all bounded by the
+            // Gaussian product magnitude of (i,j). If even the best
+            // primitive pair is below the screen, the whole element is
+            // negligible -> leave 0.
+            if (internal::pair_overlap_bound(basis[i], basis[j], cell, periodic)
+                < internal::kGammaPairScreen)
+                return;
+            const double reach = radii[static_cast<std::size_t>(i)]
+                                 + radii[static_cast<std::size_t>(j)];
+            // Fused S+T over the live image set (xsimd s–s image axis on
+            // pure s shells). Avoids a second image sweep when T is wanted.
+            if (T != nullptr) {
+                double s_ij = 0.0, t_ij = 0.0;
+                contracted_ST_periodic(basis[i], basis[j], cell, mimg, reach,
+                                       s_ij, t_ij);
+                S(i, j) = s_ij;
+                (*T)(i, j) = t_ij;
+            } else {
+                S(i, j) = overlap(basis[i], basis[j], cell, mimg, reach);
+            }
+            if (Vpp != nullptr && !grid_loc) // analytic local PP only when
+                                             // the grid route is disabled
+                (*Vpp)(i, j) =
+                    gth_matrix_element(basis[i], basis[j], atoms, acells,
+                                       rmax_pp, cell, mimg, reach);
+        });
     }
-};
-
-// Sampled k-points of a configuration: the explicit `k_points` list when
-// non-empty, else the Monkhorst-Pack mesh. One definition, so the SCF k branch
-// and the standalone `GpwDft::overlap_k` sample the same points in the same
-// order (S_k parity is per-index).
-std::vector<internal::KPoint> sampled_kpoints(const GpwDft& cfg) {
-    std::vector<internal::KPoint> kpts;
-    if (!cfg.k_points.empty()) {
-        for (std::size_t i = 0; i < cfg.k_points.size(); ++i) {
-            internal::KPoint kp;
-            kp.frac[0] = cfg.k_points[i][0];
-            kp.frac[1] = cfg.k_points[i][1];
-            kp.frac[2] = cfg.k_points[i][2];
-            kp.weight = cfg.k_point_weights[i];
-            kpts.push_back(kp);
-        }
-        return kpts;
-    }
-    return internal::monkhorst_pack(cfg.k_mesh, cfg.k_time_reversal);
+    // GTH nonlocal V_nl via the separable Kleinman-Bylander form
+    // (projectors computed once per (basis,atom)) — adds onto Vpp.
+    if (Vpp != nullptr)
+        add_nonlocal_kb(*Vpp, basis, atoms, radii, cell, mimg, bcells);
 }
 
 // True when this configuration solves on the k-point path (any non-Γ mesh,
@@ -938,6 +893,49 @@ const std::vector<std::vector<std::vector<CartTerm>>>& harmonics() {
 }
 } // namespace
 
+internal::GpwAoBasis::GpwAoBasis(const std::vector<GpwAtom>& atoms,
+                                 const double cell[3], bool periodic,
+                                 double eps)
+    : basis(global_basis(atoms)), radii(basis.size()) {
+    for (std::size_t i = 0; i < basis.size(); ++i) {
+        radii[i] = basis_function_radius(basis[i], eps);
+        rmax = std::max(rmax, radii[i]);
+    }
+    pair_image_counts(cell, periodic, 2 * rmax, mimg);
+}
+
+internal::GpwGeometry::GpwGeometry(std::vector<GpwAtom> geometry_atoms,
+                                   std::array<double, 3> edges,
+                                   double cutoff_ry, double eps, bool periodic,
+                                   GpwGridTables tables, int product_levels,
+                                   double rel_cutoff)
+    : atoms(std::move(geometry_atoms)), cell(edges),
+      ao(atoms, cell.data(), periodic, eps) {
+    if (tables == GpwGridTables::products
+        || tables == GpwGridTables::compact_and_products) {
+        product_grid =
+            make_multigrid(cell.data(), cutoff_ry, product_levels, rel_cutoff);
+        product_rel_cutoff = rel_cutoff;
+        products = build_products(product_grid, ao.basis, cell.data(),
+                                  product_rel_cutoff, eps, periodic);
+        grid = product_grid.levels.front();
+    } else {
+        grid = make_uniform_grid(cell.data(), cutoff_ry);
+    }
+    if (tables == GpwGridTables::compact
+        || tables == GpwGridTables::compact_and_products)
+        cbg = build_compact_basis_grid(grid, ao.basis, periodic, eps);
+}
+
+void internal::GpwGeometry::assemble_bloch_grid(std::vector<KPoint> sampled,
+                                                double eps) {
+    kpoints = std::move(sampled);
+    if (product_grid.levels.empty())
+        kbg = build_kpoint_basis_grid(grid, ao.basis, kpoints, eps);
+    else
+        bloch_cell_phases = build_bloch_cell_phases(kpoints, products.cells);
+}
+
 internal::GpwAtom::GpwAtom(const double pos[3], const GaussianBasis& basis,
                            const GthPotential& pot, int z) {
     this->z_val = static_cast<double>(pot.zion);
@@ -1012,18 +1010,40 @@ using OtStageDrive = std::function<bool(
     std::function<std::pair<bool, double>(int)> measure,
     std::function<bool(int)> update, int max_iter, GpwResult& res)>;
 
-static GpwResult run_gpw_scf_kpoints(
-    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-    const std::vector<GridBasisFunction>& basis,
-    const std::vector<double>& radii, const int mimg[3],
-    const UniformGrid& grid, const std::vector<double>& n_ion,
-    const std::vector<double>& v_locsr, double e_self, double e_core_overlap,
-    double e_d3, const std::vector<internal::KPoint>& kpts,
-    StageDrive stage_drive, OtStageDrive ot_stage_drive,
-    const std::vector<linalg::CplxMatrix>* guess_P_k = nullptr) {
+static std::vector<std::vector<double>>
+gpw_product_density_stack(const internal::GpwGeometry& geometry,
+                          const std::vector<internal::CplxMatrix>& P_k,
+                          const GpwMpiLayout& layout) {
+    auto D = internal::build_bloch_density_stack(geometry, P_k, layout.rank,
+                                                 layout.nprocs);
+#ifdef ATV_HAS_MPI
+    if (layout.active)
+        for (auto& cell : D)
+            MPI_Allreduce(MPI_IN_PLACE, cell.data(),
+                          static_cast<int>(cell.size()), MPI_DOUBLE, MPI_SUM,
+                          MPI_COMM_WORLD);
+#endif
+    return D;
+}
+
+static GpwResult
+run_gpw_scf_kpoints(const internal::GpwGeometry& geometry, const GpwDft& cfg,
+                    const std::vector<double>& n_ion,
+                    const std::vector<double>& v_locsr, double e_self,
+                    double e_core_overlap, double e_d3,
+                    internal::GpwWorkspace& ws, StageDrive stage_drive,
+                    OtStageDrive ot_stage_drive,
+                    const std::vector<linalg::CplxMatrix>* guess_P_k) {
     using internal::CplxMatrix;
     using Cplx = std::complex<double>;
-    const int nb = static_cast<int>(basis.size());
+    const auto& atoms = geometry.atoms;
+    const auto& basis = geometry.ao.basis;
+    const auto& radii = geometry.ao.radii;
+    const auto* mimg = geometry.ao.mimg;
+    const auto& grid = geometry.grid;
+    const auto& kpts = geometry.kpoints;
+    const auto& kbg = geometry.kbg;
+    const int nb = geometry.ao.nb();
     const int nk = static_cast<int>(kpts.size());
     const GpwMpiLayout layout = gpw_mpi_layout();
     int n_kpts_local = 0;
@@ -1118,118 +1138,18 @@ static GpwResult run_gpw_scf_kpoints(
         weights[static_cast<std::size_t>(ik)] =
             kpts[static_cast<std::size_t>(ik)].weight;
 
-    // CP2K REL_CUTOFF multigrid on the k path (gated ngrids>1 && rel_cutoff>0):
-    // the geometry-fixed product list is the SAME as the Γ multigrid — the ket
-    // image shift each product already carries becomes the Bloch phase index.
-    // Per iteration the k-summed real-space density-matrix stack
-    //   D(t) = Σ_k w_k Re[P^k e^{−2πi κ·t}]
-    // weighs the per-level product collocation (Γ limit: D(t) = P, the shipped
-    // weight), the per-level densities prolong spectrally to the finest grid
-    // for Poisson + XC, and the fine potential restricts back to each level to
-    // integrate the real per-cell stack V_t — phase-summed per k into the
-    // Hermitian grid KS matrix V^k = Σ_t e^{+2πi κ·t} V_t (exact transpose of
-    // the density assembly, so the SCF stays variational). MPI: D and V_t are
-    // k-independent, so each rank holds the full stacks (D Allreduced over the
-    // local-k partials; the product sweep itself is replicated — foothold,
-    // same replication class as the analytic S_k/T_k setup).
-    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
-    // Solver-private bags (products / kbg / last_veff); grid is the caller's.
-    internal::GpwWorkspace ws;
-    ws.grid = grid;
-    MultiGrid& mg = ws.mg;
-    ProductSet& products = ws.products;
-    if (use_mg) {
-        k_setup_clk_early = std::chrono::steady_clock::now();
-        mg = make_multigrid(cfg.cell_bohr().data(), cfg.cutoff_ry, cfg.ngrids,
-                            cfg.rel_cutoff);
-        if (mg.levels[0].n[0] != grid.n[0] || mg.levels[0].n[1] != grid.n[1]
-            || mg.levels[0].n[2] != grid.n[2])
-            throw std::logic_error(
-                "GPW kpoints: multigrid finest level n[] != SCF grid n[]");
-        products =
-            build_products(mg, basis, cfg.cell_bohr().data(), cfg.rel_cutoff,
-                           cfg.eps_default, /*periodic=*/true);
-        k_setup_mark_early("products_mg");
-    }
-    const std::size_t n_tcells = products.cells.size();
-    // Bloch phase per (k, image cell): e^{−2πi κ·t} matches the χ^k grid
-    // convention (kpoints.h); the KS assembly uses its conjugate.
-    std::vector<std::vector<Cplx>> tcell_phase(static_cast<std::size_t>(nk));
-    if (use_mg) {
-        constexpr double kTwoPi = 6.283185307179586476925286766559;
-        for (int ik = 0; ik < nk; ++ik) {
-            auto& row = tcell_phase[static_cast<std::size_t>(ik)];
-            row.resize(n_tcells);
-            for (std::size_t c = 0; c < n_tcells; ++c) {
-                const auto& t = products.cells[c];
-                const double arg =
-                    -kTwoPi
-                    * (kpts[static_cast<std::size_t>(ik)].frac[0] * t[0]
-                       + kpts[static_cast<std::size_t>(ik)].frac[1] * t[1]
-                       + kpts[static_cast<std::size_t>(ik)].frac[2] * t[2]);
-                row[c] = Cplx(std::cos(arg), std::sin(arg));
-            }
-        }
-    }
-    // Full (Allreduced) D stack from {P_k}: local-k partials, then the sum.
-    auto mg_density_stack = [&](const std::vector<CplxMatrix>& Pk) {
-        std::vector<std::vector<double>> D(
-            n_tcells,
-            std::vector<double>(static_cast<std::size_t>(nb) * nb, 0.0));
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const double wk = weights[static_cast<std::size_t>(ik)];
-            const auto& P = Pk[static_cast<std::size_t>(ik)];
-            internal::accumulate_bloch_density_stack(
-                P, wk, tcell_phase[static_cast<std::size_t>(ik)], D);
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active)
-            for (auto& Dc : D)
-                MPI_Allreduce(MPI_IN_PLACE, Dc.data(),
-                              static_cast<int>(Dc.size()), MPI_DOUBLE, MPI_SUM,
-                              MPI_COMM_WORLD);
-#endif
-        return D;
-    };
-    // Fine-grid density from {P_k}: multi-level product collocation + spectral
-    // prolongation (shared MAIN path). Every rank returns the GLOBAL density.
+    const auto& mg = geometry.product_grid;
+    const auto& products = geometry.products;
+    const bool use_mg = !mg.levels.empty();
     auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
         return multigrid_collocate_rho_cells(
-            mg, products, nb, mg_density_stack(Pk), cfg.eps_default);
+            mg, products, nb, gpw_product_density_stack(geometry, Pk, layout),
+            cfg.eps_default);
     };
-    // Real per-cell KS stack V_t from fine V_eff (shared MAIN restrict+integrate).
     auto mg_vt_stack = [&](const std::vector<double>& veff) {
         return multigrid_integrate_veff_cells(mg, products, nb, veff,
                                               cfg.eps_default);
     };
-    // Per-k Hermitian grid KS matrix V^k = Σ_t e^{+2πi κ·t} V_t (conjugate of
-    // the collocation phase).
-    auto mg_phase_V = [&](const std::vector<std::vector<double>>& Vt, int ik) {
-        CplxMatrix V = xt::zeros<Cplx>({nb, nb});
-        const std::size_t nn = static_cast<std::size_t>(nb) * nb;
-        for (std::size_t c = 0; c < n_tcells; ++c) {
-            const Cplx ph =
-                std::conj(tcell_phase[static_cast<std::size_t>(ik)][c]);
-            const double* Vc = Vt[c].data();
-            Cplx* out = V.data();
-            for (std::size_t e = 0; e < nn; ++e)
-                out[e] += ph * Vc[e];
-        }
-        return V;
-    };
-
-    // Per-k pre-summed complex basis-on-grid values (image sum + Bloch phase
-    // folded once; per-iteration cost is O(npts * nb^2) per k). Skipped under
-    // multigrid — the product path replaces it (dense χ^k on the fine grid is
-    // exactly the cost multigrid exists to avoid).
-    if (!use_mg)
-        k_setup_clk_early = std::chrono::steady_clock::now();
-    if (!use_mg)
-        ws.kbg = internal::build_kpoint_basis_grid(grid, basis, kpts,
-                                                   cfg.eps_default);
-    const internal::KpointBasisGrid& kbg = ws.kbg;
-    if (!use_mg)
-        k_setup_mark_early("kbg_build");
 
     // Density from band occupations f_b ∈ [0, 2] (closed-shell band form).
     auto density_from_occ = [&](const CplxMatrix& C,
@@ -1371,9 +1291,6 @@ static GpwResult run_gpw_scf_kpoints(
     GpwResult res;
     res.n_kpts = nk;
     res.n_kpts_local = n_kpts_local;
-    // Force path reuses geometry-fixed χ^k (single-grid only; MG has no kbg).
-    if (!use_mg)
-        res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
     internal::KDiis diis(use_diis ? cfg.diis_depth : 1, weights,
                          [layout](double* values, int count) {
@@ -1481,7 +1398,7 @@ static GpwResult run_gpw_scf_kpoints(
             Vt = mg_vt_stack(veff);
         for (int ik = 0; ik < nk; ++ik) {
             const CplxMatrix Vg =
-                use_mg ? mg_phase_V(Vt, ik)
+                use_mg ? internal::phase_bloch_potential(geometry, Vt, ik)
                        : internal::integrate_potential_k(kbg, ik, veff);
             full[static_cast<std::size_t>(ik)] =
                 T_k[static_cast<std::size_t>(ik)]
@@ -1495,6 +1412,10 @@ static GpwResult run_gpw_scf_kpoints(
     };
 
     auto store_k_payload = [&](const std::vector<CplxMatrix>& H_full) {
+        if (res.converged && (use_mg || !use_smear)) {
+            ws.accepted_P_k = P_k;
+            layout.gather_density(ws.accepted_P_k, nb);
+        }
         res.k_frac.clear();
         res.k_weights.clear();
         res.eps_k.clear();
@@ -1561,7 +1482,7 @@ static GpwResult run_gpw_scf_kpoints(
     };
 
     std::vector<CplxMatrix> H_k(static_cast<std::size_t>(nk));
-    std::vector<double>& last_veff = ws.last_veff;
+    auto& last_veff = ws.veff;
 
     // Shared H/energy rebuild from {P_k} (used by DIIS and OT).
     // ATV_GPW_PROF: per-call [gpw prof k] timings (collocate / Poisson / XC /
@@ -1586,8 +1507,7 @@ static GpwResult run_gpw_scf_kpoints(
         (void)t2p;
         const double e_locgrid = ks.e_locgrid;
         last_veff = ks.veff;
-        res.veff = last_veff; // force assembly reuses SCF V_eff
-        res.v_es = ks.v_es;
+        ws.v_es = ks.v_es;
         const std::vector<double>& veff = last_veff;
 
         std::vector<std::vector<double>> Vt;
@@ -1597,7 +1517,7 @@ static GpwResult run_gpw_scf_kpoints(
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
             const double wk = weights[static_cast<std::size_t>(ik)];
             const CplxMatrix Vg =
-                use_mg ? mg_phase_V(Vt, ik)
+                use_mg ? internal::phase_bloch_potential(geometry, Vt, ik)
                        : internal::integrate_potential_k(kbg, ik, veff);
             H_k[static_cast<std::size_t>(ik)] =
                 T_k[static_cast<std::size_t>(ik)]
@@ -2370,19 +2290,25 @@ static GpwResult run_gpw_scf_kpoints(
 /// spin-resolved XC, and separate H_α^k / H_β^k + DIIS. Fixed integer
 /// fillings n_alpha / n_beta by default; optional metallic smearing (FD/MP)
 /// with a shared \(\mu\) over spin-orbitals (spin_degen=1).
-static GpwResult run_gpw_scf_kpoints_uks(
-    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-    const std::vector<GridBasisFunction>& basis,
-    const std::vector<double>& radii, const int mimg[3],
-    const UniformGrid& grid, const std::vector<double>& n_ion,
-    const std::vector<double>& v_locsr, double e_self, double e_core_overlap,
-    double e_d3, const std::vector<internal::KPoint>& kpts,
-    StageDrive stage_drive, OtStageDrive ot_stage_drive,
-    const std::vector<linalg::CplxMatrix>* guess_Pa_k = nullptr,
-    const std::vector<linalg::CplxMatrix>* guess_Pb_k = nullptr) {
+static GpwResult
+run_gpw_scf_kpoints_uks(const internal::GpwGeometry& geometry,
+                        const GpwDft& cfg, const std::vector<double>& n_ion,
+                        const std::vector<double>& v_locsr, double e_self,
+                        double e_core_overlap, double e_d3,
+                        internal::GpwWorkspace& ws, StageDrive stage_drive,
+                        OtStageDrive ot_stage_drive,
+                        const std::vector<linalg::CplxMatrix>* guess_Pa_k,
+                        const std::vector<linalg::CplxMatrix>* guess_Pb_k) {
     using internal::CplxMatrix;
     using Cplx = std::complex<double>;
-    const int nb = static_cast<int>(basis.size());
+    const auto& atoms = geometry.atoms;
+    const auto& basis = geometry.ao.basis;
+    const auto& radii = geometry.ao.radii;
+    const auto* mimg = geometry.ao.mimg;
+    const auto& grid = geometry.grid;
+    const auto& kpts = geometry.kpoints;
+    const auto& kbg = geometry.kbg;
+    const int nb = geometry.ao.nb();
     const int nk = static_cast<int>(kpts.size());
     const int n_a = cfg.n_alpha;
     const int n_b = cfg.n_beta;
@@ -2490,96 +2416,20 @@ static GpwResult run_gpw_scf_kpoints_uks(
         weights[static_cast<std::size_t>(ik)] =
             kpts[static_cast<std::size_t>(ik)].weight;
 
-    // CP2K REL_CUTOFF multigrid on the multi-k UKS path (gated
-    // ngrids>1 && rel_cutoff>0): same geometry-fixed product list as the RKS
-    // multi-k multigrid, applied once per spin. Per spin σ the Bloch-phased
-    // real-space density stack
-    //   D^σ(t) = Σ_k w_k Re[P^{σ,k} e^{−2πi κ·t}]
-    // weighs the per-level product collocation; ρ^σ_l prolongs to the fine
-    // grid (ρ = ρα + ρβ feeds Poisson; (ρα, ρβ) feed spin XC); each V_eff^σ
-    // restricts back and integrates into V^σ_t; phase-summed
-    // V^{σ,k} = Σ_t e^{+2πi κ·t} V^σ_t (Hermitian, exact transpose of the
-    // density assembly — SCF stays variational per spin).
-    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
-    internal::GpwWorkspace ws;
-    ws.grid = grid;
-    MultiGrid& mg = ws.mg;
-    ProductSet& products = ws.products;
-    if (use_mg) {
-        mg = make_multigrid(cfg.cell_bohr().data(), cfg.cutoff_ry, cfg.ngrids,
-                            cfg.rel_cutoff);
-        if (mg.levels[0].n[0] != grid.n[0] || mg.levels[0].n[1] != grid.n[1]
-            || mg.levels[0].n[2] != grid.n[2])
-            throw std::logic_error(
-                "GPW k-UKS: multigrid finest level n[] != SCF grid n[]");
-        products =
-            build_products(mg, basis, cfg.cell_bohr().data(), cfg.rel_cutoff,
-                           cfg.eps_default, /*periodic=*/true);
-    }
-    const std::size_t n_tcells = products.cells.size();
-    std::vector<std::vector<Cplx>> tcell_phase(static_cast<std::size_t>(nk));
-    if (use_mg) {
-        constexpr double kTwoPi = 6.283185307179586476925286766559;
-        for (int ik = 0; ik < nk; ++ik) {
-            auto& row = tcell_phase[static_cast<std::size_t>(ik)];
-            row.resize(n_tcells);
-            for (std::size_t c = 0; c < n_tcells; ++c) {
-                const auto& t = products.cells[c];
-                const double arg =
-                    -kTwoPi
-                    * (kpts[static_cast<std::size_t>(ik)].frac[0] * t[0]
-                       + kpts[static_cast<std::size_t>(ik)].frac[1] * t[1]
-                       + kpts[static_cast<std::size_t>(ik)].frac[2] * t[2]);
-                row[c] = Cplx(std::cos(arg), std::sin(arg));
-            }
-        }
-    }
-    auto mg_density_stack = [&](const std::vector<CplxMatrix>& Pk) {
-        std::vector<std::vector<double>> D(
-            n_tcells,
-            std::vector<double>(static_cast<std::size_t>(nb) * nb, 0.0));
-        for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
-            const double wk = weights[static_cast<std::size_t>(ik)];
-            const auto& P = Pk[static_cast<std::size_t>(ik)];
-            internal::accumulate_bloch_density_stack(
-                P, wk, tcell_phase[static_cast<std::size_t>(ik)], D);
-        }
-#ifdef ATV_HAS_MPI
-        if (layout.active)
-            for (auto& Dc : D)
-                MPI_Allreduce(MPI_IN_PLACE, Dc.data(),
-                              static_cast<int>(Dc.size()), MPI_DOUBLE, MPI_SUM,
-                              MPI_COMM_WORLD);
-#endif
-        return D;
-    };
-    // Shared MAIN multi-level product path (same helpers as multi-k RKS).
+    const auto& mg = geometry.product_grid;
+    const auto& products = geometry.products;
+    const bool use_mg = !mg.levels.empty();
     auto mg_density = [&](const std::vector<CplxMatrix>& Pk) {
         return multigrid_collocate_rho_cells(
-            mg, products, nb, mg_density_stack(Pk), cfg.eps_default);
+            mg, products, nb, gpw_product_density_stack(geometry, Pk, layout),
+            cfg.eps_default);
     };
     auto mg_vt_stack = [&](const std::vector<double>& veff) {
         return multigrid_integrate_veff_cells(mg, products, nb, veff,
                                               cfg.eps_default);
     };
-    auto mg_phase_V = [&](const std::vector<std::vector<double>>& Vt, int ik) {
-        CplxMatrix V = xt::zeros<Cplx>({nb, nb});
-        const std::size_t nn = static_cast<std::size_t>(nb) * nb;
-        for (std::size_t c = 0; c < n_tcells; ++c) {
-            const Cplx ph =
-                std::conj(tcell_phase[static_cast<std::size_t>(ik)][c]);
-            const double* Vc = Vt[c].data();
-            Cplx* out = V.data();
-            for (std::size_t e = 0; e < nn; ++e)
-                out[e] += ph * Vc[e];
-        }
-        return V;
-    };
+
     // Dense χ^k path only when multigrid is off — products replace it.
-    if (!use_mg)
-        ws.kbg = internal::build_kpoint_basis_grid(grid, basis, kpts,
-                                                   cfg.eps_default);
-    const internal::KpointBasisGrid& kbg = ws.kbg;
     // k-summed spin density ρ^σ on the fine grid from {P^σ_k}.
     auto collocate_rho_spin_k = [&](const std::vector<CplxMatrix>& Pk) {
         if (use_mg)
@@ -2657,8 +2507,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
             return std::make_pair(std::move(occ_a), std::move(occ_b));
         };
 
-    std::vector<CplxMatrix> Pa_k(static_cast<std::size_t>(nk));
-    std::vector<CplxMatrix> Pb_k(static_cast<std::size_t>(nk));
+    auto& Pa_k = ws.accepted_P_k;
+    auto& Pb_k = ws.accepted_P_k_beta;
+    Pa_k.resize(static_cast<std::size_t>(nk));
+    Pb_k.resize(static_cast<std::size_t>(nk));
     double last_mu = 0.0;
     double last_n_elec = 0.0;
     double last_entropy = 0.0;
@@ -2692,9 +2544,6 @@ static GpwResult run_gpw_scf_kpoints_uks(
     GpwResult res;
     res.n_kpts = nk;
     res.n_kpts_local = n_kpts_local;
-    // Force path reuses geometry-fixed χ^k (single-grid only; MG has no kbg).
-    if (!use_mg)
-        res.scf_kbg = std::make_shared<internal::KpointBasisGrid>(ws.kbg);
     const bool use_diis = cfg.diis_depth > 0;
     internal::KDiis diis_a(use_diis ? cfg.diis_depth : 1, weights,
                            [layout](double* values, int count) {
@@ -2719,17 +2568,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
     linalg::RealMatrix Va_dftu, Vb_dftu;
     bool have_V_dftu = false;
 
-    auto rebuild_all_H = [&](const std::vector<double>& veff_spin) {
-        // veff_spin layout: first npts α, next npts β.
-        const long ng = grid.npts();
-        std::vector<double> va(static_cast<std::size_t>(ng));
-        std::vector<double> vb(static_cast<std::size_t>(ng));
-        for (long g = 0; g < ng; ++g) {
-            va[static_cast<std::size_t>(g)] =
-                veff_spin[static_cast<std::size_t>(g)];
-            vb[static_cast<std::size_t>(g)] =
-                veff_spin[static_cast<std::size_t>(g + ng)];
-        }
+    auto rebuild_all_H = [&]() {
+        const auto& va = ws.veff_a;
+        const auto& vb = ws.veff_b;
         // Multigrid: one V_t stack per spin (k-independent), phase-summed.
         std::vector<std::vector<double>> Vt_a, Vt_b;
         if (use_mg) {
@@ -2740,10 +2581,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
         std::vector<CplxMatrix> Hb(static_cast<std::size_t>(nk));
         for (int ik = 0; ik < nk; ++ik) {
             const CplxMatrix Va =
-                use_mg ? mg_phase_V(Vt_a, ik)
+                use_mg ? internal::phase_bloch_potential(geometry, Vt_a, ik)
                        : internal::integrate_potential_k(kbg, ik, va);
             const CplxMatrix Vb =
-                use_mg ? mg_phase_V(Vt_b, ik)
+                use_mg ? internal::phase_bloch_potential(geometry, Vt_b, ik)
                        : internal::integrate_potential_k(kbg, ik, vb);
             const CplxMatrix H0 = T_k[static_cast<std::size_t>(ik)]
                                   + Vnl_k[static_cast<std::size_t>(ik)];
@@ -2763,6 +2604,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
     auto store_k_payload = [&](const std::vector<CplxMatrix>& Ha_full,
                                const std::vector<CplxMatrix>& Hb_full) {
+        if (res.converged && !use_mg) {
+            layout.gather_density(Pa_k, nb);
+            layout.gather_density(Pb_k, nb);
+        }
         res.k_frac.clear();
         res.k_weights.clear();
         res.eps_k.clear();
@@ -2916,35 +2761,21 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
     std::vector<CplxMatrix> Ha_k(static_cast<std::size_t>(nk));
     std::vector<CplxMatrix> Hb_k(static_cast<std::size_t>(nk));
-    // Packed α||β on the workspace bag (same layout as before).
-    std::vector<double>& last_veff_ab = ws.last_veff;
 
     // One dual-spin KS build at (Pa_k, Pb_k): collocate ρ^σ → Poisson → spin
-    // XC → V_eff^σ → local H^σ_k + energy terms. Shared by the OT minimizer
-    // and the fixed-density (max_iter == 0) eval below; the DIIS loop keeps
-    // its historical inline copy (byte-identical assembly). Multigrid and
-    // single-grid paths share this chokepoint via collocate_rho_spin_k /
-    // mg_vt_stack + mg_phase_V.
+    // XC → V_eff^σ → local H^σ_k + energy terms for DIIS, OT and fixed-density
+    // evaluation. Retain both fine-grid potentials in the same workspace.
     auto build_uks_k_energy =
         [&](const std::vector<CplxMatrix>& Pak,
             const std::vector<CplxMatrix>& Pbk) -> double {
         const std::vector<double> rho_a = collocate_rho_spin_k(Pak);
         const std::vector<double> rho_b = collocate_rho_spin_k(Pbk);
-        const internal::KsGridUks ks = internal::ks_grid_build_uks(
+        auto ks = internal::ks_grid_build_uks(
             grid, rho_a, rho_b, n_ion, v_locsr, cfg.xc, /*nonperiodic=*/false,
             cfg.vdw_df, cfg.vdw_df2, cfg.rvv10);
         const double e_locgrid = ks.e_locgrid;
         const std::vector<double>& veff_a = ks.veff_a;
         const std::vector<double>& veff_b = ks.veff_b;
-        last_veff_ab.resize(veff_a.size() + veff_b.size());
-        for (std::size_t g = 0; g < veff_a.size(); ++g) {
-            last_veff_ab[g] = veff_a[g];
-            last_veff_ab[g + veff_a.size()] = veff_b[g];
-        }
-        // Force assembly reuses dual V_eff + V_es (same functional as the SCF).
-        res.veff_a = veff_a;
-        res.veff_b = veff_b;
-        res.v_es = ks.v_es;
         std::vector<std::vector<double>> Vt_a, Vt_b;
         if (use_mg) {
             Vt_a = mg_vt_stack(veff_a);
@@ -2954,10 +2785,10 @@ static GpwResult run_gpw_scf_kpoints_uks(
         for (int ik = layout.rank; ik < nk; ik += layout.nprocs) {
             const double wk = weights[static_cast<std::size_t>(ik)];
             const CplxMatrix Va =
-                use_mg ? mg_phase_V(Vt_a, ik)
+                use_mg ? internal::phase_bloch_potential(geometry, Vt_a, ik)
                        : internal::integrate_potential_k(kbg, ik, veff_a);
             const CplxMatrix Vb =
-                use_mg ? mg_phase_V(Vt_b, ik)
+                use_mg ? internal::phase_bloch_potential(geometry, Vt_b, ik)
                        : internal::integrate_potential_k(kbg, ik, veff_b);
             const CplxMatrix H0 = T_k[static_cast<std::size_t>(ik)]
                                   + Vnl_k[static_cast<std::size_t>(ik)];
@@ -2994,6 +2825,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
         res.e_loc_sr = e_nl + e_locgrid;
         res.e_es = ks.e_hartree - e_self + e_core_overlap;
         res.e_xc = ks.e_xc;
+        ws.veff_a = std::move(ks.veff_a);
+        ws.veff_b = std::move(ks.veff_b);
+        ws.v_es = std::move(ks.v_es);
         const double e_ks =
             res.e_kinetic + res.e_loc_sr + res.e_es + res.e_xc + e_dftu;
         const double e_ent = use_smear ? (-degauss_ha * last_entropy) : 0.0;
@@ -3030,7 +2864,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
         }
         res.e_total = build_uks_k_energy(Pa_k, Pb_k);
         // Full H^σ_k on every rank from the shared dual V_eff.
-        auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+        auto [Ha_full, Hb_full] = rebuild_all_H();
         res.H_ks_k.resize(static_cast<std::size_t>(nk));
         res.H_ks_k_beta.resize(static_cast<std::size_t>(nk));
         res.S_k.resize(static_cast<std::size_t>(nk));
@@ -3335,7 +3169,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
 
                     if (outer > 0 && std::abs(e_total - e_prev) < cfg.tol) {
                         res.converged = true;
-                        auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+                        auto [Ha_full, Hb_full] = rebuild_all_H();
                         store_k_payload(Ha_full, Hb_full);
                         {
                             const double sz =
@@ -3382,8 +3216,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
                 cfg.max_iter, res);
             if (finished_early)
                 return res;
-            if (!last_veff_ab.empty()) {
-                auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+            if (!ws.veff_a.empty()) {
+                auto [Ha_full, Hb_full] = rebuild_all_H();
                 store_k_payload(Ha_full, Hb_full);
             }
             {
@@ -3537,7 +3371,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
                                         : kOtGradTolK;
                 auto finish_converged = [&]() {
                     res.converged = true;
-                    auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+                    auto [Ha_full, Hb_full] = rebuild_all_H();
                     store_k_payload(Ha_full, Hb_full);
                     {
                         const double sz = 0.5 * static_cast<double>(n_a - n_b);
@@ -3826,9 +3660,9 @@ static GpwResult run_gpw_scf_kpoints_uks(
             cfg.max_iter, res);
         if (finished_early)
             return res;
-        // Budget exhausted: last_veff_ab from final trial.
-        if (!last_veff_ab.empty()) {
-            auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+        // Budget exhausted: workspace potentials from final trial.
+        if (!ws.veff_a.empty()) {
+            auto [Ha_full, Hb_full] = rebuild_all_H();
             store_k_payload(Ha_full, Hb_full);
         }
         {
@@ -4026,7 +3860,7 @@ static GpwResult run_gpw_scf_kpoints_uks(
         cfg.max_iter, res);
 
     if (conv) {
-        auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+        auto [Ha_full, Hb_full] = rebuild_all_H();
         store_k_payload(Ha_full, Hb_full);
         {
             const double sz = 0.5 * static_cast<double>(n_a - n_b);
@@ -4039,8 +3873,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
         return res;
     }
     // Budget exhausted: report the last state (converged stays false).
-    if (!last_veff_ab.empty()) {
-        auto [Ha_full, Hb_full] = rebuild_all_H(last_veff_ab);
+    if (!ws.veff_a.empty()) {
+        auto [Ha_full, Hb_full] = rebuild_all_H();
         store_k_payload(Ha_full, Hb_full);
     }
     {
@@ -4057,7 +3891,8 @@ static GpwResult run_gpw_scf_kpoints_uks(
 /// The full GPW SCF implementation, owned and reached through
 /// `GpwDft::run` → `run_impl_`.
 GpwResult
-GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
+GpwDft::run_impl_(const internal::GpwGeometry& geometry,
+                  internal::GpwWorkspace& ws, const RealMatrix* guess_C,
                   const RealMatrix* guess_P, const RealMatrix* guess_P_beta,
                   const std::vector<linalg::CplxMatrix>* guess_P_k,
                   const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
@@ -4067,14 +3902,8 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     device::ensure_fftw_threads();
     const bool periodic = !cfg.nonperiodic;
     const double eps_default = cfg.eps_default;
-    // Flattened basis, Gaussian-tail radii, and the Γ pair-image extent —
-    // constructed through the same type `GpwDft::overlap` / `overlap_k` use, so
-    // the standalone overlaps sum exactly the images the SCF's S does.
-    const OneElectronSetup setup(atoms, cfg.cell_bohr().data(), periodic,
-                                 eps_default);
-    const std::vector<GridBasisFunction>& basis = setup.basis;
-    const std::vector<double>& radii = setup.radii;
-    const int* const mimg = setup.mimg;
+    const auto& atoms = geometry.atoms;
+    const auto& setup = geometry.ao;
     const int nb = setup.nb();
     const std::vector<internal::AoShellTag> ao_tags = global_ao_tags(atoms);
     if (static_cast<int>(ao_tags.size()) != nb)
@@ -4087,12 +3916,7 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     std::vector<internal::PlusUHa> plus_u_slots;
     pack_plus_u(cfg.plus_u, plus_u_z, plus_u_slots);
     const bool do_dftu = !plus_u_slots.empty();
-    // Solver-private workspace for this run (Γ path owns bags; k runners
-    // build their own). Grid is filled here so Γ aliases and k call sites
-    // share one make_uniform_grid.
-    internal::GpwWorkspace ws;
-    ws.grid = make_uniform_grid(cfg.cell_bohr().data(), cfg.cutoff_ry);
-    const UniformGrid& grid = ws.grid;
+    const auto& grid = geometry.grid;
     // GGA spectral grad/div goes through howmany=3 plans whose 3×-sized real and
     // complex buffers are allocated lazily on the first many_* call. Warm them
     // during setup so the first KS (esp. OT water with cold multi-out) does not
@@ -4218,7 +4042,7 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     // The geometry-fixed one-electron / GTH matrices dominate the GPW SCF wall
     // time at scale (profiled: ~75-80% for hundreds of atoms; the eigensolve is
     // <2%). Each (i,j) is an independent primitive contraction; the assembly
-    // itself lives in OneElectronSetup::gamma (shared with GpwDft::overlap).
+    // itself lives in assemble_gamma (shared with GpwDft::overlap).
     const bool sprof = std::getenv("ATV_GPW_PROF") != nullptr;
     auto sclk = std::chrono::steady_clock::now();
     auto smark = [&](const char* what) {
@@ -4240,8 +4064,8 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     // The Γ real S/T/Vpp lattice sums serve the Γ paths only; the k-point
     // branch builds its own phased (complex) matrices per k.
     if (!use_kpath)
-        setup.gamma(atoms, cfg.cell_bohr().data(), periodic, grid_loc, S, &T,
-                    &Vpp);
+        assemble_gamma(setup, atoms, geometry.cell.data(), periodic, grid_loc,
+                       S, &T, &Vpp);
     const RealMatrix H0 = T + Vpp;
     smark("STVpp_build");
 
@@ -4272,7 +4096,6 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
             throw std::invalid_argument(
                 "GpwDft::run: multi-k SCF takes complex guess_P_k (one "
                 "density per k); real guess_P / guess_P_beta are Γ-only");
-        const std::vector<internal::KPoint> kpts = sampled_kpoints(cfg);
         auto ot_stage_drive = [this](OtMeasure measure, OtUpdate update,
                                      int max_iter, GpwResult& r) {
             return drive_path_ot_(std::move(measure), std::move(update),
@@ -4285,10 +4108,16 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                                       GpwResult& r) {
                 return drive_path_diis_(std::move(factory), max_iter, r);
             };
-            return run_gpw_scf_kpoints_uks(
-                atoms, cfg, basis, radii, mimg, grid, n_ion, v_locsr, e_self,
-                e_core_overlap, e_d3, kpts, stage_drive, ot_stage_drive,
-                guess_P_k, guess_P_k_beta);
+            auto result = run_gpw_scf_kpoints_uks(
+                geometry, cfg, n_ion, v_locsr, e_self, e_core_overlap, e_d3, ws,
+                stage_drive, ot_stage_drive, guess_P_k, guess_P_k_beta);
+            if (!result.converged && geometry.product_grid.levels.empty()) {
+                // A budget-limited dynamics corrector uses the density of
+                // the physical Hamiltonian's final orbitals.
+                ws.accepted_P_k = result.P_k;
+                ws.accepted_P_k_beta = result.P_k_beta;
+            }
+            return result;
         }
         if (guess_P_k_beta != nullptr)
             throw std::invalid_argument(
@@ -4298,9 +4127,9 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                                   GpwResult& r) {
             return drive_path_diis_(std::move(factory), max_iter, r);
         };
-        return run_gpw_scf_kpoints(atoms, cfg, basis, radii, mimg, grid, n_ion,
-                                   v_locsr, e_self, e_core_overlap, e_d3, kpts,
-                                   stage_drive, ot_stage_drive, guess_P_k);
+        return run_gpw_scf_kpoints(geometry, cfg, n_ion, v_locsr, e_self,
+                                   e_core_overlap, e_d3, ws, stage_drive,
+                                   ot_stage_drive, guess_P_k);
     }
     if (guess_P_k != nullptr || guess_P_k_beta != nullptr)
         throw std::invalid_argument(
@@ -4506,61 +4335,14 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
     }
     smark("init_eigensolve");
 
-    // Basis-on-grid is geometry-fixed: evaluate the Gaussians once and reuse
-    // across all SCF iterations. The molecule fills a small part of the box, so
-    // also precompute the "active" grid points (where any basis function is
-    // non-negligible) and collocate/integrate only over those.
-    // Compact-support basis-on-grid: each Gaussian touches only the grid points
-    // within its radius (CSR-by-point), built once. Replaces the dense
-    // npts x nb matrix — prohibitive in memory at scale (ngrid*nb*8 bytes) and
-    // O(na*nb^2) per iter; the compact path is O(sum_g k_g^2), k_g << nb.
-    // Multigrid (ngrids>1 && rel_cutoff>0) collocates per-level products; the
-    // single grid uses the cbg gather path. (Single-grid products lost an A/B —
-    // cbg pre-contracts primitives into χ_u once, products redo primitive work
-    // each iter — so products serve only the genuine multigrid.)
-    const bool use_mg = cfg.ngrids > 1 && cfg.rel_cutoff > 0.0;
-    const bool use_prod = use_mg || cfg.nonperiodic;
-    // Only the single-grid path uses cbg; the multigrid path collocates per-level
-    // products instead. Building cbg on the fine grid is prohibitive at production
-    // cutoff (CUTOFF 320 → ~8M points × diffuse functions = >100 GB of triples), so
-    // skip it entirely under multigrid.
+    // Borrow the AO tables shared with derivatives. Spectral prolongation
+    // and its exact adjoint transfer between product levels and the fine grid.
     GpwResult res;
-    if (!use_prod) {
-        // The result owns the geometry payload reused by forces. SCF borrows
-        // that same table, avoiding a second full CBG allocation and copy.
-        res.scf_cbg =
-            build_compact_basis_grid(grid, basis, periodic, eps_default);
-        res.scf_cbg_valid = true;
-    }
-    const CompactBasisGrid& cbg = res.scf_cbg;
-    smark("cbg_build");
-
-    // CP2K-style REL_CUTOFF multigrid (gated on ngrids>1 && rel_cutoff>0). Each
-    // primitive-pair product of the density is assigned (by its combined exponent)
-    // to the coarsest grid level that resolves it; diffuse products collocate on a
-    // coarse grid (far fewer points). The per-level densities are prolonged to the
-    // finest grid for the (nonlinear) Hartree+XC, and the fine potential is
-    // restricted back to each level to integrate the KS matrix. ngrids==1 leaves
-    // the single-grid path above untouched (bit-identical). The product list is
-    // geometry-fixed (excludes P); P is applied per SCF iteration.
-    MultiGrid& mg = ws.mg;
-    ProductSet& products = ws.products;
-    // Inter-level transfer is spectral (band-limited FFT interpolation): a diffuse
-    // density collocated on a coarse level is embedded into the fine grid's Fourier
-    // spectrum at the same physical frequencies and zero-padded above the coarse
-    // Nyquist (shape-exact, unlike trilinear). prolong_fft conserves mass natively
-    // (the G=0 mode is preserved) and restrict_fft is its exact adjoint, so the KS
-    // integration stays the exact gradient of the collocated energy and the SCF is
-    // variational — no per-level mass-conservation correction is needed.
-    if (use_prod) {
-        const int nlev = use_mg ? cfg.ngrids : 1;
-        const double rcut = use_mg
-                                ? cfg.rel_cutoff
-                                : cfg.cutoff_ry; // 1 level → all products on it
-        mg = make_multigrid(cfg.cell_bohr().data(), cfg.cutoff_ry, nlev, rcut);
-        products = build_products(mg, basis, cfg.cell_bohr().data(), rcut,
-                                  eps_default, periodic);
-    }
+    const auto& cbg = geometry.cbg;
+    const auto& mg = geometry.product_grid;
+    const auto& products = geometry.products;
+    const bool use_prod = !mg.levels.empty();
+    const bool use_mg = mg.levels.size() > 1;
 
     // Total density on the finest grid from a flattened P. Single-grid:
     // direct compact (cbg) collocation. Multigrid: shared MAIN multi-level
@@ -4667,9 +4449,9 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
         if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10)
             e_d3 = ks.e_nl_vdw; // fold_dispersion reports SC E_c^nl
         // Force path reuses this V_eff / V_es (same functional as the SCF).
-        res.veff = ks.veff;
-        res.v_es = ks.v_es;
-        const std::vector<double>& veff = res.veff;
+        ws.veff = ks.veff;
+        ws.v_es = ks.v_es;
+        const std::vector<double>& veff = ws.veff;
         const double e_locgrid = ks.e_locgrid;
         // KS grid matrix. Single-grid: integrate veff directly. Multigrid:
         // shared MAIN restrict+integrate (`multigrid_integrate_veff`).
@@ -4776,12 +4558,6 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
                 rho_b = collocate_P(Pb_in);
             }
             auto t1p = UksProfClk::now();
-            if (use_prod && use_mg
-                && (mg.levels[0].n[0] != grid.n[0]
-                    || mg.levels[0].n[1] != grid.n[1]
-                    || mg.levels[0].n[2] != grid.n[2]))
-                throw std::runtime_error(
-                    "GPW UKS: multigrid finest level n[] != SCF grid n[]");
             if (use_prod && std::getenv("ATV_GPW_MG_TRACE")) {
                 double qe = 0.0;
                 for (std::size_t g = 0; g < rho_a.size(); ++g)
@@ -4801,21 +4577,20 @@ GpwDft::run_impl_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
             if (cfg.vdw_df || cfg.vdw_df2 || cfg.rvv10)
                 e_d3 = ks.e_nl_vdw;
             // Force path reuses dual V_eff + V_es.
-            res.veff_a = ks.veff_a;
-            res.veff_b = ks.veff_b;
-            res.v_es = ks.v_es;
+            ws.veff_a = ks.veff_a;
+            ws.veff_b = ks.veff_b;
+            ws.v_es = ks.v_es;
 
             RealMatrix Ha, Hb;
             if (!use_prod) {
                 // Dual-spin cbg integrate: one CSR walk for V_eff^α and V_eff^β.
                 std::vector<double> Va, Vb;
-                integrate_potential_spin(cbg, nb, res.veff_a, res.veff_b, Va,
-                                         Vb);
+                integrate_potential_spin(cbg, nb, ws.veff_a, ws.veff_b, Va, Vb);
                 Ha = H0 + vec_to_mat(Va, nb);
                 Hb = H0 + vec_to_mat(Vb, nb);
             } else {
-                Ha = H0 + integrate_V(res.veff_a);
-                Hb = H0 + integrate_V(res.veff_b);
+                Ha = H0 + integrate_V(ws.veff_a);
+                Hb = H0 + integrate_V(ws.veff_b);
             }
             auto t4p = UksProfClk::now();
             if (uks_prof)
@@ -5772,18 +5547,7 @@ void GpwDft::build_atoms_(const std::vector<GpwAtom>& reference) {
             }
         }
     }
-    for (int d = 0; d < 3; ++d)
-        if (k_mesh[d] < 1)
-            throw std::invalid_argument(
-                "GpwDft::build: k_mesh subdivision must be >= 1 (axis "
-                + std::to_string(d) + " got " + std::to_string(k_mesh[d])
-                + ")");
-    if (k_points.size() != k_point_weights.size())
-        throw std::invalid_argument(
-            "GpwDft::build: k_points and k_point_weights must have the same "
-            "length (got "
-            + std::to_string(k_points.size()) + " vs "
-            + std::to_string(k_point_weights.size()) + ")");
+    internal::validate_k_sampling(k_mesh, k_points, k_point_weights);
     // Match run_gpw_scf_impl: metallic smear always takes the k-point path
     // (including effective Γ via k_mesh = {1,1,1}).
     const bool kpath = !k_points.empty() || k_mesh[0] != 1 || k_mesh[1] != 1
@@ -5838,27 +5602,18 @@ void GpwDft::build_atoms_(const std::vector<GpwAtom>& reference) {
         // single-grid gpw-vdw-uks-kpoints; REL_CUTOFF multigrid product
         // gpw-vdw-uks-kpoint-multigrid; Γ UKS product via gpw-vdw-uks /
         // gpw-vdw-uks-multigrid).
-        if (!k_points.empty()) {
-            double wsum = 0.0;
-            for (const double w : k_point_weights) {
-                if (!(w > 0.0))
-                    throw std::invalid_argument(
-                        "GpwDft::build: explicit k-point weights must be "
-                        "> 0");
-                wsum += w;
-            }
-            if (std::abs(wsum - 1.0) > 1e-8)
-                throw std::invalid_argument(
-                    "GpwDft::build: explicit k-point weights must sum to 1 "
-                    "(got "
-                    + std::to_string(wsum) + "); no implicit normalization");
-        }
     }
     built_ = true;
 }
 
+GpwDft::GpwDft(std::vector<Kind> kinds, double cutoff_ry, xc::XCType xc)
+    : kinds(std::move(kinds)), cutoff_ry(cutoff_ry), xc(xc) {}
+
+GpwDft::~GpwDft() = default;
+GpwDft::GpwDft(GpwDft&&) = default;
+
 GpwResult&
-GpwDft::run_atoms_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
+GpwDft::run_atoms_(std::vector<GpwAtom> atoms, const RealMatrix* guess_C,
                    const RealMatrix* guess_P, const RealMatrix* guess_P_beta,
                    const std::vector<linalg::CplxMatrix>* guess_P_k,
                    const std::vector<linalg::CplxMatrix>* guess_P_k_beta) {
@@ -5910,9 +5665,28 @@ GpwDft::run_atoms_(const std::vector<GpwAtom>& atoms, const RealMatrix* guess_C,
         throw std::invalid_argument(
             "GpwDft::run: multi-k UKS density guess requires both "
             "guess_P_k (alpha) and guess_P_k_beta (no partial spin guess)");
-    result_ = run_impl_(atoms, guess_C, guess_P, guess_P_beta, guess_P_k,
-                        guess_P_k_beta);
-    last_atoms_ = atoms;
+    const bool kpath = uses_kpath(*this);
+    const bool multigrid = ngrids > 1 && rel_cutoff > 0;
+    using internal::GpwGridTables;
+    auto tables = GpwGridTables::none;
+    if (multigrid || nonperiodic)
+        tables = GpwGridTables::products;
+    else if (!kpath)
+        tables = GpwGridTables::compact;
+    auto geometry = std::make_unique<internal::GpwGeometry>(
+        std::move(atoms), cell_, cutoff_ry, eps_default, !nonperiodic, tables,
+        multigrid ? ngrids : 1, multigrid ? rel_cutoff : cutoff_ry);
+    if (kpath)
+        geometry->assemble_bloch_grid(
+            internal::sample_kpoints(k_mesh, k_time_reversal, k_points,
+                                     k_point_weights),
+            eps_default);
+    internal::GpwWorkspace workspace;
+    auto result = run_impl_(*geometry, workspace, guess_C, guess_P,
+                            guess_P_beta, guess_P_k, guess_P_k_beta);
+    result_ = std::move(result);
+    workspace_ = std::move(workspace);
+    geometry_ = std::move(geometry);
     return result_;
 }
 
@@ -5931,12 +5705,13 @@ RealMatrix GpwDft::overlap_atoms_(const std::vector<GpwAtom>& atoms) const {
     // Same setup + same assembly routine run_gpw_scf_impl uses; T and Vpp are
     // simply not requested, which leaves S bit-identical (every element is an
     // independent screened pair contraction).
-    const OneElectronSetup setup(atoms, cell_.data(), periodic, eps_default);
+    const internal::GpwAoBasis setup(atoms, cell_.data(), periodic,
+                                     eps_default);
     const int nb = setup.nb();
     RealMatrix S = xt::zeros<double>({nb, nb});
-    setup.gamma(atoms, cell_.data(), periodic, local_pp_on_grid, S,
-                /*T=*/nullptr,
-                /*Vpp=*/nullptr);
+    assemble_gamma(setup, atoms, cell_.data(), periodic, local_pp_on_grid, S,
+                   /*T=*/nullptr,
+                   /*Vpp=*/nullptr);
     return S;
 }
 
@@ -5951,14 +5726,17 @@ GpwDft::overlap_k_atoms_(const std::vector<GpwAtom>& atoms) const {
             "GpwDft::overlap_k: this configuration solves at Γ (no k_mesh / "
             "k_points / smearing) — use the Γ overlap instead");
     const bool periodic = !nonperiodic;
-    const OneElectronSetup setup(atoms, cell_.data(), periodic, eps_default);
+    const internal::GpwAoBasis setup(atoms, cell_.data(), periodic,
+                                     eps_default);
     // internal::build_overlap_kinetic_k is the one phased S_k/T_k image sweep
     // the multi-k SCF branches call; T_k is built with S_k in that sweep and
     // discarded here.
     std::vector<linalg::CplxMatrix> S_k, T_k;
-    internal::build_overlap_kinetic_k(setup.basis, setup.radii, cell_.data(),
-                                      setup.mimg, kBuildScreen,
-                                      sampled_kpoints(*this), S_k, T_k);
+    internal::build_overlap_kinetic_k(
+        setup.basis, setup.radii, cell_.data(), setup.mimg, kBuildScreen,
+        internal::sample_kpoints(k_mesh, k_time_reversal, k_points,
+                                 k_point_weights),
+        S_k, T_k);
     return S_k;
 }
 
@@ -6054,7 +5832,7 @@ GpwResult& GpwDft::forces(Frame& frame) {
             "GpwDft::forces: SCF did not converge — raise max_iter or loosen "
             "tol; forces at an unconverged density are not a gradient");
     const std::vector<std::array<double, 3>> F =
-        internal::gpw_forces_from_scf(last_atoms_, *this, res);
+        internal::gpw_forces_from_scf(*geometry_, *this, res, workspace_);
     AccReal* __restrict fx = frame.span(kAtom_fx);
     AccReal* __restrict fy = frame.span(kAtom_fy);
     AccReal* __restrict fz = frame.span(kAtom_fz);
@@ -6183,14 +5961,15 @@ int GpwDft::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
             throw std::runtime_error(
                 "GpwDft: nested forces require a converged orbital payload "
                 "from the current SCF");
-        forces = internal::gpw_forces_from_scf(atoms, *this, res);
+        forces =
+            internal::gpw_forces_from_scf(*geometry_, *this, res, workspace_);
     }
     if (want_stress) {
         if (!res.converged)
             throw std::runtime_error(
                 "GpwDft: stress requested at an unconverged density");
         sigma = internal::gpw_stress_at_state_impl(
-            atoms, *this, res, stress_strain_h, stress_axes);
+            *geometry_, *this, res, workspace_, stress_strain_h, stress_axes);
     }
     // The hosting phase owns zeroing, so every write is `+=`.
     frame.meta.get(kEnergy) += res.e_total * units::kHartreeInEv;
@@ -6207,8 +5986,6 @@ int GpwDft::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
             fz[i] += f[2] * units::kHartreePerBohrInEvPerAngstrom;
         }
     }
-    // The GPW virial is a second assembly, computed only when the hosting
-    // plan reads stress.
     if (want_stress) {
         // kStress is the extensive virial W = σΩ [eV].
         const double vol = frame.box.volume();
@@ -6281,7 +6058,7 @@ GpwDftAccess::overlap_k(const GpwDft& m, const std::vector<GpwAtom>& atoms) {
 
 GpwDft GpwDftAccess::clone(const GpwDft& m) {
     // Every public parameter, the kinds and the cell — the one copy of the
-    // method's configuration (strained-cell stress samples, FD oracles and
+    // method's configuration (reconverged FD oracles and
     // the analytic-force cold solve all go through here, so a new member is
     // added in exactly one place).
     GpwDft p(m.kinds, m.cutoff_ry, m.xc);
@@ -6373,8 +6150,14 @@ std::vector<GpwAtom> GpwDftAccess::atoms_from_frame(const GpwDft& m,
     return atoms;
 }
 
-const std::vector<GpwAtom>& GpwDftAccess::last_atoms(const GpwDft& m) {
-    return m.last_atoms_;
+const GpwGeometry& GpwDftAccess::geometry(const GpwDft& m) {
+    if (!m.geometry_)
+        throw std::logic_error("GPW derivative requires an assembled geometry");
+    return *m.geometry_;
+}
+
+const GpwWorkspace& GpwDftAccess::workspace(const GpwDft& m) {
+    return m.workspace_;
 }
 
 } // namespace internal

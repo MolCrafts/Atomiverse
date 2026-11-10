@@ -41,12 +41,13 @@ PW copy_pw_params(const PW& m);
 ///
 /// Assembles the problem via `setup_pw_problem` and iterates
 /// Poisson → XC (`method.xc`) → Veff → per-k Davidson → density + Pulay mix.
-/// On exit `prob` holds the final mixed density on the Γ sphere; k-points are
+/// On exit `ws` holds the final mixed density on the Γ sphere; k-points are
 /// distributed round-robin over MPI ranks when MPI is initialized.
 ///
 /// @param frame    Geometry [Å]; not mutated.
 /// @param method   Plane-wave method members (`ecut_ry`, `k_mesh`, `xc`, …).
-/// @param prob     Problem storage to fill (must outlive the caller's use).
+/// @param prob     Operator data to assemble (must outlive the workspace).
+/// @param ws       Workspace for converged density and potentials.
 /// @param poisson  Hartree step helper.
 /// @param xc       XC step helper.
 /// @param veff     Effective-potential step helper.
@@ -55,10 +56,10 @@ PW copy_pw_params(const PW& m);
 /// @param tag      Short label for the rank-0 convergence log line.
 /// @return Energy [Ry]/[Hartree], convergence flag, iteration count.
 PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
-                           PWProblem& prob, PoissonSolver& poisson,
-                           XCBuilder& xc, VeffBuilder& veff,
-                           DensityBuilder& density, DavidsonSolver& davidson,
-                           const char* tag);
+                           PWSetup& prob, PWWorkspace& ws,
+                           PoissonSolver& poisson, XCBuilder& xc,
+                           VeffBuilder& veff, DensityBuilder& density,
+                           DavidsonSolver& davidson, const char* tag);
 
 /// @brief Restricted SCF with metallic occupation smearing (FD / MP / Gaussian).
 ///
@@ -71,9 +72,9 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
 /// @param n_bands  Band count (must match the Davidson solver).
 /// @return Free energy \(F=E_{\mathrm{KS}}-TS\) [Ry]/[Hartree], flags, iters.
 PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
-                                  PWProblem& prob, PoissonSolver& poisson,
-                                  XCBuilder& xc, VeffBuilder& veff,
-                                  DensityBuilder& density,
+                                  PWSetup& prob, PWWorkspace& ws,
+                                  PoissonSolver& poisson, XCBuilder& xc,
+                                  VeffBuilder& veff, DensityBuilder& density,
                                   DavidsonSolver& davidson, int n_bands,
                                   const char* tag);
 

@@ -29,6 +29,7 @@ using ATV::cpu::gpw::internal::CplxMatrix;
 using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
+using ATV::cuda::gpw::internal::KpointBasisDevice;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
 namespace {
@@ -107,11 +108,9 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
                           cudaMemcpyHostToDevice),
                "H2D V");
 
+    const KpointBasisDevice device_basis(nullptr, kbg);
     KpointIntegrateDevice kint;
-    kint.build(/*stream=*/nullptr, nb, npts, nk);
-    for (int ik = 0; ik < nk; ++ik)
-        kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
-    check_cuda(cudaDeviceSynchronize(), "sync chi");
+    kint.build(device_basis);
 
     // Host twin tol: tree reduction vs host chunked fold — not bit-identical.
     constexpr double kAbsTol = 5.0e-9;
@@ -152,9 +151,11 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
     cudaFree(d_V);
 }
 
-TEST(CudaGpwKpointIntegrate, EmptyReject) {
-    KpointIntegrateDevice kint;
-    EXPECT_THROW(kint.build(nullptr, 0, 10, 1), std::invalid_argument);
-    EXPECT_THROW(kint.build(nullptr, 2, 0, 1), std::invalid_argument);
-    EXPECT_THROW(kint.build(nullptr, 2, 10, 0), std::invalid_argument);
+TEST(CudaGpwKpointIntegrate, EmptyBasisReject) {
+    ATV::cpu::gpw::internal::KpointBasisGrid kbg;
+    EXPECT_THROW(KpointBasisDevice(nullptr, kbg), std::invalid_argument);
+    kbg.nb = 2;
+    kbg.npts = 10;
+    kbg.chi.resize(1);
+    EXPECT_THROW(KpointBasisDevice(nullptr, kbg), std::invalid_argument);
 }

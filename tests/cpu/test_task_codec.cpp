@@ -134,26 +134,23 @@ TaskSpec make_md_spec() {
     //   * `smearing = 2` is Methfessel-Paxton (`Smearing::none == 0` is the
     //     default), and `mp_order = 2` is the order that only that arm
     //     reads — both enums cross the wire as i32.
-    // `upf_path` stays empty on purpose: it is mutually exclusive with
-    // `gth_name`, so "both non-default" is not a legal payload. Emptiness is
-    // a value the string codec has to survive too (zero-length prefix).
-    entries.push_back(MDComponentEntry{PWParams{/*upf_path=*/"",
-                                                /*gth_name=*/"GTH-PBE-q4",
-                                                /*atomic_number=*/14,
-                                                /*ecut_ry=*/4.0,
-                                                /*k_mesh=*/2,
-                                                /*tol=*/1e-4,
-                                                /*max_iter=*/3,
-                                                /*mix_beta=*/0.5,
-                                                /*pulay_depth=*/3,
-                                                /*xc=*/0,
-                                                /*spin_polarized=*/true,
-                                                /*multiplicity=*/2,
-                                                /*smearing=*/2,
-                                                /*degauss=*/0.05,
-                                                /*mp_order=*/2,
-                                                /*extra_bands=*/6},
-                                       std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PWParams{/*potentials=*/{{14, PWPotentialFormat::gth, "GTH-PBE-q4"},
+                                 {8, PWPotentialFormat::upf, "O.upf"}},
+                 /*ecut_ry=*/4.0,
+                 /*k_mesh=*/2,
+                 /*tol=*/1e-4,
+                 /*max_iter=*/3,
+                 /*mix_beta=*/0.5,
+                 /*pulay_depth=*/3,
+                 /*xc=*/0,
+                 /*spin_polarized=*/true,
+                 /*multiplicity=*/2,
+                 /*smearing=*/2,
+                 /*degauss=*/0.05,
+                 /*mp_order=*/2,
+                 /*extra_bands=*/6},
+        std::nullopt});
     // ── The widened real-space catalogue (py-pair-styles) ────────────────
     //
     // Nine appended IDs (27-35) with fresh payloads. All nine ride the categorical
@@ -382,7 +379,7 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CoulLong), 17u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::KSpacePME), 18u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::XyzRecorder), 19u);
-    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PW), 20u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PW), 40u);
     // The full CPU minimize domain (py-minimize-full): six optimizer mirrors
     // appended after `PW`, in the spec's declared order. The VALUE
     // is what crosses the wire, so these six numbers are frozen the moment

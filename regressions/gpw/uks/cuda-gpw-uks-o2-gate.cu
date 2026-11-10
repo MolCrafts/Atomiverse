@@ -132,8 +132,6 @@ int run(int argc, char** argv) {
         }
         e_cuda = r.e_total;
         s2_cuda = r.s2;
-        if (r.veff_a.empty() || r.veff_b.empty() || r.v_es.empty())
-            die("CUDA UKS result missing veff_a/veff_b/v_es after run");
         if (r.P_beta.size() == 0)
             die("CUDA UKS missing P_beta for n_beta>0");
         std::printf("CUDA: E=%.12f Ha  <S2>=%.6f  iters=%d  converged=%d\n",

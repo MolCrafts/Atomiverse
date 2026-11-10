@@ -11,7 +11,7 @@
 /// nothing and reporting NaN.
 ///
 /// The surface is the C++ one, member for member: construct `PW` from its
-/// identity (pseudopotential, `ecut_ry`, `k_mesh`, `xc`), set the knob
+/// identity (pseudopotentials, `ecut_ry`, `k_mesh`, `xc`), set the knob
 /// members (there is no `PWConfig` bag and no factory), `build(frame)` once,
 /// then ask for what you need at a geometry —
 ///
@@ -44,6 +44,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
 #ifdef ATV_HAS_PW
 // The functional-name table is shared with the Gaussian SCF binding.
@@ -294,7 +295,7 @@ void bind_pw(nb::module_& m) {
         m, "PW",
         "Plane-wave density-functional theory (DFT) for a periodic cell: the "
         "Kohn-Sham orbitals are expanded in plane waves e^{i(k+G)r}, the "
-        "basis a periodic system asks for. The pseudopotential, cutoff, "
+        "basis a periodic system asks for. The pseudopotentials, cutoff, "
         "k-mesh and functional are constructor arguments, fixed afterwards; "
         "the SCF knobs are plain writable members (there is no PWConfig bag "
         "and no factory). Construct, then build(frame) / run(frame) / "
@@ -304,17 +305,19 @@ void bind_pw(nb::module_& m) {
         .def(
             "__init__",
             [](PW* self,
-               std::shared_ptr<const NormConservingPotential> potential,
+               std::vector<std::shared_ptr<const NormConservingPotential>>
+                   potentials,
                double ecut_ry, int k_mesh, const std::string& xc) {
-                new (self)
-                    PW(std::move(potential), ecut_ry, k_mesh, xc_from_name(xc));
+                new (self) PW(std::move(potentials), ecut_ry, k_mesh,
+                              xc_from_name(xc));
             },
-            nb::kw_only(), nb::arg("potential"), nb::arg("ecut_ry"),
+            nb::kw_only(), nb::arg("potentials"), nb::arg("ecut_ry"),
             nb::arg("k_mesh"), nb::arg("xc") = "PBE",
-            "Construct with an immutable NC potential, cutoff [Ry] and k mesh.")
+            "Construct with one immutable NC potential per element, cutoff "
+            "[Ry] and k mesh.")
         .def_prop_ro(
-            "potential", [](const PW& pw) { return pw.potential; },
-            "The immutable NC potential shared by this method.")
+            "potentials", [](const PW& pw) { return pw.potentials; },
+            "The immutable NC potentials shared by this method.")
         .def_ro("ecut_ry", &PW::ecut_ry,
                 "Wavefunction cutoff [Ry] fixed at construction (read-only).")
         .def_ro("k_mesh", &PW::k_mesh,

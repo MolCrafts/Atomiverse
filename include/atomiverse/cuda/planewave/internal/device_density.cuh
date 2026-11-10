@@ -92,12 +92,11 @@ class DeviceDensity {
     /// @brief Allocate and seed every density-side device buffer.
     ///
     /// Uploads (once per run, never per iteration): the density-sphere Miller
-    /// indices h/k/l, |G|², the complex V_loc(G), the atomic ρ(G) seed from
-    /// `prob.ws.rho_G`, and — for a GGA functional — the Cartesian G
+    /// indices h/k/l, |G|², the complex V_loc(G), the initial ρ(G), and — for a GGA functional — the Cartesian G
     /// components feeding the spectral ∇ρ / divergence passes.
     ///
-    /// @param prob        Assembled problem from `setup_pw_problem` (must
-    ///                    outlive this object; `ws.gvec` aliases `gv0`).
+    /// @param grid        Assembled density modes, local potential and volume.
+    /// @param initial_density Initial density coefficients in grid order.
     /// @param mix_beta    Density mixing parameter (dimensionless).
     /// @param pulay_depth Pulay history window ≥ 1 (dimensionless).
     /// @param xc          Functional `exchange_correlation()` evaluates. Only
@@ -114,8 +113,9 @@ class DeviceDensity {
     /// @throws std::invalid_argument if `pulay_depth < 1`, the problem has
     ///         an empty G-sphere / FFT grid, or `xc` has no device kernel.
     /// @throws std::runtime_error on any CUDA / cuFFT / cuBLAS failure.
-    DeviceDensity(const cpu::pw::internal::PWProblem& prob, double mix_beta,
-                  int pulay_depth, cpu::xc::XCType xc,
+    DeviceDensity(cpu::pw::internal::PWGridView grid,
+                  std::span<const std::complex<AccReal>> initial_density,
+                  double mix_beta, int pulay_depth, cpu::xc::XCType xc,
                   bool spin_polarized = false, int n_alpha = 0, int n_beta = 0,
                   int n_elec = 0, cudaStream_t borrowed_stream = nullptr);
     ~DeviceDensity();

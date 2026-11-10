@@ -88,8 +88,10 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
                cpu::xc::XCType xc) {
     RunOut o;
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                       kEcutRy, 1, xc};
+        cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>(upf)},
+                       kEcutRy,
+                       1,
+                       xc};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
@@ -103,8 +105,10 @@ RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf,
         o.converged = r.converged;
         o.iterations = r.iterations;
     } else {
-        cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                        kEcutRy, 1, xc};
+        cuda::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>(upf)},
+                        kEcutRy,
+                        1,
+                        xc};
         pw.tol = 5e-4;
         pw.max_iter = 60;
         pw.mix_beta = 0.3;
@@ -230,7 +234,7 @@ int run(int argc, char** argv) {
     std::vector<std::array<double, 3>> F_cpu, F_cuda;
     std::array<double, 6> S_cpu{}, S_cuda{};
     if (want == "cpu" || want == "both") {
-        cpu::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
+        cpu::pw::PW pw{{pbe_pp}, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
         F_cpu = cpu_forces(frame_f, pw);
@@ -240,7 +244,7 @@ int run(int argc, char** argv) {
         }
     }
     if (want == "cuda" || want == "both") {
-        cuda::pw::PW pw{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
+        cuda::pw::PW pw{{pbe_pp}, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(pw);
         pw.build(frame_f);
         F_cuda = ([&]() {
@@ -310,8 +314,8 @@ int run(int argc, char** argv) {
 
     // Collinear spin × FD smear (energy + forces). Same O2 / UPF / ecut.
     {
-        cpu::pw::PW cpu_s{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
-        cuda::pw::PW cuda_s{pbe_pp, kEcutRy, 1, cpu::xc::XCType::PBE};
+        cpu::pw::PW cpu_s{{pbe_pp}, kEcutRy, 1, cpu::xc::XCType::PBE};
+        cuda::pw::PW cuda_s{{pbe_pp}, kEcutRy, 1, cpu::xc::XCType::PBE};
         fill_pbe(cpu_s);
         fill_pbe(cuda_s);
         cpu_s.smearing = ATV::electronic::Smearing::fermi_dirac;

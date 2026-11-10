@@ -92,7 +92,7 @@ cpu::Frame frame(2);
 set_diamond_si(frame, kA0);       // fcc primitive: type 14, mass 28.0855,
                                   // atom 1 at (a/4.0)(1,1,1), cell (a/2)(0,1,1)…
 
-PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
+PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf")}, /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 40;

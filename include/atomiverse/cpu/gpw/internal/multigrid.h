@@ -273,6 +273,14 @@ std::vector<std::array<double, 3>> multigrid_density_center_gradient(
     const MultiGrid& mg, const ProductSet& products, int nb,
     const std::vector<double>& P, const std::vector<double>& potential,
     const std::vector<int>& basis_atoms, int n_atoms, double eps);
+
+/// Same center derivative with D(t) from Hermitian Bloch densities.
+/// The image-cell relation is D(-t) = D(t)^T.
+std::vector<std::array<double, 3>> multigrid_density_center_gradient_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<std::vector<double>>& D,
+    const std::vector<double>& potential, const std::vector<int>& basis_atoms,
+    int n_atoms, double eps);
 } // namespace internal
 
 /// @brief `collocate_products` with a per-image-cell density-matrix stack —

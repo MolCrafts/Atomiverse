@@ -17,6 +17,18 @@ namespace ATV {
 namespace cpu {
 namespace gpw {
 
+namespace internal {
+
+inline constexpr double kGammaPairScreen = 1e-12;
+
+/// Maximum Gaussian-product prefactor among the primitive pairs. Use the
+/// nearest image for periodic axes before deciding whether to skip an AO pair.
+double pair_overlap_bound(const GridBasisFunction& a,
+                          const GridBasisFunction& b, const double cell[3],
+                          bool periodic);
+
+} // namespace internal
+
 /// @brief Overlap integral ⟨a|b⟩ of two primitive Cartesian Gaussians.
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b);
 

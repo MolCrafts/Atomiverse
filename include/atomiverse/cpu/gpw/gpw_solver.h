@@ -43,11 +43,11 @@
 #include "atomiverse/cpu/gpw/g0w0.h"           // G0W0Result
 #include "atomiverse/cpu/gpw/gaussian_basis.h" // GaussianBasis
 #include "atomiverse/cpu/gpw/gth_potential.h" // GthPotential, GthNonlocalChannel
-#include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/dftd3.h"    // kD3Cp2kPairCutoffBohr
 #include "atomiverse/cpu/gpw/internal/gpw_atom.h" // internal::GpwAtom
-#include "atomiverse/cpu/gpw/mp2.h"               // Mp2Result
-#include "atomiverse/cpu/gpw/rpa.h"               // RpaResult
+#include "atomiverse/cpu/gpw/internal/gpw_workspace.h"
+#include "atomiverse/cpu/gpw/mp2.h" // Mp2Result
+#include "atomiverse/cpu/gpw/rpa.h" // RpaResult
 #include "atomiverse/cpu/gpw/stages/density_stage.h"
 #include "atomiverse/cpu/gpw/stages/diagonalize_stage.h"
 #include "atomiverse/cpu/gpw/stages/gpw_converged.h"
@@ -63,9 +63,7 @@ namespace cpu {
 namespace gpw {
 
 namespace internal {
-/// Forward only — full type in `internal/kpoints.h` (avoids circular include
-/// with this header). Held by `shared_ptr` on `GpwResult` for force reuse.
-struct KpointBasisGrid;
+struct GpwGeometry;
 } // namespace internal
 
 /// @brief Dudarev DFT+U (CP2K PLUS_U) on one element / angular-momentum shell.
@@ -216,33 +214,6 @@ struct GpwResult {
     linalg::RealMatrix C_beta;    ///< UKS β MO coefficients (empty for RKS).
     linalg::RealMatrix P_beta;    ///< UKS β density (empty for RKS).
     std::vector<double> eps_beta; ///< UKS β orbital energies (empty for RKS).
-    /// @brief Fine-grid effective potential from the last KS build [Hartree].
-    ///        Length `npts`. RKS / multi-k RKS only; empty for UKS (see
-    ///        `veff_a` / `veff_b`). Force assembly reuses this to skip a
-    ///        second Poisson+XC rebuild at fixed density (p2-force-grid-reuse).
-    std::vector<double> veff;
-    /// @brief UKS α fine-grid V_eff [Hartree] (empty for RKS).
-    std::vector<double> veff_a;
-    /// @brief UKS β fine-grid V_eff [Hartree] (empty for RKS).
-    std::vector<double> veff_b;
-    /// @brief Poisson electrostatic potential of \(n=\rho-n_{\mathrm{ion}}\)
-    ///        [Hartree] from the last KS build (ionic HF forces).
-    std::vector<double> v_es;
-    /// @brief Geometry-fixed Γ single-grid basis-on-grid from SCF for force
-    ///        reuse (`p2-force-kbg-reuse`). Empty under multigrid products
-    ///        (SCF never built `cbg`) or multi-k.
-    CompactBasisGrid scf_cbg{};
-    bool scf_cbg_valid = false;
-    /// @brief Geometry-fixed multi-k single-grid χ^k from SCF for force reuse.
-    ///        Null under multigrid products or pure Γ. Shared so `GpwResult`
-    ///        stays movable without deep-copying the dense χ table.
-    std::shared_ptr<internal::KpointBasisGrid> scf_kbg{};
-    /// @brief CUDA host force setup's full derivative CBG cache. CPU forces
-    ///        stream each AO's derivatives without populating this payload.
-    mutable CompactBasisGrid force_cbgd{};
-    mutable bool force_cbgd_valid = false;
-    /// @brief Lazy multi-k force-path center-derivative basis-on-grid cache.
-    mutable std::shared_ptr<internal::KpointBasisGrid> force_kbgd{};
     /// @}
     /// @name Fixed-density KS evaluation payload (Car–Parrinello / linearized-XL path)
     /// Populated when `GpwDft::run` is called with `max_iter == 0` and a
@@ -482,11 +453,11 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @param kinds One basis + GTH entry per element in the Frames to solve.
     /// @param cutoff_ry Density grid cutoff [Ry].
     /// @param xc Exchange–correlation functional.
-    GpwDft(std::vector<Kind> kinds, double cutoff_ry, xc::XCType xc)
-        : kinds(std::move(kinds)), cutoff_ry(cutoff_ry), xc(xc) {}
+    GpwDft(std::vector<Kind> kinds, double cutoff_ry, xc::XCType xc);
+    ~GpwDft() override;
     GpwDft(const GpwDft&) = delete;
     GpwDft& operator=(const GpwDft&) = delete;
-    GpwDft(GpwDft&&) = default;
+    GpwDft(GpwDft&&);
     GpwDft& operator=(GpwDft&&) = delete;
 
     /// @brief One-time fail-fast validation against a reference Frame.
@@ -733,7 +704,7 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     /// @throws std::invalid_argument for partial / wrong-spin / wrong-path
     ///         guesses or shape / count mismatch.
     GpwResult&
-    run_atoms_(const std::vector<internal::GpwAtom>& atoms,
+    run_atoms_(std::vector<internal::GpwAtom> atoms,
                const linalg::RealMatrix* guess_C = nullptr,
                const linalg::RealMatrix* guess_P = nullptr,
                const linalg::RealMatrix* guess_P_beta = nullptr,
@@ -753,7 +724,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
     overlap_k_atoms_(const std::vector<internal::GpwAtom>& atoms) const;
 
     /// @brief Full SCF body (was free `run_gpw_scf_impl`); owns path dispatch.
-    GpwResult run_impl_(const std::vector<internal::GpwAtom>& atoms,
+    GpwResult run_impl_(const internal::GpwGeometry& geometry,
+                        internal::GpwWorkspace& workspace,
                         const linalg::RealMatrix* guess_C,
                         const linalg::RealMatrix* guess_P,
                         const linalg::RealMatrix* guess_P_beta,
@@ -833,7 +805,8 @@ class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
 
     std::array<double, 3>
         cell_{}; ///< Orthorhombic cell [Bohr] (from Frame box).
-    std::vector<internal::GpwAtom> last_atoms_; ///< Geometry of the last run.
+    std::unique_ptr<const internal::GpwGeometry> geometry_;
+    internal::GpwWorkspace workspace_;
     GpwResult result_;       ///< Owned result buffer (last run).
     Mp2Result mp2_result_;   ///< Owned MP2 result buffer (last mp2()).
     RpaResult rpa_result_;   ///< Owned RPA result buffer (last direct_rpa()).

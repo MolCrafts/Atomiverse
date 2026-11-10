@@ -211,7 +211,7 @@ cell(1, 0) = h; cell(1, 1) = 0; cell(1, 2) = h;
 cell(2, 0) = h; cell(2, 1) = h; cell(2, 2) = 0;
 frame.box.set_cell(cell);
 
-PW method{std::make_shared<UpfPseudopotential>(upf), /*ecut Ry*/ 15.0, /*k_mesh 2×2×2*/ 2,
+PW method{{std::make_shared<UpfPseudopotential>(upf)}, /*ecut Ry*/ 15.0, /*k_mesh 2×2×2*/ 2,
           cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 // per section: max_iter, mix_beta, spin_polarized / multiplicity,
@@ -282,7 +282,7 @@ absolute-eigenvalue parity, GTH+Gaussian vs NC-UPF PW).
   ([berry-spin-si](pw-berry-phase.md#berry-spin-si),
   [periodic-wannier-si](pw-wannier.md#periodic-wannier-si),
   [dfpt-metallic-si](response-dfpt.md#dfpt-metallic-si), `dfpt-spin-si`).
-- Empty `upf_path` selects a toy \(V_\mathrm{loc}\) (unphysical); every section
+- The method requires one scalar NC provider per element. Every section
   uses the in-tree ONCV Si UPF.
 
 ## References

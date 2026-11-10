@@ -401,7 +401,7 @@ class TestPWSurface:
 
         # Si, in-tree analytic GTH; no file
         pw = av.PW(
-            potential=GthPseudopotential(14, "GTH-PBE-q4"), ecut_ry=8.0, k_mesh=1
+            potentials=[GthPseudopotential(14, "GTH-PBE-q4")], ecut_ry=8.0, k_mesh=1
         )
         pw.max_iter = 5
         pw.build(silicon_frame)
@@ -412,7 +412,7 @@ class TestPWSurface:
 
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
     def test_no_pseudopotential_raises(self) -> None:
-        """A plane-wave run has no default pseudopotential: `potential` is a
+        """A plane-wave run has no default pseudopotential: `potentials` is a
         required keyword, so omitting it fails loud at construction instead
         of running a bare valence-charge potential that no cutoff
         converges."""

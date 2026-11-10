@@ -467,3 +467,25 @@ cuda_rows = []
 cpu = "implemented"
 cuda = "not_implemented"
 reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.pw.periodic"
+chapter = "dft.md"
+label = "PW periodic energy, full forces and six-component stress"
+scope = "Gamma Si2 RKS and skew H3 UKS with Fermi–Dirac smearing, PBEsol/revPBE/RPBE, plus skew H2O with H GTH and O NC-UPF at fixed PBE occupations, against live QE 7.6."
+rows = ["pw.si2-rks.pbesol", "pw.si2-rks.revpbe", "pw.si2-rks.rpbe", "pw.h3-uks.pbesol", "pw.h3-uks.revpbe", "pw.h3-uks.rpbe", "pw.h2o-rks.pbe"]
+cuda_rows = ["pw.si2-rks.pbesol", "pw.si2-rks.revpbe", "pw.si2-rks.rpbe", "pw.h3-uks.pbesol", "pw.h3-uks.revpbe", "pw.h3-uks.rpbe", "pw.h2o-rks.pbe"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "CPU and CUDA public-method acceptance use the same inputs and original periodic tolerances."
+
+[[capabilities]]
+id = "dft.gpw.periodic"
+chapter = "dft.md"
+label = "GPW periodic energy, full forces and diagonal stress"
+scope = "Orthorhombic Gamma H2 RKS and H3 UKS, integer occupations and PBE-family XC against live CP2K 2026.2. H2 covers equivalent periodic images, a same-grid geometry change and three-level multigrid. Displaced diamond Si4 uses a full two-point mesh with single-grid and three-level multigrid on both backends. H3 uses a full two-point mesh and a single grid on CPU."
+rows = ["gpw.h2-rks.pbesol", "gpw.h2-rks.revpbe", "gpw.h2-rks.rpbe", "gpw.h3-uks.pbe", "gpw.h3-uks.pbesol", "gpw.h3-uks.revpbe", "gpw.h3-uks.rpbe", "gpw.h2-rks-boundary.pbesol", "gpw.h2-rks-moved.pbesol", "gpw.h2-rks-multigrid.pbesol", "gpw.si4-rks-kpoints.pbe", "gpw.si4-rks-kpoints-multigrid.pbe", "gpw.h3-uks-kpoints.pbe"]
+cuda_rows = ["gpw.h2-rks.pbesol", "gpw.h2-rks.revpbe", "gpw.h2-rks.rpbe", "gpw.h3-uks.pbe", "gpw.h3-uks.pbesol", "gpw.h3-uks.revpbe", "gpw.h3-uks.rpbe", "gpw.h2-rks-boundary.pbesol", "gpw.h2-rks-moved.pbesol", "gpw.h2-rks-multigrid.pbesol", "gpw.si4-rks-kpoints.pbe", "gpw.si4-rks-kpoints-multigrid.pbe"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "CPU and CUDA public-method acceptance use the original periodic tolerances and three supported stress components."

@@ -329,7 +329,7 @@ TEST(PwRadialDerivatives,
     constexpr double pref = 4 * pi / 8;
     for (const Vec3 k : {Vec3{0, 0, 0}, Vec3{.17, .05, -.08}}) {
         gv.kvec = k;
-        std::vector<std::vector<PWWorkspace::KBProjG>> normal;
+        std::vector<std::vector<KBProjector>> normal;
         setup_kb_projectors(normal, gv, data, positions, 64);
         ASSERT_EQ(normal.size(), positions.size());
         for (std::size_t a = 0; a < positions.size(); ++a) {

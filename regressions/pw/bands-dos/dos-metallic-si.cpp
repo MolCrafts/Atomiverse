@@ -77,7 +77,9 @@ int run() {
 
     auto frame = make_si_diamond(kA);
 
-    PW method{std::make_shared<UpfPseudopotential>(upf), kEcutRy, kMeshScf,
+    PW method{{std::make_shared<UpfPseudopotential>(upf)},
+              kEcutRy,
+              kMeshScf,
               cpu::xc::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 80;

@@ -125,7 +125,7 @@ inline double value_nl(const NcPotentialData& d, const GVectorList& g,
                        std::span<const Vec3> r, FrozenBandView o,
                        double volume) {
     std::vector<Vec3> atoms(r.begin(), r.end());
-    std::vector<std::vector<PWWorkspace::KBProjG>> proj;
+    std::vector<std::vector<KBProjector>> proj;
     setup_kb_projectors(proj, g, d, atoms, volume);
     double e = 0;
     for (std::size_t b = 0; b < o.occupations.size(); ++b)

@@ -30,7 +30,7 @@
 /// `cpu::pw::PW` under an MPI launcher.
 ///
 /// @code
-///   cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si_lda_nc.upf"),
+///   cuda::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si_lda_nc.upf")},
 ///                   /*ecut_ry=*/15.0, /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame);   // energy [Ry] / energy_ha [Ha]
@@ -50,8 +50,9 @@
 #include <vector>
 
 namespace ATV::cpu::pw::internal {
-struct PWProblem;
-}
+struct PWSetup;
+struct PWWorkspace;
+} // namespace ATV::cpu::pw::internal
 
 namespace ATV {
 namespace cuda {
@@ -71,10 +72,10 @@ struct PwLoopState;
 class PW : public cuda::Driver<ATV::pw::Phase>, public cuda::DriverNode {
   public:
     // ── Identity (constructor arguments, fixed after construction) ────
-    /// @brief Shared immutable builtin NC potential; custom CPU providers are
-    ///        rejected before any device work.
-    const std::shared_ptr<const ::ATV::electronic::NormConservingPotential>
-        potential;
+    /// @brief Shared immutable builtin NC providers, keyed by atomic number.
+    const std::vector<
+        std::shared_ptr<const ::ATV::electronic::NormConservingPotential>>
+        potentials;
     /// @brief Wavefunction cutoff [Ry].
     const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
@@ -115,12 +116,14 @@ class PW : public cuda::Driver<ATV::pw::Phase>, public cuda::DriverNode {
     ///        Fixed-occupation runs ignore this (solve \(n_e/2\) bands).
     int extra_bands = 4;
 
-    /// @brief Plane-wave DFT using a builtin GTH or UPF NC provider.
-    /// @param pp Immutable potential; custom providers have no CUDA product path.
+    /// @brief Plane-wave DFT using builtin GTH and/or scalar NC-UPF providers.
+    /// @param potentials One builtin provider per atomic number in the frame.
     /// @param ecut_ry Wavefunction cutoff [Ry].
     /// @param k_mesh Monkhorst-Pack mesh per dimension.
     /// @param xc Exchange-correlation functional with a device kernel.
-    PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
+    PW(std::vector<
+           std::shared_ptr<const ::ATV::electronic::NormConservingPotential>>
+           potentials,
        double ecut_ry, int k_mesh, cpu::xc::XCType xc = cpu::xc::XCType::PBE);
     ~PW() override;
     /// @brief Move an unattached method; a live Runtime binding rejects moves.
@@ -129,9 +132,9 @@ class PW : public cuda::Driver<ATV::pw::Phase>, public cuda::DriverNode {
     PW(const PW&) = delete;
     PW& operator=(const PW&) = delete;
 
-    /// @brief Validate Frame species against the builtin potential.
+    /// @brief Validate Frame species against the element providers.
     /// @param reference Frame used to validate every atom's identity.
-    /// @throws std::invalid_argument if any species differs from the provider.
+    /// @throws std::invalid_argument for missing or duplicate element providers.
     void build(const cpu::Frame& reference);
 
     /// @brief Plane-wave SCF at the frame's current geometry, on the GPU.
@@ -208,16 +211,17 @@ class PW : public cuda::Driver<ATV::pw::Phase>, public cuda::DriverNode {
     void validate_members() const;
     void release_backend_();
     void drive_stages_(cuda::Context& ctx, cuda::Frame& frame, int budget);
-    std::array<int, 2> prepare_(const cpu::Frame& geometry,
-                                cpu::pw::internal::PWProblem& problem) const;
+    std::array<int, 2>
+    prepare_(const cpu::Frame& geometry, cpu::pw::internal::PWSetup& problem,
+             cpu::pw::internal::PWWorkspace& workspace) const;
     enum class DerivativePublication { ordinary, device_committed };
-    DerivativePublication
-    evaluate_(const cpu::Frame& geometry, cpu::pw::internal::PWProblem& problem,
-              const std::array<int, 2>& spin_occupations, cuda::Context& ctx,
-              cuda::Frame& frame, int budget,
-              std::vector<std::array<double, 3>>* forces_out,
-              std::array<double, 6>* stress_out,
-              cuda::Frame* force_target = nullptr);
+    DerivativePublication evaluate_(
+        const cpu::Frame& geometry, const cpu::pw::internal::PWSetup& problem,
+        cpu::pw::internal::PWWorkspace& workspace,
+        const std::array<int, 2>& spin_occupations, cuda::Context& ctx,
+        cuda::Frame& frame, int budget,
+        std::vector<std::array<double, 3>>* forces_out,
+        std::array<double, 6>* stress_out, cuda::Frame* force_target = nullptr);
     PWResult& standalone_(const cpu::Frame& geometry,
                           std::vector<std::array<double, 3>>* forces_out,
                           std::array<double, 6>* stress_out);

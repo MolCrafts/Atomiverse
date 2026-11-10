@@ -55,8 +55,7 @@ size `k_mesh`³. Total energy is in Rydberg on `PWResult`; the Frame gets eV wit
 \(E[\mathrm{eV}] = E[\mathrm{Ry}]\times 13.605693\) (`cpu/planewave/qe_units.h`).
 
 `PW`'s XC default may be GGA-PBE; pure LDA (Slater + PW92,
-`cpu::scf::XCType::LSDA`) must be passed to the constructor. Empty `upf_path`
-selects a toy \(V_\mathrm{loc}\) (unphysical); every section uses an in-tree UPF.
+`cpu::scf::XCType::LSDA`) must be passed to the constructor. Each section passes its in-tree UPF in the list of element providers.
 
 ## Common setup
 
@@ -154,7 +153,7 @@ Frame in, `PW` members, energy on `PWResult` [Ry/Ha] and
 band (not CP2K Quickstep absolute energy).
 
 ```cpp
-PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
+PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf")}, /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
@@ -219,7 +218,7 @@ Hellmann–Feynman (plus PP projectors) via `pw.forces(frame)`; on ideal diamond
 sites lattice symmetry requires \(\mathbf{F}=\mathbf{0}\) for every atom.
 
 ```cpp
-PW pbe{std::make_shared<UpfPseudopotential>(upf), 15.0, 2, cpu::scf::XCType::PBE};  // true GGA (spectral ∇ρ)
+PW pbe{{std::make_shared<UpfPseudopotential>(upf)}, 15.0, 2, cpu::scf::XCType::PBE};  // true GGA (spectral ∇ρ)
 pbe.tol      = 1e-5;
 pbe.max_iter = 40;
 pbe.mix_beta = 0.5;
@@ -228,7 +227,7 @@ pbe.build(frame);
 const PWResult r_pbe = pbe.run(frame);  // copy: forces() overwrites last_result()
 pbe.forces(frame);                      // own SCF; kAtom_fx/fy/fz [eV/Å], kEnergy [eV]
 
-PW lda{std::make_shared<UpfPseudopotential>(upf), 15.0, 2, cpu::scf::XCType::LSDA};  // activation twin
+PW lda{{std::make_shared<UpfPseudopotential>(upf)}, 15.0, 2, cpu::scf::XCType::LSDA};  // activation twin
 ```
 
 Internal XC: `xc_builder.h`, `src/cpu/planewave/internal/xc_builder.cpp`
@@ -305,7 +304,7 @@ cells (\(h = 2\times 10^{-3}\) default).
 | `kStress` | Frame meta write (virial σΩ) by `PW::stress`, or by a mounted `PW` when the plan consumes stress | eV |
 
 ```cpp
-PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), 15.0, 2,
+PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf")}, 15.0, 2,
           cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
@@ -387,7 +386,7 @@ Serial / MPI-inactive: \(n_k^\mathrm{local} = n_k\). Partition identity:
 For \(k_\mathrm{mesh}=2\) (8 k-points) at 4 ranks each rank owns exactly 2.
 
 ```cpp
-PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), 15.0, 2};
+PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf")}, 15.0, 2};
 method.tol = 1e-6;
 method.max_iter = 50;
 method.build(frame);

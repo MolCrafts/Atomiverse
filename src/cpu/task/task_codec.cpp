@@ -343,9 +343,12 @@ void write(Writer& w, const AM1Params& p) {
 // text field. Field order is the struct's declaration order; `bool` crosses
 // as a single byte and both enum mirrors as i32, matching `read_pw` below.
 void write(Writer& w, const PWParams& p) {
-    w.string(p.upf_path);
-    w.string(p.gth_name);
-    w.i32(p.atomic_number);
+    w.u64(p.potentials.size());
+    for (const auto& potential : p.potentials) {
+        w.i32(potential.atomic_number);
+        w.u8(static_cast<std::uint8_t>(potential.format));
+        w.string(potential.source);
+    }
     w.f64(p.ecut_ry);
     w.i32(p.k_mesh);
     w.f64(p.tol);
@@ -576,8 +579,6 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::KSpacePME;
     case 19:
         return ComponentId::XyzRecorder;
-    case 20:
-        return ComponentId::PW;
     case 21:
         return ComponentId::CG;
     case 22:
@@ -616,6 +617,8 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::FixEfield;
     case 39:
         return ComponentId::MrecRecorder;
+    case 40:
+        return ComponentId::PW;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -683,9 +686,18 @@ AM1Params read_am1(Reader& r) {
 /// legible at the point it is decoded.
 PWParams read_pw(Reader& r) {
     PWParams p;
-    p.upf_path = r.string();
-    p.gth_name = r.string();
-    p.atomic_number = r.i32();
+    const auto n = r.u64();
+    if (n > 118)
+        throw std::runtime_error("task_codec: too many PW potentials");
+    p.potentials.reserve(static_cast<std::size_t>(n));
+    for (std::uint64_t i = 0; i < n; ++i) {
+        const int z = r.i32();
+        const auto format = static_cast<PWPotentialFormat>(r.u8());
+        if (format != PWPotentialFormat::gth
+            && format != PWPotentialFormat::upf)
+            throw std::runtime_error("task_codec: unknown PW potential format");
+        p.potentials.push_back({z, format, r.string()});
+    }
     p.ecut_ry = r.f64();
     p.k_mesh = r.i32();
     p.tol = r.f64();

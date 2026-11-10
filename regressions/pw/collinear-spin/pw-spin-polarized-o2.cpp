@@ -54,7 +54,9 @@ int run() {
     frame.span(kAtom_z)[1] = 1.2075;
     frame.box = cpu::Box::cubic(8.0);
 
-    PW pw{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
+    PW pw{{std::make_shared<UpfPseudopotential>(upf)},
+          12.0,
+          1,
           cpu::xc::XCType::PBE};
     pw.tol = 1e-7;
     pw.max_iter = 200;

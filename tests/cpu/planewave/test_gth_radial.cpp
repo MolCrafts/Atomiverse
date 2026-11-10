@@ -173,7 +173,7 @@ TEST(KbProjectors, RotatedBlocksPreserveAnalyticGaussianOperator) {
                 for (int j = 0; j < 5; ++j)
                     if (i != j)
                         data.upf.d_ij[5 * i + j] = 0;
-        std::vector<std::vector<PWWorkspace::KBProjG>> result;
+        std::vector<std::vector<KBProjector>> result;
         setup_kb_projectors(result, gv, data.upf, positions, omega);
         ASSERT_EQ(result.size(), 1u);
         ASSERT_EQ(result[0].size(), 5u);
@@ -218,7 +218,7 @@ TEST(KbProjectors, InvalidCouplingMatricesAndAngularMomentumThrow) {
     GVectorList gv;
     gv.g = {{0, 0, 0}};
     const std::vector<Vec3> positions{{0, 0, 0}};
-    std::vector<std::vector<PWWorkspace::KBProjG>> result;
+    std::vector<std::vector<KBProjector>> result;
     EXPECT_THROW(setup_kb_projectors(result, gv, original.upf, positions, 0),
                  std::invalid_argument);
     EXPECT_THROW(setup_kb_projectors(result, gv, original.upf, positions,
@@ -259,7 +259,7 @@ TEST(KbProjectors, EachCompactPrefixUsesItsOwnSimpsonEndpoint) {
     data.d_ij = {1, 0, 0, 0, 2, 0, 0, 0, 3};
     GVectorList gv;
     gv.g = {{0, 0, 0}};
-    std::vector<std::vector<PWWorkspace::KBProjG>> result;
+    std::vector<std::vector<KBProjector>> result;
     setup_kb_projectors(result, gv, data, {{0, 0, 0}}, 64);
     double operator_value = 0;
     for (const auto& projector : result[0])
@@ -302,18 +302,21 @@ TEST(KbProjectors, PreparedComplexColumnsMatchAnalyticGaussianHamiltonian) {
             data.kb[0].beta[ir] = std::pow(data.r[ir], l + 1)
                                   * std::exp(-alpha * data.r[ir] * data.r[ir]);
         data.d_ij = {strength};
+        GVectorList modes;
+        std::vector<Vec3> positions;
+        KBProjectors projectors;
         PWWorkspace ws;
         ws.n_g = 4;
         ws.nr = 64;
         ws.fft_nx = ws.fft_ny = 8;
         ws.fft_nz = 1;
         ws.fft = std::make_unique<FFTPlan3D>(8, 8, 1);
-        ws.gvec = &ws.gvec0;
-        ws.gvec0.h = {0, 1, -1, 0};
-        ws.gvec0.k = {0, 0, 0, 1};
-        ws.gvec0.l = {0, 0, 0, 0};
+        ws.gvec = &modes;
+        modes.h = {0, 1, -1, 0};
+        modes.k = {0, 0, 0, 1};
+        modes.l = {0, 0, 0, 0};
         ws.V_eff_r = xt::zeros<AccReal>({64});
-        ws.T_G = xt::zeros<AccReal>({4});
+        modes.ekin.resize(4);
         const std::vector<Cx> psi{{.3, -.2}, {.4, .1}, {-.1, .7}, {.2, -.3}};
         std::vector<Cx> result(4);
         FFTWBuffer<fftw_complex> work(ws.nr);
@@ -323,18 +326,17 @@ TEST(KbProjectors, PreparedComplexColumnsMatchAnalyticGaussianHamiltonian) {
             SCOPED_TRACE(geometry);
             ws.omega = geometry == 0 ? 64 : 125;
             const double scale = geometry == 0 ? 1 : .8;
-            ws.gvec0.g = {
-                {0, 0, 0}, {scale, 0, 0}, {-scale, 0, 0}, {0, scale, 0}};
-            ws.gvec0.kvec =
+            modes.g = {{0, 0, 0}, {scale, 0, 0}, {-scale, 0, 0}, {0, scale, 0}};
+            modes.kvec =
                 geometry == 0 ? Vec3{.17, -.1, .07} : Vec3{-.11, .23, .13};
-            ws.atom_pos_bohr =
-                geometry == 0
-                    ? std::vector<Vec3>{{.2, -.4, .7}, {1.3, .6, -.2}}
-                    : std::vector<Vec3>{{-.5, .3, 1.1}, {.8, -1.2, .4}};
+            positions = geometry == 0
+                            ? std::vector<Vec3>{{.2, -.4, .7}, {1.3, .6, -.2}}
+                            : std::vector<Vec3>{{-.5, .3, 1.1}, {.8, -1.2, .4}};
             for (int g = 0; g < 4; ++g)
-                ws.T_G[g] = .5 * (ws.gvec0.g[g] + ws.gvec0.kvec).norm_squared();
-            setup_kb_projectors(ws.kb_proj, ws.gvec0, data, ws.atom_pos_bohr,
-                                ws.omega);
+                modes.ekin[g] = .5 * (modes.g[g] + modes.kvec).norm_squared();
+            setup_kb_projectors(projectors, modes, data, positions, ws.omega);
+            ws.atom_pos_bohr = positions;
+            ws.kb_proj = projectors;
             for (const auto& atom : ws.kb_proj) {
                 ASSERT_EQ(atom[0].beta_G.dimension(), 2u);
                 EXPECT_EQ(atom[0].beta_G.shape()[0], std::size_t(2 * l + 1));
@@ -346,7 +348,7 @@ TEST(KbProjectors, PreparedComplexColumnsMatchAnalyticGaussianHamiltonian) {
             for (int g = 0; g < 4; ++g) {
                 Cx dense_action{};
                 for (int h = 0; h < 4; ++h) {
-                    Cx matrix_element = g == h ? Cx(ws.T_G[g], 0) : Cx{};
+                    Cx matrix_element = g == h ? Cx(modes.ekin[g], 0) : Cx{};
                     for (const auto& atom : ws.kb_proj)
                         for (const auto& projector : atom)
                             for (int m = 0; m < 2 * projector.l + 1; ++m)
@@ -359,10 +361,10 @@ TEST(KbProjectors, PreparedComplexColumnsMatchAnalyticGaussianHamiltonian) {
                 EXPECT_NEAR(result[g].imag(), dense_action.imag(), 1e-12);
             }
             for (int g = 0; g < 4; ++g) {
-                const Vec3 q = ws.gvec0.g[g] + ws.gvec0.kvec;
-                Cx expected = ws.T_G[g] * psi[g];
+                const Vec3 q = modes.g[g] + modes.kvec;
+                Cx expected = modes.ekin[g] * psi[g];
                 for (int h = 0; h < 4; ++h) {
-                    const Vec3 p = ws.gvec0.g[h] + ws.gvec0.kvec;
+                    const Vec3 p = modes.g[h] + modes.kvec;
                     const double cosine =
                         (q[0] * p[0] + q[1] * p[1] + q[2] * p[2])
                         / (q.norm() * p.norm());
@@ -387,7 +389,7 @@ TEST(KbProjectors, PreparedComplexColumnsMatchAnalyticGaussianHamiltonian) {
                 EXPECT_NEAR(result[g].real(), expected.real(), 2e-6);
                 EXPECT_NEAR(result[g].imag(), expected.imag(), 2e-6);
             }
-            ws.kb_proj[0][0].beta_G = xt::xarray<Cx>{};
+            projectors[0][0].beta_G = xt::xarray<Cx>{};
             EXPECT_THROW(pw_apply_h(ws, psi.data(), result.data(), work.data()),
                          std::invalid_argument);
         }

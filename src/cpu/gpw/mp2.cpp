@@ -3,6 +3,7 @@
 ///        on the converged RKS or UKS orbitals. Product: RI-GPW; Γ foothold:
 ///        Poisson real-space tensor. Kernels in internal/mp2_kernels.h.
 
+#include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -55,7 +56,8 @@ int count_basis_(const std::vector<GpwAtom>& atoms) {
 } // namespace
 
 const Mp2Result& GpwDft::mp2() {
-    const std::vector<GpwAtom>& atoms = last_atoms_;
+    const std::vector<GpwAtom>& atoms =
+        internal::GpwDftAccess::geometry(*this).atoms;
     if (!built_)
         throw std::logic_error(
             "GpwDft::mp2 called before build() — validate the configuration "

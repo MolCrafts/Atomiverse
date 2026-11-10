@@ -15,8 +15,9 @@ TEST(PWNCGaugeCPU, FullHamiltonianPreservesProjectorNormalization) {
         const auto g = modes(nonzero_k);
         const auto c = wave(g);
         const auto original = potential(1, nonzero_k);
-        PWProblem ref;
-        prepare(ref, original, g, c);
+        PWSetup ref;
+        PWWorkspace ref_ws;
+        prepare(ref, ref_ws, original, g, c);
         const auto expected = full_d_h(original, ref, c);
         AccReal nonlocal_norm = 0;
         for (std::size_t i = 0; i < c.size(); ++i)
@@ -28,11 +29,12 @@ TEST(PWNCGaugeCPU, FullHamiltonianPreservesProjectorNormalization) {
             SCOPED_TRACE(::testing::Message()
                          << "k=" << nonzero_k << " scale=" << scale);
             const auto d = potential(scale, nonzero_k);
-            PWProblem p;
-            prepare(p, d, g, c);
+            PWSetup p;
+            PWWorkspace p_ws;
+            prepare(p, p_ws, d, g, c);
             std::vector<C> actual(c.size());
             for (int b = 0; b < 3; ++b)
-                pw_apply_h(p.ws, c.data() + b * g.count(),
+                pw_apply_h(p_ws, c.data() + b * g.count(),
                            actual.data() + b * g.count());
             for (std::size_t i = 0; i < c.size(); ++i) {
                 const AccReal gate = 1e-8 + 1e-7 * std::abs(expected[i]);
@@ -50,12 +52,16 @@ TEST(PWNCGaugeCPU, FullHamiltonianPreservesProjectorNormalization) {
 TEST(PWNCGaugeCPU, FinalBandForcesRetainTinySignedOccupations) {
     const auto g = modes(false);
     const auto c = wave(g);
-    PWProblem p;
-    prepare(p, potential(1, true), g, c);
-    auto& ws = p.ws;
-    ws.atom_pos_bohr.resize(1);
-    p.kb_proj_k[0].resize(1);
-    ws.kb_proj = p.kb_proj_k[0];
+    PWSetup p;
+    PWWorkspace p_ws;
+    prepare(p, p_ws, potential(1, true), g, c);
+    auto& ws = p_ws;
+    p.ions.positions.resize(1);
+    ws.atom_pos_bohr = p.ions.positions;
+    p.ions.atom_species.resize(1);
+    p.ions.ionic_charges.resize(1);
+    p.mesh.kb_proj_k[0].resize(1);
+    ws.kb_proj = p.mesh.kb_proj_k[0];
     ws.nc = (g.nx / 2 + 1) * g.ny * g.nz;
     ws.eigenvalues = xt::zeros<AccReal>({std::size_t(3)});
 
@@ -87,7 +93,8 @@ TEST(PWNCGaugeCPU, FinalBandForcesRetainTinySignedOccupations) {
         xt::xarray<C> rho;
         density.extract(ws, rho);
         state.orbital_density_G.assign(rho.begin(), rho.end());
-        return pw_forces_from_bands(frame, p, state);
+        return pw_forces_from_bands(frame, p.ions, p.gv0, p.mesh.gv_k,
+                                    p.mesh.kb_proj_k, state);
     };
     const auto zero = evaluate(0), full = evaluate(1);
     double scale = 0;
@@ -124,8 +131,9 @@ TEST(PWNCGaugeCPU, SternheimerResponsePreservesProjectorNormalization) {
     std::vector<C> all(3 * ng);
     std::copy(expected.begin(), expected.end(), all.begin());
     const auto original = potential(1, true);
-    PWProblem ref;
-    prepare(ref, original, g, c);
+    PWSetup ref;
+    PWWorkspace ref_ws;
+    prepare(ref, ref_ws, original, g, c);
     auto rhs = full_d_h(original, ref, all);
     rhs.resize(ng);
     constexpr AccReal eigenvalue = -2;
@@ -135,19 +143,20 @@ TEST(PWNCGaugeCPU, SternheimerResponsePreservesProjectorNormalization) {
     for (AccReal scale : {AccReal(1), AccReal(1e9), AccReal(1e-35)}) {
         SCOPED_TRACE(::testing::Message() << "scale=" << scale);
         const auto d = potential(scale, true);
-        PWProblem p;
-        prepare(p, d, g, c);
+        PWSetup p;
+        PWWorkspace p_ws;
+        prepare(p, p_ws, d, g, c);
         std::vector<C> response(ng), residual(ng);
         auto* scratch = static_cast<fftw_complex*>(
-            fftw_malloc(sizeof(fftw_complex) * p.ws.nr));
+            fftw_malloc(sizeof(fftw_complex) * p_ws.nr));
         ASSERT_NE(scratch, nullptr);
         std::unique_ptr<fftw_complex, decltype(&fftw_free)> work(scratch,
                                                                  fftw_free);
         const int iterations =
-            sternheimer_cg(p.ws, occupied, 1, eigenvalue, rhs.data(),
+            sternheimer_cg(p_ws, occupied, 1, eigenvalue, rhs.data(),
                            response.data(), 1e-11, 80, work.get());
         ASSERT_LE(iterations, 80);
-        pw_apply_h(p.ws, response.data(), residual.data(), work.get());
+        pw_apply_h(p_ws, response.data(), residual.data(), work.get());
         for (int i = 0; i < ng; ++i)
             residual[i] -= eigenvalue * response[i];
         project(residual);

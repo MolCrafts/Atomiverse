@@ -45,14 +45,15 @@ struct FinalBandState {
 // Exactly one unstrained band sweep of H[reference density]. No SCF,
 // mixing, radial admission or mutation of problem/result. The optional internal
 // band count may add zero-filled fixed-occupation gap bands; default follows
-// the existing force path. Geometry tables remain in the caller's PWProblem.
+// the existing force path. Geometry tables remain in the caller's setup.
 // Each orbital must satisfy the solver's existing method.tol*.1 Hpsi residual
 // target and |norm_squared-1|<=1e-8. The 40-expansion budget is unchanged.
 // Local auxiliary-work failures are synchronized before spectrum/density
 // collectives; no incomplete state is returned. Reference SCF convergence is
 // independent and its original verdict is preserved.
-FinalBandState extract_final_bands(const PWProblem& problem, const PW& method,
-                                   const PWResult& reference,
-                                   int final_band_count = 0);
+FinalBandState extract_final_bands(
+    PWGridView grid, const PWIons& ions, const PWKMesh& mesh,
+    PWDensityView density, const xt::xarray<std::complex<AccReal>>& trial,
+    const PW& method, const PWResult& reference, int final_band_count = 0);
 
 } // namespace ATV::cpu::pw::internal

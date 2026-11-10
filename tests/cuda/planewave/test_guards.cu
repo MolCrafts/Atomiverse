@@ -45,17 +45,20 @@ cpu::Frame make_h_atom() {
 cuda::pw::PW make_supported(cpu::xc::XCType xc = cpu::xc::XCType::LSDA,
                             double ecut_ry = 6.0, int k_mesh = 1) {
     // Real H potential, no file needed.
-    return cuda::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
-                            molrs::Element::H, "GTH-PBE-q1"),
-                        ecut_ry, k_mesh, xc};
+    return cuda::pw::PW{{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1")},
+                        ecut_ry,
+                        k_mesh,
+                        xc};
 }
 
 } // namespace
 
 TEST(CudaPWGuards, DefaultXcIsPbe) {
-    cuda::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
-                        molrs::Element::H, "GTH-PBE-q1"),
-                    /*ecut_ry=*/30.0, /*k_mesh=*/4};
+    cuda::pw::PW pw{{std::make_shared<cpu::pw::GthPseudopotential>(
+                        molrs::Element::H, "GTH-PBE-q1")},
+                    /*ecut_ry=*/30.0,
+                    /*k_mesh=*/4};
     // The default deliberately matches cpu::pw::PW (PBE): identical user
     // code computes the same functional on both backends. PBE has a device
     // path, so the default is runnable — no throw to assert here.
@@ -146,13 +149,14 @@ TEST(CudaPWGuards, ZeroPulayDepthThrows) {
 }
 
 TEST(CudaPWGuards, EmptyPseudopotentialThrowsAtConstruction) {
-    EXPECT_THROW((cuda::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
-                                   molrs::Element::H, ""),
-                               6.0, 1}),
+    EXPECT_THROW((cuda::pw::PW{{std::make_shared<cpu::pw::GthPseudopotential>(
+                                   molrs::Element::H, "")},
+                               6.0,
+                               1}),
                  std::invalid_argument);
     EXPECT_THROW(
-        (cuda::pw::PW{std::make_shared<cpu::pw::UpfPseudopotential>(""), 6.0,
-                      1}),
+        (cuda::pw::PW{
+            {std::make_shared<cpu::pw::UpfPseudopotential>("")}, 6.0, 1}),
         std::invalid_argument);
 }
 

@@ -4,13 +4,14 @@ Construct a physical provider once and share it between independent methods::
 
     from atomiverse.pw import PW, GthPseudopotential
     potential = GthPseudopotential(14, "GTH-PBE-q4")
-    pw = PW(potential=potential, ecut_ry=15.0, k_mesh=2)
+    pw = PW(potentials=[potential], ecut_ry=15.0, k_mesh=2)
     result = pw.run(frame)
     forces = pw.forces(frame)
 
 ``UpfPseudopotential(path)`` reads a scalar NC UPF once and checks its element,
 valence and physical channels. Both providers use the same CPU PW operators.
-Every atom in the Frame must match the provider's explicit atomic number.
+Supply one provider for each atomic number in the frame. Provider order is
+independent of atom order.
 USPP, PAW, NLCC and spin-orbit potentials are refused.
 
 Frame positions and forces use Angstrom and eV/Angstrom; PWResult energies use

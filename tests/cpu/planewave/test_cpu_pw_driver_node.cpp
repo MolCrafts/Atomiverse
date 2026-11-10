@@ -36,8 +36,10 @@ constexpr int kKMesh = 4;        // Monkhorst-Pack points per dimension
 // PW is the plane-wave self-consistency Driver node (MeanFieldMethod / GpwDft).
 TEST(PwDriverNode, InheritsCpuDriverPwPhase) {
     static_assert(std::is_base_of_v<ATV::cpu::Driver<ATV::pw::Phase>, PW>);
-    PW m{std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"),
-         kEcutRy, kKMesh};
+    PW m{
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        kEcutRy,
+        kKMesh};
     EXPECT_EQ(ATV::slot_count<ATV::pw::Phase>(), 5);
     EXPECT_EQ(ATV::pw::kind_of(ATV::pw::Phase{}), ATV::PhaseKind::SCF);
 }
@@ -83,8 +85,10 @@ TEST(PwDriverNode, PathLocalStepFnsAreCallable) {
 
 // Public multi-path members remain constructible without *Config bags.
 TEST(PwDriverNode, MultiPathPublicMembers) {
-    PW m{std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"),
-         kEcutRy, kKMesh};
+    PW m{
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        kEcutRy,
+        kKMesh};
     m.spin_polarized = true;
     m.multiplicity = 3;
     m.smearing = ATV::electronic::Smearing::fermi_dirac;
@@ -100,18 +104,20 @@ TEST(PwDriverNode, MultiPathPublicMembers) {
 // there, not at the first run.
 TEST(PwDriverNode, EmptyPseudopotentialThrowsAtConstruction) {
     EXPECT_THROW(
-        (PW{std::make_shared<GthPseudopotential>(molrs::Element::H, ""),
-            kEcutRy, kKMesh}),
+        (PW{{std::make_shared<GthPseudopotential>(molrs::Element::H, "")},
+            kEcutRy,
+            kKMesh}),
         std::invalid_argument);
     EXPECT_THROW(
-        (PW{std::make_shared<UpfPseudopotential>(""), kEcutRy, kKMesh}),
+        (PW{{std::make_shared<UpfPseudopotential>("")}, kEcutRy, kKMesh}),
         std::invalid_argument);
 }
 
 TEST(PwDriverNode, NestedMountBindsToOneRuntime) {
     PW method{
-        std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"),
-        kEcutRy, kKMesh};
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        kEcutRy,
+        kKMesh};
     ATV::cpu::Runtime runtime;
     ATV::cpu::Runtime other;
     ATV::cpu::DriverNode& node = method;

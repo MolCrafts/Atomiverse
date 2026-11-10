@@ -129,11 +129,7 @@ double scf_energy_ry(const cpu::Frame& frame, const PW& method) {
 // A homogeneous strain changes their Cartesian metric and volume, not those
 // labels. Keep them directly, avoiding FFT-shape interpolation or a uniform
 // fallback that discards the inhomogeneous density.
-using FrozenDensity = std::vector<std::complex<AccReal>>;
-
-FrozenDensity freeze_density(const xt::xarray<std::complex<AccReal>>& rho) {
-    return FrozenDensity(rho.begin(), rho.end());
-}
+using FrozenDensity = std::span<const std::complex<AccReal>>;
 
 void load_rho_scaled(PWWorkspace& ws, const FrozenDensity& rho0,
                      AccReal scale) {
@@ -169,16 +165,16 @@ void load_rho_spin_scaled(PWWorkspace& ws, const FrozenDensity& rho_a0,
 /// Non-self-consistent collinear spin total / free energy [Ry] under
 /// remapped ρ_σ. Metallic paths fill both spin spectra with one shared μ.
 double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
-                           const PWProblem& reference,
+                           PWStrainReference reference,
                            const FrozenDensity& rho_a0,
                            const FrozenDensity& rho_b0, AccReal omega0_bohr,
                            PoissonSolver& poisson, XCBuilder& xc,
                            VeffBuilder& veff, DavidsonSolver& davidson,
                            int n_bands, int n_alpha, int n_beta) {
-    PWProblem prob;
+    PWSetup prob;
+    PWWorkspace ws;
     setup_pw_problem_fixed_basis(frame, reference, method.ecut_ry,
-                                 method.k_mesh, prob);
-    PWWorkspace& ws = prob.ws;
+                                 method.k_mesh, prob, ws);
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
@@ -193,7 +189,7 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
     xc.step_spin(ws, method.xc);
 
     const auto layout = mpi_layout();
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const int n_occ[2] = {n_alpha, n_beta};
     const bool use_smear = method.smearing != ATV::electronic::Smearing::none;
     AccReal e_band = 0;
@@ -203,7 +199,7 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
     std::vector<AccReal> spectrum(
         use_smear ? static_cast<std::size_t>(2 * n_kpts * n_bands) : 0,
         AccReal(0));
-    auto* saved_gvec = ws.gvec;
+    const auto saved_point = ws.point();
     auto& gv0 = prob.gv0;
     const int ng0 = gv0.count();
 
@@ -215,17 +211,7 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
         veff.step(ws);
 
         for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-            ws.gvec = &gvk;
-            ws.n_g = gvk.count();
-            ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.T_G[ig] = gvk.ekin[ig];
-
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
 
             davidson.step(ws);
 
@@ -238,13 +224,12 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
                         (s * n_kpts + ik) * n_bands + b)] = ws.eigenvalues[b];
             } else {
                 const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 for (int b = 0; b < n_occ[s]; ++b)
                     e_band += weight * ws.eigenvalues[b];
             }
 
-            ws.gvec = saved_gvec;
-            ws.n_g = ng0;
+            ws.bind(saved_point);
         }
     }
 
@@ -273,10 +258,10 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
                 for (int b = 0; b < n_bands; ++b)
                     weights[static_cast<std::size_t>((s * n_kpts + ik) * n_bands
                                                      + b)] =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
         const AccReal mu =
-            find_fermi_level(spectrum, weights, AccReal(prob.n_elec), width,
-                             kind, method.mp_order, AccReal(1));
+            find_fermi_level(spectrum, weights, AccReal(prob.ions.n_elec),
+                             width, kind, method.mp_order, AccReal(1));
         const auto fill = fill_occupations(spectrum, weights, mu, width, kind,
                                            method.mp_order, AccReal(1));
         // All ranks now have the same full spectrum and free-energy sum.
@@ -286,12 +271,12 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
         entropy_sum = fill.entropy;
     }
 
-    ws.gvec = &gv0;
-    ws.n_g = ng0;
-    auto terms = iteration_energy(ws, e_band, prob.ew_total, prob.vol_bohr);
+    ws.bind({gv0});
+    auto terms =
+        iteration_energy(ws, e_band, prob.ions.ew_total, prob.ions.vol_bohr);
     // Collinear: replace Parseval ∫ρ V_xc (last channel) with e_xc_int_spin.
     terms.e_one = e_band - AccReal(2.0) * terms.e_h - ws.e_xc_int_spin;
-    terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ew_total;
+    terms.total = terms.e_one + terms.e_h + ws.E_xc + prob.ions.ew_total;
     if (use_smear)
         terms.total -= AccReal(method.degauss)
                        * AccReal(qe_units::rydberg_to_hartree) * entropy_sum;
@@ -305,14 +290,14 @@ double nscf_energy_spin_ry(const cpu::Frame& frame, const PW& method,
 /// μ over the spectrum, fractional f_b∈[0,2], Mermin free energy
 /// F = E_KS − σ·S (σ = degauss in Ha).
 double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
-                      const PWProblem& reference, const FrozenDensity& rho0,
+                      PWStrainReference reference, const FrozenDensity& rho0,
                       AccReal omega0_bohr, PoissonSolver& poisson,
                       XCBuilder& xc, VeffBuilder& veff,
                       DavidsonSolver& davidson, int n_bands) {
-    PWProblem prob;
+    PWSetup prob;
+    PWWorkspace ws;
     setup_pw_problem_fixed_basis(frame, reference, method.ecut_ry,
-                                 method.k_mesh, prob);
-    PWWorkspace& ws = prob.ws;
+                                 method.k_mesh, prob, ws);
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
@@ -330,11 +315,11 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
     veff.step(ws);
 
     const auto layout = mpi_layout();
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     AccReal e_band = 0;
     AccReal entropy_sum = AccReal(0);
-    auto* saved_gvec = ws.gvec;
+    const auto saved_point = ws.point();
     auto& gv0 = prob.gv0;
 
     if (use_smear) {
@@ -351,17 +336,7 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
         std::vector<std::vector<AccReal>> evals_k(
             static_cast<std::size_t>(n_kpts));
         for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-            ws.gvec = &gvk;
-            ws.n_g = gvk.count();
-            ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.T_G[ig] = gvk.ekin[ig];
-
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
 
             davidson.step(ws);
 
@@ -375,8 +350,7 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
                 evals_k[static_cast<std::size_t>(ik)].resize(
                     static_cast<std::size_t>(n_bands));
 
-            ws.gvec = saved_gvec;
-            ws.n_g = gv0.count();
+            ws.bind(saved_point);
         }
 
 #ifdef ATV_HAS_MPI
@@ -407,7 +381,8 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
         all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
         all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
         for (int ik = 0; ik < n_kpts; ++ik) {
-            const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal w =
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ev = evals_k[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
                  ++b) {
@@ -416,11 +391,12 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
             }
         }
         const AccReal mu_ha =
-            find_fermi_level(all_evals, all_weights, AccReal(prob.n_elec),
+            find_fermi_level(all_evals, all_weights, AccReal(prob.ions.n_elec),
                              degauss_ha, smear_kind, mp_order);
 
         for (int ik = 0; ik < n_kpts; ++ik) {
-            const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal w =
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ev = evals_k[static_cast<std::size_t>(ik)];
             std::vector<AccReal> w_one(ev.size(), w);
             auto fill = fill_occupations(ev, w_one, mu_ha, degauss_ha,
@@ -434,27 +410,16 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
         }
     } else {
         for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-            ws.gvec = &gvk;
-            ws.n_g = gvk.count();
-            ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.T_G[ig] = gvk.ekin[ig];
-
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
 
             davidson.step(ws);
 
             const AccReal weight =
-                prob.kg.weights[static_cast<std::size_t>(ik)];
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands; ++b)
                 e_band += weight * ws.eigenvalues[b] * AccReal(2);
 
-            ws.gvec = saved_gvec;
-            ws.n_g = gv0.count();
+            ws.bind(saved_point);
         }
 
 #ifdef ATV_HAS_MPI
@@ -466,10 +431,9 @@ double nscf_energy_ry(const cpu::Frame& frame, const PW& method,
     }
 
     // Restore Γ sphere for energy Parseval (ρ, V_H, V_xc, V_loc live there).
-    ws.gvec = &gv0;
-    ws.n_g = gv0.count();
+    ws.bind({gv0});
     const auto terms =
-        iteration_energy(ws, e_band, prob.ew_total, prob.vol_bohr);
+        iteration_energy(ws, e_band, prob.ions.ew_total, prob.ions.vol_bohr);
     AccReal e_ha = terms.total;
     if (use_smear) {
         const AccReal degauss_ha =
@@ -522,10 +486,11 @@ std::array<double, 6> pw_stress_fd_impl(const cpu::Frame& frame,
     return stress;
 }
 
-std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
-                                              const PW& method,
-                                              PWResult* scf_out,
-                                              PWProblem* solved) {
+std::array<double, 6> pw_stress_from_density(const cpu::Frame& frame,
+                                             const PW& method,
+                                             PWStrainReference reference,
+                                             PWDensityView density,
+                                             const PWResult& result) {
     if (frame.nlocal() <= 0)
         throw std::invalid_argument("pw_stress: frame has no atoms");
     if (frame.box.volume() <= 0)
@@ -535,11 +500,7 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "pw_stress: degauss must be > 0 [Ry] when smearing is enabled");
-    internal::validate_potential_frame(frame, *method.potential);
-    int n_elec = method.potential->valence() * frame.nlocal();
-
-    if (solved)
-        n_elec = solved->n_elec;
+    const int n_elec = reference.ions.n_elec;
 
     int n_alpha = 0;
     int n_beta = 0;
@@ -568,61 +529,19 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
     PoissonSolver poisson;
     XCBuilder xc;
     VeffBuilder veff;
-    DensityBuilder density;
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
-
-    PWProblem local_problem;
-    PWProblem& scf_prob = solved ? *solved : local_problem;
-    PWResult res;
-    if (solved) {
-        if (!scf_out)
-            throw std::logic_error("PW solved state requires its result");
-        res = *scf_out;
-        xc.prepare(scf_prob.ws);
-        veff.prepare(scf_prob.ws);
-    } else if (method.spin_polarized && use_smear) {
-        res = run_collinear_smear_scf(frame, method, scf_prob, n_bands);
-        xc.prepare(scf_prob.ws);
-        veff.prepare(scf_prob.ws);
-        davidson.prepare(scf_prob.ws);
-    } else if (method.spin_polarized) {
-        res = run_collinear_scf(frame, method, scf_prob, n_alpha, n_beta);
-        // Local builders inside run_collinear_scf are gone; prepare ours for
-        // NSCF strain samples (same pattern as pw_forces_analytic spin path).
-        xc.prepare(scf_prob.ws);
-        veff.prepare(scf_prob.ws);
-        davidson.prepare(scf_prob.ws);
-    } else if (use_smear) {
-        res =
-            run_scf_smear_restricted(frame, method, scf_prob, poisson, xc, veff,
-                                     density, davidson, n_bands, "stress");
-    } else {
-        res = run_scf_fixed_occ(frame, method, scf_prob, poisson, xc, veff,
-                                density, davidson, "stress");
-    }
-    if (scf_out)
-        *scf_out = res;
-    if (!res.converged) {
+    if (!result.converged)
         ATV_WARN("[pw] pw_stress_analytic: SCF not converged after {} iters; "
                  "using last density for HF stress",
-                 res.iterations);
-    }
+                 result.iterations);
 
-    PWWorkspace& ws = scf_prob.ws;
-    ws.gvec = &scf_prob.gv0;
-    ws.n_g = scf_prob.gv0.count();
-    const AccReal omega0 = ws.omega;
-
-    FrozenDensity rho0, rho_a0, rho_b0;
+    const AccReal omega0 = reference.ions.vol_bohr;
+    FrozenDensity rho_a0, rho_b0;
     if (method.spin_polarized) {
-        rho_a0 = freeze_density(ws.rho_spin_G[0]);
-        rho_b0 = freeze_density(ws.rho_spin_G[1]);
-        // Keep scf_out as the complete reference-SCF result. An additional
-        // unstrained NSCF energy would mix a new energy with the reference
-        // occupations, chemical potential and entropy in that public result.
-    } else {
-        rho0 = freeze_density(ws.rho_G);
+        rho_a0 = {density.spin[0].data(), density.spin[0].size()};
+        rho_b0 = {density.spin[1].data(), density.spin[1].size()};
     }
+    const auto rho0 = density.total;
 
     // Hellmann–Feynman strain-FD of the NSCF free / total energy (one SCF).
     const double h = 2e-3;
@@ -650,16 +569,16 @@ std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
         double ep_ry = 0.0;
         double em_ry = 0.0;
         if (method.spin_polarized) {
-            ep_ry = nscf_energy_spin_ry(fp, method, scf_prob, rho_a0, rho_b0,
+            ep_ry = nscf_energy_spin_ry(fp, method, reference, rho_a0, rho_b0,
                                         omega0, poisson, xc, veff, davidson,
                                         n_bands, n_alpha, n_beta);
-            em_ry = nscf_energy_spin_ry(fm, method, scf_prob, rho_a0, rho_b0,
+            em_ry = nscf_energy_spin_ry(fm, method, reference, rho_a0, rho_b0,
                                         omega0, poisson, xc, veff, davidson,
                                         n_bands, n_alpha, n_beta);
         } else {
-            ep_ry = nscf_energy_ry(fp, method, scf_prob, rho0, omega0, poisson,
+            ep_ry = nscf_energy_ry(fp, method, reference, rho0, omega0, poisson,
                                    xc, veff, davidson, n_bands);
-            em_ry = nscf_energy_ry(fm, method, scf_prob, rho0, omega0, poisson,
+            em_ry = nscf_energy_ry(fm, method, reference, rho0, omega0, poisson,
                                    xc, veff, davidson, n_bands);
         }
         const double dE_dev = (ep_ry - em_ry) * ry_to_ev / (2.0 * h);

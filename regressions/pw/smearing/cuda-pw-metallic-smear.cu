@@ -115,12 +115,12 @@ RunOut run_pw(PwT& pw, const cpu::Frame& frame) {
 
 RunOut run_one(Device dev, const cpu::Frame& frame, const char* upf) {
     if (dev == Device::Cpu) {
-        cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                       kEcutRy, 2};
+        cpu::pw::PW pw{
+            {std::make_shared<cpu::pw::UpfPseudopotential>(upf)}, kEcutRy, 2};
         return run_pw(pw, frame);
     }
-    cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>(upf), kEcutRy,
-                    2};
+    cuda::pw::PW pw{
+        {std::make_shared<cpu::pw::UpfPseudopotential>(upf)}, kEcutRy, 2};
     return run_pw(pw, frame);
 }
 

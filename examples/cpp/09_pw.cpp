@@ -109,12 +109,14 @@ int main(int argc, char** argv) {
     constexpr int kKMesh = 2;
     cpu::pw::PW pw =
         upf_path.empty()
-            ? cpu::pw::PW{std::make_shared<cpu::pw::GthPseudopotential>(
-                              molrs::Element::Si, gth_name),
-                          kEcutRy, kKMesh}
+            ? cpu::pw::PW{{std::make_shared<cpu::pw::GthPseudopotential>(
+                              molrs::Element::Si, gth_name)},
+                          kEcutRy,
+                          kKMesh}
             : cpu::pw::PW{
-                  std::make_shared<cpu::pw::UpfPseudopotential>(upf_path),
-                  kEcutRy, kKMesh};
+                  {std::make_shared<cpu::pw::UpfPseudopotential>(upf_path)},
+                  kEcutRy,
+                  kKMesh};
     pw.tol = 1e-6;
     pw.max_iter = 50;
 

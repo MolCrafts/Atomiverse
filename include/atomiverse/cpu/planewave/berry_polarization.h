@@ -19,7 +19,7 @@
 /// bag, no factories.
 ///
 /// @code
-///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf")}, /*ecut_ry=*/15.0,
 ///                  /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///   // optional collinear: pw.spin_polarized = true; pw.multiplicity = 1;
 ///

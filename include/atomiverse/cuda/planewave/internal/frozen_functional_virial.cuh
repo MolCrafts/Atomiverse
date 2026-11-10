@@ -56,7 +56,6 @@ struct FrozenFunctionalOutcome {
 // Method-private bounded read-only views. Buffers are owned by this workspace;
 // all views expire before solver/density/borrowed stream destruction. Never Frame state.
 struct FrozenCandidateView {
-    const cpu::pw::internal::PWProblem* geometry;
     FrozenBandDeviceView orbitals;
     const cufftDoubleComplex *reference_density, *orbital_density;
     const FrozenOperatorVirial* terms; //7 only when stress requested
@@ -79,13 +78,16 @@ class FrozenFunctionalWorkspace {
     std::unique_ptr<Impl> impl_;
 
   public:
-    FrozenFunctionalWorkspace(const cpu::Frame&, cpu::pw::internal::PWProblem&,
-                              int bands, cpu::xc::XCType, electronic::Smearing,
-                              double width_ha,
-                              std::optional<FixedSpinOccupations>, cudaStream_t,
-                              bool forces, bool stress);
+    FrozenFunctionalWorkspace(
+        const cpu::Frame&, const cpu::pw::internal::PWIons&,
+        const cpu::pw::internal::GVectorList& density_modes,
+        const cpu::pw::internal::GVectorList& gamma_modes, int bands,
+        cpu::xc::XCType, electronic::Smearing, double width_ha,
+        std::optional<FixedSpinOccupations>, cudaStream_t, bool forces,
+        bool stress);
     ~FrozenFunctionalWorkspace();
     FrozenFinishResult finish(DeviceDensity&, DeviceBandSolver&,
+                              xt::xarray<AccReal>& eigenvalues,
                               const cpu::pw::PWResult&,
                               std::vector<std::array<double, 3>>* host_force,
                               std::array<double, 6>* host_stress,

@@ -26,6 +26,7 @@ using ATV::cpu::gpw::internal::CplxMatrix;
 using ATV::cpu::gpw::internal::GpwAtom;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
+using ATV::cuda::gpw::internal::KpointBasisDevice;
 using ATV::cuda::gpw::internal::KpointCollocateDevice;
 using Cplx = std::complex<double>;
 
@@ -102,10 +103,9 @@ TEST(CudaGpwKpointCollocate, DeviceMatchesHostDensity) {
     double* d_rho = nullptr;
     ASSERT_EQ(cudaMalloc(&d_rho, static_cast<size_t>(npts) * sizeof(double)),
               cudaSuccess);
+    const KpointBasisDevice device_basis(nullptr, kbg);
     KpointCollocateDevice coll;
-    coll.build(/*stream=*/nullptr, /*nk=*/2, nb, npts);
-    for (int ik = 0; ik < 2; ++ik)
-        coll.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
+    coll.build(device_basis);
     coll.zero_rho(d_rho);
     for (int ik = 0; ik < 2; ++ik)
         coll.collocate_k(ik, P_k[static_cast<std::size_t>(ik)].data(),

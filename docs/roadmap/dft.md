@@ -15,6 +15,12 @@ checks of the current checkout. Current molecular acceptance runs through
 PySCF and the public Python methods. Historical marks below do not substitute
 for current benchmark results.
 
+The [periodic acceptance campaign](../../benchmarks/periodic/README.md)
+runs the archived PBE-family inputs against live QE 7.6 and CP2K 2026.2.
+The PW campaign also includes skew H₂O with H GTH and O NC-UPF.
+It compares energy, every force component and six PW or three GPW stress
+components through the public CPU methods at the original tolerances.
+
 Historical CPU validation on 2026-10-25 passed 1785
 unit tests and all 68 enabled regression cases (301 sections at their declared
 thread widths), plus the relocated installed XC extension project. Affected
@@ -80,8 +86,17 @@ Complete-method solves stay outside unit tests: archived cases go to
   PBEsol/revPBE/RPBE × Si₂ RKS/skew H₃ UKS at Γ with FD smearing. Absolute
   Mermin energy, every force and six numerical strain-FD stress components
   pass the original gates.
+- [x] `pw-cpu-multispecies`: assemble NC providers by element on the
+  CPU PW operator path. The skew PBE H₂O benchmark combines H GTH with
+  O NC-UPF and checks energy, all nine forces and all six stresses against
+  live QE 7.6 under the existing PW tolerances.
 - [x] `pbe-pw-periodic-oracles-cuda`: the same six independent references
   pass on GH200, including nonzero thermal and collinear-spin states.
+- [x] `pw-cuda-multispecies`: GH200 uses the CPU element assignment and
+  NC radial tables for both builtin provider types. Skew PBE H₂O and all
+  six original PW periodic cases pass the same QE 7.6 energy, full-force
+  and six-component stress gates on cold and warm runs. All 81 CUDA PW
+  unit tests pass in GH200 job 5143898.
 - [x] `pbe-gpw-periodic-oracles-cpu`: qualify the actual CP2K 2026.2
   PBEsol/revPBE/RPBE Γ RKS references after repairing Gaussian-core overlap.
   Absolute energy, every force and supported diagonal stress pass their
@@ -584,8 +599,8 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| Plane-wave DFT | ✓ | ✓ | [pw/rks][pw-rks]; CPU GTH and scalar NC-UPF share one operator path; the independent NC project below has a matched Si₂ energy/full-force pin. CUDA ⊂ CPU |
-| External scalar NC provider | ✓ | ○ | [Independent installed project](../../examples/extensions/nc/README.md): immutable radial data/local callback on existing PW; published Si GTH-PBE-q4, absolute Mermin energy and all six nonzero forces against actual QE. Single species, real scalar l≤2; no USPP/PAW/NLCC/spin-orbit |
+| Plane-wave DFT | ✓ | ✓ | [pw/rks][pw-rks]; CPU GTH and scalar NC-UPF share one operator path, including mixed-element cells; the independent NC project below has a matched Si₂ energy/full-force pin. CUDA ⊂ CPU |
+| External scalar NC provider | ✓ | ○ | [Independent installed project](../../examples/extensions/nc/README.md): immutable radial data/local callback on existing PW; published Si GTH-PBE-q4, absolute Mermin energy and all six nonzero forces against actual QE. The independent project covers single-species Si₂. Real scalar l≤2; no USPP/PAW/NLCC/spin-orbit |
 | GPW DFT | ✓ | ◐ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; CUDA first product slices |
 | Γ-point RKS | ✓ | ◐ | [gpw/rks][gpw-rks]; CUDA CPU-twin slice |
 | k-point RKS | ✓ | ✓ | [pw/rks][pw-rks] on both; [gpw/rks][gpw-rks] CPU; CUDA GPW remains ◐ |

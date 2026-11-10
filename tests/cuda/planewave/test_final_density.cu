@@ -42,7 +42,7 @@ TEST(CudaPWFinalDensity, RetainsIsolatedTinyTailsAndPreservesLegacyBehavior) {
     constexpr int n = 4, nr = 64;
     constexpr double volume = 120, tiny = 5e-15;
     std::vector<double> actual(nr), sentinel(nr, .125);
-    host::PWProblem p;
+    host::PWKMesh mesh;
     host::GVectorList g;
     g.nx = g.ny = g.nz = n;
     g.h = {0, 1, 0};
@@ -51,15 +51,10 @@ TEST(CudaPWFinalDensity, RetainsIsolatedTinyTailsAndPreservesLegacyBehavior) {
     g.g = {{0, 0, 0}, {2 * M_PI / 4, 0, 0}, {0, 2 * M_PI / 5, 0}};
     for (const auto& q : g.g)
         g.ekin.push_back(.5 * q.norm_squared());
-    p.gv0 = g;
-    p.gv_k = {g};
-    p.vol_bohr = volume;
-    p.n_bands = 2;
-    p.ws.gvec = &p.gv0;
-    p.ws.n_g = g.count();
-    p.ws.omega = volume;
-    p.ws.fft_nx = p.ws.fft_ny = p.ws.fft_nz = n;
-    p.ws.nr = nr;
+    mesh.gv_k = {g};
+    mesh.kb_proj_k.resize(1);
+    mesh.atom_wfc_k.resize(1);
+    xt::xarray<AccReal> eigenvalues;
     Resources gpu;
     dev::DeviceBandSolver solver(n, n, n, 2, gpu.stream);
     auto* rho = gpu.allocate<double>(nr);
@@ -67,10 +62,10 @@ TEST(CudaPWFinalDensity, RetainsIsolatedTinyTailsAndPreservesLegacyBehavior) {
     ATV_CUDA_CHECK(cudaMemsetAsync(rho, 0, nr * sizeof(double), gpu.stream));
     ATV_CUDA_CHECK(cudaMemsetAsync(veff, 0, nr * sizeof(double), gpu.stream));
     solver.bind_grids(rho, veff);
-    solver.build_kpoints(p);
+    solver.build_kpoints(mesh, {}, volume, {});
     solver.bind_kpoint(0);
-    solver.solve(p.ws, 20);
-    require(p.ws.eigenvalues.size() == 2, "free-electron two-band shape");
+    solver.solve(eigenvalues, 20);
+    require(eigenvalues.size() == 2, "free-electron two-band shape");
     auto capture = [&](bool exact, const std::array<double, 2>& f) {
         ATV_CUDA_CHECK(
             cudaMemsetAsync(rho, 0, nr * sizeof(double), gpu.stream));

@@ -72,19 +72,19 @@ namespace pw {
 namespace {
 bool frozen_functional_admitted(bool spin, electronic::Smearing filling,
                                 cpu::xc::XCType type,
-                                const cpu::pw::internal::PWProblem& p,
+                                const cpu::pw::internal::PWSetup& p,
                                 int multiplicity) noexcept {
     const long long mag = static_cast<long long>(multiplicity) - 1;
     const bool nonempty_fixed_spin =
         spin && filling == electronic::Smearing::none && mag >= 0
-        && mag < p.n_elec && (p.n_elec + mag) % 2 == 0;
+        && mag < p.ions.n_elec && (p.ions.n_elec + mag) % 2 == 0;
     return ((!spin
              && (filling == electronic::Smearing::none
                  || filling == electronic::Smearing::fermi_dirac))
             || nonempty_fixed_spin)
            && (type == cpu::xc::XCType::LSDA || cpu::xc::is_pbe_family(type))
-           && p.kg.kpoints.size() == 1 && p.gv_k.size() == 1
-           && p.gv_k[0].kvec.norm_squared() == 0;
+           && p.mesh.kg.kpoints.size() == 1 && p.mesh.gv_k.size() == 1
+           && p.mesh.gv_k[0].kvec.norm_squared() == 0;
 }
 using Step = std::function<void(int)>;
 class PwStage final : public cuda::Component {
@@ -216,16 +216,20 @@ struct PwLoopState {
     }
 };
 
-PW::PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
+PW::PW(std::vector<
+           std::shared_ptr<const ::ATV::electronic::NormConservingPotential>>
+           pp,
        double cutoff, int mesh, cpu::xc::XCType functional)
-    : potential(std::move(pp)), ecut_ry(cutoff), k_mesh(mesh), xc(functional),
+    : potentials(std::move(pp)), ecut_ry(cutoff), k_mesh(mesh), xc(functional),
       loop_(std::make_unique<PwLoopState>()) {
-    if (!potential
-        || (!dynamic_cast<const cpu::pw::GthPseudopotential*>(potential.get())
-            && !dynamic_cast<const cpu::pw::UpfPseudopotential*>(
-                potential.get())))
+    if (potentials.empty()
+        || std::any_of(potentials.begin(), potentials.end(), [](const auto& p) {
+               return !dynamic_cast<const cpu::pw::GthPseudopotential*>(p.get())
+                      && !dynamic_cast<const cpu::pw::UpfPseudopotential*>(
+                          p.get());
+           }))
         throw std::invalid_argument(
-            "cuda::pw::PW: only builtin GTH/UPF NC providers are supported");
+            "cuda::pw::PW: builtin GTH/UPF NC providers are required");
     this->on(ATV::pw::Phase::veff).add_ref(loop_->veff_stage);
     this->on(ATV::pw::Phase::diagonalize).add_ref(loop_->diag_stage);
     this->on(ATV::pw::Phase::density).add_ref(loop_->density_stage);
@@ -241,7 +245,7 @@ PW::~PW() {
 }
 PW::PW(PW&& other)
     : cuda::Driver<ATV::pw::Phase>(std::move(other)),
-      potential(std::move(other.potential)), ecut_ry(other.ecut_ry),
+      potentials(std::move(other.potentials)), ecut_ry(other.ecut_ry),
       k_mesh(other.k_mesh), xc(other.xc), tol(other.tol),
       max_iter(other.max_iter), mix_beta(other.mix_beta),
       pulay_depth(other.pulay_depth), spin_polarized(other.spin_polarized),
@@ -296,7 +300,7 @@ void PW::validate_members() const {
 }
 
 void PW::build(const cpu::Frame& reference) {
-    cpu::pw::internal::validate_potential_frame(reference, *potential);
+    cpu::pw::internal::assign_nc_species(reference, potentials);
     built_ = true;
 }
 
@@ -358,14 +362,14 @@ void PW::drive_stages_(cuda::Context& ctx, cuda::Frame& frame, int budget) {
 }
 
 std::array<int, 2> PW::prepare_(const cpu::Frame& frame,
-                                cpu::pw::internal::PWProblem& prob) const {
+                                cpu::pw::internal::PWSetup& prob,
+                                cpu::pw::internal::PWWorkspace& ws) const {
     // ── Shared problem assembly (identical to the CPU backend) ──
-    // PWProblem is non-copyable (ws.gvec aliases gv0): construct in place.
-    cpu::pw::internal::setup_pw_problem(frame, *potential, ecut_ry, k_mesh,
-                                        prob);
+    cpu::pw::internal::setup_pw_problem(frame, potentials, ecut_ry, k_mesh,
+                                        prob, ws);
 
     // Collinear occupation split: N↑ − N↓ = multiplicity − 1, N↑ + N↓ = n_elec.
-    const int n_elec = prob.n_elec;
+    const int n_elec = prob.ions.n_elec;
     const bool use_smear = (smearing != ATV::electronic::Smearing::none);
     int n_alpha = n_elec / 2;
     int n_beta = n_elec - n_alpha;
@@ -393,7 +397,8 @@ std::array<int, 2> PW::prepare_(const cpu::Frame& frame,
 }
 
 PW::DerivativePublication
-PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
+PW::evaluate_(const cpu::Frame& frame, const cpu::pw::internal::PWSetup& prob,
+              cpu::pw::internal::PWWorkspace& ws,
               const std::array<int, 2>& spin_occupations, cuda::Context& ctx,
               cuda::Frame& device, int budget,
               std::vector<std::array<double, 3>>* forces_out,
@@ -403,8 +408,7 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
         ~ClearCallbacks() { loop.clear(); }
     } clear_callbacks{*loop_};
     result_ = PWResult{};
-    auto& ws = prob.ws;
-    const int n_elec = prob.n_elec;
+    const int n_elec = prob.ions.n_elec;
     const bool use_smear = smearing != ATV::electronic::Smearing::none;
     const int n_alpha = spin_occupations[0], n_beta = spin_occupations[1];
     result_.magnetization = spin_polarized ? multiplicity - 1 : 0;
@@ -415,7 +419,7 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
     ws.mix_beta = AccReal(mix_beta);
     ws.pulay_depth = pulay_depth;
 
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     // Band count: fixed occ uses n_elec/2 (or max spin channel); smear uses
     // ceil(n_e/2) + extra_bands so empty states sit near E_F for the μ search.
     int n_bands =
@@ -424,8 +428,8 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
         const int n_occ_ceil = std::max((n_elec + 1) / 2, 1);
         n_bands = std::max({n_bands, n_occ_ceil + std::max(extra_bands, 0), 1});
     }
-    const AccReal vol_bohr = prob.vol_bohr;
-    // build_kpoints() leaves ws bound to the density sphere, so ws.omega is
+    const AccReal vol_bohr = prob.ions.vol_bohr;
+    // The prepared cell volume is
     // stable for the whole run; the k-loop no longer touches ws at all.
     const AccReal omega_bohr = ws.omega;
 
@@ -448,21 +452,24 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
     // the atomic ρ(G) seed, then nothing scientific leaves the GPU. Density
     // borrows the execution owner's stream; the band solver uses it too,
     // so all SCF stages and final publication stay ordered on that stream.
-    internal::DeviceDensity den(prob, mix_beta, pulay_depth, xc, spin_polarized,
-                                n_alpha, n_beta, n_elec,
+    internal::DeviceDensity den(prob.grid(), ws.density().total, mix_beta,
+                                pulay_depth, xc, spin_polarized, n_alpha,
+                                n_beta, n_elec,
                                 static_cast<cudaStream_t>(ctx.stream));
     internal::DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, n_bands,
                                       den.stream());
     solver.bind_grids(den.density_accumulator(), den.effective_potential());
     // Every per-k table (G→FFT map, T(G), q = k+G, KB descriptors, initial
     // Davidson subspace) is geometry — built and uploaded once, here.
-    solver.build_kpoints(prob);
+    solver.build_kpoints(prob.mesh, prob.ions.positions, prob.ions.vol_bohr,
+                         ws.wfc);
     const bool frozen_slice = frozen_functional_admitted(
         spin_polarized, smearing, xc, prob, multiplicity);
     std::unique_ptr<internal::FrozenFunctionalWorkspace> frozen;
     if (frozen_slice && (forces_out || stress_out || force_target))
         frozen = std::make_unique<internal::FrozenFunctionalWorkspace>(
-            frame, prob, n_bands, xc, smearing, degauss_ha,
+            frame, prob.ions, prob.gv0, prob.mesh.gv_k[0], n_bands, xc,
+            smearing, degauss_ha,
             spin_polarized
                 ? std::optional<internal::FixedSpinOccupations>{{n_alpha,
                                                                  n_beta}}
@@ -491,7 +498,7 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
                 den.assemble_veff_spin(s);
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
+                    solver.solve(ws.eigenvalues, 40);
                     auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     ev.assign(ws.eigenvalues.begin(), ws.eigenvalues.end());
@@ -507,7 +514,7 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             for (int s = 0; s < 2; ++s) {
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     for (int b = 0; b < n_bs && b < static_cast<int>(ev.size());
@@ -530,9 +537,9 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
                 den.zero_accumulator();
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
+                    solver.solve(ws.eigenvalues, 40);
                     const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     std::vector<AccReal> w_one(ev.size(), w);
@@ -566,14 +573,14 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             ws.E_xc = AccReal(s.e_xc);
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
+                ws.E_xc, prob.ions.ew_total);
             terms.e_one =
                 e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
             const AccReal e_ent_ha = -degauss_ha * entropy_sum;
-            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total
-                          + e_ent_ha;
-            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
-                                                    iter);
+            terms.total = terms.e_one + AccReal(s.e_h) + ws.E_xc
+                          + prob.ions.ew_total + e_ent_ha;
+            cpu::pw::internal::log_iteration_energy(terms, ws,
+                                                    prob.ions.ew_total, iter);
             result_.iterations = iter + 1;
             result_.energy_ha = static_cast<double>(terms.total);
             result_.energy =
@@ -602,8 +609,8 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
                 den.zero_accumulator();
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
-                    const AccReal weight = prob.kg.weights[ik];
+                    solver.solve(ws.eigenvalues, 40);
+                    const AccReal weight = prob.mesh.kg.weights[ik];
                     for (int b = 0; b < n_occ[s]; ++b)
                         e_band += weight * ws.eigenvalues[b]; // spin-orbital
                     // f = 1 per occupied spin-orbital (CPU accumulate_kpoint).
@@ -624,14 +631,14 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             // Spin energy: e_one = e_band − 2 e_h − ∫(ρ↑V↑+ρ↓V↓).
             auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
+                ws.E_xc, prob.ions.ew_total);
             terms.e_one =
                 e_band - AccReal(2.0) * AccReal(s.e_h) - AccReal(s.e_xc_int);
             terms.total =
-                terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ew_total;
+                terms.e_one + AccReal(s.e_h) + ws.E_xc + prob.ions.ew_total;
 
-            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
-                                                    iter);
+            cpu::pw::internal::log_iteration_energy(terms, ws,
+                                                    prob.ions.ew_total, iter);
 
             result_.iterations = iter + 1;
             result_.energy_ha = static_cast<double>(terms.total);
@@ -652,7 +659,7 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
         loop_->diagonalize = [&](int iter) {
             for (int ik = 0; ik < n_kpts; ++ik) {
                 solver.bind_kpoint(ik);
-                solver.solve(ws, 40);
+                solver.solve(ws.eigenvalues, 40);
                 evals_k[static_cast<std::size_t>(ik)].assign(
                     ws.eigenvalues.begin(), ws.eigenvalues.end());
                 if (static_cast<int>(
@@ -668,7 +675,8 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
             all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
                      ++b) {
@@ -686,7 +694,8 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             std::vector<std::vector<AccReal>> occ_k(
                 static_cast<std::size_t>(n_kpts));
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 std::vector<AccReal> w_one(ev.size(), w);
                 auto fill = ATV::electronic::fill_occupations(
@@ -705,7 +714,7 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             for (int ik = 0; ik < n_kpts; ++ik) {
                 solver.load_ritz(ik);
                 const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& occ = occ_k[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 const int nb = static_cast<int>(occ.size());
@@ -723,13 +732,13 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
 
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
+                ws.E_xc, prob.ions.ew_total);
             // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).
             const AccReal e_ent_ha = -degauss_ha * entropy_sum;
             const AccReal e_ha = terms.total + e_ent_ha;
 
-            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
-                                                    iter);
+            cpu::pw::internal::log_iteration_energy(terms, ws,
+                                                    prob.ions.ew_total, iter);
 
             result_.iterations = iter + 1;
             result_.energy_ha = static_cast<double>(e_ha);
@@ -761,9 +770,9 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
                 // geometry that cannot change inside the SCF. It now happens once
                 // in build_kpoints(); binding is a pointer swap.
                 solver.bind_kpoint(ik);
-                solver.solve(ws, 40);
+                solver.solve(ws.eigenvalues, 40);
 
-                const AccReal weight = prob.kg.weights[ik];
+                const AccReal weight = prob.mesh.kg.weights[ik];
                 // Eigenvalues are the only band-side quantity the host needs;
                 // they are already in ws (the Davidson subspace solve is a host
                 // step). No wavefunction or density array is read back.
@@ -790,10 +799,10 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
             // catastrophic-cancellation term order cannot drift apart.
             const auto terms = cpu::pw::internal::combine_energy_terms(
                 e_band, AccReal(s.e_h), AccReal(s.e_xc_int), AccReal(s.e_loc),
-                ws.E_xc, prob.ew_total);
+                ws.E_xc, prob.ions.ew_total);
 
-            cpu::pw::internal::log_iteration_energy(terms, ws, prob.ew_total,
-                                                    iter);
+            cpu::pw::internal::log_iteration_energy(terms, ws,
+                                                    prob.ions.ew_total, iter);
 
             result_.iterations = iter + 1;
             result_.energy_ha = static_cast<double>(terms.total);
@@ -806,10 +815,13 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
         drive_stages_(ctx, device, budget);
     }
 
+    if (!use_smear && result_.iterations > 0)
+        result_.n_elec_occ = n_elec;
+
     if (frozen) {
-        const auto status =
-            frozen->finish(den, solver, result_, forces_out, stress_out,
-                           this->borrowed_backend_ ? &device : nullptr);
+        const auto status = frozen->finish(
+            den, solver, ws.eigenvalues, result_, forces_out, stress_out,
+            this->borrowed_backend_ ? &device : nullptr);
         if (status == internal::FrozenFinishResult::complete)
             return this->borrowed_backend_
                        ? DerivativePublication::device_committed
@@ -819,13 +831,13 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
         // Unsupported finite XC domain only: retain the old same-accepted-state
         // stress then force ordering, and stage both candidates before commit.
         if (stress_out)
-            legacy_sigma = internal::pw_stress_from_state(frame, *this, prob,
-                                                          den, n_alpha, n_beta);
+            legacy_sigma = internal::pw_stress_from_state(
+                frame, *this, prob.strain_reference(), den, n_alpha, n_beta);
         if (forces_out || force_target)
             legacy_force = internal::pw_forces_analytic_impl(
-                frame, den, solver, prob, ws, n_alpha, n_beta, use_smear,
-                n_elec, smear_kind, static_cast<double>(degauss_ha), mp_order,
-                nullptr);
+                frame, den, solver, prob.ions, prob.gv0, prob.mesh.kg.weights,
+                ws.eigenvalues, n_alpha, n_beta, use_smear, n_elec, smear_kind,
+                static_cast<double>(degauss_ha), mp_order, nullptr);
         frozen->commit_fallback(den, result_, legacy_force, legacy_sigma,
                                 this->borrowed_backend_ ? &device : nullptr);
         if (forces_out)
@@ -839,11 +851,12 @@ PW::evaluate_(const cpu::Frame& frame, cpu::pw::internal::PWProblem& prob,
     // The stress capture must precede the force epilogue's refreshed potentials.
     if (stress_out)
         *stress_out = internal::pw_stress_from_state(
-            frame, *this, prob, den, spin_polarized ? n_alpha : -1,
-            spin_polarized ? n_beta : -1);
+            frame, *this, prob.strain_reference(), den,
+            spin_polarized ? n_alpha : -1, spin_polarized ? n_beta : -1);
     if (forces_out || force_target) {
         auto force = internal::pw_forces_analytic_impl(
-            frame, den, solver, prob, ws, spin_polarized ? n_alpha : -1,
+            frame, den, solver, prob.ions, prob.gv0, prob.mesh.kg.weights,
+            ws.eigenvalues, spin_polarized ? n_alpha : -1,
             spin_polarized ? n_beta : -1, use_smear, n_elec, smear_kind,
             static_cast<double>(degauss_ha), mp_order, force_target);
         if (forces_out)
@@ -866,15 +879,16 @@ PWResult& PW::standalone_(const cpu::Frame& geometry,
     // Incorporate bindings/criteria added after construction or a prior solve.
     // In particular, verdict-only criteria need their lifecycle-only entries.
     cuda::Driver<ATV::pw::Phase>::build();
-    cpu::pw::internal::PWProblem problem;
-    const auto occupations = prepare_(geometry, problem);
+    cpu::pw::internal::PWSetup problem;
+    cpu::pw::internal::PWWorkspace ws;
+    const auto occupations = prepare_(geometry, problem, ws);
     built_ = true;
     // Materialize the actual input system, never an empty scheduling Frame.
     // The caller's arrays and metadata are published only by its chosen entry.
     cpu::Frame scratch(geometry);
     try {
         this->setup_pass(scratch);
-        evaluate_(geometry, problem, occupations, this->backend_->context(),
+        evaluate_(geometry, problem, ws, occupations, this->backend_->context(),
                   this->backend_->frame(), max_iter, forces_out, stress_out);
         release_backend_();
     } catch (...) {
@@ -942,12 +956,13 @@ int PW::run_nested_erased(cuda::Context& ctx, cuda::Frame& device, int budget) {
             "cuda::pw::PW: parent Frame has incomplete output columns");
     const auto stream = static_cast<cudaStream_t>(ctx.stream);
     cpu::Frame geometry = host_geometry(device, stream);
-    cpu::pw::internal::PWProblem problem;
-    const auto occupations = prepare_(geometry, problem);
+    cpu::pw::internal::PWSetup problem;
+    cpu::pw::internal::PWWorkspace ws;
+    const auto occupations = prepare_(geometry, problem, ws);
     std::array<double, 6> sigma{};
     const auto publication =
-        evaluate_(geometry, problem, occupations, ctx, device, budget, nullptr,
-                  ctx.exec.stress_requested ? &sigma : nullptr,
+        evaluate_(geometry, problem, ws, occupations, ctx, device, budget,
+                  nullptr, ctx.exec.stress_requested ? &sigma : nullptr,
                   ctx.exec.forces_requested ? &device : nullptr);
     if (!device.scalars)
         throw std::invalid_argument(

@@ -70,37 +70,38 @@ void require(bool good, const char* message) {
 bool finite(std::complex<AccReal> v) {
     return std::isfinite(v.real()) && std::isfinite(v.imag());
 }
-void validate(const PWProblem& p, const FinalBandState& bands,
-              cpu::xc::XCType functional, const EwaldSummation& ionic,
-              const Layout& mpi) {
-    const auto& ws = p.ws;
-    const auto ng = p.gv0.g.size();
+void validate(const PWIons& ions, const GVectorList& density_modes,
+              std::span<const GVectorList> modes,
+              std::span<const AccReal> weights, PWDensityView density,
+              const FinalBandState& bands, cpu::xc::XCType functional,
+              const EwaldSummation& ionic, const Layout& mpi) {
+    const auto ng = density_modes.g.size();
     require(functional == cpu::xc::XCType::LSDA
                 || cpu::xc::is_pbe_family(functional),
             "PW frozen functional: only qualified LSDA/PBE-family semilocal "
             "models");
     require(
-        p.potential && !p.kg.kpoints.empty()
-            && p.kg.weights.size() == p.kg.kpoints.size()
-            && p.gv_k.size() == p.kg.kpoints.size(),
+        !ions.species.empty() && !modes.empty()
+            && ions.atom_species.size() == ions.positions.size()
+            && weights.size() == modes.size(),
         "PW frozen functional: matching nonempty k-point geometry is required");
     AccReal weight_sum = 0;
-    for (const auto weight : p.kg.weights) {
+    for (const auto weight : weights) {
         require(std::isfinite(weight) && weight > 0,
                 "PW frozen functional: positive finite k weight required");
         weight_sum += weight;
     }
     require(std::abs(weight_sum - 1) < 1e-12,
             "PW frozen functional: normalized k weights required");
-    const bool spin = ws.nspin == 2;
+    const bool spin = density.channels == 2;
     const auto* fixed =
         bands.fixed_spin_occupations ? &*bands.fixed_spin_occupations : nullptr;
     if (fixed) {
         require(spin && fixed->n_alpha > 0 && fixed->n_beta >= 0
                     && static_cast<long long>(fixed->n_alpha) + fixed->n_beta
-                           == p.n_elec,
+                           == ions.n_elec,
                 "PW frozen functional: invalid fixed spin declaration");
-        require(std::abs(bands.auxiliary_electron_count - p.n_elec) < 1e-8
+        require(std::abs(bands.auxiliary_electron_count - ions.n_elec) < 1e-8
                     && std::abs(bands.auxiliary_magnetization
                                 - (fixed->n_alpha - fixed->n_beta))
                            < 1e-8
@@ -108,70 +109,72 @@ void validate(const PWProblem& p, const FinalBandState& bands,
                 "PW frozen functional: fixed declaration/aux mismatch");
     }
 
-    require(ws.nspin == 1 || spin, "general functional: spin shape");
-    require(p.n_elec >= 0 && std::isfinite(bands.auxiliary_entropy)
+    require(density.channels == 1 || spin, "general functional: spin shape");
+    require(ions.n_elec >= 0 && std::isfinite(bands.auxiliary_entropy)
                 && std::isfinite(bands.auxiliary_electron_count)
-                && std::abs(bands.auxiliary_electron_count - p.n_elec) < 1e-8,
+                && std::abs(bands.auxiliary_electron_count - ions.n_elec)
+                       < 1e-8,
             "general functional: collective occupation metadata");
     require(bands.orbital_spin_density_G.size() == (spin ? 2u : 0u)
                 && bands.reference_spin_density_G.size() == (spin ? 2u : 0u)
-                && ws.rho_spin_G.size() == (spin ? 2u : 0u),
+                && density.spin.size() == (spin ? 2u : 0u),
             "general functional: spin channels");
     if (spin)
         for (int channel = 0; channel < 2; ++channel) {
             require(bands.orbital_spin_density_G[channel].size() == ng
                         && bands.reference_spin_density_G[channel].size() == ng
-                        && ws.rho_spin_G[channel].size() == ng,
+                        && density.spin[channel].size() == ng,
                     "general functional: spin density sizes");
             require(std::equal(bands.reference_spin_density_G[channel].begin(),
                                bands.reference_spin_density_G[channel].end(),
-                               ws.rho_spin_G[channel].begin()),
+                               density.spin[channel].begin()),
                     "general functional: reference spin identity");
         }
-    require(ng > 0 && p.gv0.h.size() == ng && p.gv0.k.size() == ng
-                && p.gv0.l.size() == ng && ws.rho_G.size() == ng
+    require(ng > 0 && density_modes.h.size() == ng
+                && density_modes.k.size() == ng && density_modes.l.size() == ng
+                && density.total.size() == ng
                 && bands.reference_density_G.size() == ng
                 && bands.orbital_density_G.size() == ng,
             "PW frozen functional: density shapes do not match the reference "
             "modes");
-    require(ws.fft_nx > 0 && ws.fft_ny > 0 && ws.fft_nz > 0 && ws.nr > 0
-                && ws.nc > 0 && std::isfinite(p.vol_bohr) && p.vol_bohr > 0
-                && ws.omega == p.vol_bohr,
+    require(density_modes.nx > 0 && density_modes.ny > 0 && density_modes.nz > 0
+                && std::isfinite(ions.vol_bohr) && ions.vol_bohr > 0,
             "PW frozen functional: invalid reference FFT or volume");
     require(std::equal(bands.reference_density_G.begin(),
-                       bands.reference_density_G.end(), ws.rho_G.begin()),
+                       bands.reference_density_G.end(), density.total.begin()),
             "PW frozen functional: bands belong to another reference density");
     require(std::isfinite(bands.density_mismatch_l2)
                 && bands.density_mismatch_l2 >= 0,
             "PW frozen functional: invalid density mismatch");
     for (const auto rho : bands.orbital_density_G)
         require(finite(rho), "PW frozen functional: nonfinite orbital density");
-    const auto ionic_tolerance = AccReal(64)
-                                 * std::numeric_limits<AccReal>::epsilon()
-                                 * std::max(AccReal(1), std::abs(p.ew_total));
-    require(ionic.positions_bohr().size() == ws.atom_pos_bohr.size()
+    const auto ionic_tolerance =
+        AccReal(64) * std::numeric_limits<AccReal>::epsilon()
+        * std::max(AccReal(1), std::abs(ions.ew_total));
+    require(ionic.positions_bohr().size() == ions.positions.size()
                 && std::isfinite(ionic.total_energy())
-                && std::abs(ionic.total_energy() - p.ew_total)
+                && std::abs(ionic.total_energy() - ions.ew_total)
                        <= ionic_tolerance,
             "PW frozen functional: ionic contribution does not match the "
             "reference");
     if (fixed) {
         std::size_t g0 = ng;
         for (std::size_t g = 0; g < ng; ++g)
-            if (p.gv0.h[g] == 0 && p.gv0.k[g] == 0 && p.gv0.l[g] == 0)
+            if (density_modes.h[g] == 0 && density_modes.k[g] == 0
+                && density_modes.l[g] == 0)
                 g0 = g;
         require(g0 < ng, "PW frozen functional: fixed density G0 missing");
         for (int channel = 0; channel < 2; ++channel) {
             const auto count = channel ? fixed->n_beta : fixed->n_alpha;
             require(std::abs(bands.orbital_spin_density_G[channel][g0].real()
-                                 * p.vol_bohr
+                                 * ions.vol_bohr
                              - count)
                         < 1e-8,
                     "PW frozen functional: fixed orbital density count");
         }
         if (fixed->n_beta == 0)
             for (std::size_t g = 0; g < ng; ++g)
-                require(ws.rho_spin_G[1][g] == std::complex<AccReal>{}
+                require(density.spin[1][g] == std::complex<AccReal>{}
                             && bands.reference_spin_density_G[1][g]
                                    == std::complex<AccReal>{}
                             && bands.orbital_spin_density_G[1][g]
@@ -179,7 +182,7 @@ void validate(const PWProblem& p, const FinalBandState& bands,
                         "PW frozen functional: nonzero payload in fixed empty "
                         "beta density");
     }
-    const int nk = static_cast<int>(p.gv_k.size());
+    const int nk = static_cast<int>(modes.size());
     const int ns = spin ? 2 : 1;
     const int owned = mpi.rank < nk ? (nk - 1 - mpi.rank) / mpi.size + 1 : 0;
     require(bands.local_blocks.size() == static_cast<std::size_t>(owned * ns),
@@ -189,8 +192,8 @@ void validate(const PWProblem& p, const FinalBandState& bands,
         const auto nb = b.occupations.size();
         require(b.ik >= 0 && b.ik < nk && b.ik % mpi.size == mpi.rank,
                 "PW frozen functional: invalid local k owner");
-        const auto nw = p.gv_k[b.ik].g.size();
-        require(b.spin >= 0 && b.spin < ns && b.k_weight == p.kg.weights[b.ik]
+        const auto nw = modes[b.ik].g.size();
+        require(b.spin >= 0 && b.spin < ns && b.k_weight == weights[b.ik]
                     && b.epsilon_ha.size() == nb
                     && b.coefficients.dimension() == 2
                     && b.coefficients.shape(0) == nb
@@ -266,13 +269,16 @@ void unpack(const std::array<AccReal, 6>& v, FrozenOperatorVirial& out) {
 }
 } // namespace
 FrozenFunctionalVirial assemble_frozen_functional_virial(
-    const PWProblem& problem, const FinalBandState& bands,
+    const PWIons& ions, const GVectorList& density_modes,
+    std::span<const GVectorList> modes, std::span<const AccReal> weights,
+    PWDensityView density, const FinalBandState& bands,
     cpu::xc::XCType functional, const EwaldSummation& ionic,
     XCBuilder& xc_scratch) {
     const auto mpi = layout();
     std::exception_ptr error;
     try {
-        validate(problem, bands, functional, ionic, mpi);
+        validate(ions, density_modes, modes, weights, density, bands,
+                 functional, ionic, mpi);
     } catch (...) {
         error = std::current_exception();
     }
@@ -280,7 +286,10 @@ FrozenFunctionalVirial assemble_frozen_functional_virial(
     FrozenFunctionalVirial out;
     out.density_mismatch_l2 = bands.density_mismatch_l2;
     AccReal electrons = 0;
+    std::vector<std::vector<Vec3>> positions(ions.species.size());
     try {
+        for (std::size_t ia = 0; ia < ions.atom_species.size(); ++ia)
+            positions.at(ions.atom_species[ia]).push_back(ions.positions[ia]);
         for (const auto& block : bands.local_blocks) {
             for (const auto f : block.occupations)
                 electrons += block.k_weight * f;
@@ -288,12 +297,14 @@ FrozenFunctionalVirial assemble_frozen_functional_virial(
                 {block.coefficients.data(), block.coefficients.size()},
                 block.occupations,
                 block.k_weight};
-            add(out.kinetic,
-                kinetic_frozen_virial(problem.gv_k[block.ik], view));
-            add(out.nonlocal, nonlocal_frozen_virial(*problem.potential,
-                                                     problem.gv_k[block.ik],
-                                                     problem.ws.atom_pos_bohr,
-                                                     view, problem.vol_bohr));
+            add(out.kinetic, kinetic_frozen_virial(modes[block.ik], view));
+            for (std::size_t kind = 0; kind < positions.size(); ++kind) {
+                if (positions[kind].empty())
+                    continue;
+                add(out.nonlocal, nonlocal_frozen_virial(
+                                      *ions.species[kind], modes[block.ik],
+                                      positions[kind], view, ions.vol_bohr));
+            }
         }
     } catch (...) {
         error = std::current_exception();
@@ -301,31 +312,34 @@ FrozenFunctionalVirial assemble_frozen_functional_virial(
     synchronize_error(mpi, error);
     sum_band_terms(out.kinetic, out.nonlocal, electrons, mpi);
     require(
-        std::isfinite(electrons) && std::abs(electrons - problem.n_elec) < 1e-8,
+        std::isfinite(electrons) && std::abs(electrons - ions.n_elec) < 1e-8,
         "PW frozen functional: collective occupations disagree with reference");
     try {
         out.hartree = hartree_frozen_virial(
-            problem.gv0, bands.orbital_density_G, problem.vol_bohr);
-        out.local = local_potential_frozen_virial(
-            *problem.potential, problem.gv0, problem.ws.atom_pos_bohr,
-            bands.orbital_density_G, problem.vol_bohr);
+            density_modes, bands.orbital_density_G, ions.vol_bohr);
+        for (std::size_t kind = 0; kind < positions.size(); ++kind) {
+            if (positions[kind].empty())
+                continue;
+            add(out.local,
+                local_potential_frozen_virial(
+                    *ions.species[kind], density_modes, positions[kind],
+                    bands.orbital_density_G, ions.vol_bohr));
+        }
         PWWorkspace scratch;
-        scratch.gvec = &problem.gv0;
-        scratch.n_g = problem.gv0.count();
-        scratch.fft_nx = problem.ws.fft_nx;
-        scratch.fft_ny = problem.ws.fft_ny;
-        scratch.fft_nz = problem.ws.fft_nz;
-        scratch.omega = problem.vol_bohr;
+        scratch.gvec = &density_modes;
+        scratch.n_g = density_modes.count();
+        scratch.fft_nx = density_modes.nx;
+        scratch.fft_ny = density_modes.ny;
+        scratch.fft_nz = density_modes.nz;
+        scratch.omega = ions.vol_bohr;
         scratch.fft = std::make_unique<FFTPlan3D>(
             scratch.fft_nx, scratch.fft_ny, scratch.fft_nz);
         scratch.nr = scratch.fft->nr();
         scratch.nc = scratch.fft->nc();
-        require(scratch.nr == problem.ws.nr && scratch.nc == problem.ws.nc,
-                "PW frozen functional: reference FFT sizes are inconsistent");
         scratch.rho_G.resize({bands.orbital_density_G.size()});
         std::copy(bands.orbital_density_G.begin(),
                   bands.orbital_density_G.end(), scratch.rho_G.begin());
-        scratch.nspin = problem.ws.nspin;
+        scratch.nspin = density.channels;
         if (scratch.nspin == 2) {
             scratch.rho_spin_G.resize(2);
             for (int channel = 0; channel < 2; ++channel) {

@@ -77,9 +77,11 @@ int run() {
     cpu::Frame frame(2);
     set_diamond_si(frame, kA0);
 
-    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
-                                                   "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMesh, cpu::xc::XCType::LSDA};
+    PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                    "/pw/Si_lda_nc.upf")},
+              kEcutRy,
+              kMesh,
+              cpu::xc::XCType::LSDA};
     method.tol = 1e-6;
     method.max_iter = 40;
 

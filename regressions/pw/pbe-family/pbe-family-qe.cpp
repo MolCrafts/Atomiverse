@@ -77,7 +77,7 @@ void run_case(const pbe_periodic_qe::Pin& pin, const char* backend) {
     auto potential = std::make_shared<cpu::pw::GthPseudopotential>(
         pin.spin ? molrs::Element::H : molrs::Element::Si,
         pin.spin ? "GTH-PBE-q1" : "GTH-PBE-q4");
-    Method m{potential, pin.spin ? 6. : 12., 1, xc(pin)};
+    Method m{{potential}, pin.spin ? 6. : 12., 1, xc(pin)};
     m.spin_polarized = pin.spin;
     m.multiplicity = pin.spin ? 2 : 1;
     m.smearing = electronic::Smearing::fermi_dirac;

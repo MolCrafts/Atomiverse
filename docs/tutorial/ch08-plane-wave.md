@@ -214,7 +214,7 @@ breakdown stays on `last_result()`). Run it through the one-pass
 #include "atomiverse/cpu/planewave/norm_conserving_potential.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
 
-cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf"),
+cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("tests/data/pw/Si_lda_nc.upf")},
                30.0,  // wavefunction cutoff [Ry]
                4};    // 4x4x4 Monkhorst-Pack mesh
 pw.tol      = 1e-6;   // SCF tolerance on the density change
@@ -234,9 +234,10 @@ solver.build(frame);
 const cpu::pw::PWResult& r = solver.run(frame);
 ```
 
-The potential is a required constructor argument; a null provider rejects.
-For a file-free silicon calculation, pass
-`std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si, "GTH-PBE-q4")`.
+The constructor takes a list of NC providers and selects one per element by atomic number.
+For a file-free silicon calculation, put
+`std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si, "GTH-PBE-q4")`
+in that list.
 For different scalar NC physics, derive `NormConservingPotential` and supply
 immutable radial tables plus the batched local value/derivative operation.
 PW owns all transforms, force contractions and electronic iteration. The
@@ -277,18 +278,16 @@ work (problem assembly, per-k table binding), the Pulay coefficient solve
 (bit-for-bit the CPU's `solve_pulay_coefficients`) and the energy report.
 
 ```cpp
-cuda::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si_lda_nc.upf"), 15.0, 2, cpu::scf::XCType::LSDA};  // required on this backend
+cuda::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si_lda_nc.upf")}, 15.0, 2, cpu::xc::XCType::LSDA};
 pw.build(frame);
 const auto& r = pw.run(frame);    // r.energy [Ry], r.energy_ha [Ha]
 ```
 
-The device path is a strict subset of the CPU path, and a setting it cannot honour makes `run()` throw with a how-to instead of silently computing a
-different Hamiltonian: only `XCType::LSDA`, only restricted
-(`spin_polarized = false`, `multiplicity = 1`), only fixed closed-shell
-occupations (`smearing = Smearing::none`). k-points are not distributed across
-MPI ranks on this backend — every rank computes every k-point, so
-`n_kpts_local == n_kpts`. Use `cpu::pw::PW` for GGA, collinear spin, metallic
-smearing, or MPI k-point parallelism.
+CUDA accepts builtin GTH and scalar NC-UPF providers in the same list. The
+SCF supports LSDA and the semilocal PBE family, with restricted or collinear
+spin and fixed or smeared occupations. Each CUDA rank computes the full k mesh
+and reports `n_kpts_local == n_kpts`. CPU PW distributes k-points across MPI
+ranks.
 
 CPU↔CUDA agreement at identical settings is asserted end-to-end by
 `pw-cuda-lda-si` (`--device=both`), which also carries the
@@ -317,7 +316,7 @@ completeness; production acceptance in the regressions suite compares **EOS**
 the regression reference notes.
 
 ```cpp
-cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("…/Si_lda_nc.upf"), 15.0, 2};  // tutorial; ~30 Ry for production Si
+cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("…/Si_lda_nc.upf")}, 15.0, 2};  // tutorial; ~30 Ry for production Si
 cpu::single_point(frame, pw);           // frame.meta.get(kEnergy) (eV)
 auto res = pw.last_result();            // Ry / Ha on the result object
 ```

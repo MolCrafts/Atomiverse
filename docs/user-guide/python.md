@@ -1330,7 +1330,7 @@ argument optional and already at its C++ default:
 ## Plane-wave DFT (`pw` module)
 
 ```python
-pw = av.PW(potential=av.GthPseudopotential(14, "GTH-PBE-q4"),   # analytic GTH for Si; no external file
+pw = av.PW(potentials=[av.GthPseudopotential(14, "GTH-PBE-q4")],   # analytic GTH for Si; no external file
            ecut_ry=30.0, k_mesh=4)
 pw.build(frame)
 result = pw.run(frame)
@@ -1383,7 +1383,7 @@ result conventions do not change the shared Frame units.
 ### Spin, functionals and metals
 
 ```python
-pw = av.PW(potential=av.GthPseudopotential(14, "GTH-PBE-q4"), ecut_ry=30.0, k_mesh=4,
+pw = av.PW(potentials=[av.GthPseudopotential(14, "GTH-PBE-q4")], ecut_ry=30.0, k_mesh=4,
            xc="LSDA")       # name, not an enum; unknown names raise ValueError
 pw.spin_polarized = True    # collinear; needed for an odd electron count
 pw.multiplicity = 2         # fixed occupations: N↑ − N↓ = M − 1 exactly
@@ -1420,7 +1420,7 @@ from atomiverse.md import MD
 from atomiverse.md.integrator import VelocityVerlet
 from atomiverse.pw import PW, GthPseudopotential
 
-pw = PW(potential=GthPseudopotential(14, "GTH-PBE-q4"), ecut_ry=8.0, k_mesh=1)
+pw = PW(potentials=[GthPseudopotential(14, "GTH-PBE-q4")], ecut_ry=8.0, k_mesh=1)
 pw.tol = 1e-4
 pw.max_iter = 12            # one step is one whole SCF — budget it
 
@@ -1443,14 +1443,14 @@ converged density), seconds of work at production settings. A
 Python-side run therefore wants a small cell, a low `ecut_ry` and a modest
 `max_iter`.
 
-### Immutable norm-conserving potential
+### Immutable norm-conserving potentials
 
 | Member | What it takes |
 |--------|---------------|
-| `potential` | Immutable `GthPseudopotential(atomic_number, name)` or `UpfPseudopotential(path)`. GTH selects a published table for an explicit element; UPF loads its declared element and integral valence once. |
+| `potentials` | Sequence of immutable `GthPseudopotential(atomic_number, name)` and `UpfPseudopotential(path)` providers, keyed by atomic number. GTH selects a published table for an explicit element; UPF loads its declared element and integral valence once. |
 
-A provider is required. Every Frame atom must match its atomic number;
-mixed-species frames are rejected for both built-ins. USPP, PAW, NLCC and
+Supply exactly one provider for each element in the Frame. A single
+calculation can combine GTH and NC-UPF providers. USPP, PAW, NLCC and
 spin-orbit channels are rejected at admission. The CPU PW path uses one
 NC operator implementation for built-in and independently authored C++
 providers. A physical provider never owns an electronic Driver.

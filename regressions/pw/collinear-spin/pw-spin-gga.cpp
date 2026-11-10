@@ -64,7 +64,9 @@ int run() {
 
     auto frame = o2_frame();
 
-    PW pbe{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
+    PW pbe{{std::make_shared<UpfPseudopotential>(upf)},
+           12.0,
+           1,
            cpu::xc::XCType::PBE};
     pbe.tol = 1e-7;
     pbe.max_iter = 200;
@@ -98,7 +100,9 @@ int run() {
 
     // LSDA spin twin for GGA activation (same geometry / occupations).
     auto frame_lsda = o2_frame();
-    PW lsda{std::make_shared<UpfPseudopotential>(upf), 12.0, 1,
+    PW lsda{{std::make_shared<UpfPseudopotential>(upf)},
+            12.0,
+            1,
             cpu::xc::XCType::LSDA};
     lsda.tol = 1e-7;
     lsda.max_iter = 200;
