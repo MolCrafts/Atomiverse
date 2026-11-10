@@ -3,6 +3,7 @@ from benchmarks.framework.specification import Check, Method, Row
 from benchmarks.scf.hf import eight_water_chain, row
 
 _rhf = row("RHF", "sto3g.energy", "energy", "STO-3G", ["water"])
+_rhf.systems[0].tiers.insert(0, "smoke")
 _participants = [p for p in _rhf.participants if p.id != "gpu4pyscf.cuda"]
 _cuda = next(p for p in _participants if p.id == "atv.cuda")
 _cuda.available = False
