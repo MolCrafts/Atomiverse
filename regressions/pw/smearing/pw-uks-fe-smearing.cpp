@@ -50,7 +50,9 @@ cpu::Frame make_fe_bcc_primitive(double a_ang) {
 PWResult solve(const char* upf, double degauss_ry) {
     auto frame = make_fe_bcc_primitive(/*a_ang=*/2.87);
     // ecut 12 Ry: modest algorithm pin (≤ 60 s).
-    PW pw{std::make_shared<UpfPseudopotential>(upf), 12.0, 2,
+    PW pw{{std::make_shared<UpfPseudopotential>(upf)},
+          12.0,
+          2,
           cpu::xc::XCType::PBE};
     pw.tol = 2e-3;
     pw.max_iter = 30;

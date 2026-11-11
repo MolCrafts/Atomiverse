@@ -25,16 +25,15 @@ namespace pw {
 namespace internal {
 
 PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
-                            PWProblem& prob) {
+                            PWSetup& prob, PWWorkspace& ws) {
     PWResult result{};
 
-    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
-                     prob);
-    PWWorkspace& ws = prob.ws;
-    auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
+
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const int n_bands_occ = prob.n_bands;
-    const AccReal vol_bohr = prob.vol_bohr;
+    const AccReal vol_bohr = prob.ions.vol_bohr;
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
@@ -59,38 +58,28 @@ PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
 
         density.begin(ws);
         AccReal e_band = 0;
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int ik = 0; ik < n_kpts; ++ik) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-            ws.gvec = &gvk;
-            ws.n_g = gvk.count();
-            ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.T_G[ig] = gvk.ekin[ig];
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
 
             davidson.step(ws);
 
             const AccReal weight =
-                prob.kg.weights[static_cast<std::size_t>(ik)];
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands_occ; ++b)
                 e_band += weight * ws.eigenvalues[b] * AccReal(2);
             density.accumulate_kpoint(ws, weight, n_bands_occ);
 
-            ws.gvec = saved_gvec;
-            ws.n_g = gv0.count();
+            ws.bind(saved_point);
         }
 
         const auto terms =
-            iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+            iteration_energy(ws, e_band, prob.ions.ew_total, vol_bohr);
         const AccReal residual = density.finish(ws);
         result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
         result.energy = result.energy_ha / qe_units::rydberg_to_hartree;
-        log_iteration_energy(terms, ws, prob.ew_total, iter);
+        log_iteration_energy(terms, ws, prob.ions.ew_total, iter);
 
         if (convergence.step(residual)) {
             result.converged = true;
@@ -106,7 +95,8 @@ PWResult run_restricted_scf(const cpu::Frame& frame, const PW& method,
 }
 
 PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
-                           PWProblem& prob, int& n_alpha, int& n_beta) {
+                           PWSetup& prob, PWWorkspace& ws, int& n_alpha,
+                           int& n_beta) {
     if (!method.spin_polarized)
         throw std::invalid_argument(
             "run_collinear_scf: requires method.spin_polarized");
@@ -118,12 +108,12 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
             "run_collinear_scf: multiplicity must be >= 1");
 
     PWResult result{};
-    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
-                     prob);
-    PWWorkspace& ws = prob.ws;
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
+
     auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const int n_elec = prob.n_elec;
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
+    const int n_elec = prob.ions.n_elec;
     const int mag = method.multiplicity - 1;
     if ((n_elec + mag) % 2 != 0 || mag > n_elec)
         throw std::invalid_argument(
@@ -133,7 +123,7 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
     n_beta = (n_elec - mag) / 2;
     const int n_occ[2] = {n_alpha, n_beta};
     const int n_bands = std::max(std::max(n_alpha, n_beta), 1);
-    const AccReal vol_bohr = prob.vol_bohr;
+    const AccReal vol_bohr = prob.ions.vol_bohr;
     const int ng0 = gv0.count();
 
     ws.mix_beta = AccReal(method.mix_beta);
@@ -180,7 +170,7 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
 
         xt::xarray<std::complex<AccReal>> rho_out[2];
         AccReal e_band = 0;
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int s = 0; s < 2; ++s) {
             // Empty fixed-occupation channels have exactly zero density and
             // energy; do not seed the occupied solve with virtual orbitals.
@@ -195,29 +185,19 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
             veff.step(ws);
             density.begin(ws);
             for (int ik = 0; ik < n_kpts; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                ws.gvec = &gvk;
-                ws.n_g = gvk.count();
-                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.T_G[ig] = gvk.ekin[ig];
-                if (!prob.kb_proj_k.empty())
-                    ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
                 davidson.step(ws);
                 const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 for (int b = 0; b < n_occ[s]; ++b)
                     e_band += weight * ws.eigenvalues[b];
                 density.accumulate_kpoint(ws, weight, n_occ[s], AccReal(1));
-                ws.gvec = saved_gvec;
-                ws.n_g = ng0;
+                ws.bind(saved_point);
             }
             density.extract(ws, rho_out[s]);
         }
         const auto terms =
-            iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+            iteration_energy(ws, e_band, prob.ions.ew_total, vol_bohr);
         const AccReal residual = density.mix_spin(ws, rho_out[0], rho_out[1]);
         result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
@@ -242,7 +222,8 @@ PWResult run_collinear_scf(const cpu::Frame& frame, const PW& method,
 }
 
 PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
-                                 PWProblem& prob, int n_bands_min) {
+                                 PWSetup& prob, PWWorkspace& ws,
+                                 int n_bands_min) {
     if (!method.spin_polarized)
         throw std::invalid_argument(
             "run_collinear_smear_scf: requires method.spin_polarized");
@@ -259,12 +240,12 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         n_bands_min = 1;
 
     PWResult result{};
-    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
-                     prob);
-    PWWorkspace& ws = prob.ws;
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
+
     auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const int n_elec = prob.n_elec;
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
+    const int n_elec = prob.ions.n_elec;
     const int mag0 = method.multiplicity - 1;
     if ((n_elec + mag0) % 2 != 0 || mag0 > n_elec)
         throw std::invalid_argument(
@@ -289,7 +270,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
     const AccReal degauss_ha =
         AccReal(method.degauss) * AccReal(qe_units::rydberg_to_hartree);
 
-    const AccReal vol_bohr = prob.vol_bohr;
+    const AccReal vol_bohr = prob.ions.vol_bohr;
     const int ng0 = gv0.count();
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
@@ -338,26 +319,16 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         poisson.step(ws);
         xc.step_spin(ws, method.xc);
 
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int s = 0; s < 2; ++s) {
             // Veff on the density G-sphere (Γ); restore after each k so the
             // next spin channel does not inherit a k-sphere n_g.
-            ws.gvec = saved_gvec;
-            ws.n_g = ng0;
+            ws.bind(saved_point);
             for (int ig = 0; ig < ng0; ++ig)
                 ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
             veff.step(ws);
             for (int ik = 0; ik < n_kpts; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                ws.gvec = &gvk;
-                ws.n_g = gvk.count();
-                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.T_G[ig] = gvk.ekin[ig];
-                if (!prob.kb_proj_k.empty())
-                    ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
                 davidson.step(ws);
                 const std::size_t sk =
                     static_cast<std::size_t>(s * n_kpts + ik);
@@ -368,8 +339,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
                 wfc_sk[sk] = ws.wfc;
             }
         }
-        ws.gvec = saved_gvec;
-        ws.n_g = ng0;
+        ws.bind(saved_point);
 
         // Shared μ over both spins (spin_degen = 1).
         std::vector<AccReal> all_evals;
@@ -378,7 +348,8 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         all_weights.reserve(static_cast<std::size_t>(2 * n_kpts * n_bs));
         for (int s = 0; s < 2; ++s) {
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev =
                     evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                 for (int b = 0; b < n_bs && b < static_cast<int>(ev.size());
@@ -400,7 +371,8 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
             static_cast<std::size_t>(2 * n_kpts));
         for (int s = 0; s < 2; ++s) {
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ev =
                     evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                 std::vector<AccReal> w_one(ev.size(), w);
@@ -424,7 +396,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
         for (int s = 0; s < 2; ++s) {
             density.begin(ws);
             for (int ik = 0; ik < n_kpts; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
+                auto& gvk = prob.mesh.gv_k[static_cast<std::size_t>(ik)];
                 ws.gvec = &gvk;
                 ws.n_g = gvk.count();
                 const std::size_t sk =
@@ -434,7 +406,7 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
                 for (std::size_t b = 0; b < evals_sk[sk].size(); ++b)
                     ws.eigenvalues[b] = evals_sk[sk][b];
                 const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& occ = occ_sk[sk];
                 const int nb = static_cast<int>(occ.size());
                 for (int b = 0; b < nb; ++b)
@@ -442,12 +414,11 @@ PWResult run_collinear_smear_scf(const cpu::Frame& frame, const PW& method,
                               * occ[static_cast<std::size_t>(b)];
                 density.accumulate_kpoint(ws, weight, nb, occ.data());
             }
-            ws.gvec = saved_gvec;
-            ws.n_g = ng0;
+            ws.bind(saved_point);
             density.extract(ws, rho_out[s]);
         }
 
-        auto terms = iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+        auto terms = iteration_energy(ws, e_band, prob.ions.ew_total, vol_bohr);
         const AccReal residual = density.mix_spin(ws, rho_out[0], rho_out[1]);
 
         result.iterations = iter + 1;

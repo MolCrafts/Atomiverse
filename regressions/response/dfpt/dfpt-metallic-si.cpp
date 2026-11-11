@@ -70,9 +70,11 @@ int run() {
     cell(2, 2) = 0;
     frame.box.set_cell(cell);
 
-    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
-                                                   "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMesh, cpu::xc::XCType::LSDA};
+    PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                    "/pw/Si_lda_nc.upf")},
+              kEcutRy,
+              kMesh,
+              cpu::xc::XCType::LSDA};
     method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = kDegaussRy;
     // Gapped Si twin: extra empty states are optional for FD fill (near

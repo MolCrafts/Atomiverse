@@ -1,6 +1,8 @@
 /// @file cpu/scf/internal/exact_jk.cpp
 #include "atomiverse/cpu/scf/internal/exact_jk.h"
 
+#include "exact_jk_contraction.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -27,6 +29,10 @@
 
 namespace ATV::cpu::scf::internal {
 namespace {
+using exact_jk_detail::contract_j_n;
+using exact_jk_detail::contract_k_n;
+using exact_jk_detail::pair_index;
+
 double resident_mb() {
 #if defined(__linux__)
     std::ifstream status("/proc/self/statm");
@@ -43,12 +49,6 @@ double resident_mb() {
 #endif
     return 0;
 }
-std::size_t pair_index(std::size_t a, std::size_t b) {
-    if (a < b)
-        std::swap(a, b);
-    return a * (a + 1) / 2 + b;
-}
-
 // Visit each symmetry-unique AO quartet once. Block-pair order is not AO-pair
 // order, so only a diagonal block quartet needs the ab >= cd filter.
 // `bound(bra, ket)` scales the Schwarz product by the largest density element
@@ -129,74 +129,6 @@ void visit_quartets(const ShellBlockPairList& pairs, int left,
                 }
             }
         }
-    }
-}
-
-// Distinct permutations only; no density symmetry assumption. The same
-// contraction handles RHF, open-shell and all four real GHF spin blocks.
-// Densities and outputs are interleaved, element-major ([i + j n][m] for m
-// densities), so one integral updates contiguous memory for every density.
-// J is symmetric even for nonsymmetric densities: combine the two density
-// orientations before scattering.
-template <int M>
-inline void contract_j_n(int n, int m, const double* p, double* j, int a, int b,
-                         int c, int d, double v) {
-    if constexpr (M > 0)
-        m = M;
-    const auto at = [n, m](int x, int y) {
-        return static_cast<std::size_t>(x + y * n) * m;
-    };
-    const double* pcd = p + at(c, d);
-    const double* pdc = p + at(d, c);
-    const double* pab = p + at(a, b);
-    const double* pba = p + at(b, a);
-    double* jab = j + at(a, b);
-    double* jba = j + at(b, a);
-    double* jcd = j + at(c, d);
-    double* jdc = j + at(d, c);
-    const bool cd_off = c != d, ab_off = a != b, mirror = a != c || b != d;
-    for (int t = 0; t < m; ++t) {
-        const double x = v * (pcd[t] + (cd_off ? pdc[t] : 0));
-        jab[t] += x;
-        if (ab_off)
-            jba[t] += x;
-        if (mirror) {
-            const double y = v * (pab[t] + (ab_off ? pba[t] : 0));
-            jcd[t] += y;
-            if (cd_off)
-                jdc[t] += y;
-        }
-    }
-}
-
-// K uses all eight permutations; `scale[t]` is density t's exchange factor.
-template <int M>
-inline void contract_k_n(int n, int m, const double* p, double* k,
-                         const double* scale, int a, int b, int c, int d,
-                         double v) {
-    if constexpr (M > 0)
-        m = M;
-    const auto add = [&](int i, int q, int r, int s) {
-        double* out = k + static_cast<std::size_t>(i + r * n) * m;
-        const double* in = p + static_cast<std::size_t>(q + s * n) * m;
-        for (int t = 0; t < m; ++t)
-            out[t] += v * scale[t] * in[t];
-    };
-    add(a, b, c, d);
-    if (a != b)
-        add(b, a, c, d);
-    if (c != d)
-        add(a, b, d, c);
-    if (a != b && c != d)
-        add(b, a, d, c);
-    if (a != c || b != d) {
-        add(c, d, a, b);
-        if (c != d)
-            add(d, c, a, b);
-        if (a != b)
-            add(c, d, b, a);
-        if (a != b && c != d)
-            add(d, c, b, a);
     }
 }
 
@@ -375,6 +307,30 @@ void ExactJK::prepare(const IntegralView& ints, double memory_mb, bool mpi,
              cache_bytes(), elapsed_ms(start), ranks_, omega_);
 }
 
+std::optional<double> ExactJK::coulomb_cache_screening_bound() const {
+    if (!cached() || omega_ != 0.0)
+        return std::nullopt;
+    if (pairs_.blocks.empty())
+        return 0.0; // Cache filled from a supplied dense tensor.
+    // Whole pairs are discarded at Q <= threshold. For retained pairs the
+    // quartet test drops Q_bra * Q_ket < threshold.
+    double max_schwarz = std::max(1.0, pairs_.threshold);
+    for (const auto& pair : pairs_.pairs)
+        max_schwarz = std::max(max_schwarz, pair.schwarz);
+    return pairs_.threshold * max_schwarz;
+}
+
+void ExactJK::unpack_coulomb_cache_row(std::size_t pair, double* ao) const {
+    const auto n = static_cast<std::size_t>(n_);
+    std::size_t other = 0;
+    for (std::size_t a = 0; a < n; ++a)
+        for (std::size_t b = 0; b <= a; ++b, ++other) {
+            const double value = eri_[pair_index(pair, other)];
+            ao[a * n + b] = value;
+            ao[b * n + a] = value;
+        }
+}
+
 void ExactJK::compute(std::span<const JKRequest> requests) const {
     const auto start = LogClock::now();
     if (n_ <= 0)
@@ -454,55 +410,62 @@ void ExactJK::compute(std::span<const JKRequest> requests) const {
         scale[t] = requests[kr[t]].k_scale;
     }
     std::vector<std::vector<double>> js(nt), ks(nt);
+    if (!cached()
+        || !exact_jk_detail::try_contract_cached(
+            pairs_, n_, rank_, ranks_, eri_, mj, mk, dj_in.data(), dk_in.data(),
+            scale.data(), js, ks)) {
 #ifdef _OPENMP
 #pragma omp parallel
 #endif
-    {
-        int tid = 0;
+        {
+            int tid = 0;
 #ifdef _OPENMP
-        tid = omp_get_thread_num();
+            tid = omp_get_thread_num();
 #endif
-        js[tid].assign(nn * mj, 0.0);
-        ks[tid].assign(nn * mk, 0.0);
-        double* jt = js[tid].data();
-        double* kt = ks[tid].data();
-        const double* pj = dj_in.data();
-        const double* pk = dk_in.data();
-        const double* sk = scale.data();
-        const int n = n_;
-        const auto consume = [=](int a, int b, int c, int d, double v) {
-            if (v == 0.0)
-                return;
-            if (mj)
-                contract_j(n, mj, pj, jt, a, b, c, d, v);
-            if (mk)
-                contract_k(n, mk, pk, kt, sk, a, b, c, d, v);
-        };
-        if (cached()) {
-            // As in PySCF nr_incore, schedule canonical AO-pair rows in
-            // small dynamic chunks, keeping heavy rows balanced across threads.
+            js[tid].assign(nn * mj, 0.0);
+            ks[tid].assign(nn * mk, 0.0);
+            double* jt = js[tid].data();
+            double* kt = ks[tid].data();
+            const double* pj = dj_in.data();
+            const double* pk = dk_in.data();
+            const double* sk = scale.data();
+            const int n = n_;
+            const auto consume = [=](int a, int b, int c, int d, double v) {
+                if (v == 0.0)
+                    return;
+                if (mj)
+                    contract_j(n, mj, pj, jt, a, b, c, d, v);
+                if (mk)
+                    contract_k(n, mk, pk, kt, sk, a, b, c, d, v);
+            };
+            if (cached()) {
+                // As in PySCF nr_incore, schedule canonical AO-pair rows in
+                // small dynamic chunks, keeping heavy rows balanced across threads.
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic, 4)
 #endif
-            for (std::int64_t ab = rank_;
-                 ab < static_cast<std::int64_t>(n_) * (n_ + 1) / 2;
-                 ab += ranks_) {
-                const int a =
-                    static_cast<int>((std::sqrt(8.0 * ab + 1) - 1) / 2);
-                const int b = ab - static_cast<std::int64_t>(a) * (a + 1) / 2;
-                const double* row = eri_.data() + ab * (ab + 1) / 2;
-                std::size_t cd = 0;
-                for (int c = 0; c <= a; ++c)
-                    for (int d = 0; d <= (c == a ? b : c); ++d, ++cd)
-                        consume(a, b, c, d, row[cd]);
-            }
-        } else {
+                for (std::int64_t ab = rank_;
+                     ab < static_cast<std::int64_t>(n_) * (n_ + 1) / 2;
+                     ab += ranks_) {
+                    const int a =
+                        static_cast<int>((std::sqrt(8.0 * ab + 1) - 1) / 2);
+                    const int b =
+                        ab - static_cast<std::int64_t>(a) * (a + 1) / 2;
+                    const double* row = eri_.data() + ab * (ab + 1) / 2;
+                    std::size_t cd = 0;
+                    for (int c = 0; c <= a; ++c)
+                        for (int d = 0; d <= (c == a ? b : c); ++d, ++cd)
+                            consume(a, b, c, d, row[cd]);
+                }
+            } else {
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic)
 #endif
-            for (int left = rank_; left < static_cast<int>(pairs_.pairs.size());
-                 left += ranks_)
-                visit_quartets(pairs_, left, consume, bound, omega_);
+                for (int left = rank_;
+                     left < static_cast<int>(pairs_.pairs.size());
+                     left += ranks_)
+                    visit_quartets(pairs_, left, consume, bound, omega_);
+            }
         }
     }
     const auto emit = [&](const std::vector<std::vector<double>>& parts, int m,

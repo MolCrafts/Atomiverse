@@ -1609,12 +1609,12 @@ multigrid_integrate_veff_cells(const MultiGrid& mg, const ProductSet& products,
 }
 
 namespace internal {
-std::vector<std::array<double, 3>> multigrid_density_center_gradient(
+template <class DensityForProduct>
+static std::vector<std::array<double, 3>> product_center_gradient(
     const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<double>& P, const std::vector<double>& potential,
+    DensityForProduct density, const std::vector<double>& potential,
     const std::vector<int>& basis_atoms, int n_atoms, double eps) {
     if (nb < 1 || n_atoms < 1 || mg.levels.empty()
-        || P.size() != static_cast<std::size_t>(nb) * nb
         || basis_atoms.size() != static_cast<std::size_t>(nb)
         || potential.size() != static_cast<std::size_t>(mg.levels[0].npts())
         || products.by_level.size() != mg.levels.size()
@@ -1655,7 +1655,8 @@ std::vector<std::array<double, 3>> multigrid_density_center_gradient(
                     const auto& prod = prods[task.beg + j];
                     const auto& bra = products.prims[prod.ua];
                     const double weight = std::abs(product_density_weight(
-                        prod, products.prims, products.contribs, nb, P));
+                        prod, products.prims, products.contribs, nb,
+                        density(prod)));
                     magnitude =
                         std::max(magnitude,
                                  weight * vmax
@@ -1683,6 +1684,7 @@ std::vector<std::array<double, 3>> multigrid_density_center_gradient(
                         const auto& prod = prods[task.beg + j];
                         const auto& bra = products.prims[prod.ua];
                         const auto& ket = products.prims[prod.ub];
+                        const auto& P = density(prod);
                         const double integral =
                             grid.weight() * prod.k
                             * (2 * bra.alpha * integrals[(2 * axis) * n + j]
@@ -1698,8 +1700,8 @@ std::vector<std::array<double, 3>> multigrid_density_center_gradient(
                                             + cb.mu]
                                           * cb.coeff;
                             }
-                            // Ordered bra/ket products and symmetric P: the
-                            // ket-center contribution equals the bra term.
+                            // Ordered product pairs and D(-t) = D(t)^T
+                            // make the ket-center contribution equal the bra term.
                             accum[3 * basis_atoms[ca.mu] + axis] +=
                                 2 * ca.coeff * weight * integral;
                         }
@@ -1713,6 +1715,35 @@ std::vector<std::array<double, 3>> multigrid_density_center_gradient(
                     gradient[atom][axis] += chunk[3 * atom + axis];
     }
     return gradient;
+}
+
+std::vector<std::array<double, 3>> multigrid_density_center_gradient(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& P, const std::vector<double>& potential,
+    const std::vector<int>& basis_atoms, int n_atoms, double eps) {
+    if (P.size() != static_cast<std::size_t>(nb) * nb)
+        throw std::invalid_argument(
+            "Product center gradient: incompatible density shape");
+    return product_center_gradient(
+        mg, products, nb, [&](const GridProduct&) -> const auto& { return P; },
+        potential, basis_atoms, n_atoms, eps);
+}
+
+std::vector<std::array<double, 3>> multigrid_density_center_gradient_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<std::vector<double>>& D,
+    const std::vector<double>& potential, const std::vector<int>& basis_atoms,
+    int n_atoms, double eps) {
+    const auto nn = static_cast<std::size_t>(nb) * nb;
+    if (D.size() != products.cells.size()
+        || std::any_of(D.begin(), D.end(),
+                       [nn](const auto& row) { return row.size() != nn; }))
+        throw std::invalid_argument(
+            "Product center gradient: incompatible Bloch density stack");
+    return product_center_gradient(
+        mg, products, nb,
+        [&](const GridProduct& prod) -> const auto& { return D[prod.tcell]; },
+        potential, basis_atoms, n_atoms, eps);
 }
 } // namespace internal
 

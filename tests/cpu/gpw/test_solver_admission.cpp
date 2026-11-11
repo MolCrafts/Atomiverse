@@ -1,4 +1,5 @@
 #include "atomiverse/cpu/gpw/gpw_solver.h"
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include <gtest/gtest.h>
 #include <limits>
 
@@ -34,6 +35,24 @@ void expect_stress_frame_preserved(const ATV::cpu::Frame& frame) {
 }
 
 } // namespace
+
+TEST(GpwAdmission, BlochSamplingPreservesExplicitOrderAndWeights) {
+    using ATV::cpu::gpw::internal::sample_kpoints;
+    const int mesh[3] = {1, 1, 2};
+    const std::array<std::array<double, 3>, 2> points{
+        {{0, 0, 0.25}, {0, 0, -0.25}}};
+    const std::array<double, 2> weights{0.3, 0.7};
+    const auto explicit_points = sample_kpoints(mesh, true, points, weights);
+    ASSERT_EQ(explicit_points.size(), 2u);
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        EXPECT_EQ(explicit_points[i].frac[2], points[i][2]);
+        EXPECT_EQ(explicit_points[i].weight, weights[i]);
+    }
+    EXPECT_EQ(sample_kpoints(mesh, true, {}, {}).size(), 1u);
+    EXPECT_EQ(sample_kpoints(mesh, false, {}, {}).size(), 2u);
+    EXPECT_THROW(sample_kpoints(mesh, false, points, std::array{0.3, 0.5}),
+                 std::invalid_argument);
+}
 
 TEST(GpwAdmission, RejectsInvalidStressStepBeforeEvaluatingFrame) {
     auto frame = stress_guard_frame();

@@ -157,7 +157,7 @@ def _si2_method(xc: str = "PBE") -> "PW":
     @param xc: Exchange-correlation functional name (identity, fixed at
         construction).
     """
-    pw = PW(potential=GthPseudopotential(14, _GTH_SI), ecut_ry=_ECUT_RY, k_mesh=_K_MESH, xc=xc)
+    pw = PW(potentials=[GthPseudopotential(14, _GTH_SI)], ecut_ry=_ECUT_RY, k_mesh=_K_MESH, xc=xc)
     pw.tol = _TOL
     pw.max_iter = _MAX_ITER
     return pw
@@ -269,13 +269,13 @@ class TestPwIdentity:
 
     def test_identity_reads_back(self) -> None:
         pw = _si2_method(xc="LSDA")
-        assert pw.potential.atomic_number == 14
-        assert pw.potential.valence == 4
+        assert pw.potentials[0].atomic_number == 14
+        assert pw.potentials[0].valence == 4
         assert pw.ecut_ry == pytest.approx(_ECUT_RY)
         assert pw.k_mesh == _K_MESH
         assert pw.xc == "LSDA"
 
-    @pytest.mark.parametrize("name", ("potential", "ecut_ry", "k_mesh", "xc"))
+    @pytest.mark.parametrize("name", ("potentials", "ecut_ry", "k_mesh", "xc"))
     def test_identity_is_read_only(self, name: str) -> None:
         pw = _si2_method()
         with pytest.raises(AttributeError):
@@ -287,7 +287,7 @@ class TestPwIdentity:
 
     def test_null_pseudopotential_raises(self) -> None:
         with pytest.raises((TypeError, ValueError)):
-            PW(potential=None, ecut_ry=_ECUT_RY, k_mesh=_K_MESH)
+            PW(potentials=None, ecut_ry=_ECUT_RY, k_mesh=_K_MESH)
 
 
 # ── forces(frame): (N,3) [eV/Å] + write-back ─────────────────────────
@@ -538,7 +538,7 @@ class TestPwSpinPolarized:
     def h_atom_result() -> "PWResult":
         """Spin-polarized doublet H in the pw-bomd-h cell."""
         frame = _h_atom_frame()
-        pw = PW(potential=GthPseudopotential(1, _GTH_H), ecut_ry=_H_ECUT_RY, k_mesh=_K_MESH)
+        pw = PW(potentials=[GthPseudopotential(1, _GTH_H)], ecut_ry=_H_ECUT_RY, k_mesh=_K_MESH)
         pw.tol = _TOL
         pw.max_iter = _H_MAX_ITER
         pw.mix_beta = _H_MIX_BETA

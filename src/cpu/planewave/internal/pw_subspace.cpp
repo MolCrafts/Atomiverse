@@ -232,14 +232,16 @@ void jacobi_eigh_hermitian(int n, std::complex<AccReal>* A, AccReal* eig,
         vecs[i] = vecs_s[i];
 }
 
-int init_subspace(const PWWorkspace& ws, int n_bands,
+int init_subspace(const GVectorList& modes, AtomicOrbitalView orbitals,
+                  std::span<const Vec3> positions,
+                  const xt::xarray<std::complex<AccReal>>& trial, int n_bands,
                   std::vector<std::complex<AccReal>>& sub_vectors) {
-    int ng = ws.n_g;
+    int ng = modes.count();
     int nb = n_bands;
     const bool have_wavefunctions =
-        ws.wfc.dimension() == 2
-        && ws.wfc.shape()[0] >= static_cast<std::size_t>(nb)
-        && ws.wfc.shape()[1] == static_cast<std::size_t>(ng);
+        trial.dimension() == 2
+        && trial.shape()[0] >= static_cast<std::size_t>(nb)
+        && trial.shape()[1] == static_cast<std::size_t>(ng);
 
     // ── Initialize subspace: lowest T(G) plane waves ──
     struct DiagElem {
@@ -248,16 +250,16 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
     };
     std::vector<DiagElem> diag(ng);
     for (int i = 0; i < ng; ++i)
-        diag[i] = {ws.T_G[i], i};
+        diag[i] = {modes.ekin[i], i};
     std::sort(
         diag.begin(), diag.end(),
         [](const DiagElem& a, const DiagElem& b) { return a.val < b.val; });
 
     // Count atomic wavefunction states: n_atoms × Σ (2l+1)
     int n_atom_states = 0;
-    for (size_t ia = 0; ia < ws.atom_wfc.size(); ++ia)
-        for (size_t iw = 0; iw < ws.atom_wfc[ia].size(); ++iw)
-            n_atom_states += 2 * ws.atom_wfc[ia][iw].l + 1;
+    for (size_t ia = 0; ia < orbitals.size(); ++ia)
+        for (size_t iw = 0; iw < orbitals[ia].size(); ++iw)
+            n_atom_states += 2 * orbitals[ia][iw].l + 1;
 
     int n_sub;
     if (n_atom_states >= nb) {
@@ -273,13 +275,12 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
         // Initialize subspace with atomic wavefunctions (QE atomic_wfc_mod.f90)
         // ψ_{nlm}(G) = i^l · Y_lm(Ĝ) · chi_G(G) · exp(-iG·R)
         int j = 0;
-        auto& gv = *ws.gvec;
-        for (size_t ia = 0; ia < ws.atom_wfc.size() && j < n_sub; ++ia) {
-            AccReal ax = ws.atom_pos_bohr[ia][0], ay = ws.atom_pos_bohr[ia][1],
-                    az = ws.atom_pos_bohr[ia][2];
-            for (size_t iw = 0; iw < ws.atom_wfc[ia].size() && j < n_sub;
-                 ++iw) {
-                int l = ws.atom_wfc[ia][iw].l;
+        const auto& gv = modes;
+        for (size_t ia = 0; ia < orbitals.size() && j < n_sub; ++ia) {
+            AccReal ax = positions[ia][0], ay = positions[ia][1],
+                    az = positions[ia][2];
+            for (size_t iw = 0; iw < orbitals[ia].size() && j < n_sub; ++iw) {
+                int l = orbitals[ia][iw].l;
                 int nm = 2 * l + 1;
                 for (int m = 0; m < nm && j < n_sub; ++m) {
                     for (int ig = 0; ig < ng; ++ig) {
@@ -288,7 +289,7 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
                                 Gy = gv.g[ig][1] + gv.kvec[1],
                                 Gz = gv.g[ig][2] + gv.kvec[2];
                         AccReal Gr = std::sqrt(Gx * Gx + Gy * Gy + Gz * Gz);
-                        AccReal chi = ws.atom_wfc[ia][iw].chi_G[ig];
+                        AccReal chi = orbitals[ia][iw].chi_G[ig];
                         if (std::abs(chi) < AccReal(1e-30)) {
                             sub_vectors[j * ng + ig] =
                                 std::complex<AccReal>(0, 0);
@@ -341,7 +342,7 @@ int init_subspace(const PWWorkspace& ws, int n_bands,
         for (int band = 0; band < nb; ++band)
             for (int ig = 0; ig < ng; ++ig)
                 sub_vectors[static_cast<std::size_t>(n_sub + band) * ng + ig] =
-                    ws.wfc(band, ig);
+                    trial(band, ig);
         n_sub += nb;
     }
 

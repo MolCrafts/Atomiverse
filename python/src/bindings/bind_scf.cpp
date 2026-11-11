@@ -67,6 +67,7 @@
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/ghf.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
+#include "atomiverse/cpu/scf/post_hf.h"
 #include "atomiverse/cpu/scf/rhf.h"
 #include "atomiverse/cpu/scf/rks.h"
 #include "atomiverse/cpu/scf/rohf.h"
@@ -286,6 +287,39 @@ void bind_single_point(
             });
 }
 
+template <typename Method>
+void bind_restricted_mp(nb::module_& m, const char* name,
+                        const char* description) {
+    using RHF = ATV::cpu::scf::RHF;
+    nb::class_<Method>(m, name, description)
+        .def(
+            "__init__",
+            [](Method* self, MethodHandle<RHF>& rhf, int frozen) {
+                if (frozen < 0)
+                    throw std::invalid_argument("frozen must be nonnegative");
+                new (self) Method(rhf.method);
+                self->frozen = frozen;
+            },
+            nb::arg("rhf"), nb::arg("frozen") = 0, nb::keep_alive<1, 2>())
+        .def_ro("frozen", &Method::frozen)
+        .def(
+            "run",
+            [](Method& self, nb::object frame_obj) {
+                auto fref = borrow_molpy_frame(frame_obj);
+                auto work = ATV::cpu::from_molpy(*fref);
+                const auto result = [&] {
+                    nb::gil_scoped_release release;
+                    return self.run(work);
+                }();
+                ATV::cpu::to_molpy(work, *fref);
+                return result;
+            },
+            nb::arg("frame"),
+            "Run fresh RHF and the correlation method. Return energies in "
+            "Hartree and write the correlated total energy in eV to "
+            "frame.meta['energy'].");
+}
+
 /// Named quadrature policy shared by the two Python Kohn–Sham methods.
 /// Keep the native defaults; callers can explicitly match an oracle grid.
 template <typename Method>
@@ -333,6 +367,8 @@ void bind_ks_grid(nb::class_<MethodHandle<Method>, ATV::cpu::DriverNode>& cls) {
 void bind_scf(nb::module_& m) {
 
 #ifdef ATV_HAS_HF
+    using ATV::cpu::scf::MP2Result;
+    using ATV::cpu::scf::MP3Result;
     using ATV::cpu::scf::RHF;
     using ATV::cpu::scf::RKS;
     using ATV::cpu::scf::UHF;
@@ -362,6 +398,25 @@ void bind_scf(nb::module_& m) {
         "energy change per iteration [Hartree], and the iteration cap. "
         "An unknown basis name raises ValueError listing the supported ones.");
     bind_single_point(rhf);
+
+    nb::class_<MP2Result>(m, "MP2Result", "Canonical RMP2 energies in Hartree.")
+        .def_ro("e_tot", &MP2Result::e_tot)
+        .def_ro("e_corr", &MP2Result::e_corr)
+        .def_ro("e_corr_os", &MP2Result::e_corr_os)
+        .def_ro("e_corr_ss", &MP2Result::e_corr_ss)
+        .def_ro("frozen", &MP2Result::frozen)
+        .def_ro("ri", &MP2Result::ri);
+    bind_restricted_mp<ATV::cpu::scf::MP2<RHF>>(
+        m, "MP2", "Canonical MP2 on a CPU RHF reference.");
+
+    nb::class_<MP3Result>(m, "MP3Result", "Canonical RMP3 energies in Hartree.")
+        .def_ro("e_tot", &MP3Result::e_tot)
+        .def_ro("e_corr", &MP3Result::e_corr)
+        .def_ro("e_corr_mp2", &MP3Result::e_corr_mp2)
+        .def_ro("e_corr_mp3", &MP3Result::e_corr_mp3)
+        .def_ro("frozen", &MP3Result::frozen);
+    bind_restricted_mp<ATV::cpu::scf::MP3<RHF>>(
+        m, "MP3", "Canonical MP3 on a CPU RHF reference.");
 
     nb::class_<MethodHandle<UHF>, ATV::cpu::DriverNode> uhf(
         m, "UHF",

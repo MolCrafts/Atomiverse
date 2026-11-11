@@ -13,7 +13,7 @@ non-converged reference. Legend: [Roadmap index](index.md).
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| RMP2 | ✓ | ✓ | Canonical O(N⁵), energy only on CUDA. `cuda::scf::MP2{cuda_rhf}.run(Frame&)` consumes device RHF orbitals/ERIs; occupied tiling, cuBLAS contractions and CUB spin-channel reduction. Dense reference limit 215 AOs; timed by `benchmarks/perf/scf/bench_mp2_cpu_vs_cuda.cu` |
+| RMP2 | ✓ | ✓ | Canonical O(N⁵). Public CPU Python entry `scf.MP2(rhf).run(frame)` runs RHF and correlation. The [scientific benchmark](../../benchmarks/scf/bench_rmp2.py) compares energy components against live PySCF. `cuda::scf::MP2{cuda_rhf}.run(Frame&)` consumes device RHF orbitals/ERIs for energy; occupied tiling, cuBLAS contractions and CUB spin-channel reduction. Dense reference limit 215 AOs; timed by `benchmarks/perf/scf/bench_mp2_cpu_vs_cuda.cu` |
 | UMP2 | ✓ | ○ | `MP2` on `UHF` |
 | ROMP2 | ✓ | ○ | UMP2 on ROHF reference |
 | Frozen-core MP2 | ✓ | ✓ | `MP2::frozen = N`; CUDA canonical RHF energy, pinned by frozen-core water / 6-31G*. CPU RI-MP2 combination reachable |
@@ -22,7 +22,7 @@ non-converged reference. Legend: [Roadmap index](index.md).
 | RMP2 / UMP2 analytic gradient | ✓ | ○ | Lagrangian + Z-vector |
 | ROMP2 gradient | ○ | ○ | |
 | MP2 Hessian | ○ | ○ | |
-| RMP3 | ✓ | ○ | Closed-shell |
+| RMP3 | ✓ | ○ | Closed-shell. The [scientific benchmark](../../benchmarks/scf/bench_rmp3.py) compares the public CPU entry `scf.MP3(rhf).run(frame)` against PySCF RHF and NumPy spatial MP3 diagrams on single and eight-water STO-3G systems. |
 | RMP4(SDTQ) | ✓ | ○ | Closed-shell |
 | Local / DLPNO / F12 MP2 | ○ | ○ | |
 

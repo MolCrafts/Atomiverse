@@ -109,15 +109,19 @@ __global__ void local_kernel(FrozenReciprocalView G,
          g += block * gridDim.x) {
         const double r[3] = {G.x[g], G.y[g], G.z[g]},
                      g2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
-        const double s = omega * inner(rho[g], geometry.structure[g]),
-                     e = s * geometry.value[g];
+        double e = 0, radial = 0;
+        for (int kind = 0; kind < geometry.species_count; ++kind) {
+            const auto i = std::size_t(kind) * G.count + g;
+            const double overlap = omega * inner(rho[g], geometry.structure[i]);
+            e += overlap * geometry.value[i];
+            radial += overlap * geometry.slope[i];
+        }
         value.energy_ha += e;
         for (int a = 0; a < 3; ++a)
             for (int b = 0; b < 3; ++b)
                 value.virial_ha[3 * a + b] +=
                     (a == b ? e : 0.)
-                    + (g2 > 0 ? s * geometry.slope[g] * r[a] * r[b] / sqrt(g2)
-                              : 0.);
+                    + (g2 > 0 ? radial * r[a] * r[b] / sqrt(g2) : 0.);
     }
     reduce(value, output);
 }
@@ -173,7 +177,9 @@ __global__ void build_operator(FrozenNonlocalDeviceGeometry geometry, int ab,
         const double q[3] = {geometry.q.x[g], geometry.q.y[g], geometry.q.z[g]};
         double h, dh[3];
         solid(c.l, c.m, q, h, dh);
-        const auto radial = std::size_t(c.projector) * geometry.q.count + g;
+        const auto kind = geometry.species[c.species];
+        const auto radial =
+            (kind.radial_offset + c.projector) * geometry.q.count + g;
         double amplitude = geometry.R[radial] * h;
         if (ab >= 0) {
             const int a = ab / 3, b = ab % 3;
@@ -196,11 +202,14 @@ __global__ void apply_D(FrozenNonlocalDeviceGeometry geometry, int bands,
         const int col = index % geometry.column_count,
                   b = index / geometry.column_count;
         const auto i = geometry.columns[col];
+        const auto kind = geometry.species[i.species];
+        const auto row = kind.coupling_offset
+                         + std::size_t(i.projector) * kind.projector_count;
         cufftDoubleComplex sum{};
         for (int colj = i.block_first; colj < i.block_first + i.block_size;
              ++colj) {
             const int j = geometry.columns[colj].projector;
-            const double d = geometry.D[i.projector * geometry.projectors + j];
+            const double d = geometry.D[row + j];
             const auto z = c[colj + b * geometry.column_count];
             sum.x += d * z.x;
             sum.y += d * z.y;
@@ -262,7 +271,7 @@ void local_potential_frozen_virial(FrozenReciprocalView G,
     if (!G.count)
         return;
     require(rho && output && geometry.value && geometry.slope
-                && geometry.structure,
+                && geometry.structure && geometry.species_count > 0,
             "PW frozen local: missing density, geometry or output");
     local_kernel<<<blocks(G.count), block, 0, stream>>>(G, rho, omega, geometry,
                                                         output);
@@ -273,16 +282,17 @@ void project_frozen_nonlocal(FrozenNonlocalDeviceGeometry geometry,
                              FrozenNonlocalDeviceScratch scratch,
                              cublasHandle_t blas, cudaStream_t stream) {
     validate(geometry.q, state);
-    require(geometry.column_count >= 0 && geometry.projectors >= 0,
+    require(geometry.column_count >= 0 && geometry.species_count >= 0,
             "PW frozen nonlocal: negative projector dimensions");
     if (!geometry.q.count || !geometry.column_count || !state.bands)
         return;
-    require(geometry.projectors > 0 && std::isfinite(geometry.prefactor)
+    require(geometry.species_count > 0 && std::isfinite(geometry.prefactor)
                 && geometry.prefactor > 0,
             "PW frozen nonlocal: invalid projector count or normalization");
     require(
         geometry.R && geometry.D && geometry.positions && geometry.columns
-            && scratch.B && scratch.c && scratch.Dc && scratch.eta && blas,
+            && geometry.species && scratch.B && scratch.c && scratch.Dc
+            && scratch.eta && blas,
         "PW frozen nonlocal: missing geometry, scratch, output or BLAS handle");
     cudaStream_t handle_stream = nullptr;
     cublasPointerMode_t pointer_mode;

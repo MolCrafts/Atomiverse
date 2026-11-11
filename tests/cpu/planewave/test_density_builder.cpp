@@ -9,15 +9,16 @@ TEST(PwDensityBuilder, RestrictedResidualCannotBeHiddenByMixing) {
     using namespace cpu::pw::internal;
     using Complex = std::complex<AccReal>;
     for (const AccReal damping : {AccReal(0), AccReal(.25), AccReal(.8)}) {
+        GVectorList modes;
         PWWorkspace ws;
         ws.fft_nx = 8;
         ws.fft_ny = ws.fft_nz = 4;
         ws.nr = 8 * 4 * 4;
         ws.nc = 5 * 4 * 4;
         ws.fft = std::make_unique<FFTPlan3D>(8, 4, 4);
-        ws.gvec0.h = {0, 1, -1};
-        ws.gvec0.k = ws.gvec0.l = {0, 0, 0};
-        ws.gvec = &ws.gvec0;
+        modes.h = {0, 1, -1};
+        modes.k = modes.l = {0, 0, 0};
+        ws.gvec = &modes;
         ws.n_g = 3;
         ws.mix_beta = damping;
         ws.rho_G = xt::xarray<Complex>{1., .02, .02};

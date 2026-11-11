@@ -3,6 +3,7 @@
 ///        spectral G0W0@KS on converged RKS orbitals, plus Γ/multi-k
 ///        UKS UGW. dRPA screening + MT exchange + local v_xc.
 
+#include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -161,7 +162,8 @@ int cap_virt_gw_(int n_mo, int n_occ, int mp2_n_virt,
 } // namespace
 
 const G0W0Result& GpwDft::g0w0() {
-    const std::vector<GpwAtom>& atoms = last_atoms_;
+    const std::vector<GpwAtom>& atoms =
+        internal::GpwDftAccess::geometry(*this).atoms;
     if (!built_)
         throw std::logic_error(
             "GpwDft::g0w0 called before build() — validate the "

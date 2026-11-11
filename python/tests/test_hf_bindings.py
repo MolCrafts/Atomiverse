@@ -93,6 +93,66 @@ def test_ghf_density_requires_converged_result():
         method.spin_density_block()
 
 
+def test_cpu_mp2_publishes_correlated_total_and_retains_rhf_energy():
+    frame = h2_frame()
+    rhf = scf.RHF("STO-3G", tol=1e-12)
+    rhf.set_threads(1)
+    result = scf.MP2(rhf).run(frame)
+    assert isinstance(result, scf.MP2Result)
+    assert result.frozen == 0 and not result.ri
+    assert rhf.converged() and result.e_corr < 0
+    assert result.e_corr == pytest.approx(result.e_corr_os + result.e_corr_ss, abs=1e-12)
+    assert result.e_tot == pytest.approx(rhf.energy() + result.e_corr, abs=1e-12)
+    assert frame.meta["energy"] == pytest.approx(result.e_tot * 27.211386245988, abs=1e-8)
+    for key, value in (("fx", 0.125), ("fy", -0.25), ("fz", 0.5)):
+        np.testing.assert_array_equal(np.asarray(frame["atoms"][key]), np.full(2, value))
+
+
+def test_cpu_mp3_publishes_correlated_total_and_retains_rhf_energy():
+    frame = h2_frame()
+    rhf = scf.RHF("STO-3G", tol=1e-12)
+    rhf.set_threads(1)
+    result = scf.MP3(rhf).run(frame)
+    assert isinstance(result, scf.MP3Result)
+    assert result.frozen == 0 and rhf.converged()
+    # H2/STO-3G pins from regressions/scf/mp2/mp3-h2-sto3g.cpp.
+    assert result.e_corr_mp2 == pytest.approx(-0.013138073590, abs=1e-6)
+    assert result.e_corr_mp3 == pytest.approx(-0.004836072637, abs=1e-6)
+    assert result.e_corr == pytest.approx(result.e_corr_mp2 + result.e_corr_mp3, abs=1e-12)
+    assert result.e_tot == pytest.approx(rhf.energy() + result.e_corr, abs=1e-12)
+    assert frame.meta["energy"] == pytest.approx(result.e_tot * 27.211386245988, abs=1e-8)
+    for key, value in (("fx", 0.125), ("fy", -0.25), ("fz", 0.5)):
+        np.testing.assert_array_equal(np.asarray(frame["atoms"][key]), np.full(2, value))
+
+
+@pytest.mark.parametrize(
+    ("name", "components"),
+    [
+        ("MP2", ("e_corr_os", "e_corr_ss")),
+        ("MP3", ("e_corr_mp2", "e_corr_mp3")),
+    ],
+)
+def test_cpu_correlation_keeps_reference_alive_and_checks_frozen_occupation(name, components):
+    cls = getattr(scf, name)
+    rhf = scf.RHF("STO-3G")
+    rhf.set_threads(1)
+    method = cls(rhf, frozen=1)
+    del rhf
+    result = method.run(h2_frame())
+    assert method.frozen == result.frozen == 1
+    assert result.e_corr == 0.0
+    assert all(getattr(result, field) == 0.0 for field in components)
+
+    rhf = scf.RHF("STO-3G")
+    rhf.set_threads(1)
+    with pytest.raises(ValueError, match="frozen"):
+        cls(rhf, frozen=-1)
+    frame = h2_frame()
+    with pytest.raises(ValueError, match="frozen"):
+        cls(rhf, frozen=2).run(frame)
+    assert frame.meta["energy"] == -314.15
+
+
 _HAS_CUDA = "CudaRHF" in scf.__all__
 
 

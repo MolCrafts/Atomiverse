@@ -31,6 +31,7 @@ void constant_potential(const xt::xarray<AccReal>& values, AccReal expected) {
 
 TEST_P(PwXcEnergyPrecision, UniformIntegralMatchesSinglePointRoundingBound) {
     const auto test = GetParam();
+    GVectorList modes;
     PWWorkspace ws;
     ws.fft_nx = ws.fft_ny = ws.fft_nz = 28;
     ws.fft = std::make_unique<FFTPlan3D>(28, 28, 28);
@@ -38,11 +39,11 @@ TEST_P(PwXcEnergyPrecision, UniformIntegralMatchesSinglePointRoundingBound) {
     ws.nc = ws.fft->nc();
     ws.nspin = test.spin ? 2 : 1;
     ws.omega = 1000;
-    ws.gvec0.g = {{0, 0, 0}};
-    ws.gvec0.h = ws.gvec0.k = ws.gvec0.l = {0};
-    ws.gvec0.ekin = {0};
-    ws.gvec0.nx = ws.gvec0.ny = ws.gvec0.nz = 28;
-    ws.gvec = &ws.gvec0;
+    modes.g = {{0, 0, 0}};
+    modes.h = modes.k = modes.l = {0};
+    modes.ekin = {0};
+    modes.nx = modes.ny = modes.nz = 28;
+    ws.gvec = &modes;
     ws.n_g = 1;
     ws.rho_G = xt::xarray<std::complex<AccReal>>{std::complex<AccReal>{.05, 0}};
     const AccReal alpha = test.spin ? .037 : .025;

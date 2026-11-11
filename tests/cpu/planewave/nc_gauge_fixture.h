@@ -85,36 +85,35 @@ inline std::vector<C> wave(const GVectorList& g) {
     }
     return c;
 }
-inline void prepare(PWProblem& problem, const NcPotentialData& d,
+inline void prepare(PWSetup& problem, PWWorkspace& ws, const NcPotentialData& d,
                     const GVectorList& g, std::span<const C> c) {
     problem.gv0 = g;
-    problem.gv_k = {g};
-    problem.vol_bohr = 125;
+    problem.mesh.gv_k = {g};
+    problem.ions.vol_bohr = 125;
     problem.n_bands = 3;
-    problem.potential = std::make_shared<const NcPotentialData>(d);
-    auto& ws = problem.ws;
-    ws.gvec = &problem.gv0;
-    ws.n_g = g.count();
-    ws.omega = problem.vol_bohr;
-    ws.atom_pos_bohr = {{.2, .4, .7}, {1.1, -.3, .5}};
+    problem.ions.species = {std::make_shared<const NcPotentialData>(d)};
+    problem.ions.atom_species = {0, 0};
+    problem.ions.ionic_charges = {AccReal(d.z_val), AccReal(d.z_val)};
+    ws.omega = problem.ions.vol_bohr;
+    problem.ions.positions = {{.2, .4, .7}, {1.1, -.3, .5}};
+    ws.atom_pos_bohr = problem.ions.positions;
     ws.fft_nx = g.nx;
     ws.fft_ny = g.ny;
     ws.fft_nz = g.nz;
     ws.nr = g.nx * g.ny * g.nz;
     ws.fft = std::make_unique<FFTPlan3D>(g.nx, g.ny, g.nz);
-    ws.T_G.resize({std::size_t(g.count())});
-    for (int i = 0; i < g.count(); ++i)
-        ws.T_G[i] = g.ekin[i];
     ws.V_eff_r = xt::zeros<AccReal>({std::size_t(ws.nr)});
     ws.wfc = xt::zeros<C>({std::size_t(3), std::size_t(g.count())});
     std::copy(c.begin(), c.end(), ws.wfc.begin());
-    problem.kb_proj_k.resize(1);
-    setup_kb_projectors(problem.kb_proj_k[0], g, d, ws.atom_pos_bohr, ws.omega);
-    ws.kb_proj = problem.kb_proj_k[0];
+    problem.mesh.kb_proj_k.resize(1);
+    setup_kb_projectors(problem.mesh.kb_proj_k[0], g, d, problem.ions.positions,
+                        ws.omega);
+    problem.mesh.atom_wfc_k.resize(1);
+    ws.bind(problem.mesh.point(0));
 }
 // Independent original full-D contraction: no eigenvalue rotation, packed
 // device columns or projector amplitude admission used by the actual H path.
-inline std::vector<C> full_d_h(const NcPotentialData& d, const PWProblem& p,
+inline std::vector<C> full_d_h(const NcPotentialData& d, const PWSetup& p,
                                std::span<const C> c) {
     const auto& g = p.gv0;
     const int np = d.n_proj(), ng = g.count();
@@ -127,8 +126,8 @@ inline std::vector<C> full_d_h(const NcPotentialData& d, const PWProblem& p,
         for (int i = 0; i < ng; ++i)
             jets[j * ng + i] =
                 nc_projector_cartesian_jet(d, j, g.g[i] + g.kvec);
-    const AccReal pref = 4 * M_PI / std::sqrt(p.ws.omega);
-    for (const auto& atom : p.ws.atom_pos_bohr) {
+    const AccReal pref = 4 * M_PI / std::sqrt(p.ions.vol_bohr);
+    for (const auto& atom : p.ions.positions) {
         std::vector<std::array<std::vector<C>, 5>> beta(np);
         for (int j = 0; j < np; ++j) {
             const int ell = d.kb[j].l;

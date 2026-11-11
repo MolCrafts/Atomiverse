@@ -4,6 +4,7 @@
 
 #include "atomiverse/core/precision.h"
 #include <cstddef>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -17,13 +18,21 @@ class NormConservingPotential;
 
 namespace ATV::cpu::pw::internal {
 
-/// Validate this single-species PW representation before any setup mutation.
-void validate_potential_frame(
-    const cpu::Frame& frame,
-    const ::ATV::electronic::NormConservingPotential& potential);
+/// Atom-order assignment of the element providers and their ionic charges.
+struct NcComposition {
+    std::vector<std::size_t> atom_species;
+    std::vector<AccReal> ionic_charges;
+    int n_elec = 0;
+};
+
+using NcProviders = std::span<
+    const std::shared_ptr<const ::ATV::electronic::NormConservingPotential>>;
+
+NcComposition assign_nc_species(const cpu::Frame& frame,
+                                NcProviders potentials);
 
 /// Physical radial data only. Fourier tables and electronic state belong to
-/// PWProblem/PWWorkspace, never to a shared potential provider.
+/// PWSetup/PWWorkspace, never to a shared potential provider.
 struct NcPotentialData {
     int atomic_number = 0;
     int z_val = 0;
@@ -55,8 +64,9 @@ struct NcPotentialData {
     AccReal integrate_radial(std::span<const AccReal> values) const;
 };
 
-/// Same admission check for an already snapshotted immutable potential.
-void validate_potential_frame(const cpu::Frame& frame,
-                              const NcPotentialData& potential);
+/// Resolve a new geometry against already admitted radial data.
+NcComposition assign_nc_species(
+    const cpu::Frame& frame,
+    std::span<const std::shared_ptr<const NcPotentialData>> species);
 
 } // namespace ATV::cpu::pw::internal

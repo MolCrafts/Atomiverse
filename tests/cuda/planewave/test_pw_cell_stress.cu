@@ -52,10 +52,9 @@ cpu::Frame make_h2_cubic(double L) {
 /// @return Method with ecut 5 Ry, Γ-only mesh, loose SCF tolerance.
 template <typename Method>
 Method h_gth_method(cpu::xc::XCType xc = cpu::xc::XCType::LSDA) {
-    Method m{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::H,
-                                                           "GTH-PBE-q1"),
-             /*ecut_ry=*/5.0,
-             /*k_mesh=*/1, xc};
+    auto potential = std::make_shared<cpu::pw::GthPseudopotential>(
+        molrs::Element::H, "GTH-PBE-q1");
+    Method m{{potential}, 5.0, 1, xc};
     m.tol = 1e-4;
     m.max_iter = 12;
     m.mix_beta = 0.5;

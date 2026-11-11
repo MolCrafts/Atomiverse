@@ -61,6 +61,26 @@ struct KPoint {
 /// @throws std::invalid_argument when any N_d < 1.
 std::vector<KPoint> monkhorst_pack(const int mesh[3], bool time_reversal);
 
+void validate_k_sampling(const int mesh[3],
+                         std::span<const std::array<double, 3>> points,
+                         std::span<const double> weights);
+
+/// Explicit points keep their order and weights. Otherwise sample the mesh.
+std::vector<KPoint>
+sample_kpoints(const int mesh[3], bool time_reversal,
+               std::span<const std::array<double, 3>> points,
+               std::span<const double> weights);
+
+/// Energy-weighted density from flattened occupied Bloch orbitals.
+CplxMatrix
+energy_weighted_from_occ(const std::vector<std::complex<double>>& C_occ,
+                         const std::vector<double>& eps, int nb, int n_occ,
+                         double occ = 2.0);
+
+CplxMatrix energy_weighted_from_frac(const CplxMatrix& C,
+                                     const std::vector<double>& eps,
+                                     const std::vector<double>& occupations);
+
 /// @brief Physical reciprocal-space data for one AO Fourier-overlap link.
 struct FourierOverlapLink {
     std::array<double, 3>
@@ -103,6 +123,23 @@ void accumulate_bloch_density_stack(
     const CplxMatrix& P, double weight,
     std::span<const std::complex<double>> phases,
     std::vector<std::vector<double>>& density_stack);
+
+/// Collocation phases in the order of the supplied k points and image cells.
+std::vector<std::vector<std::complex<double>>>
+build_bloch_cell_phases(std::span<const KPoint> kpoints,
+                        std::span<const std::array<int, 3>> cells);
+
+/// Real-space density stack from the selected rank-local or complete k set.
+std::vector<std::vector<double>>
+build_bloch_density_stack(const GpwGeometry& geometry,
+                          std::span<const CplxMatrix> density,
+                          std::size_t first_k = 0, std::size_t stride = 1);
+
+/// Fold the real-space potential stack with the conjugate collocation phases.
+CplxMatrix
+phase_bloch_potential(const GpwGeometry& geometry,
+                      const std::vector<std::vector<double>>& potential,
+                      int ik);
 
 /// @brief Build S_k and T_k for every k in ONE lattice-image sweep.
 ///
@@ -148,6 +185,13 @@ void add_nonlocal_kb_k(std::vector<CplxMatrix>& V_k,
                        const std::vector<double>& radii, const double L[3],
                        const int mimg[3], double screen,
                        const std::vector<KPoint>& kpts);
+
+/// Contract the derivative of the same separable Bloch operator with P_k.
+void add_nonlocal_kb_k_forces(
+    const GpwGeometry& geometry,
+    const std::vector<std::array<GridBasisFunction, 3>>& derivatives,
+    std::span<const int> owner, const std::vector<CplxMatrix>& density,
+    double screen, std::vector<std::array<double, 3>>& force);
 
 /// @brief Per-k pre-summed complex basis-on-grid values.
 ///

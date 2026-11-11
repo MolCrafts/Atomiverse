@@ -29,17 +29,18 @@ void validate_stress_probe(double h, const std::array<bool, 3>& axes,
 /// Used by the zero-SCF linearized XL-BOMD warm step (shadow-density
 /// stress at \(P = D = q[n]\), \(W\) from the \(H[n]\) eigenpairs).
 ///
-/// @param atoms Geometry [Bohr] + basis/PP (same as `GpwDft::run`).
+/// @param geometry Reference geometry and operators from the same solve.
 /// @param method SCF configuration (`cell` must match atoms' box).
 /// @param scf Stationary payload (`converged` must be true): Γ needs
 ///        `P`/`C`/`eps` (+ β for UKS); multi-k needs `C_occ_k`/`eps_k`
 ///        (+ β for UKS).
+/// @param workspace Accepted Bloch densities when applicable.
 /// @param h Dimensionless strain step (default 2e-3).
 /// @param axes Per-axis mask (x,y,z); a masked axis reports exactly 0.
 /// @return Voigt stress σ [Hartree/Bohr³], order xx,yy,zz,xy,xz,yz.
 std::array<double, 6>
-gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
-                         const GpwDft& method, const GpwResult& scf,
+gpw_stress_at_state_impl(const GpwGeometry& geometry, const GpwDft& method,
+                         const GpwResult& scf, const GpwWorkspace& workspace,
                          double h = 2e-3,
                          const std::array<bool, 3>& axes = {true, true, true});
 

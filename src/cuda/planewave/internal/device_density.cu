@@ -285,23 +285,24 @@ inline void check_cublas(cublasStatus_t s, const char* what) {
 
 // ── DeviceDensity ────────────────────────────────────────────────────────
 
-DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
-                             double mix_beta, int pulay_depth,
-                             cpu::xc::XCType xc, bool spin_polarized,
-                             int n_alpha, int n_beta, int n_elec,
-                             cudaStream_t borrowed_stream)
-    : ng0_(prob.gv0.count()), nr_(prob.ws.nr), nc_(prob.ws.nc),
+DeviceDensity::DeviceDensity(
+    cpu::pw::internal::PWGridView grid,
+    std::span<const std::complex<AccReal>> initial_density, double mix_beta,
+    int pulay_depth, cpu::xc::XCType xc, bool spin_polarized, int n_alpha,
+    int n_beta, int n_elec, cudaStream_t borrowed_stream)
+    : ng0_(grid.modes.count()),
+      nr_(grid.modes.nx * grid.modes.ny * grid.modes.nz),
+      nc_((grid.modes.nx / 2 + 1) * grid.modes.ny * grid.modes.nz),
       depth_(pulay_depth), mix_beta_(mix_beta),
-      omega_(static_cast<double>(prob.ws.omega)), xc_(xc),
+      omega_(static_cast<double>(grid.volume)), xc_(xc),
       gga_(cpu::xc::is_gga(xc)), spin_(spin_polarized),
       // Temporary default-stream FFT; rebound after stream_ is created below.
       // FFTPlan3D cannot be default-constructed, so we build it first then
       // rebind via set_stream once stream_ exists.
-      fft_(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz),
-      xc_fft_(
-          cpu::pw::internal::xc_quadrature_dimension(prob.ws.fft_nx, gga_),
-          cpu::pw::internal::xc_quadrature_dimension(prob.ws.fft_ny, gga_),
-          cpu::pw::internal::xc_quadrature_dimension(prob.ws.fft_nz, gga_)) {
+      fft_(grid.modes.nx, grid.modes.ny, grid.modes.nz),
+      xc_fft_(cpu::pw::internal::xc_quadrature_dimension(grid.modes.nx, gga_),
+              cpu::pw::internal::xc_quadrature_dimension(grid.modes.ny, gga_),
+              cpu::pw::internal::xc_quadrature_dimension(grid.modes.nz, gga_)) {
     if (pulay_depth < 1)
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: pulay_depth must be >= 1");
@@ -313,16 +314,17 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
         throw std::invalid_argument(
             "cuda::pw::internal::DeviceDensity: the assembled problem has an "
             "empty density G-sphere or FFT grid");
+    if (grid.local_potential.size() != std::size_t(ng0_)
+        || initial_density.size() != std::size_t(ng0_))
+        throw std::invalid_argument(
+            "PW device density: inconsistent input modes");
     if (spin_ && ng0_ > std::numeric_limits<int>::max() / 2)
         throw std::invalid_argument(
             "PW spin mixer: joint vector exceeds BLAS range");
-    // d_half_ is sized from ws.nc, the transforms from ws.fft_n*. If those
-    // ever disagree, `scatter_g_to_halfcomplex` writes past the buffer and
-    // the only symptom is garbage or an illegal-access at run time.
+    // The half-complex buffer and cuFFT plan must use the same grid.
     if (nr_ != fft_.nr() || nc_ != fft_.nc())
         throw std::invalid_argument(
-            "cuda::pw::internal::DeviceDensity: ws.nr/ws.nc disagree with the "
-            "ws.fft_nx/ny/nz grid the cuFFT plans were built from");
+            "PW device density: FFT plan disagrees with the density grid");
 
     // Cold host upload sources also outlive failure-path stream draining in
     // catch. Each Cartesian axis has distinct storage until the final fence.
@@ -423,7 +425,7 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
             cudaMemsetAsync(d_scalars_, 0, 5 * sizeof(double), stream_));
 
         // ── One-time uploads (never repeated per SCF iteration) ──
-        const auto& gv = prob.gv0;
+        const auto& gv = grid.modes;
         g2.resize(ng);
         for (int i = 0; i < ng0_; ++i)
             g2[static_cast<size_t>(i)] = static_cast<double>(
@@ -437,10 +439,10 @@ DeviceDensity::DeviceDensity(const cpu::pw::internal::PWProblem& prob,
                                        cudaMemcpyHostToDevice, stream_));
         ATV_CUDA_CHECK(cudaMemcpyAsync(d_g2_, g2.data(), ng * sizeof(double),
                                        cudaMemcpyHostToDevice, stream_));
-        ATV_CUDA_CHECK(cudaMemcpyAsync(d_V_loc_G_, prob.ws.V_loc_G.data(),
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_V_loc_G_, grid.local_potential.data(),
                                        ng * sizeof(cufftDoubleComplex),
                                        cudaMemcpyHostToDevice, stream_));
-        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_G_, prob.ws.rho_G.data(),
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_rho_G_, initial_density.data(),
                                        ng * sizeof(cufftDoubleComplex),
                                        cudaMemcpyHostToDevice, stream_));
 

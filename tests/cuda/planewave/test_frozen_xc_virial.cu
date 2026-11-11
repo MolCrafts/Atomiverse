@@ -101,10 +101,8 @@ Primal primal(cpu::xc::XCType type, const std::vector<Point>& points,
 std::array<double, 7> cpu_tensor(cpu::xc::XCType type,
                                  const host::GVectorList& g,
                                  const std::vector<C>& rho, double volume) {
-    host::PWProblem problem;
-    problem.gv0 = g;
-    auto& w = problem.ws;
-    w.gvec = &problem.gv0;
+    host::PWWorkspace w;
+    w.gvec = &g;
     w.n_g = g.count();
     w.omega = volume;
     w.fft_nx = g.nx;

@@ -23,6 +23,16 @@ function(atv_add_bench name src)
     endif()
 endfunction()
 
+# Public C++ participant for the PW/QE and GPW/CP2K accuracy campaigns.
+if(ATV_BUILD_PW)
+    if(ATV_BUILD_CUDA)
+        set_source_files_properties(periodic/periodic_dft.cpp PROPERTIES LANGUAGE CUDA)
+        atv_add_bench(atv_periodic_dft periodic/periodic_dft.cpp SEPARABLE)
+    else()
+        atv_add_bench(atv_periodic_dft periodic/periodic_dft.cpp)
+    endif()
+endif()
+
 # ── md ──────────────────────────────────────────────────────────────────────
 if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
     # CPU LJ/EAM/SW MD; compare/lj-lammps/compare.py checks it against LAMMPS.

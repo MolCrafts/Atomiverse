@@ -606,6 +606,15 @@ inline bool operator==(const AM1Params& a, const AM1Params& b) {
            && a.energy_tol == b.energy_tol;
 }
 
+enum class PWPotentialFormat : std::uint8_t { gth, upf };
+
+struct PWPotentialInput {
+    int atomic_number;
+    PWPotentialFormat format;
+    std::string source; ///< GTH parameter name or NC-UPF file path.
+    bool operator==(const PWPotentialInput&) const = default;
+};
+
 /// @brief Built-in pseudopotential and SCF payload for `cpu::pw::PW` — the
 ///        plane-wave DFT method as an MD force source (plane-wave BOMD).
 ///
@@ -632,20 +641,8 @@ inline bool operator==(const AM1Params& a, const AM1Params& b) {
 /// writes and `task_materializer` replays; this declaration therefore doubles
 /// as the byte layout. Defaults are `cpu::pw::PW`'s own, member for member.
 struct PWParams {
-    /// @brief Norm-conserving UPF (Unified Pseudopotential Format) file — a
-    ///        pseudopotential replaces the nucleus plus core electrons by an
-    ///        effective potential, which is what makes the plane-wave
-    ///        expansion affordable. Mutually exclusive with `gth_name`;
-    ///        exactly one must be set (checked by `cpu::pw::PW::build`, not
-    ///        here — a plane-wave run has no default pseudopotential).
-    std::string upf_path;
-    /// @brief In-tree analytic Goedecker-Teter-Hutter parameterization, e.g.
-    ///        "GTH-PBE-q4". Needs no external file. Mutually exclusive with
-    ///        `upf_path`. One potential serves the whole cell, so a frame
-    ///        mixing atomic numbers is refused at run time.
-    std::string gth_name;
-    int atomic_number =
-        0; ///< Explicit element Z for GTH lookup; UPF supplies its own.
+    /// One NC potential per element in the frame.
+    std::vector<PWPotentialInput> potentials;
 
     /// @brief Wavefunction cutoff [Ry] — plane waves with kinetic energy
     ///        above it are dropped, so this sets basis size and cost.
@@ -684,8 +681,7 @@ struct PWParams {
     int extra_bands = 4;
 };
 inline bool operator==(const PWParams& a, const PWParams& b) {
-    return a.upf_path == b.upf_path && a.gth_name == b.gth_name
-           && a.atomic_number == b.atomic_number && a.ecut_ry == b.ecut_ry
+    return a.potentials == b.potentials && a.ecut_ry == b.ecut_ry
            && a.k_mesh == b.k_mesh && a.tol == b.tol && a.max_iter == b.max_iter
            && a.mix_beta == b.mix_beta && a.pulay_depth == b.pulay_depth
            && a.xc == b.xc && a.spin_polarized == b.spin_polarized
@@ -1363,10 +1359,7 @@ enum class ComponentId : std::uint16_t {
     /// XYZ trajectory sink — `cpu::XyzRecorder`. Decodable everywhere;
     /// materializable only where `ATV_BUILD_IO` compiled the writer in.
     XyzRecorder = 19,
-    /// Plane-wave DFT force source — `cpu::pw::PWEvaluator`. Decodable
-    /// everywhere; materializable only where `ATV_BUILD_PW` compiled the
-    /// plane-wave solver in.
-    PW = 20,
+    // ID 20 is retired with the single-provider PW payload.
     // The rest of the CPU minimize domain. `CG` and `FIRE` are fixed-cell
     // alternatives to `LBFGS`; the four relaxers below them move the BOX and
     // terminate on `PressureConverged` / `StressConverged` rather than on
@@ -1407,6 +1400,7 @@ enum class ComponentId : std::uint16_t {
     /// molrec trajectory sink — `cpu::MrecRecorder`. Decodable everywhere;
     /// materialized only with the molpy streaming trajectory writer.
     MrecRecorder = 39,
+    PW = 40, ///< CPU plane-wave DFT with one NC provider per element.
 };
 
 inline const char* component_name(ComponentId id) noexcept {

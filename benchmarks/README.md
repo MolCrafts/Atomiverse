@@ -7,7 +7,8 @@ of them is registered with CTest. The tree has one axis per directory:
 benchmarks/
   README.md  __init__.py  __main__.py  framework/  roadmap.toml  requirements.txt
   systems/      hf.json dft.json gaff.json
-  scf/          bench_{rhf,uhf,rohf,ghf,rks,uks}.py  hf.py  dft.py
+  scf/          bench_{rhf,uhf,rohf,ghf,rks,uks,rmp2,rmp3}.py  hf.py  dft.py
+  periodic/     bench_{pw,gpw}.py
   forcefield/   bench_gaff.py
   perf/         CMakeLists.txt  md/  scf/  pw/  semiempirical/{nddo_energy,nddo_forces}/
   compare/      lj-lammps/  gaff-liquid/  gaff-peo-openmm/  gaff-peo-lammps/  am1-sqm/
@@ -18,9 +19,10 @@ benchmarks/
   compares observables, and writes reports and roadmap evidence.
 - **`systems/`**: canonical inputs that the Atomiverse and reference
   participants share. Methods read these files and do not embed their own copies.
-- **`scf/`, `forcefield/`**: framework methods. Each `bench_*.py` compares
+- **`scf/`, `periodic/`, `forcefield/`**: framework methods. Each `bench_*.py` compares
   public Atomiverse calls with a live independent engine. See
-  [scf/README.md](scf/README.md) and [forcefield/README.md](forcefield/README.md).
+  [scf/README.md](scf/README.md), [periodic/README.md](periodic/README.md) and
+  [forcefield/README.md](forcefield/README.md).
 - **`perf/`**: native C++/CUDA timing harnesses, built by CMake into
   `<build>/bin`. See [perf/README.md](perf/README.md).
 - **`compare/`**: scripts that drive Atomiverse and an external engine
@@ -45,8 +47,10 @@ benchmarks/
 
 ## Framework CLI
 
-Install the HF-enabled Atomiverse extension and `molcrafts-molpy==0.20.0` in
-one environment. Until the molcrafts-ci 0.3 observation protocol is released,
+For molecular SCF, install the HF-enabled Atomiverse extension and
+`molcrafts-molpy==0.20.0` in one environment. Periodic DFT uses the native
+participant described in [periodic/README.md](periodic/README.md).
+Until the molcrafts-ci 0.3 observation protocol is released,
 install the sibling checkout before `requirements.txt`. The native bridge
 must pass the runtime's ABI fingerprint check; do not bypass it to accept a
 different Rust build. Optional GPU oracles count as available only if they

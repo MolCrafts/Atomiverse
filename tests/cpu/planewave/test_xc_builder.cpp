@@ -11,7 +11,8 @@ using namespace ATV::cpu::pw::internal;
 using Complex = std::complex<AccReal>;
 
 namespace {
-void configure(PWWorkspace& ws, int spin, double scale = 1.0) {
+void configure(PWWorkspace& ws, GVectorList& modes, int spin,
+               double scale = 1.0) {
     ws.fft_nx = 8;
     ws.fft_ny = 6;
     ws.fft_nz = 4;
@@ -20,20 +21,20 @@ void configure(PWWorkspace& ws, int spin, double scale = 1.0) {
     ws.fft = std::make_unique<FFTPlan3D>(8, 6, 4);
     ws.omega = 6 * 7 * 8 * scale * scale * scale;
     ws.nspin = spin;
-    ws.gvec0 = GVectorList{};
-    constexpr int modes[5][3] = {
+    modes = GVectorList{};
+    constexpr int miller[5][3] = {
         {0, 0, 0}, {3, 0, 0}, {-3, 0, 0}, {0, 2, 1}, {0, -2, -1}};
     const double lengths[3] = {6 * scale, 7 * scale, 8 * scale};
-    for (const auto& mode : modes) {
-        ws.gvec0.h.push_back(mode[0]);
-        ws.gvec0.k.push_back(mode[1]);
-        ws.gvec0.l.push_back(mode[2]);
-        ws.gvec0.g.push_back({2 * M_PI * mode[0] / lengths[0],
-                              2 * M_PI * mode[1] / lengths[1],
-                              2 * M_PI * mode[2] / lengths[2]});
+    for (const auto& mode : miller) {
+        modes.h.push_back(mode[0]);
+        modes.k.push_back(mode[1]);
+        modes.l.push_back(mode[2]);
+        modes.g.push_back({2 * M_PI * mode[0] / lengths[0],
+                           2 * M_PI * mode[1] / lengths[1],
+                           2 * M_PI * mode[2] / lengths[2]});
     }
     ws.n_g = 5;
-    ws.gvec = &ws.gvec0;
+    ws.gvec = &modes;
     ws.rho_G =
         xt::xarray<Complex>{.04, Complex(.003, .001), Complex(.003, -.001),
                             Complex(.002, -.0007), Complex(.002, .0007)};
@@ -182,8 +183,9 @@ TEST(PwXcQuadrature, UniformDensityPreservesChargeAndEnergyNormalization) {
     for (auto type :
          {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
           cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
+        GVectorList modes;
         PWWorkspace ws;
-        configure(ws, 1);
+        configure(ws, modes, 1);
         ws.rho_G.fill(Complex(0));
         ws.rho_G[0] = .04;
         XCBuilder builder;
@@ -204,8 +206,9 @@ TEST(PwXcQuadrature, RestrictedAndSpinWeightedEnergyAdjointsNearNyquist) {
         for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE,
                           cpu::xc::XCType::PBEsol, cpu::xc::XCType::RevPBE,
                           cpu::xc::XCType::RPBE}) {
+            GVectorList modes;
             PWWorkspace ws;
-            configure(ws, spin);
+            configure(ws, modes, spin);
             XCBuilder builder;
             builder.prepare(ws);
             expect_energy_adjoint(ws, builder, type);
@@ -213,23 +216,24 @@ TEST(PwXcQuadrature, RestrictedAndSpinWeightedEnergyAdjointsNearNyquist) {
 }
 
 TEST(PwXcQuadrature, SameShapeChangedCellAndModeOrderingUseCurrentMetric) {
+    GVectorList modes;
     PWWorkspace ws;
-    configure(ws, 2);
+    configure(ws, modes, 2);
     XCBuilder builder;
     builder.prepare(ws);
     expect_energy_adjoint(ws, builder);
-    configure(ws, 2, 1.37);
-    ws.gvec0.h[1] = 2;
-    ws.gvec0.h[2] = -2;
-    ws.gvec0.g[1][0] *= 2.0 / 3;
-    ws.gvec0.g[2][0] *= 2.0 / 3;
+    configure(ws, modes, 2, 1.37);
+    modes.h[1] = 2;
+    modes.h[2] = -2;
+    modes.g[1][0] *= 2.0 / 3;
+    modes.g[2][0] *= 2.0 / 3;
     // Change list order, including G=0, at the same FFT shape.
     for (int g = 0; g < 2; ++g) {
         const int other = 4 - g;
-        std::swap(ws.gvec0.h[g], ws.gvec0.h[other]);
-        std::swap(ws.gvec0.k[g], ws.gvec0.k[other]);
-        std::swap(ws.gvec0.l[g], ws.gvec0.l[other]);
-        std::swap(ws.gvec0.g[g], ws.gvec0.g[other]);
+        std::swap(modes.h[g], modes.h[other]);
+        std::swap(modes.k[g], modes.k[other]);
+        std::swap(modes.l[g], modes.l[other]);
+        std::swap(modes.g[g], modes.g[other]);
         std::swap(ws.rho_G[g], ws.rho_G[other]);
         for (int spin = 0; spin < 2; ++spin)
             std::swap(ws.rho_spin_G[spin][g], ws.rho_spin_G[spin][other]);
@@ -240,12 +244,13 @@ TEST(PwXcQuadrature, SameShapeChangedCellAndModeOrderingUseCurrentMetric) {
 }
 
 TEST(PwXcQuadrature, PhysicalDensitySpaceRejectsAliasedNyquistModes) {
+    GVectorList modes;
     PWWorkspace ws;
-    configure(ws, 1);
+    configure(ws, modes, 1);
     XCBuilder builder;
     builder.prepare(ws);
-    ws.gvec0.h[1] = 4;
-    ws.gvec0.h[2] = -4;
+    modes.h[1] = 4;
+    modes.h[2] = -4;
     EXPECT_THROW(builder.step(ws, cpu::xc::XCType::PBE), std::invalid_argument);
 }
 
@@ -254,8 +259,9 @@ TEST(PwXcQuadrature,
     for (auto type :
          {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
           cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
+        GVectorList modes;
         PWWorkspace ws;
-        configure(ws, 2);
+        configure(ws, modes, 2);
         // The alpha Fourier field is negative at some quadrature points,
         // away from clipping boundaries. Beta keeps the total density finite.
         ws.rho_spin_G[0].fill(Complex(0));
@@ -366,8 +372,9 @@ TEST(PwXcResponse,
         for (auto type : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE,
                           cpu::xc::XCType::PBEsol, cpu::xc::XCType::RevPBE,
                           cpu::xc::XCType::RPBE}) {
+            GVectorList modes;
             PWWorkspace ws;
-            configure(ws, spin);
+            configure(ws, modes, spin);
             XCBuilder response;
             response.prepare(ws);
             expect_fused_response(ws, response, type);
@@ -376,7 +383,7 @@ TEST(PwXcResponse,
             ws.rho_G *= 1.03;
             for (auto& rho : ws.rho_spin_G)
                 rho *= 1.03;
-            for (auto& g : ws.gvec0.g)
+            for (auto& g : modes.g)
                 for (int d = 0; d < 3; ++d)
                     g[d] *= 1.1;
             expect_fused_response(ws, response, type);
@@ -387,8 +394,9 @@ TEST(PwXcResponse, MatchesFiniteDifferencesAcrossClippingAndLowDensityCutoffs) {
     for (auto type :
          {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
           cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE}) {
+        GVectorList modes;
         PWWorkspace ws;
-        configure(ws, 2);
+        configure(ws, modes, 2);
         ws.rho_spin_G[0].fill(Complex(0));
         ws.rho_spin_G[0][0] = .001;
         ws.rho_spin_G[0][1] = Complex(.002, .0007);
@@ -407,8 +415,9 @@ TEST(PwXcResponse, MatchesFiniteDifferencesAcrossClippingAndLowDensityCutoffs) {
 }
 
 TEST(PwXcResponse, RejectsInvalidCallsBeforeChangingOutput) {
+    GVectorList modes;
     PWWorkspace ws;
-    configure(ws, 1);
+    configure(ws, modes, 1);
     XCBuilder response;
     response.prepare(ws);
     std::vector<AccReal> output(ws.nr, 7);

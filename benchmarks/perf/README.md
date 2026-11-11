@@ -65,7 +65,12 @@ Every scf target also needs `ATV_BUILD_HF`.
 `scf/profile_hf_cpu.py --binary "$BUILD/bin/bench_hf_cpu" --out DIR [--threads N] [--repeats N] [--validate]`
 runs `bench_hf_cpu` beside live PySCF. It writes per-case logs and
 `DIR/results.json`, which include the exact-J/K build, J/K and SCF-loop phase
-times. It needs NumPy, PySCF and threadpoolctl. `DIR` must not exist yet;
+times. The default runs a 16-water STO-3G chain and 4- and 8-water def2-SVP
+chains with 4000 MB and 0 MB budgets for both engines. It verifies the
+actual cached and streamed paths. The def2-SVP chains also run with
+analytic forces under `--validate`. PySCF checkpoint
+writes are disabled for this in-memory comparison. It needs NumPy, PySCF and
+threadpoolctl. `DIR` must not exist yet;
 keep it under `build/` or outside the tree.
 
 ## pw

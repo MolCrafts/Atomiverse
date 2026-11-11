@@ -12,6 +12,7 @@
 
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 
+#include <cstddef>
 #include <cuda_runtime.h>
 
 namespace ATV {
@@ -44,12 +45,13 @@ struct DeviceProductGeom {
     int lb[3] = {0, 0, 0};
     int ua = 0;   ///< bra prim index.
     int ub = 0;   ///< ket prim index.
+    int cell = 0; ///< Translation index in the density/potential stack.
     double k = 0; ///< Gaussian product prefactor (geometry-fixed).
 };
 
 /// @brief Device P→weight pack + acc→V scatter workspace.
 ///
-/// One instance owns prim/contrib tables and an nb×nb V buffer. Product
+/// Borrows the immutable primitive tables and owns the V buffer. Product
 /// geometry arrays and `DeviceProduct` buffers are owned by the caller
 /// (per level under multigrid; α/β under UKS) and passed each launch.
 class ProductWeightPackDevice {
@@ -60,17 +62,9 @@ class ProductWeightPackDevice {
     ProductWeightPackDevice(const ProductWeightPackDevice&) = delete;
     ProductWeightPackDevice& operator=(const ProductWeightPackDevice&) = delete;
 
-    /// @brief Allocate prim/contrib tables + V (nb×nb column-major).
-    ///
-    /// @param stream    Non-default SCF stream (caller-owned).
-    /// @param nb        AO dimension.
-    /// @param nprim     Length of prim table.
-    /// @param ncontrib  Length of contrib pool.
-    void build(cudaStream_t stream, int nb, int nprim, int ncontrib);
-
-    /// @brief Upload geometry-fixed prim + contrib tables (once per run).
-    void upload_tables(const DevicePrimRef* prims_host, int nprim,
-                       const DevicePrimContrib* contribs_host, int ncontrib);
+    /// @brief Allocate V (ncells column-major nb×nb matrices).
+    void build(cudaStream_t stream, int nb, const DevicePrimRef* d_prims,
+               const DevicePrimContrib* d_contribs, int ncells = 1);
 
     /// @brief From device P (nb×nb column-major), write `d_prods[0..nprod)`.
     ///
@@ -78,7 +72,7 @@ class ProductWeightPackDevice {
     /// fields are copied from `d_geom` (device-resident). Sets `mag = |w|`
     /// (per-monom); call `apply_group_max_mag` for collint group windows.
     ///
-    /// @param d_P      Device density, length nb*nb, column-major [e].
+    /// @param d_P      Device density stack, column-major within each cell.
     /// @param d_geom   Device product geometry, length nprod.
     /// @param d_prods  Device product descriptors (weight field written).
     /// @param nprod    Number of products.
@@ -119,7 +113,7 @@ class ProductWeightPackDevice {
     void scatter_acc_add(const DeviceProductGeom* d_geom, const double* d_acc,
                          int nprod, double w_grid);
 
-    /// @brief Download internal V (nb×nb column-major) to host.
+    /// @brief Download the internal column-major V stack to host.
     void download_V(double* V_host) const;
 
     /// @brief Frobenius ⟨P, M⟩ = Σ_ij P_ij M_ij (column-major device buffers).
@@ -137,8 +131,6 @@ class ProductWeightPackDevice {
     int nb() const { return nb_; }
     double* d_V() { return d_V_; }
     const double* d_V() const { return d_V_; }
-    DevicePrimRef* d_prims() { return d_prims_; }
-    DevicePrimContrib* d_contribs() { return d_contribs_; }
 
   private:
     void ensure_built_() const;
@@ -147,13 +139,12 @@ class ProductWeightPackDevice {
 
     cudaStream_t stream_ = nullptr;
     int nb_ = 0;
-    int nprim_ = 0;
-    int ncontrib_ = 0;
+    std::size_t v_bytes_ = 0;
     bool built_ = false;
 
-    DevicePrimRef* d_prims_ = nullptr;
-    DevicePrimContrib* d_contribs_ = nullptr;
-    double* d_V_ = nullptr;      ///< nb×nb column-major.
+    const DevicePrimRef* d_prims_ = nullptr;
+    const DevicePrimContrib* d_contribs_ = nullptr;
+    double* d_V_ = nullptr;      ///< One column-major matrix per cell.
     double* d_reduce_ = nullptr; ///< single double for frobenius reduction.
 };
 

@@ -24,13 +24,15 @@ namespace internal {
 ///
 /// Kernel twin of CPU `accumulate_local_forces`. Accumulates into
 /// `d_forces` [Hartree/Bohr] with atomicAdd. Caller zeros the buffer.
+/// `d_vg` is [species][G]; `d_atom_species` maps atoms to its rows.
 /// @param stream CUDA stream for the launch (pass `DeviceDensity::stream()`
 ///               so force kernels share the SCF stream).
 void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
                                     const double* d_gx, const double* d_gy,
                                     const double* d_gz, const double* d_vg,
-                                    const double* d_pos, int ng, int n_atoms,
-                                    double omega, double* d_forces,
+                                    const double* d_pos,
+                                    const int* d_atom_species, int ng,
+                                    int n_atoms, double omega, double* d_forces,
                                     cudaStream_t stream = nullptr);
 
 /// @brief Analytic forces after a completed device SCF [eV/Å].
@@ -46,8 +48,10 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 /// @param frame     Geometry [Å]; not mutated.
 /// @param den       Device density after SCF mix (owns ρ(G)).
 /// @param solver    Band solver bound to den grids, k-tables built.
-/// @param prob      Assembled problem (same run as SCF).
-/// @param ws        Workspace used for band solves (eigenvalues sink).
+/// @param ions          Ionic geometry and admitted radial data.
+/// @param density_modes Reciprocal modes for the accepted density.
+/// @param k_weights     Weights in the device solver's k-point order.
+/// @param eigenvalues   Scratch output for band solves.
 /// @param n_alpha   Occupied ↑ bands (−1 = restricted).
 /// @param n_beta    Occupied ↓ bands (spin path only).
 /// @param use_smear Restricted metallic-smear fractional NL path.
@@ -57,7 +61,9 @@ void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
 ///        existing classical host Ewald contribution is uploaded in this mode.
 std::vector<std::array<double, 3>> pw_forces_analytic_impl(
     const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
-    cpu::pw::internal::PWProblem& prob, cpu::pw::internal::PWWorkspace& ws,
+    const cpu::pw::internal::PWIons& ions,
+    const cpu::pw::internal::GVectorList& density_modes,
+    std::span<const AccReal> k_weights, xt::xarray<AccReal>& eigenvalues,
     int n_alpha = -1, int n_beta = -1, bool use_smear = false, int n_elec = 0,
     ATV::electronic::Smearing smear_kind =
         ATV::electronic::Smearing::fermi_dirac,

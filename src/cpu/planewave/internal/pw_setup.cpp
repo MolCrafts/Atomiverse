@@ -53,24 +53,15 @@ bool log_rank0() {
     return true;
 }
 
-void setup_nc_vloc(PWWorkspace& ws, const internal::GVectorList& gv,
-                   const internal::NcPotentialData& upf, AccReal omega) {
-    auto vg = nc_vloc_to_gspace(upf, gv, omega);
-    // Atom form factor × structure factor Σ_a e^{-iG·R_a}.
-    // vg[0] already holds only the finite part (QE "αZ" term); the
-    // divergent −4πZ/ΩG² jellium piece is cancelled against the
-    // Ewald/Hartree G=0 conventions.
-    const auto& pos = ws.atom_pos_bohr;
-    for (int ig = 0; ig < ws.n_g; ++ig) {
-        AccReal s_re = 0, s_im = 0;
-        for (size_t ia = 0; ia < pos.size(); ++ia) {
-            AccReal phase = gv.g[ig][0] * pos[ia][0] + gv.g[ig][1] * pos[ia][1]
-                            + gv.g[ig][2] * pos[ia][2];
-            s_re += std::cos(phase);
-            s_im -= std::sin(phase);
-        }
-        ws.V_loc_G[ig] = vg[ig] * std::complex<AccReal>(s_re, s_im);
+std::complex<AccReal> structure_factor(const Vec3& g,
+                                       const std::vector<Vec3>& positions) {
+    AccReal re = 0, im = 0;
+    for (const auto& pos : positions) {
+        const AccReal phase = g[0] * pos[0] + g[1] * pos[1] + g[2] * pos[2];
+        re += std::cos(phase);
+        im -= std::sin(phase);
     }
+    return {re, im};
 }
 
 std::vector<Vec3> pos_to_bohr(const cpu::Frame& frame) {
@@ -119,8 +110,7 @@ SphBesselFn sph_bessel_for_l(int l) {
 /// k-sphere. The radial table is evaluated at q = |k+G| — the projector
 /// of a Bloch state lives on k+G, so the table is k-dependent and must
 /// be rebuilt per k-point (size gv.count(), which also differs per k).
-void setup_kb_projectors(std::vector<std::vector<PWWorkspace::KBProjG>>& out,
-                         const internal::GVectorList& gv,
+void setup_kb_projectors(KBProjectors& out, const internal::GVectorList& gv,
                          const internal::NcPotentialData& upf,
                          const std::vector<Vec3>& pos_bohr, AccReal omega) {
     if (!(omega > AccReal(0)) || !std::isfinite(omega))
@@ -243,8 +233,7 @@ namespace {
 /// Build atomic wavefunctions in G-space for the initial guess on one
 /// k-sphere; the radial transform is evaluated at q = |k+G|
 /// (QE atwfc_mod.f90: chi_G = (4π/√Ω) ∫ χ(r)·j_l(qr)·r dr).
-void setup_atomic_wfc(std::vector<std::vector<PWWorkspace::AtomWfc>>& out,
-                      const internal::GVectorList& gv,
+void setup_atomic_wfc(AtomicOrbitals& out, const internal::GVectorList& gv,
                       const internal::NcPotentialData& upf, int n_atoms,
                       AccReal omega) {
     int ng = gv.count();
@@ -318,16 +307,52 @@ void require_closed_shell(int n_elec, const char* where) {
           "for open shell, or set smearing for metallic occupations");
 }
 
-void setup_pw_problem(
-    const cpu::Frame& frame,
-    const ::ATV::electronic::NormConservingPotential& potential, double ecut_ry,
-    int k_mesh, PWProblem& out) {
-    validate_potential_frame(frame, potential);
-    if (!std::isfinite(ecut_ry) || ecut_ry <= 0 || k_mesh < 1)
-        throw std::invalid_argument(
-            "PW setup requires a positive cutoff and k-mesh");
-    auto admitted = std::make_shared<const NcPotentialData>(potential);
-    setup_pw_problem(frame, std::move(admitted), ecut_ry, k_mesh, out);
+std::vector<std::vector<AccReal>> nc_vloc_to_gspace(
+    std::span<const std::shared_ptr<const NcPotentialData>> species,
+    const GVectorList& gv, AccReal omega) {
+    std::vector<std::vector<AccReal>> form_factors;
+    form_factors.reserve(species.size());
+    for (const auto& nc : species)
+        form_factors.push_back(nc_vloc_to_gspace(*nc, gv, omega));
+    return form_factors;
+}
+
+static void setup_species_k_tables(PWKMesh& out, const PWIons& ions) {
+    const auto n_atoms = ions.atom_species.size();
+    const auto n_k = out.gv_k.size();
+    out.kb_proj_k.assign(n_k, {});
+    out.atom_wfc_k.assign(n_k, {});
+    for (std::size_t ik = 0; ik < n_k; ++ik) {
+        out.kb_proj_k[ik].resize(n_atoms);
+        out.atom_wfc_k[ik].resize(n_atoms);
+    }
+    for (std::size_t kind = 0; kind < ions.species.size(); ++kind) {
+        const auto& nc = *ions.species[kind];
+        std::vector<std::size_t> atoms;
+        std::vector<Vec3> positions;
+        for (std::size_t ia = 0; ia < n_atoms; ++ia) {
+            if (ions.atom_species[ia] != kind)
+                continue;
+            atoms.push_back(ia);
+            positions.push_back(ions.positions[ia]);
+        }
+        if (atoms.empty())
+            continue;
+        for (std::size_t ik = 0; ik < n_k; ++ik) {
+            KBProjectors projectors;
+            setup_kb_projectors(projectors, out.gv_k[ik], nc, positions,
+                                ions.vol_bohr);
+            for (std::size_t j = 0; j < atoms.size(); ++j)
+                out.kb_proj_k[ik][atoms[j]] = std::move(projectors[j]);
+            if (nc.nwfc > 0) {
+                AtomicOrbitals orbitals;
+                setup_atomic_wfc(orbitals, out.gv_k[ik], nc,
+                                 static_cast<int>(atoms.size()), ions.vol_bohr);
+                for (std::size_t j = 0; j < atoms.size(); ++j)
+                    out.atom_wfc_k[ik][atoms[j]] = std::move(orbitals[j]);
+            }
+        }
+    }
 }
 
 // Keep integer mode labels and the quadrature geometry fixed while changing
@@ -350,14 +375,32 @@ static GVectorList strained_g_vectors(const GVectorList& reference,
     return out;
 }
 
+static PWKMesh assemble_k_mesh(const PWIons& ions, const cpu::Box& box_bohr,
+                               AccReal ecut_ht, KPointGrid grid,
+                               std::span<const GVectorList> reference) {
+    PWKMesh mesh;
+    mesh.kg = std::move(grid);
+    mesh.gv_k.reserve(mesh.kg.kpoints.size());
+    const auto recip = box_bohr.recip_cell();
+    for (std::size_t ik = 0; ik < mesh.kg.kpoints.size(); ++ik) {
+        const auto& kf = mesh.kg.kpoints[ik];
+        const Vec3 kc{
+            recip(0, 0) * kf[0] + recip(0, 1) * kf[1] + recip(0, 2) * kf[2],
+            recip(1, 0) * kf[0] + recip(1, 1) * kf[1] + recip(1, 2) * kf[2],
+            recip(2, 0) * kf[0] + recip(2, 1) * kf[1] + recip(2, 2) * kf[2]};
+        mesh.gv_k.push_back(
+            !reference.empty() ? strained_g_vectors(reference[ik], box_bohr, kc)
+                               : enumerate_g_vectors(box_bohr, ecut_ht, kc));
+    }
+    setup_species_k_tables(mesh, ions);
+    return mesh;
+}
+
 static void setup_pw_problem_impl(
-    const cpu::Frame& frame, std::shared_ptr<const NcPotentialData> potential,
-    double ecut_ry, int k_mesh, PWProblem& out, const PWProblem* reference) {
-    if (!potential)
-        throw std::invalid_argument(
-            "PW setup requires an admitted NC potential");
-    validate_potential_frame(frame, *potential);
-    potential->validate();
+    const cpu::Frame& frame,
+    std::vector<std::shared_ptr<const NcPotentialData>> species,
+    NcComposition composition, double ecut_ry, int k_mesh, PWSetup& out,
+    PWWorkspace& ws, const PWStrainReference* reference) {
     if (!std::isfinite(ecut_ry) || ecut_ry <= 0 || k_mesh < 1)
         throw std::invalid_argument(
             "PW setup requires a positive cutoff and k-mesh");
@@ -371,24 +414,25 @@ static void setup_pw_problem_impl(
     if (!std::isfinite(vol_bohr) || vol_bohr <= 0)
         throw std::invalid_argument(
             "PW setup requires a finite positive cell volume");
-    out.vol_bohr = vol_bohr;
-    out.potential = std::move(potential);
+    out.ions.vol_bohr = vol_bohr;
+    out.ions.species = std::move(species);
+    out.ions.atom_species = std::move(composition.atom_species);
+    out.ions.ionic_charges = std::move(composition.ionic_charges);
 
-    auto pos_bohr = pos_to_bohr(frame);
+    out.ions.positions = pos_to_bohr(frame);
+    const auto& pos_bohr = out.ions.positions;
 
     const bool rank0 = log_rank0();
 
-    const NcPotentialData& upf = *out.potential;
-    const int n_elec = n_atoms * upf.z_val;
-    const std::vector<AccReal> valence_charges(
-        static_cast<std::size_t>(n_atoms), static_cast<AccReal>(upf.z_val));
-    out.n_elec = n_elec;
+    const int n_elec = composition.n_elec;
+    out.ions.n_elec = n_elec;
     out.n_bands = std::max(n_elec / 2, 1);
 
     if (rank0) {
         ATV_INFO("[pw] ========== PW SCF ==========");
-        ATV_INFO("[pw] atoms={} elec={} bands={} ecut_ry={} NC(Z={})", n_atoms,
-                 n_elec, out.n_bands, ecut_ry, upf.atomic_number);
+        ATV_INFO("[pw] atoms={} elec={} bands={} ecut_ry={} NC species={}",
+                 n_atoms, n_elec, out.n_bands, ecut_ry,
+                 out.ions.species.size());
     }
 
     // === Ewald ===
@@ -401,10 +445,9 @@ static void setup_pw_problem_impl(
                            static_cast<AccReal>(sp_y[i]),
                            static_cast<AccReal>(sp_z[i])});
     // Ewald uses the same charges as V_loc: pseudopotential valence.
-    const auto& ewald_charges = valence_charges;
-    internal::EwaldSummation ewald(pos_ang, ewald_charges, box_ang);
+    internal::EwaldSummation ewald(pos_ang, out.ions.ionic_charges, box_ang);
     const AccReal ew_total = ewald.total_energy();
-    out.ew_total = ew_total;
+    out.ions.ew_total = ew_total;
 
     if (rank0) {
         ATV_DEBUG("[pw] --- Ewald (Ha) ---");
@@ -419,10 +462,10 @@ static void setup_pw_problem_impl(
     // 2·G_max(wfc), i.e. ecutrho = 4·ecut (QE default). All density-side
     // quantities (ρ, V_H, V_xc, V_loc, V_eff, mixing, energy sums) live
     // on this sphere; the per-k wavefunction spheres stay at ecut.
-    out.gv0 = reference
-                  ? strained_g_vectors(reference->gv0, box_bohr, Vec3::zeros())
-                  : internal::enumerate_g_vectors(
-                        box_bohr, AccReal(4) * ecut_ht, Vec3::zeros());
+    out.gv0 = reference ? strained_g_vectors(reference->density_modes, box_bohr,
+                                             Vec3::zeros())
+                        : internal::enumerate_g_vectors(
+                              box_bohr, AccReal(4) * ecut_ht, Vec3::zeros());
     auto& gv0 = out.gv0;
     if (rank0) {
         ATV_DEBUG("[pw] --- G-vectors ---");
@@ -432,73 +475,69 @@ static void setup_pw_problem_impl(
         ATV_DEBUG("[pw]   FFT dims(hkl): {}x{}x{}", gv0.nx, gv0.ny, gv0.nz);
     }
 
-    // k-points
-    out.kg = reference ? reference->kg
-                       : internal::generate_mp_mesh(k_mesh, k_mesh, k_mesh);
-
     // === Workspace ===
-    PWWorkspace& ws = out.ws;
     // Orbital guesses are local to this SCF solve. A new frame/cell or a
     // retry starts from a fresh physical setup, never a failed prior solve.
     ws.wfc = xt::xarray<std::complex<AccReal>>{};
-    ws.n_g = gv0.count();
-    ws.gvec = &gv0;
+    ws.bind({gv0});
     auto ng = static_cast<std::size_t>(ws.n_g);
     ws.rho_G.resize({ng});
     ws.rho_G_old.resize({ng});
     ws.V_H_G.resize({ng});
     ws.V_xc_G.resize({ng});
     ws.V_eff_G.resize({ng});
-    ws.V_loc_G.resize({ng});
-    ws.T_G.resize({ng});
+    out.V_loc_G.assign(ng, {});
+    ws.V_loc_G = out.V_loc_G;
     ws.mix_beta = AccReal(0.7); // QE default: mixing_beta = 0.7
     ws.omega = vol_bohr;        // cell volume for real-space integration
     ws.atom_pos_bohr =
         pos_bohr; // atom positions for local/nonlocal structure factors
 
-    // Initial density uses the same admitted NC physical data.
-
-    for (int i = 0; i < ws.n_g; ++i)
-        ws.rho_G[i] = std::complex<AccReal>(0, 0);
-
-    if (!upf.rho_atom.empty()) {
-        // G-space transform of the atomic pseudocharge. UPF PP_RHOATOM
-        // stores 4πr²ρ(r) (integrates to Z_val with plain dr), so
-        // ρ_atom(G) = (1/Ω) ∫ PP_RHOATOM(r) j₀(Gr) dr.
-        std::vector<AccReal> integrand(upf.r.size());
-        for (int ig = 0; ig < ws.n_g; ++ig) {
-            AccReal G = std::sqrt(gv0.g[ig].norm_squared());
-            for (std::size_t ir = 0; ir < upf.r.size(); ++ir) {
-                AccReal Gr = G * upf.r[ir];
-                AccReal j0 = (Gr < AccReal(1e-8))
-                                 ? AccReal(1) - Gr * Gr / AccReal(6)
-                                 : std::sin(Gr) / Gr;
-                integrand[ir] = upf.rho_atom[ir] * j0;
-            }
-            const AccReal sum = upf.integrate_radial(integrand);
-            AccReal rho_g_atom = sum / vol_bohr;
-            // Structure factor: Σ_a exp(-i G·R_a)
-            AccReal s_re = 0, s_im = 0;
-            for (int ia = 0; ia < n_atoms; ++ia) {
-                AccReal phase = gv0.g[ig][0] * pos_bohr[ia][0]
-                                + gv0.g[ig][1] * pos_bohr[ia][1]
-                                + gv0.g[ig][2] * pos_bohr[ia][2];
-                s_re += std::cos(phase);
-                s_im -= std::sin(phase);
-            }
-            ws.rho_G[ig] = rho_g_atom * std::complex<AccReal>(s_re, s_im);
-        }
-        // Renormalize: total charge must be n_elec
-        AccReal total_charge = ws.rho_G[0].real() * vol_bohr;
-        if (std::abs(total_charge) > AccReal(1e-16)) {
-            AccReal rescale = AccReal(n_elec) / total_charge;
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.rho_G[ig] *= rescale;
-        }
-    } else {
-        // Fallback: uniform density
-        ws.rho_G[0] = std::complex<AccReal>(AccReal(n_elec) / vol_bohr, 0);
+    // Assemble local potential and starting density with the same phases.
+    for (int ig = 0; ig < ws.n_g; ++ig) {
+        ws.rho_G[ig] = {};
     }
+    for (std::size_t kind = 0; kind < out.ions.species.size(); ++kind) {
+        std::vector<Vec3> positions;
+        for (std::size_t ia = 0; ia < out.ions.atom_species.size(); ++ia)
+            if (out.ions.atom_species[ia] == kind)
+                positions.push_back(pos_bohr[ia]);
+        if (positions.empty())
+            continue;
+        const auto& nc = *out.ions.species[kind];
+        const auto vg = nc_vloc_to_gspace(nc, gv0, vol_bohr);
+        // Providers without an atomic pseudocharge seed a uniform share.
+        if (nc.rho_atom.empty())
+            ws.rho_G[0] += AccReal(positions.size()) * nc.z_val / vol_bohr;
+        std::vector<AccReal> integrand(nc.rho_atom.size());
+        for (int ig = 0; ig < ws.n_g; ++ig) {
+            const auto phase = structure_factor(gv0.g[ig], positions);
+            out.V_loc_G[ig] += vg[ig] * phase;
+            if (integrand.empty())
+                continue;
+            // PP_RHOATOM stores 4πr²ρ(r), integrated against j₀(Gr).
+            const AccReal g = gv0.g[ig].norm();
+            for (std::size_t ir = 0; ir < integrand.size(); ++ir) {
+                const AccReal gr = g * nc.r[ir];
+                const AccReal j0 = gr < AccReal(1e-8)
+                                       ? AccReal(1) - gr * gr / AccReal(6)
+                                       : std::sin(gr) / gr;
+                integrand[ir] = nc.rho_atom[ir] * j0;
+            }
+            ws.rho_G[ig] += (nc.integrate_radial(integrand) / vol_bohr) * phase;
+        }
+    }
+    const AccReal total_charge = ws.rho_G[0].real() * vol_bohr;
+    if (std::abs(total_charge) > AccReal(1e-16)) {
+        const AccReal rescale = AccReal(n_elec) / total_charge;
+        for (int ig = 0; ig < ws.n_g; ++ig)
+            ws.rho_G[ig] *= rescale;
+    } else {
+        ws.rho_G[0] = AccReal(n_elec) / vol_bohr;
+    }
+
+    if (rank0)
+        ATV_DEBUG("[pw]   V_loc(G=0)={}", ws.V_loc_G[0].real());
 
     // gv0 is the density sphere (4*ecut) and its dimensions already cover
     // every density Fourier index. They also avoid aliasing G-G' between
@@ -517,137 +556,67 @@ static void setup_pw_problem_impl(
         ATV_DEBUG("[pw]   Density FFT grid: {}x{}x{} (nr={})", ws.fft_nx,
                   ws.fft_ny, ws.fft_nz, ws.nr);
 
-    // === V_loc ===
-    if (rank0)
-        ATV_DEBUG("[pw] --- NC: Z_val={} l_max={} n_proj={} ---", upf.z_val,
-                  upf.l_max, upf.kb.size());
-    setup_nc_vloc(ws, gv0, upf, vol_bohr);
-    if (rank0)
-        ATV_DEBUG("[pw]   V_loc(G=0)={}", ws.V_loc_G[0].real());
-
-    // Pre-compute k-point G-vectors and the per-k nonlocal / wfc tables
-    // (radial parts live on q = k+G, so size and values are k-dependent).
-    out.gv_k.clear();
-    out.gv_k.reserve(out.kg.kpoints.size());
-    {
-        // MP mesh k-points are fractional (crystal) coordinates;
-        // enumerate_g_vectors needs Cartesian [1/Bohr].
-        auto recip = box_bohr.recip_cell();
-        for (std::size_t ik = 0; ik < out.kg.kpoints.size(); ++ik) {
-            const auto& kf = out.kg.kpoints[ik];
-            Vec3 kc{
-                recip(0, 0) * kf[0] + recip(0, 1) * kf[1] + recip(0, 2) * kf[2],
-                recip(1, 0) * kf[0] + recip(1, 1) * kf[1] + recip(1, 2) * kf[2],
-                recip(2, 0) * kf[0] + recip(2, 1) * kf[1]
-                    + recip(2, 2) * kf[2]};
-            out.gv_k.push_back(
-                reference
-                    ? strained_g_vectors(reference->gv_k[ik], box_bohr, kc)
-                    : internal::enumerate_g_vectors(box_bohr, ecut_ht, kc));
-        }
-    }
-
-    out.kb_proj_k.clear();
-    out.atom_wfc_k.clear();
-    {
-        auto n_k = out.gv_k.size();
-        out.kb_proj_k.resize(n_k);
-        out.atom_wfc_k.resize(n_k);
-        for (size_t ik = 0; ik < n_k; ++ik) {
-            setup_kb_projectors(out.kb_proj_k[ik], out.gv_k[ik], upf, pos_bohr,
-                                vol_bohr);
-            if (upf.nwfc > 0)
-                setup_atomic_wfc(out.atom_wfc_k[ik], out.gv_k[ik], upf, n_atoms,
-                                 vol_bohr);
-        }
-        if (rank0)
-            ATV_DEBUG("[pw]   KB projectors: {} proj, {} atoms, {} k-spheres "
-                      "(atomic wfc: {})",
-                      upf.kb.size(), n_atoms, n_k, upf.nwfc);
-    }
+    out.mesh = assemble_k_mesh(
+        out.ions, box_bohr, ecut_ht,
+        reference ? reference->grid : generate_mp_mesh(k_mesh, k_mesh, k_mesh),
+        reference ? reference->wavefunction_modes
+                  : std::span<const GVectorList>{});
 }
 
-void setup_pw_problem(const cpu::Frame& frame,
-                      std::shared_ptr<const NcPotentialData> potential,
-                      double ecut_ry, int k_mesh, PWProblem& out) {
-    setup_pw_problem_impl(frame, std::move(potential), ecut_ry, k_mesh, out,
-                          nullptr);
+void setup_pw_problem(const cpu::Frame& frame, NcProviders potentials,
+                      double ecut_ry, int k_mesh, PWSetup& out,
+                      PWWorkspace& ws) {
+    auto composition = assign_nc_species(frame, potentials);
+    if (!std::isfinite(ecut_ry) || ecut_ry <= 0 || k_mesh < 1)
+        throw std::invalid_argument(
+            "PW setup requires a positive cutoff and k-mesh");
+    std::vector<std::shared_ptr<const NcPotentialData>> species;
+    species.reserve(potentials.size());
+    for (const auto& potential : potentials)
+        species.push_back(std::make_shared<const NcPotentialData>(*potential));
+    setup_pw_problem_impl(frame, std::move(species), std::move(composition),
+                          ecut_ry, k_mesh, out, ws, nullptr);
 }
 
 void setup_pw_problem_fixed_basis(const cpu::Frame& frame,
-                                  const PWProblem& reference, double ecut_ry,
-                                  int k_mesh, PWProblem& out) {
-    if (&reference == &out || reference.gv0.count() == 0
-        || reference.gv_k.size() != reference.kg.kpoints.size()
-        || reference.kg.kpoints.empty())
+                                  PWStrainReference reference, double ecut_ry,
+                                  int k_mesh, PWSetup& out, PWWorkspace& ws) {
+    if (&reference.density_modes == &out.gv0
+        || reference.density_modes.count() == 0
+        || reference.wavefunction_modes.size() != reference.grid.kpoints.size()
+        || reference.grid.kpoints.empty())
         throw std::invalid_argument(
             "PW fixed-basis setup requires a distinct complete reference");
     const auto mesh = static_cast<std::size_t>(k_mesh);
-    if (k_mesh < 1 || mesh * mesh * mesh != reference.kg.kpoints.size())
+    if (k_mesh < 1 || mesh * mesh * mesh != reference.grid.kpoints.size())
         throw std::invalid_argument(
             "PW fixed-basis k-mesh differs from reference");
-    setup_pw_problem_impl(frame, reference.potential, ecut_ry, k_mesh, out,
-                          &reference);
+    auto composition = assign_nc_species(frame, reference.ions.species);
+    setup_pw_problem_impl(frame, reference.ions.species, std::move(composition),
+                          ecut_ry, k_mesh, out, ws, &reference);
     const auto same_modes = [](const GVectorList& a, const GVectorList& b) {
         return a.h == b.h && a.k == b.k && a.l == b.l && a.nx == b.nx
                && a.ny == b.ny && a.nz == b.nz && a.count() == b.count();
     };
-    if (!same_modes(out.gv0, reference.gv0)
-        || out.gv_k.size() != reference.gv_k.size())
+    if (!same_modes(out.gv0, reference.density_modes)
+        || out.mesh.gv_k.size() != reference.wavefunction_modes.size())
         throw std::logic_error("PW fixed-basis density modes changed");
-    for (std::size_t ik = 0; ik < out.gv_k.size(); ++ik)
-        if (!same_modes(out.gv_k[ik], reference.gv_k[ik]))
+    for (std::size_t ik = 0; ik < out.mesh.gv_k.size(); ++ik)
+        if (!same_modes(out.mesh.gv_k[ik], reference.wavefunction_modes[ik]))
             throw std::logic_error("PW fixed-basis wavefunction modes changed");
 }
 
-void rebuild_k_tables(PWProblem& out, const cpu::Frame& frame, double ecut_ry,
-                      const std::vector<Vec3>& kfrac) {
-    if (!out.potential)
-        throw std::logic_error(
-            "rebuild_k_tables requires an admitted NC potential");
-    validate_potential_frame(frame, *out.potential);
+PWKMesh make_pw_k_mesh(const PWIons& ions, const cpu::Box& box, double ecut_ry,
+                       const std::vector<Vec3>& kfrac) {
     if (kfrac.empty())
-        throw std::invalid_argument("rebuild_k_tables: empty k-list");
-
-    const cpu::Box& box_ang = frame.box;
+        throw std::invalid_argument("PW k-mesh: empty k-list");
     cpu::Box box_bohr;
-    box_bohr.set_cell(box_ang.cell() * AccReal(1.8897259886));
-    AccReal ecut_ht = static_cast<AccReal>(ecut_ry) * AccReal(0.5);
-    AccReal vol_bohr = box_bohr.volume();
-    auto pos_bohr = pos_to_bohr(frame);
-    int n_atoms = static_cast<int>(pos_bohr.size());
-
-    out.kg.kpoints = kfrac;
-    const AccReal w = AccReal(1) / AccReal(static_cast<int>(kfrac.size()));
-    out.kg.weights.assign(kfrac.size(), w);
-
-    auto recip = box_bohr.recip_cell();
-    out.gv_k.clear();
-    out.gv_k.reserve(kfrac.size());
-    for (const auto& kf : kfrac) {
-        Vec3 kc{recip(0, 0) * kf[0] + recip(0, 1) * kf[1] + recip(0, 2) * kf[2],
-                recip(1, 0) * kf[0] + recip(1, 1) * kf[1] + recip(1, 2) * kf[2],
-                recip(2, 0) * kf[0] + recip(2, 1) * kf[1]
-                    + recip(2, 2) * kf[2]};
-        out.gv_k.push_back(
-            internal::enumerate_g_vectors(box_bohr, ecut_ht, kc));
-    }
-
-    out.kb_proj_k.clear();
-    out.atom_wfc_k.clear();
-    {
-        const auto& upf = *out.potential;
-        const auto n_k = out.gv_k.size();
-        out.kb_proj_k.resize(n_k);
-        out.atom_wfc_k.resize(n_k);
-        for (size_t ik = 0; ik < n_k; ++ik) {
-            setup_kb_projectors(out.kb_proj_k[ik], out.gv_k[ik], upf, pos_bohr,
-                                vol_bohr);
-            if (upf.nwfc > 0)
-                setup_atomic_wfc(out.atom_wfc_k[ik], out.gv_k[ik], upf, n_atoms,
-                                 vol_bohr);
-        }
-    }
+    box_bohr.set_cell(box.cell() * AccReal(1.8897259886));
+    KPointGrid grid;
+    grid.kpoints = kfrac;
+    grid.weights.assign(kfrac.size(), AccReal(1) / AccReal(kfrac.size()));
+    return assemble_k_mesh(ions, box_bohr, AccReal(ecut_ry) * AccReal(.5),
+                           std::move(grid), {});
 }
 
 void solve_pulay_coefficients(const AccReal* B, int m, AccReal* c_out) {

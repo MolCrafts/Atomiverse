@@ -5,6 +5,8 @@
 /// over grid points run on device — no host loop over g in the hot path.
 #include "atomiverse/cuda/gpw/internal/kpoint_collocate.cuh"
 
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
+
 #include <stdexcept>
 #include <string>
 
@@ -58,43 +60,49 @@ __global__ void collocate_density_k_kernel(const double2* __restrict__ chi_k,
 
 } // namespace
 
-void KpointCollocateDevice::build(cudaStream_t stream, int nk, int nb,
-                                  long npts) {
-    destroy();
-    if (nk < 1 || nb < 1 || npts < 1)
+KpointBasisDevice::KpointBasisDevice(
+    cudaStream_t stream, const cpu::gpw::internal::KpointBasisGrid& host)
+    : stream_(stream), nk_(static_cast<int>(host.chi.size())), nb_(host.nb),
+      npts_(host.npts) {
+    if (nk_ < 1 || nb_ < 1 || npts_ < 1)
         throw std::invalid_argument(
-            "KpointCollocateDevice::build: nk, nb, npts must be >= 1");
-    stream_ = stream;
-    nk_ = nk;
-    nb_ = nb;
-    npts_ = npts;
-    const size_t nchi = static_cast<size_t>(nk) * static_cast<size_t>(npts)
-                        * static_cast<size_t>(nb);
-    const size_t np = static_cast<size_t>(nb) * static_cast<size_t>(nb);
-    check_cuda(cudaMalloc(&d_chi_, nchi * sizeof(double2)), "malloc d_chi");
-    check_cuda(cudaMalloc(&d_P_, np * sizeof(double2)), "malloc d_P");
-    built_ = true;
+            "GPW device Bloch table requires nonempty dimensions");
+    const auto stride = static_cast<std::size_t>(npts_) * nb_;
+    for (const auto& values : host.chi)
+        if (values.size() != stride)
+            throw std::invalid_argument(
+                "GPW device Bloch table requires dense AO values");
+    static_assert(sizeof(std::complex<double>) == sizeof(double2));
+    check_cuda(cudaMalloc(&values_, stride * nk_ * sizeof(double2)),
+               "malloc Bloch AO table");
+    try {
+        for (int ik = 0; ik < nk_; ++ik) {
+            const auto index = static_cast<std::size_t>(ik);
+            check_cuda(cudaMemcpyAsync(values_ + index * stride,
+                                       host.chi[index].data(),
+                                       stride * sizeof(double2),
+                                       cudaMemcpyHostToDevice, stream_),
+                       "H2D Bloch AO table");
+        }
+        check_cuda(cudaStreamSynchronize(stream_), "sync Bloch AO upload");
+    } catch (...) {
+        cudaFree(values_);
+        throw;
+    }
 }
 
-void KpointCollocateDevice::upload_chi(int ik,
-                                       const std::complex<double>* chi_host) {
-    if (!built_)
-        throw std::runtime_error(
-            "KpointCollocateDevice::upload_chi: not built");
-    if (ik < 0 || ik >= nk_)
-        throw std::invalid_argument(
-            "KpointCollocateDevice::upload_chi: ik out of range");
-    if (!chi_host)
-        throw std::invalid_argument(
-            "KpointCollocateDevice::upload_chi: null chi_host");
-    const size_t n = static_cast<size_t>(npts_) * static_cast<size_t>(nb_);
-    const size_t off = static_cast<size_t>(ik) * n;
-    // std::complex<double> is layout-compatible with double2 {re, im}.
-    static_assert(sizeof(std::complex<double>) == sizeof(double2),
-                  "std::complex<double> must match double2");
-    check_cuda(cudaMemcpyAsync(d_chi_ + off, chi_host, n * sizeof(double2),
-                               cudaMemcpyHostToDevice, stream_),
-               "H2D chi");
+KpointBasisDevice::~KpointBasisDevice() { cudaFree(values_); }
+
+void KpointCollocateDevice::build(const KpointBasisDevice& basis) {
+    destroy();
+    stream_ = basis.stream();
+    nk_ = basis.nk();
+    nb_ = basis.nb();
+    npts_ = basis.npts();
+    d_chi_ = basis.data();
+    const auto np = static_cast<std::size_t>(nb_) * nb_;
+    check_cuda(cudaMalloc(&d_P_, np * sizeof(double2)), "malloc d_P");
+    built_ = true;
 }
 
 void KpointCollocateDevice::zero_rho(double* d_rho) const {
@@ -179,10 +187,7 @@ void KpointCollocateDevice::collocate_k_device_cm(int ik, const void* d_P_cm,
 }
 
 void KpointCollocateDevice::destroy() {
-    if (d_chi_) {
-        cudaFree(d_chi_);
-        d_chi_ = nullptr;
-    }
+    d_chi_ = nullptr;
     if (d_P_) {
         cudaFree(d_P_);
         d_P_ = nullptr;

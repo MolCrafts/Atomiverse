@@ -35,7 +35,13 @@ void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
     const StorageReal* __restrict sp_vx = f.span(kAtom_vx);
     const StorageReal* __restrict sp_vy = f.span(kAtom_vy);
     const StorageReal* __restrict sp_vz = f.span(kAtom_vz);
-#pragma omp parallel for schedule(static) reduction(+ : ke)
+    // A rank-local sum is cheap enough to vectorize on the calling thread
+    // until there are enough owned rows to amortize a team join.
+    constexpr int kRowsPerThread = 16384;
+    [[maybe_unused]] const int team =
+        std::max(1, std::min(ctx.runtime.n_threads, n / kRowsPerThread));
+#pragma omp parallel for simd schedule(static) num_threads(team)               \
+    reduction(+ : ke) if (parallel : team > 1)
     for (int i = 0; i < n; ++i) {
         double v2 =
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];

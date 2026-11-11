@@ -247,7 +247,8 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
             "MP2::run: a GHF (spinor) reference is not supported — the MP2 "
             "pack has no spinor transformation. Use RHF or UHF.");
     drive_converged(mf, frame, guess, "MP2::run");
-    if (mf.ri == RI::None)
+    const auto* cached_jk = mf.post_hf_coulomb_cache_();
+    if (mf.ri == RI::None && !cached_jk)
         mf.materialize_eri_();
     if ((mf.spin_ == SpinType::Unrestricted
          || mf.spin_ == SpinType::RestrictedOpen)
@@ -274,7 +275,7 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
                              os_scale, ss_scale);
     } else {
         result = mp2_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                            frozen, os_scale, ss_scale);
+                            frozen, os_scale, ss_scale, cached_jk);
     }
     frame.meta.get(kEnergy) = result.e_tot * units::kHartreeInEv;
     return result;
@@ -346,9 +347,13 @@ MP3Result MP3<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
         throw std::invalid_argument(
             "MP3::run: RI-MP3 is not implemented — set ri=RI::None");
     drive_converged(mf, frame, guess, "MP3::run");
-    mf.materialize_eri_();
-    return mp3_energy(mf.integral_view_(), mf.determinant(), mf.energy(),
-                      frozen);
+    const auto* cached_jk = mf.post_hf_coulomb_cache_();
+    if (!cached_jk)
+        mf.materialize_eri_();
+    const MP3Result result = mp3_energy(mf.integral_view_(), mf.determinant(),
+                                        mf.energy(), frozen, cached_jk);
+    frame.meta.get(kEnergy) = result.e_tot * units::kHartreeInEv;
+    return result;
 }
 
 template <typename Method>

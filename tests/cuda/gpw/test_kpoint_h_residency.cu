@@ -32,6 +32,7 @@ using ATV::cpu::gpw::internal::diagonalize_k;
 using ATV::cpu::gpw::internal::KOrth;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
+using ATV::cuda::gpw::internal::KpointBasisDevice;
 using ATV::cuda::gpw::internal::KpointDiisEigenDevice;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
@@ -157,10 +158,10 @@ TEST(CudaGpwKpointHResidency, IngestResidualMatchesHostDownload) {
                                cudaMemcpyHostToDevice, stream),
                "H2D V");
 
+    const KpointBasisDevice device_basis(stream, kbg);
     KpointIntegrateDevice kint;
-    kint.build(stream, nb, npts, nk);
+    kint.build(device_basis);
     for (int ik = 0; ik < nk; ++ik) {
-        kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
         kint.upload_H0(ik, H0[static_cast<std::size_t>(ik)].data());
     }
 

@@ -1,4 +1,4 @@
-# Molecular SCF benchmarks (HF and KS-DFT)
+# Molecular electronic-structure benchmarks
 
 These declarations compare public Atomiverse SCF methods with a live independent
 PySCF calculation using the same molecular input and Hamiltonian. They are manual
@@ -90,6 +90,16 @@ seeing its result.
 
 Use a fresh output directory for each campaign. Examples below do not submit
 jobs or provision hardware.
+
+`--method rmp2` compares complete RHF-to-canonical-MP2 calls on Cartesian
+STO-3G water and an eight-water chain. The smoke tier covers one water. Each
+engine computes its own RHF reference and MP2 correlation, and the benchmark
+compares the reference, total, correlation and two spin-channel energies.
+
+`--method rmp3` uses the same Cartesian STO-3G systems and times fresh RHF and
+all-electron canonical MP3. It compares the RHF, total, correlation, second-order
+and third-order energies against PySCF RHF and MO integrals with the NumPy
+[spatial MP3 diagram sum](../../tools/pyscf_oracle/mp3.py).
 
 ```bash
 python -m benchmarks list

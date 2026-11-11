@@ -83,14 +83,13 @@ gpw_forces_analytic(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 /// @return Forces [Hartree/Bohr], one xyz triple per atom.
 /// @throws std::runtime_error if `!scf.converged` or UKS β state is missing.
 std::vector<std::array<double, 3>>
-gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-                    const GpwResult& scf);
+gpw_forces_from_scf(const GpwGeometry& geometry, const GpwDft& cfg,
+                    const GpwResult& scf, const GpwWorkspace& workspace);
 
 /// @brief Analytic ionic forces at a **fixed** electronic state (no SCF).
-/// Optional geometry_cache must describe this geometry/basis/grid. It never
-/// authorizes potential reuse: matching_density separately requires that P
-/// (both spin matrices for UKS) references that result's density fields.
-/// XL shadow densities pass geometry only; CP can pass both at its current P.
+/// Geometry describes this assembly. Matching electronic state and workspace
+/// may be supplied together to reuse its potentials. P (both spin matrices
+/// for UKS) must refer to that state. XL shadow densities pass geometry only.
 ///
 /// Car–Parrinello path: nuclei feel \(-\partial E/\partial R\) at the current
 /// density. Closed-shell RKS: \(P = 2 C C^\top\),
@@ -107,10 +106,10 @@ gpw_forces_from_scf(const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
 /// @return Forces [Hartree/Bohr], one xyz triple per atom.
 /// @throws std::invalid_argument when `cfg.is_uks()` (use the UKS overload).
 std::vector<std::array<double, 3>> gpw_forces_at_density(
-    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
-    const linalg::RealMatrix& P, const linalg::RealMatrix& C_occ,
-    const linalg::RealMatrix& H, const GpwResult* geometry_cache = nullptr,
-    const GpwResult* matching_density = nullptr);
+    const GpwGeometry& geometry, const GpwDft& cfg, const linalg::RealMatrix& P,
+    const linalg::RealMatrix& C_occ, const linalg::RealMatrix& H,
+    const GpwResult* matching_density = nullptr,
+    const GpwWorkspace* workspace = nullptr);
 
 /// @brief Fixed-density analytic forces for collinear Γ-UKS (CPMD path).
 ///
@@ -127,12 +126,12 @@ std::vector<std::array<double, 3>> gpw_forces_at_density(
 /// @param H_b   β KS matrix [Hartree], nb × nb.
 /// @return Forces [Hartree/Bohr], one xyz triple per atom.
 std::vector<std::array<double, 3>> gpw_forces_at_density(
-    const std::vector<GpwAtom>& atoms, const GpwDft& cfg,
+    const GpwGeometry& geometry, const GpwDft& cfg,
     const linalg::RealMatrix& P_a, const linalg::RealMatrix& C_a,
     const linalg::RealMatrix& H_a, const linalg::RealMatrix& P_b,
     const linalg::RealMatrix& C_b, const linalg::RealMatrix& H_b,
-    const GpwResult* geometry_cache = nullptr,
-    const GpwResult* matching_density = nullptr);
+    const GpwResult* matching_density = nullptr,
+    const GpwWorkspace* workspace = nullptr);
 
 } // namespace internal
 } // namespace gpw

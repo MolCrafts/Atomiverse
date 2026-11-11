@@ -68,7 +68,9 @@ int run() {
 
     auto frame = make_si_diamond(5.43);
 
-    PW pbe{std::make_shared<UpfPseudopotential>(upf), 15.0, 2,
+    PW pbe{{std::make_shared<UpfPseudopotential>(upf)},
+           15.0,
+           2,
            cpu::xc::XCType::PBE};
     pbe.tol = 1e-5;
     pbe.max_iter = 40;
@@ -99,7 +101,9 @@ int run() {
         }
     }
 
-    PW lda{std::make_shared<UpfPseudopotential>(upf), 15.0, 2,
+    PW lda{{std::make_shared<UpfPseudopotential>(upf)},
+           15.0,
+           2,
            cpu::xc::XCType::LSDA};
     lda.tol = 1e-5;
     lda.max_iter = 40;

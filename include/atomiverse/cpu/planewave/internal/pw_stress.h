@@ -12,6 +12,9 @@ namespace cpu {
 namespace pw {
 namespace internal {
 
+struct PWStrainReference;
+struct PWDensityView;
+
 /// @brief Frozen-density NSCF strain-FD stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
 /// One reference SCF then 12 NSCF evaluations under symmetric strain at
@@ -22,15 +25,11 @@ namespace internal {
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param method Plane-wave method members (ecut, k-mesh, UPF path, …).
-/// @param solved Optional state from PW::run; scf_out must hold its result.
-/// @param scf_out Optional: complete reference SCF result (energy [Ry],
-///        convergence, iterations and metallic/spin metadata). Strained
-///        metallic samples use fractional occupations and matching entropy;
-///        the collinear path shares one μ across both spin spectra.
-std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
-                                              const PW& method,
-                                              PWResult* scf_out = nullptr,
-                                              PWProblem* solved = nullptr);
+std::array<double, 6> pw_stress_from_density(const cpu::Frame& frame,
+                                             const PW& method,
+                                             PWStrainReference reference,
+                                             PWDensityView density,
+                                             const PWResult& result);
 
 /// @brief Strain finite-difference stress oracle [eV/Å³] (12 SCF solves).
 ///

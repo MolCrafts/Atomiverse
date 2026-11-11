@@ -60,7 +60,7 @@ MPI_Datatype mpi_real_type() {
 
 PW copy_pw_params(const PW& m) {
     // Share immutable potential physics; never share electronic solve state.
-    PW p(m.potential, m.ecut_ry, m.k_mesh, m.xc);
+    PW p(m.potentials, m.ecut_ry, m.k_mesh, m.xc);
     // SCF control
     p.tol = m.tol;
     p.max_iter = m.max_iter;
@@ -77,20 +77,19 @@ PW copy_pw_params(const PW& m) {
 }
 
 PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
-                           PWProblem& prob, PoissonSolver& poisson,
-                           XCBuilder& xc, VeffBuilder& veff,
-                           DensityBuilder& density, DavidsonSolver& davidson,
-                           const char* tag) {
+                           PWSetup& prob, PWWorkspace& ws,
+                           PoissonSolver& poisson, XCBuilder& xc,
+                           VeffBuilder& veff, DensityBuilder& density,
+                           DavidsonSolver& davidson, const char* tag) {
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
-                     prob);
-    PWWorkspace& ws = prob.ws;
-    auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
+
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const int n_bands = prob.n_bands;
-    const AccReal vol_bohr = prob.vol_bohr;
+    const AccReal vol_bohr = prob.ions.vol_bohr;
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
@@ -108,31 +107,20 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
 
         density.begin(ws);
         AccReal e_band = 0;
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-            ws.gvec = &gvk;
-            ws.n_g = gvk.count();
-            ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.T_G[ig] = gvk.ekin[ig];
-
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
 
             davidson.step(ws);
 
             const AccReal weight =
-                prob.kg.weights[static_cast<std::size_t>(ik)];
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands; ++b)
                 e_band += weight * ws.eigenvalues[b] * AccReal(2);
 
             density.accumulate_kpoint(ws, weight, n_bands);
 
-            ws.gvec = saved_gvec;
-            ws.n_g = gv0.count();
+            ws.bind(saved_point);
         }
 
 #ifdef ATV_HAS_MPI
@@ -145,7 +133,7 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
 #endif
 
         const auto terms =
-            iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+            iteration_energy(ws, e_band, prob.ions.ew_total, vol_bohr);
         const AccReal residual = density.finish(ws);
         result.iterations = iter + 1;
         result.energy_ha = static_cast<double>(terms.total);
@@ -166,9 +154,9 @@ PWResult run_scf_fixed_occ(const cpu::Frame& frame, const PW& method,
 }
 
 PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
-                                  PWProblem& prob, PoissonSolver& poisson,
-                                  XCBuilder& xc, VeffBuilder& veff,
-                                  DensityBuilder& density,
+                                  PWSetup& prob, PWWorkspace& ws,
+                                  PoissonSolver& poisson, XCBuilder& xc,
+                                  VeffBuilder& veff, DensityBuilder& density,
                                   DavidsonSolver& davidson, int n_bands,
                                   const char* tag) {
     if (method.smearing == ATV::electronic::Smearing::none)
@@ -188,12 +176,11 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
     PWResult result{};
     const auto layout = mpi_layout();
 
-    setup_pw_problem(frame, *method.potential, method.ecut_ry, method.k_mesh,
-                     prob);
-    PWWorkspace& ws = prob.ws;
-    auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
-    const AccReal vol_bohr = prob.vol_bohr;
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
+
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
+    const AccReal vol_bohr = prob.ions.vol_bohr;
     ws.mix_beta = AccReal(method.mix_beta);
     ws.pulay_depth = method.pulay_depth;
 
@@ -223,18 +210,9 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
         veff.step(ws);
 
         // Pass 1: diagonalize owned k-points; stash evals + wfc.
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-            ws.gvec = &gvk;
-            ws.n_g = gvk.count();
-            ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-            for (int ig = 0; ig < ws.n_g; ++ig)
-                ws.T_G[ig] = gvk.ekin[ig];
-            if (!prob.kb_proj_k.empty())
-                ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
 
             davidson.step(ws);
 
@@ -248,8 +226,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
                 evals_k[static_cast<std::size_t>(ik)].resize(
                     static_cast<std::size_t>(n_bands));
             wfc_k[static_cast<std::size_t>(ik)] = ws.wfc;
-            ws.gvec = saved_gvec;
-            ws.n_g = gv0.count();
+            ws.bind(saved_point);
         }
 
 #ifdef ATV_HAS_MPI
@@ -279,7 +256,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
         all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
         all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
         for (int ik = 0; ik < n_kpts; ++ik) {
-            const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal w =
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ev = evals_k[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands && b < static_cast<int>(ev.size());
                  ++b) {
@@ -289,7 +267,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
         }
 
         const AccReal mu_ha =
-            find_fermi_level(all_evals, all_weights, AccReal(prob.n_elec),
+            find_fermi_level(all_evals, all_weights, AccReal(prob.ions.n_elec),
                              degauss_ha, kind, mp_order);
 
         AccReal entropy_sum = AccReal(0);
@@ -297,7 +275,8 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
         std::vector<std::vector<AccReal>> occ_k(
             static_cast<std::size_t>(n_kpts));
         for (int ik = 0; ik < n_kpts; ++ik) {
-            const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal w =
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ev = evals_k[static_cast<std::size_t>(ik)];
             std::vector<AccReal> w_one(ev.size(), w);
             auto fill =
@@ -314,7 +293,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
         density.begin(ws);
         AccReal e_band = 0;
         for (int ik = layout.rank; ik < n_kpts; ik += layout.nprocs) {
-            auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
+            auto& gvk = prob.mesh.gv_k[static_cast<std::size_t>(ik)];
             ws.gvec = &gvk;
             ws.n_g = gvk.count();
             ws.wfc = wfc_k[static_cast<std::size_t>(ik)];
@@ -325,7 +304,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
                 ws.eigenvalues[b] = evals_k[static_cast<std::size_t>(ik)][b];
 
             const AccReal weight =
-                prob.kg.weights[static_cast<std::size_t>(ik)];
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             const auto& occ = occ_k[static_cast<std::size_t>(ik)];
             const int nb = static_cast<int>(occ.size());
             for (int b = 0; b < nb; ++b)
@@ -333,8 +312,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
                           * occ[static_cast<std::size_t>(b)];
             density.accumulate_kpoint(ws, weight, nb, occ.data());
 
-            ws.gvec = saved_gvec;
-            ws.n_g = gv0.count();
+            ws.bind(saved_point);
         }
 
 #ifdef ATV_HAS_MPI
@@ -347,7 +325,7 @@ PWResult run_scf_smear_restricted(const cpu::Frame& frame, const PW& method,
 #endif
 
         const auto terms =
-            iteration_energy(ws, e_band, prob.ew_total, vol_bohr);
+            iteration_energy(ws, e_band, prob.ions.ew_total, vol_bohr);
         const AccReal residual = density.finish(ws);
         result.iterations = iter + 1;
         // Mermin free energy: F = E_KS − σ · S  (σ = degauss in Ha).

@@ -91,7 +91,7 @@ void apply_hamiltonian(const PWWorkspace& ws,
     extract_from_fft(ws, work_buf, Hpsi_g);
     AccReal inv_N = AccReal(1) / AccReal(nr);
     for (int ig = 0; ig < ng; ++ig)
-        Hpsi_g[ig] = Hpsi_g[ig] * inv_N + ws.T_G[ig] * psi_g[ig];
+        Hpsi_g[ig] = Hpsi_g[ig] * inv_N + ws.gvec->ekin[ig] * psi_g[ig];
 
     // Step 5: Non-local KB potential: V_NL = Σ_a Σ_lm D_l β_lm^a ⟨β_lm^a|ψ⟩
     for (const auto& atom_proj : ws.kb_proj) {
@@ -161,7 +161,8 @@ void DavidsonSolver::step(PWWorkspace& ws) {
 
     // ── Initialize subspace (atomic wavefunctions or lowest-T(G) PWs) ──
     std::vector<std::complex<AccReal>> sub_vectors;
-    int n_sub = internal::init_subspace(ws, nb, sub_vectors);
+    int n_sub = internal::init_subspace(*ws.gvec, ws.atom_wfc, ws.atom_pos_bohr,
+                                        ws.wfc, nb, sub_vectors);
     ws.wfc.resize({static_cast<std::size_t>(nb), static_cast<std::size_t>(ng)});
     std::vector<std::complex<AccReal>> H_sub_vectors(n_sub * ng);
     std::vector<bool> H_computed(n_sub, false);
@@ -243,7 +244,7 @@ void DavidsonSolver::step(PWWorkspace& ws) {
                 std::vector<std::complex<AccReal>> delta(ng);
                 AccReal eps = sub_eig[b];
                 for (int ig = 0; ig < ng; ++ig) {
-                    AccReal denom = ws.T_G[ig] - eps;
+                    AccReal denom = ws.gvec->ekin[ig] - eps;
                     // Damp near-degenerate contributions
                     AccReal damp = std::abs(denom);
                     if (damp < AccReal(1e-2))

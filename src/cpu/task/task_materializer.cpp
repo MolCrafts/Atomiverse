@@ -290,19 +290,29 @@ cpu::semiempirical::AM1 am1_method(const AM1Params& p) {
 ///          cap, mixing, functional, spin, smearing [Ry]).
 /// @return The configured method, ready for either registration path.
 cpu::pw::PW pw_method(const PWParams& p) {
-    if (p.upf_path.empty() == p.gth_name.empty())
-        throw std::invalid_argument(
-            "PWParams: set exactly one of upf_path / gth_name");
-    const auto xc = static_cast<cpu::xc::XCType>(p.xc);
-    cpu::pw::PW pw =
-        p.upf_path.empty()
-            ? cpu::pw::PW(
-                  std::make_shared<cpu::pw::GthPseudopotential>(
-                      static_cast<molrs::Element>(p.atomic_number), p.gth_name),
-                  p.ecut_ry, p.k_mesh, xc)
-            : cpu::pw::PW(
-                  std::make_shared<cpu::pw::UpfPseudopotential>(p.upf_path),
-                  p.ecut_ry, p.k_mesh, xc);
+    std::vector<std::shared_ptr<const electronic::NormConservingPotential>>
+        potentials;
+    potentials.reserve(p.potentials.size());
+    for (const auto& input : p.potentials) {
+        switch (input.format) {
+        case PWPotentialFormat::gth:
+            potentials.push_back(std::make_shared<cpu::pw::GthPseudopotential>(
+                static_cast<molrs::Element>(input.atomic_number),
+                input.source));
+            break;
+        case PWPotentialFormat::upf:
+            potentials.push_back(
+                std::make_shared<cpu::pw::UpfPseudopotential>(input.source));
+            if (potentials.back()->atomic_number() != input.atomic_number)
+                throw std::invalid_argument(
+                    "PWParams: UPF atomic number mismatch");
+            break;
+        default:
+            throw std::invalid_argument("PWParams: unknown potential format");
+        }
+    }
+    cpu::pw::PW pw{std::move(potentials), p.ecut_ry, p.k_mesh,
+                   static_cast<cpu::xc::XCType>(p.xc)};
     pw.tol = p.tol;
     pw.max_iter = p.max_iter;
     pw.mix_beta = p.mix_beta;

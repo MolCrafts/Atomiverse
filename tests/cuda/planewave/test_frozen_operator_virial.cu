@@ -94,7 +94,7 @@ double value_local(const internal_data& d, const GList& g,
 double value_nl(const internal_data& d, const GList& g, std::span<const Vec3> r,
                 Orbitals o, double volume) {
     std::vector<Vec3> atoms(r.begin(), r.end());
-    std::vector<std::vector<PWWorkspace::KBProjG>> proj;
+    std::vector<std::vector<KBProjector>> proj;
     setup_kb_projectors(proj, g, d, atoms, volume);
     double e = 0;
     for (std::size_t b = 0; b < o.occupations.size(); ++b)
@@ -195,6 +195,7 @@ std::array<Term, 4> run_gpu(const internal_data& d, const GList& g,
         occupation(state.occupations.begin(), state.occupations.end());
     std::vector<cufftDoubleComplex> coefficients, density_values, structure;
     std::vector<FrozenProjectorColumn> columns;
+    const std::vector<FrozenProjectorSpecies> species{{0, 0, d.n_proj()}};
     for (const auto& r : atoms)
         for (int k = 0; k < 3; ++k)
             positions.push_back(r[k]);
@@ -235,7 +236,7 @@ std::array<Term, 4> run_gpu(const internal_data& d, const GList& g,
                         radial.push_back(p);
                 for (int p : radial)
                     columns.push_back(
-                        {int(atom), l, m, p, start, int(radial.size())});
+                        {int(atom), l, m, p, start, int(radial.size()), 0});
             }
     std::array<ATV::cuda::pw::internal::FrozenOperatorVirial, 4> downloaded;
     DeviceResources device;
@@ -247,7 +248,7 @@ std::array<Term, 4> run_gpu(const internal_data& d, const GList& g,
                                        int(occupation.size()), state.k_weight};
     const FrozenLocalDeviceView lv{device.upload(local_value),
                                    device.upload(local_slope),
-                                   device.upload(structure)};
+                                   device.upload(structure), 1};
     const auto* density = device.upload(density_values);
     auto* output =
         device.allocate<ATV::cuda::pw::internal::FrozenOperatorVirial>(4);
@@ -263,7 +264,8 @@ std::array<Term, 4> run_gpu(const internal_data& d, const GList& g,
                                     device.upload(d.d_ij),
                                     device.upload(positions),
                                     device.upload(columns),
-                                    d.n_proj(),
+                                    device.upload(species),
+                                    1,
                                     int(columns.size()),
                                     4 * M_PI / std::sqrt(volume)};
     const std::size_t bc = columns.size() * occupation.size();
@@ -483,7 +485,8 @@ TEST(CudaPWFrozenOperatorVirial,
     // Host sources outlive the resources' exception-path stream drain.
     std::vector<double> scalar{1}, position{0, 0, 0};
     std::vector<cufftDoubleComplex> coefficient{{1, 0}};
-    std::vector<dev::FrozenProjectorColumn> columns{{0, 0, 0, 0, 0, 1}};
+    std::vector<dev::FrozenProjectorColumn> columns{{0, 0, 0, 0, 0, 1, 0}};
+    std::vector<dev::FrozenProjectorSpecies> species{{0, 0, 1}};
     std::vector<dev::FrozenOperatorVirial> sentinel(1);
     sentinel[0].energy_ha = 11;
     for (int i = 0; i < 9; ++i)
@@ -494,9 +497,16 @@ TEST(CudaPWFrozenOperatorVirial,
     auto* one = device.upload(scalar);
     dev::FrozenReciprocalView q{one, one, one, 1};
     dev::FrozenBandDeviceView state{device.upload(coefficient), one, 1, 1};
-    dev::FrozenNonlocalDeviceGeometry geometry{
-        q, one, one, one, device.upload(position), device.upload(columns),
-        1, 1,   1};
+    dev::FrozenNonlocalDeviceGeometry geometry{q,
+                                               one,
+                                               one,
+                                               one,
+                                               device.upload(position),
+                                               device.upload(columns),
+                                               device.upload(species),
+                                               1,
+                                               1,
+                                               1};
     dev::FrozenNonlocalDeviceScratch scratch{
         device.allocate<cufftDoubleComplex>(1),
         device.allocate<cufftDoubleComplex>(1),

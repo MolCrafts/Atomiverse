@@ -28,7 +28,7 @@ inline double value_nl(const NcPotentialData& d, const GVectorList& g,
                        std::span<const Vec3> r, FrozenBandView o,
                        double volume) {
     std::vector<Vec3> atoms(r.begin(), r.end());
-    std::vector<std::vector<PWWorkspace::KBProjG>> proj;
+    std::vector<std::vector<KBProjector>> proj;
     setup_kb_projectors(proj, g, d, atoms, volume);
     double e = 0;
     for (std::size_t b = 0; b < o.occupations.size(); ++b)
@@ -126,7 +126,6 @@ std::vector<C> snapshot(const PWWorkspace& w) {
     add(w.V_loc_G);
     add(w.wfc);
     add(w.eigenvalues);
-    add(w.T_G);
     for (const auto& c : w.rho_spin_G)
         add(c);
     return v;
@@ -149,14 +148,15 @@ cpu::Frame deform(cpu::Frame f, const Mat3& F) {
     }
     return f;
 }
-double primal(const cpu::Frame& f, const PWProblem& ref,
-              const FinalBandState& s, bool spin, double scale, XCBuilder& xc) {
-    PWProblem p;
-    setup_pw_problem_fixed_basis(f, ref, 12, 1, p);
-    auto& w = p.ws;
+double primal(const cpu::Frame& f, const PWSetup& ref, const FinalBandState& s,
+              bool spin, double scale, XCBuilder& xc) {
+    PWSetup p;
+    PWWorkspace ws;
+    setup_pw_problem_fixed_basis(f, ref.strain_reference(), 12, 1, p, ws);
+    auto& w = ws;
     require(p.gv0.h == ref.gv0.h && p.gv0.k == ref.gv0.k && p.gv0.l == ref.gv0.l
-                && w.fft_nx == ref.ws.fft_nx && w.fft_ny == ref.ws.fft_ny
-                && w.fft_nz == ref.ws.fft_nz,
+                && w.fft_nx == ref.gv0.nx && w.fft_ny == ref.gv0.ny
+                && w.fft_nz == ref.gv0.nz,
             "fixed ordered density modes and FFT");
     for (std::size_t g = 0; g < s.orbital_density_G.size(); ++g)
         w.rho_G[g] = s.orbital_density_G[g] * scale;
@@ -174,23 +174,25 @@ double primal(const cpu::Frame& f, const PWProblem& ref,
         xc.step_spin(w, cpu::xc::XCType::PBEsol);
     else
         xc.step(w, cpu::xc::XCType::PBEsol);
-    double e = w.E_xc + p.ew_total;
+    double e = w.E_xc + p.ions.ew_total;
     for (const auto& b : s.local_blocks) {
         FrozenBandView v{{b.coefficients.data(), b.coefficients.size()},
                          b.occupations,
                          b.k_weight};
-        e += value_t(p.gv_k[0], v)
-             + value_nl(*p.potential, p.gv_k[0], w.atom_pos_bohr, v, w.omega);
+        e += value_t(p.mesh.gv_k[0], v)
+             + value_nl(*p.ions.species.front(), p.mesh.gv_k[0],
+                        w.atom_pos_bohr, v, w.omega);
     }
     const auto rho = std::span<const C>{w.rho_G.data(), w.rho_G.size()};
     return e + value_h(p.gv0, rho, w.omega)
-           + value_local(*p.potential, p.gv0, w.atom_pos_bohr, rho, w.omega);
+           + value_local(*p.ions.species.front(), p.gv0, w.atom_pos_bohr, rho,
+                         w.omega);
 }
 void run(bool spin) {
     auto f = pw_frozen::silicon();
     auto potential = std::make_shared<cpu::pw::GthPseudopotential>(
         molrs::Element::Si, "GTH-PBE-q4");
-    cpu::pw::PW m{potential, 12, 1, cpu::xc::XCType::PBEsol};
+    cpu::pw::PW m{{potential}, 12, 1, cpu::xc::XCType::PBEsol};
     m.tol = 1e-10;
     m.spin_polarized = spin;
     m.multiplicity = 1;
@@ -198,21 +200,21 @@ void run(bool spin) {
         spin ? electronic::Smearing::fermi_dirac : electronic::Smearing::none;
     m.degauss = .08;
     m.extra_bands = 2;
-    PWProblem p;
-    setup_pw_problem(f, *potential, 12, 1, p);
+    PWSetup p;
+    PWWorkspace ws;
+    setup_pw_problem(f, m.potentials, 12, 1, p, ws);
     if (spin) {
-        p.ws.nspin = 2;
-        p.ws.rho_spin_G = {.65 * p.ws.rho_G, .35 * p.ws.rho_G};
+        ws.nspin = 2;
+        ws.rho_spin_G = {.65 * ws.rho_G, .35 * ws.rho_G};
     }
-    p.ws.V_H_G.fill(7);
-    p.ws.V_xc_G.fill(-5);
+    ws.V_H_G.fill(7);
+    ws.V_xc_G.fill(-5);
     // Prepared state has no accepted SCF caches; define all audited stale
     // buffers so unchanged-input comparisons never read indeterminate values.
-    p.ws.rho_G_old.fill(2);
-    p.ws.V_eff_G.fill(-3);
-    p.ws.T_G.fill(11);
-    p.ws.eigenvalues = xt::ones<AccReal>({std::size_t(1)});
-    p.ws.wfc = xt::ones<C>({std::size_t(1), std::size_t(1)});
+    ws.rho_G_old.fill(2);
+    ws.V_eff_G.fill(-3);
+    ws.eigenvalues = xt::ones<AccReal>({std::size_t(1)});
+    ws.wfc = xt::ones<C>({std::size_t(1), std::size_t(1)});
     cpu::pw::PWResult reference;
     reference.energy = 17;
     reference.energy_ha = 8.5;
@@ -220,10 +222,11 @@ void run(bool spin) {
     reference.iterations = 7;
     reference.e_fermi = .2;
     reference.e_entropy = -.4;
-    const auto before = snapshot(p.ws);
-    const auto* fft = p.ws.fft.get();
-    const auto* binding = p.ws.gvec;
-    const auto bands = extract_final_bands(p, m, reference, 6);
+    const auto before = snapshot(ws);
+    const auto* fft = ws.fft.get();
+    const auto* binding = ws.gvec;
+    const auto bands = extract_final_bands(
+        p.grid(), p.ions, p.mesh, ws.density(), ws.wfc, m, reference, 6);
     require(bands.density_mismatch_l2 > 1e-6,
             "must distinguish rhoorb from rhoref");
     std::vector<Vec3> positions;
@@ -233,8 +236,9 @@ void run(bool spin) {
     EwaldSummation ew(positions, std::vector<AccReal>(positions.size(), 4),
                       f.box);
     XCBuilder scratch;
-    const auto result =
-        assemble_frozen_functional_virial(p, bands, m.xc, ew, scratch);
+    const auto result = assemble_frozen_functional_virial(
+        p.ions, p.gv0, p.mesh.gv_k, p.mesh.kg.weights, ws.density(), bands,
+        m.xc, ew, scratch);
     require(result.max_antisymmetric_ha < 1e-9, "unprojected W9");
     require(std::abs(result.nonlocal.energy_ha) > 1e-3,
             "nontrivial Si nonlocal");
@@ -247,8 +251,9 @@ void run(bool spin) {
     metadata.reference_result.energy_ha = 500;
     metadata.reference_result.e_entropy = -3;
     metadata.reference_result.iterations = 1984;
-    const auto invariant =
-        assemble_frozen_functional_virial(p, metadata, m.xc, ew, scratch);
+    const auto invariant = assemble_frozen_functional_virial(
+        p.ions, p.gv0, p.mesh.gv_k, p.mesh.kg.weights, ws.density(), metadata,
+        m.xc, ew, scratch);
     require(invariant.total.energy_ha == result.total.energy_ha
                 && invariant.total.virial_ha == result.total.virial_ha,
             "functional independent of entropy/mu/reference bookkeeping");
@@ -256,7 +261,9 @@ void run(bool spin) {
     auto bad = bands;
     bad.local_blocks[0].epsilon_ha.pop_back();
     try {
-        assemble_frozen_functional_virial(p, bad, m.xc, ew, scratch);
+        assemble_frozen_functional_virial(p.ions, p.gv0, p.mesh.gv_k,
+                                          p.mesh.kg.weights, ws.density(), bad,
+                                          m.xc, ew, scratch);
     } catch (const std::invalid_argument&) {
         ++rejects;
     }
@@ -264,14 +271,18 @@ void run(bool spin) {
         bad = bands;
         bad.orbital_spin_density_G.pop_back();
         try {
-            assemble_frozen_functional_virial(p, bad, m.xc, ew, scratch);
+            assemble_frozen_functional_virial(p.ions, p.gv0, p.mesh.gv_k,
+                                              p.mesh.kg.weights, ws.density(),
+                                              bad, m.xc, ew, scratch);
         } catch (const std::invalid_argument&) {
             ++rejects;
         }
         bad = bands;
         bad.local_blocks[1].spin = 0;
         try {
-            assemble_frozen_functional_virial(p, bad, m.xc, ew, scratch);
+            assemble_frozen_functional_virial(p.ions, p.gv0, p.mesh.gv_k,
+                                              p.mesh.kg.weights, ws.density(),
+                                              bad, m.xc, ew, scratch);
         } catch (const std::invalid_argument&) {
             ++rejects;
         }
@@ -299,8 +310,7 @@ void run(bool spin) {
                   "total frozen-functional affine derivative");
         }
     require(
-        before == snapshot(p.ws) && fft == p.ws.fft.get()
-            && binding == p.ws.gvec,
+        before == snapshot(ws) && fft == ws.fft.get() && binding == ws.gvec,
         "reference arrays/cache/bindings unchanged on success/rejection/FD");
     require(reference.energy == 17 && reference.energy_ha == 8.5
                 && !reference.converged && reference.iterations == 7,

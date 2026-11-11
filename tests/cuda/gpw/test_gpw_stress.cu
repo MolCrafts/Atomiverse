@@ -136,9 +136,9 @@ TEST(CudaGpwStress, MultiKBuildIsOnProductPath) {
     ATV::cpu::gpw::GpwResult fake;
     fake.converged = true;
     // Unit-only access: a full multi-k payload must come from a real solve.
-    const auto atoms = h2_atoms();
-    EXPECT_THROW(ATV::cuda::gpw::internal::GpwDftAccess::stress_from_state(
-                     method, atoms, fake),
+    using Access = ATV::cuda::gpw::internal::GpwDftAccess;
+    const auto geometry = Access::assemble_geometry(method, h2_atoms());
+    EXPECT_THROW(Access::stress_from_state(method, geometry, fake, {}),
                  std::exception);
 }
 
@@ -148,9 +148,9 @@ TEST(CudaGpwStress, FailClosedUnconvergedState) {
     method.build(frame);
     ATV::cpu::gpw::GpwResult fake;
     fake.converged = false;
-    const auto atoms = h2_atoms();
-    EXPECT_THROW(ATV::cuda::gpw::internal::GpwDftAccess::stress_from_state(
-                     method, atoms, fake),
+    using Access = ATV::cuda::gpw::internal::GpwDftAccess;
+    const auto geometry = Access::assemble_geometry(method, h2_atoms());
+    EXPECT_THROW(Access::stress_from_state(method, geometry, fake, {}),
                  std::invalid_argument);
     expect_frame_outputs_preserved(frame);
 }

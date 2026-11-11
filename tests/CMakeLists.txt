@@ -1585,8 +1585,17 @@ set_target_properties(atv_tests PROPERTIES CXX_STANDARD 20)
 target_precompile_headers(atv_tests PRIVATE <gtest/gtest.h>
     "${CMAKE_SOURCE_DIR}/include/atomiverse/cpu/frame/frame.h")
 gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
+    TEST_FILTER "*-PwFrozenFunctionalVirial.*"
     PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
                ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+if(ATV_BUILD_PW)
+    # Each affine finite-difference audit fits the unit timeout on its own;
+    # concurrent SCF tests otherwise consume its wall-time budget.
+    gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
+        TEST_FILTER "PwFrozenFunctionalVirial.*"
+        PROPERTIES RUN_SERIAL TRUE TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
+                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+endif()
 
 get_property(_atv_unit_cuda_sources GLOBAL PROPERTY ATV_UNIT_CUDA_SOURCES)
 if(_atv_unit_cuda_sources)

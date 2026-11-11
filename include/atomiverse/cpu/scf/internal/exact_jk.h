@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -54,6 +55,14 @@ class ExactJK {
     std::size_t cache_bytes() const { return eri_.size() * sizeof(double); }
     bool cached() const { return !eri_.empty(); }
     bool prepared() const { return n_ > 0; }
+
+    /// Max absolute omitted Cartesian AO integral, or nullopt when there is
+    /// no bare Coulomb cache to read. Cached rows use the working AO basis.
+    [[nodiscard]] std::optional<double> coulomb_cache_screening_bound() const;
+
+    /// Expand one canonical AO pair's row into an n × n working-basis matrix.
+    /// Requires an admitted bare Coulomb cache and space for n² doubles.
+    void unpack_coulomb_cache_row(std::size_t pair, double* ao) const;
 
   private:
     struct History {

@@ -112,7 +112,7 @@ not in the bond-centering of the valence manifold of elemental Si.
 cpu::Frame frame = make_si_diamond(5.43);   // type 14, mass 28.0855; atom 1 at a/4.0 (1,1,1);
                                             // cell h = a/2.0: (0,h,h), (h,0,h), (h,h,0)
 
-PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf"), /*ecut Ry*/ 15.0,
+PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR "/pw/Si_lda_nc.upf")}, /*ecut Ry*/ 15.0,
           /*k_mesh 2×2×2*/ 2, cpu::scf::XCType::LSDA};
 method.tol = 1e-6;
 method.max_iter = 50;
@@ -174,7 +174,7 @@ record \(r = T_\mathrm{ATV}/T_\mathrm{CP2K}\) in REFERENCE.md and require
   no hybrid / meta-GGA XC; no noncollinear / SOC.
 - Absolute \(\Omega\) and total energy are not comparable to CP2K Quickstep GTH
   decks.
-- Empty `upf_path` selects a toy \(V_\mathrm{loc}\) (unphysical); the sections
+- The method requires one scalar NC provider per element. The sections
   always use the in-tree ONCV Si UPF.
 - The CUDA PW surface is not covered.
 

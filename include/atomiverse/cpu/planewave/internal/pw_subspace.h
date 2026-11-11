@@ -50,7 +50,9 @@ void jacobi_eigh_hermitian(int n, std::complex<AccReal>* A, AccReal* eig,
 /// lower roots. `sub_vectors` is resized to n_sub × ws.n_g (row-major).
 ///
 /// @return n_sub, the number of initial subspace vectors.
-int init_subspace(const PWWorkspace& ws, int n_bands,
+int init_subspace(const GVectorList& modes, AtomicOrbitalView orbitals,
+                  std::span<const Vec3> positions,
+                  const xt::xarray<std::complex<AccReal>>& trial, int n_bands,
                   std::vector<std::complex<AccReal>>& sub_vectors);
 
 } // namespace internal

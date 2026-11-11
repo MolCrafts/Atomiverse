@@ -23,7 +23,7 @@ namespace internal {
 /// @return Intensive stress [eV/Å³], xx,yy,zz,xy,xz,yz (symmetric-shear lanes).
 std::array<double, 6>
 pw_stress_from_state(const cpu::Frame& frame, const PW& method,
-                     const cpu::pw::internal::PWProblem& reference,
+                     cpu::pw::internal::PWStrainReference reference,
                      DeviceDensity& density, int n_alpha, int n_beta);
 } // namespace internal
 } // namespace ATV::cuda::pw

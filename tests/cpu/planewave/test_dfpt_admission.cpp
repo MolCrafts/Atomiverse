@@ -19,8 +19,9 @@ class DfptMpAdmission : public ::testing::TestWithParam<std::tuple<bool, int>> {
 TEST_P(DfptMpAdmission, RejectsSignedWeightsBeforeScfOrSupercellWork) {
     const auto [spin, path] = GetParam();
     PW method{
-        std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1"),
-        6., 1};
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        6.,
+        1};
     method.spin_polarized = spin;
     method.multiplicity = spin ? 2 : 1;
     method.smearing = ATV::electronic::Smearing::methfessel_paxton;

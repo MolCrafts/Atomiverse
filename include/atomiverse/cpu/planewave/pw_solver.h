@@ -12,8 +12,8 @@
 /// `build`/`run` directly.
 ///
 /// @code
-///   cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(
-///                      molrs::Element::Si, "GTH-PBE-q4"),
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::GthPseudopotential>(
+///                      molrs::Element::Si, "GTH-PBE-q4")},
 ///                  /*ecut_ry=*/30.0, /*k_mesh=*/4};
 ///   pw.build(frame);
 ///   const auto& result = pw.run(frame); // [Ry]/Ha on result
@@ -45,7 +45,8 @@ namespace cpu {
 namespace pw {
 
 namespace internal {
-struct PWProblem;
+struct PWSetup;
+struct PWWorkspace;
 class PoissonSolver;
 class XCBuilder;
 class VeffBuilder;
@@ -90,8 +91,9 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
 
     // ── Identity (constructor arguments, fixed after construction) ────
     /// @brief Immutable shared NC physics; execution state belongs to this PW.
-    const std::shared_ptr<const ::ATV::electronic::NormConservingPotential>
-        potential;
+    const std::vector<
+        std::shared_ptr<const ::ATV::electronic::NormConservingPotential>>
+        potentials;
     /// @brief Wavefunction cutoff [Ry].
     const double ecut_ry;
     /// @brief Monkhorst-Pack mesh size per dimension (dimensionless).
@@ -130,12 +132,14 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     /// @brief Extra bands beyond ceil(n_e/2) when smearing is on (per spin if collinear).
     int extra_bands = 4;
 
-    /// @brief Plane-wave DFT using an immutable norm-conserving potential.
-    /// @param pp Shared physical provider; must be non-null.
+    /// @brief Plane-wave DFT using immutable norm-conserving potentials.
+    /// @param potentials Shared providers, one per atomic number in the frame.
     /// @param ecut_ry Wavefunction cutoff [Ry].
     /// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
     /// @param xc Exchange-correlation functional.
-    PW(std::shared_ptr<const ::ATV::electronic::NormConservingPotential> pp,
+    PW(std::vector<
+           std::shared_ptr<const ::ATV::electronic::NormConservingPotential>>
+           potentials,
        double ecut_ry, int k_mesh, cpu::xc::XCType xc = cpu::xc::XCType::PBE);
 
     ~PW();
@@ -145,9 +149,9 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     PW& operator=(const PW&) = delete;
 
     /// @brief Allocate step helpers and validate Frame species against the
-    ///        provider. `run()` calls it lazily and validates every geometry.
+    ///        providers. `run()` calls it lazily and validates every geometry.
     /// @param reference Frame used to validate every atom's identity.
-    /// @throws std::invalid_argument when any atom differs from the provider.
+    /// @throws std::invalid_argument for missing or duplicate element providers.
     void build(const cpu::Frame& reference);
 
     /// @brief Plane-wave SCF at the frame's current geometry.
@@ -266,7 +270,8 @@ class PW : public cpu::Driver<ATV::pw::Phase> {
     void evaluate_(const Frame& frame,
                    std::vector<std::array<double, 3>>* forces,
                    std::array<double, 6>* stress);
-    std::unique_ptr<internal::PWProblem> problem_;
+    std::unique_ptr<const internal::PWSetup> setup_;
+    std::unique_ptr<internal::PWWorkspace> workspace_;
     /// @brief Wire path-local stage StepFns + compile Plan (rebuilds each drive).
     void ensure_driver_built_(VeffStage::StepFn veff,
                               DiagonalizeStage::StepFn diag,

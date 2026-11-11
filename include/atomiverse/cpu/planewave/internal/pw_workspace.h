@@ -11,10 +11,10 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/planewave/internal/fft.h"
-#include "atomiverse/cpu/planewave/internal/g_vector.h"
-#include "atomiverse/cpu/planewave/internal/kpoint.h"
+#include "atomiverse/cpu/planewave/internal/pw_operators.h"
 #include <complex>
 #include <memory>
+#include <span>
 #include <vector>
 #include <xtensor/containers/xarray.hpp>
 
@@ -29,12 +29,28 @@ struct PWWorkspace {
     int fft_nx = 0, fft_ny = 0, fft_nz = 0;
     const GVectorList* gvec = nullptr; // current G-sphere (density or k)
 
-    // Owned G-vector storage the `gvec` pointer aliases into:
-    // the density sphere (Γ) plus one sphere per locally-owned k-point.
-    GVectorList gvec0;
-    KPointGrid kgrid;                // full Monkhorst-Pack mesh
-    std::vector<int> owned_k;        // global k indices this rank computes
-    std::vector<GVectorList> gvec_k; // spheres for owned_k (same order)
+    // Active basis and static ionic data are borrowed from setup.
+    KBProjectorView kb_proj;
+    AtomicOrbitalView atom_wfc;
+    std::span<const Vec3> atom_pos_bohr;
+    std::span<const std::complex<AccReal>> V_loc_G;
+
+    void bind(PWKPointView point) {
+        gvec = &point.modes;
+        n_g = gvec->count();
+        kb_proj = point.projectors;
+        atom_wfc = point.orbitals;
+    }
+
+    PWKPointView point() const { return {*gvec, kb_proj, atom_wfc}; }
+
+    PWProjectorView projectors() const {
+        return {*gvec, kb_proj, atom_pos_bohr, omega};
+    }
+
+    PWDensityView density() const {
+        return {{rho_G.data(), rho_G.size()}, rho_spin_G, nspin};
+    }
 
     // FFT plan for r2c / c2r transforms
     std::unique_ptr<FFTPlan3D> fft;
@@ -46,10 +62,7 @@ struct PWWorkspace {
     xt::xarray<std::complex<AccReal>> V_eff_G;   // total effective potential
     xt::xarray<AccReal> rho_r;                   // real-space density
     xt::xarray<AccReal> V_xc_r;                  // real-space XC potential
-    xt::xarray<AccReal> T_G;                     // kinetic energy diagonal
     xt::xarray<AccReal> eigenvalues;             // per-band eigenvalues
-    // Local PP in G-space, incl. structure factor Σ_a e^{-iG·R_a}.
-    xt::xarray<std::complex<AccReal>> V_loc_G;
     xt::xarray<AccReal> V_eff_r; // V_eff on real-space grid [Hartree]
 
     // Wavefunctions: wfc[b][ig] for band b, G-vector ig
@@ -75,28 +88,6 @@ struct PWWorkspace {
 
     // Accumulated XC energy [Hartree]
     AccReal E_xc = AccReal(0);
-
-    // Non-local KB projector data in G-space
-    struct KBProjG {
-        int l;
-        AccReal d;               // diagonalized D_ij eigenvalue [Ha]
-        xt::xarray<AccReal> f_G; // f_l(|G+k|) = ∫ r·β_upf(r)·j_l(|G+k|r) dr
-        // Physical β_lm(G), including angular, atomic Bloch phase and
-        // 4π/√Ω normalization. Shape [2*l+1, n_g], m-major contiguous.
-        xt::xarray<std::complex<AccReal>> beta_G;
-    };
-    // kb_proj[atom][proj] — prepared for the current geometry and k-sphere.
-    std::vector<std::vector<KBProjG>> kb_proj;
-
-    // Atomic wavefunctions for initial guess (QE atomic_wfc_mod.f90)
-    struct AtomWfc {
-        int l;
-        xt::xarray<AccReal> chi_G; // (4π/√Ω) * ∫χ(r)j_l(Gr)rdr  for all G
-    };
-    std::vector<std::vector<AtomWfc>> atom_wfc; // [atom][iwfc]
-
-    // Atom positions [Bohr] for structure factors
-    std::vector<Vec3> atom_pos_bohr;
 
     // Pulay mixer history (managed by internal::DensityBuilder)
     std::vector<xt::xarray<std::complex<AccReal>>> pulay_res;

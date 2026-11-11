@@ -5,33 +5,14 @@
 /// index — cuda-gpw-product-collocate-pbc). Non-periodic: full-grid bare shape.
 #include "atomiverse/cuda/gpw/internal/product_integrate.cuh"
 
+#include "product_window.cuh"
+
 namespace ATV {
 namespace cuda {
 namespace gpw {
 namespace internal {
 
 namespace {
-
-__device__ __forceinline__ double ipow_nonneg(double x, int n) {
-    double v = 1.0;
-    for (int i = 0; i < n; ++i)
-        v *= x;
-    return v;
-}
-
-__device__ __forceinline__ double product_radius_dev(double mag, double p,
-                                                     int Ltot, double eps) {
-    if (!(mag > 0.0) || !(p > 0.0) || !(eps > 0.0))
-        return 0.0;
-    const double lc = log(fmax(mag, 1e-300));
-    const double leps = log(fmax(eps, 1e-300));
-    double r2 = fmax(0.0, (lc - leps) / p);
-    for (int it = 0; it < 4; ++it) {
-        const double r = sqrt(fmax(r2, 1e-30));
-        r2 = fmax(0.0, (lc + static_cast<double>(Ltot) * log(r) - leps) / p);
-    }
-    return sqrt(fmax(r2, 0.0));
-}
 
 __device__ __forceinline__ double product_shape_bare_raw(const DeviceProduct& q,
                                                          const double r[3]) {
@@ -46,13 +27,6 @@ __device__ __forceinline__ double product_shape_bare_raw(const DeviceProduct& q,
         v *= ipow_nonneg(da, q.la[d]) * ipow_nonneg(db, q.lb[d]);
     }
     return v;
-}
-
-__device__ __forceinline__ long wrap_idx(long i, int n) {
-    long m = i % n;
-    if (m < 0)
-        m += n;
-    return m;
 }
 
 /// Full-grid integrate (non-periodic).
@@ -92,88 +66,38 @@ __global__ void integrate_products_fullgrid_kernel(
         acc[q] = s[0];
 }
 
-/// Sphere-window PBC integrate: one block per product, threads stride the window.
+struct PotentialContraction {
+    const double* potential;
+    double value = 0.0;
+
+    __device__ void operator()(long i, double shape) {
+        value += potential[i] * shape;
+    }
+};
+
 __global__ void integrate_products_sphere_kernel(
-    const DeviceProduct* __restrict__ prods, int nprod, int n0, int n1, int n2,
-    double L0, double L1, double L2, double o0, double o1, double o2,
-    double eps, const double* __restrict__ V, double* __restrict__ acc) {
-    const int ip = static_cast<int>(blockIdx.x);
-    if (ip >= nprod)
-        return;
-    const DeviceProduct q = prods[ip];
-    // Shape-only integrate (weight on scatter). Support uses unit bare-shape
-    // mag=1 (collint integrate uses geom_mag·max|V| separately) + group Ltot
-    // when set by apply_group_max_mag (same L as collocate sphere).
-    const int L_monom =
-        q.la[0] + q.la[1] + q.la[2] + q.lb[0] + q.lb[1] + q.lb[2];
-    const int Ltot = (q.L_win >= 0) ? q.L_win : L_monom;
-    const double mag = 1.0;
-    const double rc = product_radius_dev(mag, q.p, Ltot, eps);
-    if (!(rc > 0.0)) {
-        if (threadIdx.x == 0)
-            acc[ip] = 0.0;
-        return;
-    }
-
-    const double dx0 = L0 / static_cast<double>(n0);
-    const double dx1 = L1 / static_cast<double>(n1);
-    const double dx2 = L2 / static_cast<double>(n2);
-    const long ih0 = static_cast<long>(ceil(rc / dx0));
-    const long ih1 = static_cast<long>(ceil(rc / dx1));
-    const long ih2 = static_cast<long>(ceil(rc / dx2));
-    const long ic0 = static_cast<long>(floor(q.pc[0] / dx0));
-    const long ic1 = static_cast<long>(floor(q.pc[1] / dx1));
-    const long ic2 = static_cast<long>(floor(q.pc[2] / dx2));
-    const long lo0 = ic0 - ih0, hi0 = ic0 + ih0;
-    const long lo1 = ic1 - ih1, hi1 = ic1 + ih1;
-    const long lo2 = ic2 - ih2, hi2 = ic2 + ih2;
-    const long nwin0 = hi0 - lo0 + 1;
-    const long nwin1 = hi1 - lo1 + 1;
-    const long nwin2 = hi2 - lo2 + 1;
-    const long nwin = nwin0 * nwin1 * nwin2;
-    const double rc2 = rc * rc;
-
-    double local = 0.0;
-    for (long t = static_cast<long>(threadIdx.x); t < nwin;
-         t += static_cast<long>(blockDim.x)) {
-        const long koff = t % nwin2;
-        const long tmp = t / nwin2;
-        const long joff = tmp % nwin1;
-        const long ioff = tmp / nwin1;
-        const long i = lo0 + ioff;
-        const long j = lo1 + joff;
-        const long k = lo2 + koff;
-        const double r0 =
-            o0 + L0 * static_cast<double>(i) / static_cast<double>(n0);
-        const double r1 =
-            o1 + L1 * static_cast<double>(j) / static_cast<double>(n1);
-        const double r2c =
-            o2 + L2 * static_cast<double>(k) / static_cast<double>(n2);
-        const double d0 = r0 - q.pc[0];
-        const double d1 = r1 - q.pc[1];
-        const double d2 = r2c - q.pc[2];
-        if (d0 * d0 + d1 * d1 + d2 * d2 > rc2)
-            continue;
-        const double r[3] = {r0, r1, r2c};
-        const long ii = wrap_idx(i, n0);
-        const long jj = wrap_idx(j, n1);
-        const long kk = wrap_idx(k, n2);
-        const long gidx =
-            (ii * static_cast<long>(n1) + jj) * static_cast<long>(n2) + kk;
-        local += V[gidx] * product_shape_bare_raw(q, r);
-    }
-
-    __shared__ double s[256];
-    s[threadIdx.x] = local;
+    const DeviceProduct* __restrict__ products, CollocateGridDesc grid,
+    const double* __restrict__ potential, double* __restrict__ acc) {
+    const DeviceProduct product = products[blockIdx.x];
+    __shared__ ProductWindow window;
+    __shared__ ProductAxisPoint cache[kProductAxisCacheSize];
+    if (threadIdx.x == 0)
+        window = product_window(grid, product, /*magnitude=*/1.0);
     __syncthreads();
-    for (int stride = static_cast<int>(blockDim.x) / 2; stride > 0;
-         stride >>= 1) {
+    PotentialContraction contraction{potential};
+    if (window.radius2 > 0.0)
+        visit_periodic_product(grid, product, window, cache, contraction);
+
+    __shared__ double sums[kProductWindowBlock];
+    sums[threadIdx.x] = contraction.value;
+    __syncthreads();
+    for (int stride = kProductWindowBlock / 2; stride > 0; stride >>= 1) {
         if (static_cast<int>(threadIdx.x) < stride)
-            s[threadIdx.x] += s[threadIdx.x + stride];
+            sums[threadIdx.x] += sums[threadIdx.x + stride];
         __syncthreads();
     }
     if (threadIdx.x == 0)
-        acc[ip] = s[0];
+        acc[blockIdx.x] = sums[0];
 }
 
 } // namespace
@@ -191,12 +115,12 @@ void integrate_products(const CollocateGridDesc& grid,
     }
     constexpr int kBlock = 256;
     if (grid.periodic) {
-        // Mass-margin class default (Si charge); mag field carries group max.
-        const double eps = (grid.eps_win > 0.0) ? grid.eps_win : 1.0e-14;
-        integrate_products_sphere_kernel<<<nprod, kBlock, 0, stream>>>(
-            d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],
-            grid.L[1], grid.L[2], grid.origin[0], grid.origin[1],
-            grid.origin[2], eps, d_V, d_acc);
+        auto window_grid = grid;
+        if (!(window_grid.eps_win > 0.0))
+            window_grid.eps_win = 1e-14;
+        integrate_products_sphere_kernel<<<nprod, kProductWindowBlock, 0,
+                                           stream>>>(d_prods, window_grid, d_V,
+                                                     d_acc);
     } else {
         integrate_products_fullgrid_kernel<<<nprod, kBlock, 0, stream>>>(
             d_prods, nprod, grid.n[0], grid.n[1], grid.n[2], grid.L[0],

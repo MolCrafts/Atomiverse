@@ -333,7 +333,7 @@ occupation/entropy functional, not a claim that MP response projectors work.
    D rotations, phases and normalization. Add a six-component Ewald virial
    reduction in the existing energy loops. Add XC point-strain reduction in
    the same padded-grid loop as energy/potential.
-2. Add an internal no-SCF tensor assembler over the accepted PWProblem and
+2. Add an internal no-SCF tensor assembler over the accepted PW operator and density views and
    reference orbital sweep. First opt-in vertical case: asymmetric skew-cell
    Si2, GTH-PBE-q4, Gamma RKS fixed occupations, LSDA, with nonzero local and
    nonlocal terms and all six physical components. H-only fixtures cannot

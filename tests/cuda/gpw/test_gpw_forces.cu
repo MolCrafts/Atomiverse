@@ -250,9 +250,12 @@ TEST(CudaGpwForces, FreeFnRejectsMissingGrids) {
     scf.C = xt::zeros<double>({2, 2});
     scf.eps = {0.0, 0.0};
     // Unit-only state injection: no public Frame entry accepts missing grids.
-    const std::vector<GpwAtom> atoms;
+    const ATV::cpu::gpw::internal::GpwGeometry geometry(
+        {}, {12., 12., 12.}, 5., 1e-10, true,
+        ATV::cpu::gpw::internal::GpwGridTables::none);
+    const ATV::cpu::gpw::internal::GpwWorkspace workspace;
     EXPECT_THROW(ATV::cuda::gpw::internal::GpwDftAccess::forces_from_state(
-                     method, atoms, scf),
+                     method, geometry, scf, workspace),
                  std::runtime_error);
 }
 
@@ -264,10 +267,13 @@ TEST(CudaGpwForces, UksDoesNotHitFirstSliceReject) {
     method.build(frame);
     ATV::cuda::gpw::GpwResult scf;
     scf.converged = true;
-    const std::vector<GpwAtom> atoms;
+    const ATV::cpu::gpw::internal::GpwGeometry geometry(
+        {}, {12., 12., 12.}, 5., 1e-10, true,
+        ATV::cpu::gpw::internal::GpwGridTables::none);
+    const ATV::cpu::gpw::internal::GpwWorkspace workspace;
     try {
         (void)ATV::cuda::gpw::internal::GpwDftAccess::forces_from_state(
-            method, atoms, scf);
+            method, geometry, scf, workspace);
         FAIL() << "expected host-assembly throw";
     } catch (const std::exception& e) {
         const std::string msg = e.what();

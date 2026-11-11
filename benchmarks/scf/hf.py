@@ -1,4 +1,4 @@
-"""HF declarations and public engine adapters; each timed call owns fresh state.
+"""HF declarations and public HF-reference adapters; each call owns fresh state.
 
 No integral, molecule, density, solver or force oracle is prepared by an adapter
 factory. Factories only import/configure runtimes and fingerprint their binaries.
@@ -38,6 +38,13 @@ class ScientificFailure(RuntimeError):
 def systems(*names: str) -> list[System]:
     canonical = json.loads((Path(__file__).resolve().parents[1] / "systems/hf.json").read_text())
     return [System.model_validate(canonical[name]) for name in names]
+
+
+def eight_water_chain() -> System:
+    chain = systems("water_chain16")[0]
+    return System(id="water_chain8", label="Eight-water chain",
+                  tiers=["acceptance", "performance"], atomic_numbers=chain.atomic_numbers[:24],
+                  positions_angstrom=chain.positions_angstrom[:24])
 
 
 def participants(method: str, basis: str, task: str, guess: str) -> list[Participant]:
@@ -122,6 +129,22 @@ def _shared_libraries(root: Path, *, recursive: bool = False) -> list[Path]:
                    for file in discover(pattern) if file.is_file()})
 
 
+def _correlation_observables(hf, total, correlation, **components):
+    values = {
+        "hf_energy_hartree": float(hf),
+        "energy_hartree": float(total),
+        "correlation_energy_hartree": float(correlation),
+        **{name: float(value) for name, value in components.items()},
+    }
+    if (not all(math.isfinite(value) for value in values.values())
+            or abs(values["energy_hartree"] - values["hf_energy_hartree"]
+                   - values["correlation_energy_hartree"]) > 1e-10
+            or abs(values["correlation_energy_hartree"]
+                   - sum(values[name] for name in components)) > 1e-10):
+        raise ScientificFailure("Post-HF energy components are nonfinite or inconsistent")
+    return values
+
+
 def atv_adapter(row: Row, system: System, participant: Participant, threads: int):
     if not participant.available:
         raise CapabilityUnavailable(participant.unavailable_reason or "Declared native capability unavailable")
@@ -133,6 +156,10 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
     cls = getattr(scf, name, None)
     if cls is None:
         raise BindingMissing(f"Public atomiverse.scf.{name} is absent from the loaded binary")
+    correlation_method = row.model.get("correlation")
+    post_hf_cls = getattr(scf, correlation_method, None) if correlation_method else None
+    if correlation_method and post_hf_cls is None:
+        raise BindingMissing(f"Public atomiverse.scf.{correlation_method} is absent from the loaded binary")
     module = importlib.import_module(cls.__module__)
     limits = threadpoolctl.threadpool_limits(limits=threads)
     backend_info = scf.cuda_backend_info() if participant.backend == "cuda" else scf.backend_info()
@@ -167,13 +194,19 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
             if method in {"UHF", "ROHF"}:
                 kwargs.update(n_alpha=(ne + system.spin) // 2, n_beta=(ne - system.spin) // 2)
         solver = cls(**kwargs)
+        correlation = None
         try:
             if participant.backend == "cpu":
                 solver.max_memory_mb = participant.options["max_memory_mb"]
                 solver.init_guess = row.model["init_guess"]
                 for field in ["damping", "conv_tol_grad", "diis_space", "diis_start_cycle"]:
                     setattr(solver, field, row.model[field])
-            if row.task == "forces":
+            if post_hf_cls is not None:
+                correlation = post_hf_cls(solver, frozen=row.model["frozen"])
+                result = correlation.run(frame)
+                if result.frozen != row.model["frozen"] or getattr(result, "ri", False):
+                    raise ScientificFailure(f"Native {correlation_method} returned unexpected frozen-core or RI settings")
+            elif row.task == "forces":
                 force_ev_a = np.asarray(solver.forces(frame), dtype=np.float64).copy()
                 from_frame = np.column_stack([np.asarray(frame["atoms"][k]) for k in ["fx", "fy", "fz"]])
                 if not np.allclose(force_ev_a, from_frame, rtol=0, atol=1e-8):
@@ -185,13 +218,22 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
                     raise ScientificFailure("CUDA HF reported a CPU SCF fallback")
                 if row.task == "forces" and not solver.last_force_on_device():
                     raise ScientificFailure("CUDA force workload reported a CPU force fallback")
-            energy = float(solver.energy())
-            if not solver.converged() or not np.isfinite(energy):
+            hf_energy = float(solver.energy())
+            if not solver.converged() or not np.isfinite(hf_energy):
                 raise NotConverged(f"{name} did not return a finite converged SCF")
+            energy = hf_energy if correlation is None else float(result.e_tot)
             frame_energy = float(frame.meta["energy"])
             if not np.isfinite(frame_energy) or abs(frame_energy / HARTREE_IN_EV - energy) > 1e-10:
                 raise ScientificFailure("Frame energy does not match the solver Hartree total")
             observables = {"energy_hartree": energy}
+            if correlation_method == "MP2":
+                observables = _correlation_observables(
+                    hf_energy, result.e_tot, result.e_corr,
+                    opposite_spin_energy_hartree=result.e_corr_os, same_spin_energy_hartree=result.e_corr_ss)
+            elif correlation_method == "MP3":
+                observables = _correlation_observables(
+                    hf_energy, result.e_tot, result.e_corr,
+                    second_order_energy_hartree=result.e_corr_mp2, third_order_energy_hartree=result.e_corr_mp3)
             if row.task == "forces":
                 forces = force_ev_a * (BOHR_IN_ANGSTROM / HARTREE_IN_EV)
                 if forces.shape != (len(system.atomic_numbers), 3) or not np.isfinite(forces).all():
@@ -211,6 +253,9 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
                             solver_type=type(solver).__name__, energy_only=row.task != "forces",
                             tol=float(solver.tol), max_iter=int(solver.max_iter),
                             basis=solver.basis, charge=solver.charge, final_residuals="not_exposed")
+            if correlation is not None:
+                observed.update(correlation=type(correlation).__name__, frozen=result.frozen,
+                                ri=bool(getattr(result, "ri", False)))
             if participant.backend == "cpu":
                 observed.update({key: getattr(solver, key) for key in ["max_memory_mb", "init_guess", "damping", "conv_tol_grad", "diis_space", "diis_start_cycle"]})
                 observed["density_criterion"] = "not_exposed"
@@ -228,7 +273,7 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
                     last_force_on_device=bool(solver.last_force_on_device()) if row.task == "forces" else "not_requested")
             return {"observables": observables, "metadata": {**meta, "resolved_settings": observed}}
         finally:
-            del solver, frame
+            del correlation, solver, frame
             if participant.backend == "cuda" and hasattr(scf, "cuda_synchronize"):
                 scf.cuda_synchronize()
     return run
@@ -244,6 +289,11 @@ def pyscf_adapter(row: Row, system: System, participant: Participant, threads: i
     cls = getattr(engine_scf, row.model["method"], None)
     if cls is None:
         raise BindingMissing(f"{participant.engine} public {row.model['method']} is not implemented")
+    correlation_method = row.model.get("correlation")
+    mp2 = importlib.import_module("pyscf.mp.mp2") if correlation_method == "MP2" else None
+    mp3 = importlib.import_module("tools.pyscf_oracle.mp3") if correlation_method == "MP3" else None
+    if mp3 is not None and (gpu or row.model["frozen"] != 0):
+        raise CapabilityUnavailable("The PySCF and NumPy MP3 oracle requires all-electron CPU RHF")
     cp = importlib.import_module("cupy") if gpu else None
     if cp is not None:
         cp.cuda.runtime.getDeviceCount()
@@ -256,6 +306,9 @@ def pyscf_adapter(row: Row, system: System, participant: Participant, threads: i
     meta["requested_model"] = row.model
     meta["comparison_class"] = "matched_accuracy"
     meta["entrypoint_path"] = getattr(engine_scf, "__file__", None)
+    if mp2 is not None or mp3 is not None:
+        path = Path((mp2 if mp2 is not None else mp3).__file__).resolve()
+        meta["binaries_sha256"][str(path)] = file_hash(path)
     # Include the integral/JK shared objects, not just the Python module path.
     for file in _shared_libraries(Path(pyscf.__file__).resolve().parent / "lib"):
         meta["binaries_sha256"][str(file)] = file_hash(file)
@@ -292,6 +345,9 @@ def pyscf_adapter(row: Row, system: System, participant: Participant, threads: i
         mf.diis_start_cycle = row.model["diis_start_cycle"]
         mf.damp = row.model["damping"]
         mf.init_guess = "1e" if row.model["init_guess"] == "hcore" else "minao"
+        correlation = None
+        if correlation_method is not None:
+            mf.chkfile = None
         try:
             dm0 = None
             if row.model["neel"]:
@@ -312,6 +368,18 @@ def pyscf_adapter(row: Row, system: System, participant: Participant, threads: i
             if not mf.converged or not np.isfinite(energy):
                 raise NotConverged(f"{participant.engine} {row.model['method']} failed to converge")
             observables = {"energy_hartree": energy}
+            if mp2 is not None:
+                correlation = mp2.MP2(mf, frozen=row.model["frozen"])
+                correlation.kernel(with_t2=False)
+                observables = _correlation_observables(
+                    energy, correlation.e_tot, correlation.e_corr,
+                    opposite_spin_energy_hartree=correlation.e_corr_os,
+                    same_spin_energy_hartree=correlation.e_corr_ss)
+            elif mp3 is not None:
+                e2, e3 = mp3.rmp3_corrections(mf)
+                observables = _correlation_observables(
+                    energy, energy + (e2 + e3), e2 + e3,
+                    second_order_energy_hartree=e2, third_order_energy_hartree=e3)
             if row.task == "forces":
                 gradient = mf.nuc_grad_method()
                 if gpu and not type(gradient).__module__.startswith("gpu4pyscf"):
@@ -341,11 +409,17 @@ def pyscf_adapter(row: Row, system: System, participant: Participant, threads: i
                             direct_scf=bool(mf.direct_scf), max_memory_MiB=float(mf.max_memory),
                             level_shift=float(mf.level_shift), final_residuals="not_exposed_by_adapter",
                             solver_type=type(mf).__module__ + "." + type(mf).__name__)
+            if correlation is not None:
+                settings.update(correlation=type(correlation).__module__ + "." + type(correlation).__name__,
+                                frozen=correlation.frozen, ri=False, with_t2=False, checkpoint=False)
+            elif mp3 is not None:
+                settings.update(correlation=mp3.__name__ + ".rmp3_corrections",
+                                frozen=0, ri=False, checkpoint=False)
             if cp is not None:
                 cp.cuda.Device().synchronize()
             return {"observables": observables, "metadata": {**meta, "resolved_settings": settings}}
         finally:
-            del mf, mol
+            del correlation, mf, mol
             if cp is not None:
                 cp.cuda.Device().synchronize()
                 cp.get_default_memory_pool().free_all_blocks()

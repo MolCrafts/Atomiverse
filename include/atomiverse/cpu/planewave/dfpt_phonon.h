@@ -38,7 +38,7 @@
 /// *Rev. Mod. Phys.* **73**, 515 (2001).
 ///
 /// @code
-///   cpu::pw::PW pw{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf"), /*ecut_ry=*/15.0,
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf")}, /*ecut_ry=*/15.0,
 ///                  /*k_mesh=*/2, cpu::xc::XCType::PBE}; // pure GGA kernel OK
 ///
 ///   cpu::pw::DfptPhonon dfpt;

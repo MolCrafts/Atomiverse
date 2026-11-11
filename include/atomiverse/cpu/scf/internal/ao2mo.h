@@ -14,6 +14,10 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
+namespace internal {
+class ExactJK;
+}
+
 /// @brief Transform AO two-electron integrals to the MO (ia|jb) ovov block.
 xt::xtensor<double, 4> ao2mo_ovov(const xt::xtensor<double, 4>& ERI,
                                   const xt::xtensor<double, 2>& C, int n_occ,
@@ -22,6 +26,13 @@ xt::xtensor<double, 4> ao2mo_ovov(const xt::xtensor<double, 4>& ERI,
 /// @brief Transform AO two-electron integrals to the full (pq|rs) MO tensor.
 xt::xtensor<double, 4> ao2mo_full(const xt::xtensor<double, 4>& ERI,
                                   const xt::xtensor<double, 2>& C, int n_mo);
+
+/// @brief Transform an admitted bare Coulomb cache in the same AO basis as C.
+xt::xtensor<double, 4> ao2mo_full(const internal::ExactJK& cache,
+                                  const xt::xtensor<double, 2>& C);
+
+/// @brief Upper bound on the squared spectral norm of an MO coefficient block.
+double coefficient_norm_squared(const xt::xtensor<double, 2>& C);
 
 /// @brief Transform the AO core Hamiltonian to the MO basis.
 xt::xtensor<double, 2> mo_hcore(const xt::xtensor<double, 2>& Hcore,

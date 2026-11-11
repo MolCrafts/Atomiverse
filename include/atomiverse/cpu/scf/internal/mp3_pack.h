@@ -10,6 +10,10 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
+namespace internal {
+class ExactJK;
+}
+
 /// @brief Closed-shell canonical MP3 energy from a converged RHF reference.
 ///
 /// Spin-orbital third-order PT (Szabo & Ostlund; Psi4NumPy MP3 diagrams):
@@ -19,14 +23,16 @@ namespace scf {
 /// \(u_{ijab}\). Frozen-core: lowest `n_frozen` spatial occupied MOs (both
 /// spins) are excluded from the correlated SO set.
 ///
-/// @param ints     Integral pack with the ERI tensor materialized.
+/// @param ints     Integral pack with dense ERIs or shells for fallback.
 /// @param det      Converged closed-shell reference (MO coeffs + energies).
 /// @param e_scf_ha Converged SCF total energy [Hartree].
 /// @param n_frozen Lowest occupied spatial MOs frozen (0 = full correlation).
+/// @param cached_jk Optional RHF cache from this same geometry and AO basis.
 /// @return MP3 correlation pieces and total energy [Hartree].
 MP3Result mp3_energy(const internal::IntegralView& ints,
                      const SlaterDeterminant& det, double e_scf_ha,
-                     int n_frozen = 0);
+                     int n_frozen = 0,
+                     const internal::ExactJK* cached_jk = nullptr);
 
 } // namespace scf
 } // namespace cpu

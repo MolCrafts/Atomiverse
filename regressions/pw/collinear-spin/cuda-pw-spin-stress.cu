@@ -92,8 +92,10 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
         *e_ry = 0.0;
 
     if (dev == Device::Cpu) {
-        cpu::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                           kEcutRy, 1, cpu::xc::XCType::LSDA};
+        cpu::pw::PW method{{std::make_shared<cpu::pw::UpfPseudopotential>(upf)},
+                           kEcutRy,
+                           1,
+                           cpu::xc::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;
@@ -109,8 +111,11 @@ int run_on_device(Device dev, const char* upf, std::array<double, 6>& stress,
                 *e_ry = method.last_result().energy; // reference SCF [Ry]
         }
     } else {
-        cuda::pw::PW method{std::make_shared<cpu::pw::UpfPseudopotential>(upf),
-                            kEcutRy, 1, cpu::xc::XCType::LSDA};
+        cuda::pw::PW method{
+            {std::make_shared<cpu::pw::UpfPseudopotential>(upf)},
+            kEcutRy,
+            1,
+            cpu::xc::XCType::LSDA};
         method.tol = kTol;
         method.max_iter = kMaxIter;
         method.mix_beta = 0.3;

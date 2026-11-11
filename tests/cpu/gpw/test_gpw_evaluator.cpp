@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/gpw_atom.h"
 #include "atomiverse/cpu/gpw/internal/gpw_forces.h"
+#include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
 #include <limits>
 #include <xtensor/generators/xbuilder.hpp>
 #ifdef _OPENMP
@@ -163,10 +164,10 @@ TEST(GpwEvaluatorForceReuse,
     method.n_alpha = method.n_beta = 1;
     method.build(frame);
     const auto atoms = internal::GpwDftAccess::atoms_from_frame(method, frame);
-    std::vector<GridBasisFunction> basis;
-    for (const auto& atom : atoms)
-        basis.insert(basis.end(), atom.basis.begin(), atom.basis.end());
-    const std::size_t nb = basis.size();
+    const internal::GpwGeometry geometry(
+        atoms, method.cell_bohr(), method.cutoff_ry, method.eps_default,
+        !method.nonperiodic, internal::GpwGridTables::compact);
+    const std::size_t nb = geometry.ao.nb();
     ASSERT_GT(nb, 1u);
     RealMatrix c = xt::zeros<double>({nb, std::size_t{1}});
     RealMatrix h = xt::zeros<double>({nb, nb});
@@ -177,28 +178,24 @@ TEST(GpwEvaluatorForceReuse,
     cache.P = xt::zeros<double>({nb, nb});
     cache.P_beta = xt::zeros<double>({nb, nb});
     cache.P(0, 0) = cache.P_beta(0, 0) = 1.0;
-    const auto grid =
-        make_uniform_grid(method.cell_bohr().data(), method.cutoff_ry);
-    cache.scf_cbg = build_compact_basis_grid(grid, basis, !method.nonperiodic,
-                                             method.eps_default);
-    cache.scf_cbg_valid = true;
-    // A valid-sized but poisoned auxiliary potential must never be consumed
-    // merely because the geometry cache was supplied for a shadow density.
-    cache.veff_a.assign(grid.npts(), std::numeric_limits<double>::quiet_NaN());
-    cache.veff_b = cache.veff_a;
-    cache.v_es = cache.veff_a;
+    // These potentials belong to an auxiliary density, not the shadow.
+    internal::GpwWorkspace workspace;
+    workspace.veff_a.assign(geometry.grid.npts(),
+                            std::numeric_limits<double>::quiet_NaN());
+    workspace.veff_b = workspace.veff_a;
+    workspace.v_es = workspace.veff_a;
     RealMatrix shadow_a = cache.P, shadow_b = cache.P_beta;
     shadow_a(0, 0) = 0.6;
     shadow_a(1, 1) = 0.4;
     const auto expected = internal::gpw_forces_at_density(
-        atoms, method, shadow_a, c, h, shadow_b, c, h);
+        geometry, method, shadow_a, c, h, shadow_b, c, h);
     for (int repeat = 0; repeat < 2; ++repeat) {
 #ifdef _OPENMP
         const int original_threads = omp_get_max_threads();
         omp_set_num_threads(8);
 #endif
         const auto actual = internal::gpw_forces_at_density(
-            atoms, method, shadow_a, c, h, shadow_b, c, h, &cache);
+            geometry, method, shadow_a, c, h, shadow_b, c, h);
 #ifdef _OPENMP
         omp_set_num_threads(original_threads);
 #endif
@@ -208,10 +205,9 @@ TEST(GpwEvaluatorForceReuse,
                 EXPECT_TRUE(std::isfinite(actual[a][k]));
                 EXPECT_NEAR(actual[a][k], expected[a][k], 1e-12);
             }
-        EXPECT_FALSE(cache.force_cbgd_valid);
     }
-    EXPECT_THROW(internal::gpw_forces_at_density(atoms, method, shadow_a, c, h,
-                                                 shadow_b, c, h, &cache,
-                                                 &cache),
+    EXPECT_THROW(internal::gpw_forces_at_density(geometry, method, shadow_a, c,
+                                                 h, shadow_b, c, h, &cache,
+                                                 &workspace),
                  std::invalid_argument);
 }

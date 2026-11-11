@@ -28,6 +28,9 @@ struct GpwResult;
 
 namespace internal {
 
+struct GpwGeometry;
+struct GpwWorkspace;
+
 /// @brief One atom's GPW data: valence charge, basis, and GTH pseudopotential.
 struct GpwAtom {
     double z_val = 0.0;        ///< valence charge (electrons it contributes).
@@ -135,10 +138,9 @@ struct GpwDftAccess {
     static std::vector<GpwAtom> atoms_from_frame(const GpwDft& m,
                                                  const Frame& frame);
 
-    /// @brief Geometry of the most recent run [Bohr] (empty before a run).
-    /// @param m Method.
-    /// @return Atom set the last `run` solved.
-    static const std::vector<GpwAtom>& last_atoms(const GpwDft& m);
+    /// @brief Read-only operators and potentials from the most recent run.
+    static const GpwGeometry& geometry(const GpwDft& m);
+    static const GpwWorkspace& workspace(const GpwDft& m);
 };
 
 } // namespace internal

@@ -1,25 +1,22 @@
 /// @file cuda/gpw/gpw_solver.cuh
 /// @brief `cuda::gpw::GpwDft` — concrete GPW DFT method on CUDA (product).
 ///
-/// Public twin of `cpu::gpw::GpwDft` for the **landed product slice**:
-/// Γ-point DIIS RKS (Padé LDA or pure PBE-family GGA: PBE, PBEsol, RevPBE,
-/// RPBE) with single-grid (`ngrids==1`) **or**
-/// REL_CUTOFF multigrid (`ngrids>1` + `rel_cutoff>0`), **or collinear UKS
-/// (Padé LSD or PBE-family spin GGA, single-grid only)**, **or multi-k RKS DIIS** (single-grid,
-/// Monkhorst–Pack / explicit list; device phased STVnl + host χ^k,
-/// device Poisson/XC), periodic Poisson. Parameters are public members (no
-/// `*Config` bag, no `make_*` factory). Stage footholds under
+/// Public twin of `cpu::gpw::GpwDft` for periodic Γ and multi-k DIIS with
+/// fixed occupations, Padé or PBE-family XC (PBE, PBEsol, RevPBE, RPBE), and
+/// Monkhorst–Pack or explicit k points. RKS supports single-grid and
+/// REL_CUTOFF multigrid, and collinear UKS supports single-grid. Stages under
 /// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
-///   * host — Γ STVnl / product-list build (once); multi-k χ^k build once;
+///   * host — Γ STVnl and shared AO product / Bloch tables once per geometry;
 ///     multi-k payload diag / cold-start; Gamma single-grid sparse AO force
 ///     coefficients once per geometry; UKS/MG/multi-k forces and fixed-P stress
 ///   * device mid-SCF — SG: product pack→PBC collocate→KS→integrate→scatter;
 ///     MG: monom multi-level pack→`KsMultiGridChainDevice`→scatter (host collint
-///     only if `ATV_GPW_CUDA_HOST_MG=1`); UKS: dual pack + `run_uks`; multi-k:
-///     device STVnl S/T, χ collocate, `run_from_rho`, V→H_k, H0+V fuse, H
-///     residency into DIIS, `KpointDiisEigenDevice`. Γ RKS/UKS: device H=H0+V,
+///     only for Γ with `ATV_GPW_CUDA_HOST_MG=1`); UKS: dual pack + `run_uks`;
+///     multi-k: device STVnl S/T, Bloch AO contractions on a single grid or
+///     phase contractions around the shared product multigrid chain, then
+///     `KpointDiisEigenDevice`. Γ RKS/UKS: device H=H0+V,
 ///     `AoDiisEigenDevice` DIIS/eigen/density, final `eigen_from_device`
 ///     payload (no host re-diag). The method owns typed GPW stages; standalone
 /// execution owns a Backend, nested execution borrows the parent stream.
@@ -70,9 +67,9 @@ class GpwForceWorkspace;
 /// @brief Concrete GPW DFT method on CUDA — members + `build` / `run` /
 ///        `last_result`.
 ///
-/// Product slice: Γ DIIS RKS (`n_occ`, PADE/PBE family, single grid or REL_CUTOFF
-/// multigrid), collinear UKS (`n_alpha`/`n_beta`, PADE/PBE family, single grid), or
-/// multi-k RKS DIIS (`k_mesh` / `k_points`, single grid, fixed occ), periodic.
+/// Periodic Γ and multi-k DIIS with fixed occupations. RKS uses `n_occ`
+/// and either grid representation. Collinear UKS uses `n_alpha`/`n_beta`
+/// on a single grid.
 /// Move-only.
 class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
   public:
@@ -104,7 +101,7 @@ class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
     bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
     bool use_ot = false;            ///< OT — not on device product (throws).
     /// @brief Monkhorst–Pack subdivisions (CP2K convention). `{1,1,1}` is Γ
-    ///        product path; any \(N_d>1\) selects multi-k RKS DIIS (single-grid).
+    ///        product path; any \(N_d>1\) selects multi-k DIIS.
     int k_mesh[3] = {1, 1, 1};
     /// @brief Explicit fractional k list (overrides `k_mesh` when non-empty).
     std::vector<std::array<double, 3>> k_points;
@@ -211,12 +208,15 @@ class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
   private:
     friend struct internal::GpwDftAccess;
     using GpwAtom = cpu::gpw::internal::GpwAtom;
+    using GpwGeometry = cpu::gpw::internal::GpwGeometry;
+    using GpwWorkspace = cpu::gpw::internal::GpwWorkspace;
     void validate_slice_() const;
     std::vector<GpwAtom> prepare_(const cpu::Frame& frame);
+    GpwGeometry assemble_geometry_(std::vector<GpwAtom> atoms) const;
     void release_backend_();
     void drive_stages_(cuda::Context& ctx, cuda::Frame& frame, int budget);
     GpwResult&
-    solve_(const std::vector<GpwAtom>& atoms,
+    solve_(const GpwGeometry& geometry, GpwWorkspace& workspace,
            const cpu::linalg::RealMatrix* guess_C,
            const cpu::linalg::RealMatrix* guess_P,
            const cpu::linalg::RealMatrix* guess_P_beta, cuda::Context& ctx,
@@ -224,9 +224,9 @@ class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
            std::vector<std::array<double, 3>>* resident_force = nullptr,
            cuda::Frame* resident_target = nullptr,
            std::array<double, 6>* resident_stress = nullptr);
-    GpwResult& solve_kpoints_(const std::vector<GpwAtom>& atoms,
-                              cuda::Context& ctx, cuda::Frame& frame,
-                              int budget);
+    GpwResult& solve_kpoints_(const GpwGeometry& geometry,
+                              GpwWorkspace& workspace, cuda::Context& ctx,
+                              cuda::Frame& frame, int budget);
     GpwResult& standalone_(const cpu::Frame& frame,
                            const cpu::linalg::RealMatrix* guess_C,
                            const cpu::linalg::RealMatrix* guess_P,
@@ -234,16 +234,17 @@ class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
                            std::vector<std::array<double, 3>>* forces,
                            std::array<double, 6>* stress);
     std::unique_ptr<internal::GpwForceWorkspace>
-    prepare_force_workspace_(const std::vector<GpwAtom>& atoms,
+    prepare_force_workspace_(const GpwGeometry& geometry,
                              const gaussian_core::Model& core_overlap,
                              cudaStream_t stream);
     cpu::gpw::GpwDft cpu_shell_() const;
     std::vector<std::array<double, 3>>
-    forces_from_state_(const std::vector<GpwAtom>& atoms, GpwResult& scf,
-                       cudaStream_t stream,
+    forces_from_state_(const GpwGeometry& geometry, const GpwResult& scf,
+                       const GpwWorkspace& workspace, cudaStream_t stream,
                        cuda::Frame* accumulate_into = nullptr);
-    std::array<double, 6> stress_from_state_(const std::vector<GpwAtom>& atoms,
-                                             const GpwResult& scf) const;
+    std::array<double, 6>
+    stress_from_state_(const GpwGeometry& geometry, const GpwResult& scf,
+                       const GpwWorkspace& workspace) const;
 
     double cell_[3] = {0, 0, 0}; // Private per-call geometry, from Frame only.
     GpwResult result_{};

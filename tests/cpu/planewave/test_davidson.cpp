@@ -14,24 +14,25 @@ TEST(PwDavidson, ComplexFourierHamiltonianMatchesDenseSpectrumAndResidual) {
     using namespace cpu::pw::internal;
     using Complex = std::complex<AccReal>;
     constexpr int ng = 16, nx = 32, bands = 2;
+    GVectorList modes;
     PWWorkspace ws;
     ws.n_g = ng;
     ws.nr = ws.fft_nx = nx;
     ws.fft_ny = ws.fft_nz = 1;
     ws.omega = 2 * std::acos(-1.0);
     ws.fft = std::make_unique<FFTPlan3D>(nx, 1, 1);
-    ws.gvec = &ws.gvec0;
-    ws.T_G = xt::zeros<AccReal>({ng});
+    ws.gvec = &modes;
+    modes.ekin.resize(ng);
     ws.V_eff_r = xt::zeros<AccReal>({nx});
     cpu::linalg::CplxMatrix exact = xt::zeros<std::complex<double>>({ng, ng});
     for (int i = 0; i < ng; ++i) {
         const int h = i - ng / 2;
-        ws.gvec0.h.push_back(h);
-        ws.gvec0.k.push_back(0);
-        ws.gvec0.l.push_back(0);
-        ws.gvec0.g.push_back({double(h), 0, 0});
-        ws.T_G[i] = 0.5 * (h + 0.17) * (h + 0.17);
-        exact(i, i) = ws.T_G[i] - 0.2;
+        modes.h.push_back(h);
+        modes.k.push_back(0);
+        modes.l.push_back(0);
+        modes.g.push_back({double(h), 0, 0});
+        modes.ekin[i] = 0.5 * (h + 0.17) * (h + 0.17);
+        exact(i, i) = modes.ekin[i] - 0.2;
         if (i > 0) {
             // V(x)=-0.2+0.3*cos(x)+0.4*sin(x); V(+G)=0.15-0.2i.
             exact(i, i - 1) = {0.15, -0.2};
@@ -96,21 +97,22 @@ TEST(PwDavidson, ChangedHamiltonianRetainsSeedsOutsideWarmOccupiedSubspace) {
     using namespace ATV;
     using namespace cpu::pw::internal;
     constexpr int ng = 3, nx = 8;
+    GVectorList modes;
     PWWorkspace ws;
     ws.n_g = ng;
     ws.nr = ws.fft_nx = nx;
     ws.fft_ny = ws.fft_nz = 1;
     ws.omega = 2 * std::acos(-1.0);
     ws.fft = std::make_unique<FFTPlan3D>(nx, 1, 1);
-    ws.gvec = &ws.gvec0;
-    ws.T_G = xt::zeros<AccReal>({ng});
+    ws.gvec = &modes;
+    modes.ekin.resize(ng);
     ws.V_eff_r = xt::zeros<AccReal>({nx});
     for (int h = -1; h <= 1; ++h) {
-        ws.gvec0.h.push_back(h);
-        ws.gvec0.k.push_back(0);
-        ws.gvec0.l.push_back(0);
-        ws.gvec0.g.push_back({double(h), 0, 0});
-        ws.T_G[h + 1] = h * h;
+        modes.h.push_back(h);
+        modes.k.push_back(0);
+        modes.l.push_back(0);
+        modes.g.push_back({double(h), 0, 0});
+        modes.ekin[h + 1] = h * h;
     }
     DavidsonSolver solver(1, 1e-10, 10);
     solver.prepare(ws);
@@ -121,17 +123,17 @@ TEST(PwDavidson, ChangedHamiltonianRetainsSeedsOutsideWarmOccupiedSubspace) {
     // Same coefficient shape, but a shifted free-electron dispersion makes
     // G=-1 the lowest state. The old G=0 vector is still an exact eigenvector
     // (energy 1, residual 0); a warm-only initial subspace would return it.
-    ws.gvec0.kvec = {1, 0, 0};
-    ws.T_G[0] = 0;
-    ws.T_G[1] = 1;
-    ws.T_G[2] = 4;
+    modes.kvec = {1, 0, 0};
+    modes.ekin[0] = 0;
+    modes.ekin[1] = 1;
+    modes.ekin[2] = 4;
     solver.step(ws);
     EXPECT_NEAR(ws.eigenvalues[0], 0.0, 1e-12);
     EXPECT_NEAR(std::abs(ws.wfc(0, 0)), 1.0, 1e-12);
     double residual2 = 0;
     for (int ig = 0; ig < ng; ++ig)
         residual2 +=
-            std::norm((ws.T_G[ig] - ws.eigenvalues[0]) * ws.wfc(0, ig));
+            std::norm((modes.ekin[ig] - ws.eigenvalues[0]) * ws.wfc(0, ig));
     EXPECT_LE(std::sqrt(residual2), 1e-10);
 }
 
@@ -140,23 +142,24 @@ TEST(PwDavidson, LastIndependentDirectionCompletesFourierEigensolve) {
     using namespace cpu::pw::internal;
     using Complex = std::complex<AccReal>;
     constexpr int ng = 5, nx = 16;
+    GVectorList modes;
     PWWorkspace ws;
     ws.n_g = ng;
     ws.nr = ws.fft_nx = nx;
     ws.fft_ny = ws.fft_nz = 1;
     ws.omega = 2 * std::acos(-1.0);
     ws.fft = std::make_unique<FFTPlan3D>(nx, 1, 1);
-    ws.gvec = &ws.gvec0;
-    ws.T_G = xt::zeros<AccReal>({ng});
+    ws.gvec = &modes;
+    modes.ekin.resize(ng);
     ws.V_eff_r = xt::zeros<AccReal>({nx});
     cpu::linalg::CplxMatrix exact = xt::zeros<Complex>({ng, ng});
     for (int h = 0; h < ng; ++h) {
-        ws.gvec0.h.push_back(h);
-        ws.gvec0.k.push_back(0);
-        ws.gvec0.l.push_back(0);
-        ws.gvec0.g.push_back({double(h), 0, 0});
-        ws.T_G[h] = 0.5 * h * h;
-        exact(h, h) = ws.T_G[h];
+        modes.h.push_back(h);
+        modes.k.push_back(0);
+        modes.l.push_back(0);
+        modes.g.push_back({double(h), 0, 0});
+        modes.ekin[h] = 0.5 * h * h;
+        exact(h, h) = modes.ekin[h];
         if (h > 0) {
             exact(h, h - 1) = {0.15, -0.2};
             exact(h - 1, h) = {0.15, 0.2};
@@ -190,15 +193,16 @@ TEST(PwDavidson, SternheimerAcceptsAlreadySolvedProjectedInitialGuess) {
     using namespace ATV;
     using namespace cpu::pw::internal;
     using Cx = std::complex<AccReal>;
+    GVectorList modes;
     PWWorkspace ws;
     ws.n_g = 3;
     ws.nr = ws.fft_nx = 8;
     ws.fft_ny = ws.fft_nz = 1;
     ws.fft = std::make_unique<FFTPlan3D>(8, 1, 1);
-    ws.gvec = &ws.gvec0;
-    ws.gvec0.h = {0, 1, -1};
-    ws.gvec0.k = ws.gvec0.l = {0, 0, 0};
-    ws.T_G = {0., 1., 2.};
+    ws.gvec = &modes;
+    modes.h = {0, 1, -1};
+    modes.k = modes.l = {0, 0, 0};
+    modes.ekin = {0., 1., 2.};
     ws.V_eff_r = xt::zeros<AccReal>({8});
     const Cx occupied[] = {{1, 0}, {0, 0}, {0, 0}};
     const Cx rhs[] = {{7, 3}, {.5, -.25}, {-1, .75}};

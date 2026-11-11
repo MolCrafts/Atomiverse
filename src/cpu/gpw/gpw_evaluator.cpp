@@ -530,7 +530,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 }
             }
             last_.converged = true;
-            const auto F = internal::gpw_forces_from_scf(atoms, method_, last_);
+            const auto F = internal::gpw_forces_from_scf(
+                GpwDftAccess::geometry(method_), method_, last_,
+                GpwDftAccess::workspace(method_));
             AccReal* __restrict sp_fx = frame.span(kAtom_fx);
             AccReal* __restrict sp_fy = frame.span(kAtom_fy);
             AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -654,8 +656,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                         "GPWEvaluator: UKS CPMD force path needs H_ks and "
                         "H_ks_beta from fixed-density eval");
                 const auto F = internal::gpw_forces_at_density(
-                    atoms, method_, last_.P, Ca2, last_.H_ks, last_.P_beta, Cb2,
-                    last_.H_ks_beta, &last_, &last_);
+                    GpwDftAccess::geometry(method_), method_, last_.P, Ca2,
+                    last_.H_ks, last_.P_beta, Cb2, last_.H_ks_beta, &last_,
+                    &GpwDftAccess::workspace(method_));
                 AccReal* __restrict sp_fx = frame.span(kAtom_fx);
                 AccReal* __restrict sp_fy = frame.span(kAtom_fy);
                 AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -699,8 +702,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
 
         if (want_forces) {
             const auto F = internal::gpw_forces_at_density(
-                atoms, method_, last_.P, cp_alpha->C(), last_.H_ks, &last_,
-                &last_);
+                GpwDftAccess::geometry(method_), method_, last_.P,
+                cp_alpha->C(), last_.H_ks, &last_,
+                &GpwDftAccess::workspace(method_));
             AccReal* __restrict sp_fx = frame.span(kAtom_fx);
             AccReal* __restrict sp_fy = frame.span(kAtom_fy);
             AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -881,8 +885,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                         "needs dual-spin k payloads from the corrector SCF");
                 GpwResult force_scf = last_;
                 force_scf.converged = true;
-                const auto F =
-                    internal::gpw_forces_from_scf(atoms, method_, force_scf);
+                const auto F = internal::gpw_forces_from_scf(
+                    GpwDftAccess::geometry(method_), method_, force_scf,
+                    GpwDftAccess::workspace(method_));
                 AccReal* __restrict sp_fx = frame.span(kAtom_fx);
                 AccReal* __restrict sp_fy = frame.span(kAtom_fy);
                 AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -1020,7 +1025,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                         "P/C/eps for both spins from the corrector SCF");
                 GpwResult force_scf = last_;
                 force_scf.converged = true;
-                F = internal::gpw_forces_from_scf(atoms, method_, force_scf);
+                F = internal::gpw_forces_from_scf(
+                    GpwDftAccess::geometry(method_), method_, force_scf,
+                    GpwDftAccess::workspace(method_));
             } else if (method_.use_ot) {
                 // OT corrector: prefer forces-from-scf when C/eps present
                 // (partial OT may leave converged=false). Fall back to
@@ -1029,8 +1036,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                     && !last_.eps.empty()) {
                     GpwResult force_scf = last_;
                     force_scf.converged = true;
-                    F = internal::gpw_forces_from_scf(atoms, method_,
-                                                      force_scf);
+                    F = internal::gpw_forces_from_scf(
+                        GpwDftAccess::geometry(method_), method_, force_scf,
+                        GpwDftAccess::workspace(method_));
                 } else if (last_.C.size() > 0 && last_.P.size() > 0
                            && last_.H_ks.size() > 0) {
                     const int nb = static_cast<int>(last_.C.shape(0));
@@ -1041,8 +1049,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                     for (int mu = 0; mu < nb; ++mu)
                         for (int i = 0; i < n_occ; ++i)
                             C_occ(mu, i) = last_.C(mu, i);
-                    F = internal::gpw_forces_at_density(atoms, method_, last_.P,
-                                                        C_occ, last_.H_ks);
+                    F = internal::gpw_forces_at_density(
+                        GpwDftAccess::geometry(method_), method_, last_.P,
+                        C_occ, last_.H_ks);
                 } else {
                     throw std::runtime_error(
                         "GPWEvaluator: second_gen_cp OT force path needs "
@@ -1062,8 +1071,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 for (int mu = 0; mu < nb; ++mu)
                     for (int i = 0; i < n_occ; ++i)
                         C_occ(mu, i) = last_.C(mu, i);
-                F = internal::gpw_forces_at_density(atoms, method_, last_.P,
-                                                    C_occ, last_.H_ks);
+                F = internal::gpw_forces_at_density(
+                    GpwDftAccess::geometry(method_), method_, last_.P, C_occ,
+                    last_.H_ks);
             }
             AccReal* __restrict sp_fx = frame.span(kAtom_fx);
             AccReal* __restrict sp_fy = frame.span(kAtom_fy);
@@ -1169,9 +1179,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
 
             if (want_forces) {
                 // Forces of U(R,n) at fixed n: density D, KS matrix H[n].
-                F = internal::gpw_forces_at_density(atoms, method_, D,
-                                                    occupied_block(C, n_occ),
-                                                    last_.H_ks, &last_);
+                F = internal::gpw_forces_at_density(
+                    GpwDftAccess::geometry(method_), method_, D,
+                    occupied_block(C, n_occ), last_.H_ks);
             }
         } else {
             // Γ UKS: one generalized diagonalization per spin channel.
@@ -1243,9 +1253,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
                 // Forces of U(R,n^α,n^β) at fixed n^σ: densities D^σ, KS
                 // matrices H^σ[n] (dual-spin fixed-density overload).
                 F = internal::gpw_forces_at_density(
-                    atoms, method_, Da, occupied_block(Ca, method_.n_alpha),
-                    last_.H_ks, Db, occupied_block(Cb, method_.n_beta),
-                    last_.H_ks_beta, &last_);
+                    GpwDftAccess::geometry(method_), method_, Da,
+                    occupied_block(Ca, method_.n_alpha), last_.H_ks, Db,
+                    occupied_block(Cb, method_.n_beta), last_.H_ks_beta);
             }
         }
 
@@ -1273,7 +1283,8 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             // analogue of gpw_forces_at_density. No reference SCF (zero-SCF
             // preserved); stress_use_fd is refused at build().
             last_stress_ha_ = internal::gpw_stress_at_state_impl(
-                atoms, method_, last_, method_.stress_strain_h,
+                GpwDftAccess::geometry(method_), method_, last_,
+                GpwDftAccess::workspace(method_), method_.stress_strain_h,
                 method_.stress_axes);
             add_stress_to_frame(frame, last_stress_ha_);
         }
@@ -1431,7 +1442,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             // (D_k, ε_k, C_k^occ) payload — since C_k are exact
             // eigenvectors of H_k[n], W = C (C†HC) C† (the Γ product's
             // off-BO energy-weighted density) reduces to Σ f ε C C†.
-            const auto F = internal::gpw_forces_from_scf(atoms, method_, last_);
+            const auto F = internal::gpw_forces_from_scf(
+                GpwDftAccess::geometry(method_), method_, last_,
+                GpwDftAccess::workspace(method_));
             AccReal* __restrict sp_fx = frame.span(kAtom_fx);
             AccReal* __restrict sp_fy = frame.span(kAtom_fy);
             AccReal* __restrict sp_fz = frame.span(kAtom_fz);
@@ -1450,7 +1463,8 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             // Lagrangian at the warm payload (C_occ_k / eps_k just built) —
             // no reference SCF, zero-SCF preserved.
             last_stress_ha_ = internal::gpw_stress_at_state_impl(
-                atoms, method_, last_, method_.stress_strain_h,
+                GpwDftAccess::geometry(method_), method_, last_,
+                GpwDftAccess::workspace(method_), method_.stress_strain_h,
                 method_.stress_axes);
             add_stress_to_frame(frame, last_stress_ha_);
         }
@@ -1597,7 +1611,9 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
             && static_cast<int>(last_.C_occ_k.size()) == last_.n_kpts
             && static_cast<int>(last_.eps_k.size()) == last_.n_kpts;
         if (gamma_payload || k_payload) {
-            F = internal::gpw_forces_from_scf(atoms, method_, last_);
+            F = internal::gpw_forces_from_scf(GpwDftAccess::geometry(method_),
+                                              method_, last_,
+                                              GpwDftAccess::workspace(method_));
         } else {
             // XL mode warm-starts the force-pass SCF from the MO coefficients
             // just converged at this exact geometry. Default mode keeps the
@@ -1786,13 +1802,13 @@ void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
         const ATV::cpu::linalg::RealMatrix* stress_guess =
             last_.C.size() > 0 ? &last_.C : nullptr;
         last_stress_ha_ =
-            stress_use_fd
-                ? internal::gpw_stress_fd_impl(
-                      atoms, method_, method_.stress_strain_h,
-                      method_.stress_axes, stress_guess)
-                : internal::gpw_stress_at_state_impl(atoms, method_, last_,
-                                                     method_.stress_strain_h,
-                                                     method_.stress_axes);
+            stress_use_fd ? internal::gpw_stress_fd_impl(
+                                atoms, method_, method_.stress_strain_h,
+                                method_.stress_axes, stress_guess)
+                          : internal::gpw_stress_at_state_impl(
+                                GpwDftAccess::geometry(method_), method_, last_,
+                                GpwDftAccess::workspace(method_),
+                                method_.stress_strain_h, method_.stress_axes);
         add_stress_to_frame(frame, last_stress_ha_);
     }
 }

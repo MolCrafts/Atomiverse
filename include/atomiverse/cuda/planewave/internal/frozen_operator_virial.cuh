@@ -32,14 +32,22 @@ struct FrozenBandDeviceView {
     double k_weight; // use as supplied; never abs/positive-only screening
 };
 struct FrozenLocalDeviceView {
+    // Tables are [species][G].
     const double* value; // v(g)=U(g)/Omega, including production G0 finite part
     const double* slope; // dv/dg at fixed Omega, exact same radial quadrature
-    const cufftDoubleComplex* structure; // sum_atoms exp(-i G.R), cold geometry
+    const cufftDoubleComplex* structure; // sum over atoms of each species
+    int species_count;
 };
 struct FrozenProjectorColumn {
     int atom, l, m, projector;
     int block_first,
         block_size; // same atom,l,m; all radial projectors in block
+    int species;
+};
+struct FrozenProjectorSpecies {
+    std::size_t radial_offset;   // first projector in R and slope_over_q
+    std::size_t coupling_offset; // first entry in D
+    int projector_count;
 };
 struct FrozenNonlocalDeviceGeometry {
     FrozenReciprocalView q;     // k+G, not the density sphere G
@@ -48,7 +56,8 @@ struct FrozenNonlocalDeviceGeometry {
     const double* D; // immutable original full symmetric D_ij, Ha, row-major
     const double* positions; // [atom][xyz], Bohr
     const FrozenProjectorColumn* columns;
-    int projectors, column_count;
+    const FrozenProjectorSpecies* species;
+    int species_count, column_count;
     double prefactor; // 4*pi/sqrt(Omega), included exactly once
 };
 struct FrozenNonlocalDeviceScratch {
@@ -65,10 +74,10 @@ struct FrozenNonlocalDeviceScratch {
 // Hartree alone retains the existing Poisson g^2<1e-16 zero-mode exclusion.
 //
 // Geometry columns must be cold-validated: l in [0,2], m in [0,2l], valid atom and
-// projector indices, and each contiguous block contains exactly the radial
-// projectors of one (atom,l,m). D has projectors^2 entries; R and slope tables
-// each have projectors*countG; positions have 3*atom_count. No per-atom dense
-// derivative tensor is retained.
+// species-local projector indices, and each contiguous block contains exactly
+// the radial projectors of one (atom,l,m). D packs a square block per species;
+// R and slope each pack one countG row per radial projector; positions have
+// 3*atom_count. No per-atom dense derivative tensor is retained.
 // Scratch extents: B=countG*column_count, each of c/Dc/eta=column_count*bands.
 // Scratch and output must not alias each other or the read-only inputs. The
 // supplied cuBLAS handle must already use the supplied stream and HOST pointer

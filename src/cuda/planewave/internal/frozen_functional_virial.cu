@@ -294,7 +294,8 @@ void certify_frozen_derivatives(
 }
 struct FrozenFunctionalWorkspace::Impl {
     const cpu::Frame& frame;
-    host::PWProblem& prob;
+    const AccReal volume_bohr;
+    const int n_elec;
     cudaStream_t stream;
     int bands, ng, ng0, natoms;
     int packed_bands = 0, zero_index = -1;
@@ -307,10 +308,12 @@ struct FrozenFunctionalWorkspace::Impl {
     bool used = false;
     // Cold host sources and all readback destinations outlive release()'s drain.
     std::array<std::vector<double>, 3> G, q;
-    std::vector<double> R, slope, local_value, local_slope, positions,
-        occupation, ionic_force;
+    std::vector<double> R, slope, couplings, local_value, local_slope,
+        positions, occupation, ionic_force;
     std::vector<cufftDoubleComplex> structure;
     std::vector<dev::FrozenProjectorColumn> columns;
+    std::vector<dev::FrozenProjectorSpecies> projector_species;
+    std::vector<int> atom_species;
     std::unique_ptr<host::EwaldSummation> ionic;
     FrozenFunctionalOutcome value;
     FrozenOperatorVirial ionic_term{}, host_total{};
@@ -330,7 +333,7 @@ struct FrozenFunctionalWorkspace::Impl {
     dev::FrozenLocalDeviceView local{};
     dev::FrozenNonlocalDeviceGeometry nonlocal{};
     dev::FrozenNonlocalDeviceScratch nl_scratch{};
-    int *dh = nullptr, *dk = nullptr, *dl = nullptr;
+    int *dh = nullptr, *dk = nullptr, *dl = nullptr, *d_atom_species = nullptr;
     cufftDoubleComplex *dC = nullptr, *rho_orb = nullptr, *rho_ref = nullptr,
                        *half = nullptr, *qC = nullptr, *residual_work = nullptr;
     double *rho_acc = nullptr, *df = nullptr, *forces = nullptr,
@@ -375,14 +378,17 @@ struct FrozenFunctionalWorkspace::Impl {
             cudaFree(p);
         memory.clear();
     }
-    Impl(const cpu::Frame& f, host::PWProblem& p, int nb, cpu::xc::XCType type,
+    Impl(const cpu::Frame& f, const host::PWIons& ions,
+         const host::GVectorList& density_modes,
+         const host::GVectorList& gamma_modes, int nb, cpu::xc::XCType type,
          electronic::Smearing kind, double width,
          std::optional<FixedSpinOccupations> spin, cudaStream_t s,
          bool want_force, bool want_stress)
-        : frame(f), prob(p), stream(s), bands(nb), fixed_spin(spin),
-          ng(p.gv_k.empty() ? 0 : p.gv_k[0].count()), ng0(p.gv0.count()),
-          natoms(f.nlocal()), functional(type), filling(kind), width_ha(width),
-          need_force(want_force), need_stress(want_stress) {
+        : frame(f), volume_bohr(ions.vol_bohr), n_elec(ions.n_elec), stream(s),
+          bands(nb), fixed_spin(spin), ng(gamma_modes.count()),
+          ng0(density_modes.count()), natoms(f.nlocal()), functional(type),
+          filling(kind), width_ha(width), need_force(want_force),
+          need_stress(want_stress) {
         try {
             const bool filling_valid =
                 fixed_spin
@@ -392,17 +398,17 @@ struct FrozenFunctionalWorkspace::Impl {
                        && fixed_spin->beta <= bands
                        && static_cast<long long>(fixed_spin->alpha)
                                   + fixed_spin->beta
-                              == p.n_elec)
+                              == ions.n_elec)
                     : (filling == electronic::Smearing::none
-                           ? p.n_elec == 2LL * bands
+                           ? ions.n_elec == 2LL * bands
                            : (filling == electronic::Smearing::fermi_dirac
-                              && p.n_elec > 0 && p.n_elec <= 2LL * bands
+                              && ions.n_elec > 0 && ions.n_elec <= 2LL * bands
                               && std::isfinite(width_ha) && width_ha > 0));
             require((functional == cpu::xc::XCType::LSDA
                      || cpu::xc::is_pbe_family(functional))
                         && stream && bands > 0 && bands <= ng
-                        && p.kg.kpoints.size() == 1 && p.gv_k.size() == 1
-                        && ng > 0 && ng0 > 0 && filling_valid,
+                        && gamma_modes.kvec.norm_squared() == 0 && ng > 0
+                        && ng0 > 0 && filling_valid,
                     "frozen functional admission");
             require(!fixed_spin || bands <= std::numeric_limits<int>::max() / 2,
                     "packed spin band-count overflow");
@@ -420,7 +426,8 @@ struct FrozenFunctionalWorkspace::Impl {
                 for (int channel = 0; channel < 2; ++channel)
                     spin_final_norms[channel].resize(2 * bands);
                 for (int i = 0; i < ng0; ++i)
-                    if (p.gv0.h[i] == 0 && p.gv0.k[i] == 0 && p.gv0.l[i] == 0) {
+                    if (density_modes.h[i] == 0 && density_modes.k[i] == 0
+                        && density_modes.l[i] == 0) {
                         require(zero_index < 0, "duplicate density zero mode");
                         zero_index = i;
                     }
@@ -445,11 +452,10 @@ struct FrozenFunctionalWorkspace::Impl {
                 pos_ang.push_back({f.span(kAtom_x)[i], f.span(kAtom_y)[i],
                                    f.span(kAtom_z)[i]});
                 for (int a = 0; a < 3; ++a)
-                    positions.push_back(p.ws.atom_pos_bohr[i][a]);
+                    positions.push_back(ions.positions[i][a]);
             }
             ionic = std::make_unique<host::EwaldSummation>(
-                pos_ang, std::vector<AccReal>(natoms, p.potential->z_val),
-                f.box);
+                pos_ang, ions.ionic_charges, f.box);
             ionic_term.energy_ha = ionic->total_energy();
             for (int v = 0; v < 6; ++v) {
                 ionic_term.virial_ha[3 * aa[v] + bb[v]] = ionic->virial_ha()[v];
@@ -458,52 +464,81 @@ struct FrozenFunctionalWorkspace::Impl {
             for (const auto& F : ionic->forces_bohr())
                 for (int a = 0; a < 3; ++a)
                     ionic_force.push_back(F[a]);
-            for (int i = 0; i < ng0; ++i) {
-                for (int a = 0; a < 3; ++a)
-                    G[a].push_back(p.gv0.g[i][a]);
-                const auto jet = host::nc_vloc_fourier_jet(
-                    *p.potential, p.gv0.g[i].norm(), p.vol_bohr);
-                local_value.push_back(jet.value);
-                if (need_stress)
-                    local_slope.push_back(jet.slope);
-                std::complex<double> S{};
-                for (const auto& r : p.ws.atom_pos_bohr)
-                    S += std::polar(1., -p.gv0.g[i].dot(r));
-                if (need_stress)
-                    structure.push_back({S.real(), S.imag()});
+            atom_species.assign(ions.atom_species.begin(),
+                                ions.atom_species.end());
+            const auto local_extent = ions.species.size() * std::size_t(ng0);
+            local_value.resize(local_extent);
+            if (need_stress) {
+                local_slope.resize(local_extent);
+                structure.resize(local_extent);
             }
+            for (int i = 0; i < ng0; ++i) {
+                const auto& g = density_modes.g[i];
+                for (int a = 0; a < 3; ++a)
+                    G[a].push_back(g[a]);
+                const auto norm = g.norm();
+                for (std::size_t kind = 0; kind < ions.species.size(); ++kind) {
+                    const auto j = kind * ng0 + i;
+                    const auto jet = host::nc_vloc_fourier_jet(
+                        *ions.species[kind], norm, ions.vol_bohr);
+                    local_value[j] = jet.value;
+                    if (need_stress)
+                        local_slope[j] = jet.slope;
+                }
+                if (need_stress)
+                    for (int atom = 0; atom < natoms; ++atom) {
+                        const auto phase = -g.dot(ions.positions[atom]);
+                        auto& S =
+                            structure[std::size_t(atom_species[atom]) * ng0
+                                      + i];
+                        S.x += std::cos(phase);
+                        S.y += std::sin(phase);
+                    }
+            }
+            const auto& gv = gamma_modes;
             for (int i = 0; i < ng; ++i)
                 for (int a = 0; a < 3; ++a)
-                    q[a].push_back((p.gv_k[0].g[i] + p.gv_k[0].kvec)[a]);
-            for (int j = 0; j < p.potential->n_proj(); ++j)
-                for (int i = 0; i < ng; ++i) {
-                    const auto jet = host::nc_projector_radial_jet(
-                        *p.potential, j,
-                        (p.gv_k[0].g[i] + p.gv_k[0].kvec).norm());
-                    R.push_back(jet.value);
-                    if (need_stress)
-                        slope.push_back(jet.slope_over_q);
-                }
-            for (int atom = 0; atom < natoms; ++atom)
-                for (int l = 0; l <= 2; ++l)
-                    for (int m = 0; m < 2 * l + 1; ++m) {
-                        int first = columns.size(), size = 0;
-                        for (const auto& pr : p.potential->kb)
-                            if (pr.l == l)
-                                ++size;
-                        for (int j = 0; j < p.potential->n_proj(); ++j)
-                            if (p.potential->kb[j].l == l)
-                                columns.push_back({atom, l, m, j, first, size});
+                    q[a].push_back((gv.g[i] + gv.kvec)[a]);
+            for (const auto& nc : ions.species) {
+                projector_species.push_back(
+                    {R.size() / ng, couplings.size(), nc->n_proj()});
+                couplings.insert(couplings.end(), nc->d_ij.begin(),
+                                 nc->d_ij.end());
+                for (int j = 0; j < nc->n_proj(); ++j)
+                    for (int i = 0; i < ng; ++i) {
+                        const auto jet = host::nc_projector_radial_jet(
+                            *nc, j, (gv.g[i] + gv.kvec).norm());
+                        R.push_back(jet.value);
+                        if (need_stress)
+                            slope.push_back(jet.slope_over_q);
                     }
-            base = std::make_unique<dev::FFTPlan3D>(p.ws.fft_nx, p.ws.fft_ny,
-                                                    p.ws.fft_nz, stream);
+            }
+            for (int atom = 0; atom < natoms; ++atom) {
+                const int kind = atom_species[atom];
+                const auto& nc = *ions.species[kind];
+                for (int l = 0; l <= nc.l_max; ++l) {
+                    int size = 0;
+                    for (const auto& pr : nc.kb)
+                        if (pr.l == l)
+                            ++size;
+                    for (int m = 0; m < 2 * l + 1; ++m) {
+                        const int first = columns.size();
+                        for (int j = 0; j < nc.n_proj(); ++j)
+                            if (nc.kb[j].l == l)
+                                columns.push_back(
+                                    {atom, l, m, j, first, size, kind});
+                    }
+                }
+            }
+            base = std::make_unique<dev::FFTPlan3D>(
+                density_modes.nx, density_modes.ny, density_modes.nz, stream);
             if (need_stress)
                 quad = std::make_unique<dev::FFTPlan3D>(
-                    host::xc_quadrature_dimension(p.ws.fft_nx,
+                    host::xc_quadrature_dimension(density_modes.nx,
                                                   cpu::xc::is_gga(functional)),
-                    host::xc_quadrature_dimension(p.ws.fft_ny,
+                    host::xc_quadrature_dimension(density_modes.ny,
                                                   cpu::xc::is_gga(functional)),
-                    host::xc_quadrature_dimension(p.ws.fft_nz,
+                    host::xc_quadrature_dimension(density_modes.nz,
                                                   cpu::xc::is_gga(functional)),
                     stream);
             blas_check(cublasCreate(&blas));
@@ -512,16 +547,17 @@ struct FrozenFunctionalWorkspace::Impl {
             Gview = {upload(G[0]), upload(G[1]), upload(G[2]), ng0};
             qview = {upload(q[0]), upload(q[1]), upload(q[2]), ng};
             local = {upload(local_value), upload(local_slope),
-                     upload(structure)};
+                     upload(structure), int(ions.species.size())};
             nonlocal = {qview,
                         upload(R),
                         upload(slope),
-                        upload(p.potential->d_ij),
+                        upload(couplings),
                         upload(positions),
                         upload(columns),
-                        p.potential->n_proj(),
+                        upload(projector_species),
+                        int(projector_species.size()),
                         int(columns.size()),
-                        4 * M_PI / std::sqrt(p.vol_bohr)};
+                        4 * M_PI / std::sqrt(ions.vol_bohr)};
             const auto bc = std::size_t(columns.size()) * packed_bands;
             if (fixed_spin && need_force)
                 require(columns.size()
@@ -533,14 +569,16 @@ struct FrozenFunctionalWorkspace::Impl {
                 allocate<cufftDoubleComplex>(bc),
                 allocate<cufftDoubleComplex>(bc),
                 allocate<cufftDoubleComplex>(bc)};
-            dh = upload(p.gv0.h);
-            dk = upload(p.gv0.k);
-            dl = upload(p.gv0.l);
+            dh = upload(density_modes.h);
+            dk = upload(density_modes.k);
+            dl = upload(density_modes.l);
             df = filling == electronic::Smearing::none
                      ? upload(occupation)
                      : allocate<double>(bands);
-            if (need_force)
+            if (need_force) {
+                d_atom_species = upload(atom_species);
                 d_ionic_force = upload(ionic_force);
+            }
             dC = allocate<cufftDoubleComplex>(std::size_t(ng) * packed_bands);
             if (need_force)
                 qC = allocate<cufftDoubleComplex>(std::size_t(ng)
@@ -632,6 +670,7 @@ struct FrozenFunctionalWorkspace::Impl {
     }
     ~Impl() { release(); }
     FrozenFinishResult finish(DeviceDensity& den, DeviceBandSolver& solver,
+                              xt::xarray<AccReal>& eigenvalues,
                               const cpu::pw::PWResult& reference,
                               std::vector<std::array<double, 3>>* force_out,
                               std::array<double, 6>* stress_out,
@@ -662,9 +701,9 @@ struct FrozenFunctionalWorkspace::Impl {
             solver.bind_grids(rho_acc, den.effective_potential());
             try {
                 if (restricted_fixed)
-                    solver.accumulate_density(1., prob.vol_bohr, bands, 2.);
+                    solver.accumulate_density(1., volume_bohr, bands, 2.);
                 else
-                    solver.accumulate_final_density(1., prob.vol_bohr, f);
+                    solver.accumulate_final_density(1., volume_bohr, f);
             } catch (...) {
                 solver.bind_grids(den.density_accumulator(),
                                   den.effective_potential());
@@ -695,7 +734,7 @@ struct FrozenFunctionalWorkspace::Impl {
                 den.assemble_veff_spin(channel);
                 solver.bind_kpoint(0);
                 value.spin_auxiliary[channel] = solver.solve_final_bands(
-                    prob.ws,
+                    eigenvalues,
                     {ng, bands, dC + std::size_t(channel) * ng * bands,
                      residual_work, device_norms, spin_final_norms[channel]},
                     20);
@@ -714,7 +753,7 @@ struct FrozenFunctionalWorkspace::Impl {
                          value.spin_auxiliary[1].max_residual_ha),
                 std::max(value.spin_auxiliary[0].max_normalization_error,
                          value.spin_auxiliary[1].max_normalization_error)};
-            value.auxiliary_electron_count = prob.n_elec;
+            value.auxiliary_electron_count = n_elec;
             sum_spin_density<<<(ng0 + block - 1) / block, block, 0, stream>>>(
                 rho_orb_spin[0], rho_orb_spin[1], rho_orb, ng0);
             ATV_CUDA_CHECK(cudaGetLastError());
@@ -724,26 +763,26 @@ struct FrozenFunctionalWorkspace::Impl {
             den.assemble_veff();
             solver.bind_kpoint(0);
             value.auxiliary = solver.solve_final_bands(
-                prob.ws,
+                eigenvalues,
                 {ng, bands, dC, residual_work, device_norms, final_norms}, 20);
             require(value.auxiliary.complete,
                     "auxiliary final eigenstate residual incomplete");
-            value.auxiliary_electron_count = prob.n_elec;
+            value.auxiliary_electron_count = n_elec;
             if (filling == electronic::Smearing::fermi_dirac) {
-                const std::vector<AccReal> spectrum(prob.ws.eigenvalues.begin(),
-                                                    prob.ws.eigenvalues.end());
+                const std::vector<AccReal> spectrum(eigenvalues.begin(),
+                                                    eigenvalues.end());
                 require(spectrum.size() == static_cast<std::size_t>(bands),
                         "final spectrum shape");
                 std::vector<AccReal> weights(bands, 1.);
                 value.auxiliary_mu_ha = electronic::find_fermi_level(
-                    spectrum, weights, AccReal(prob.n_elec), width_ha, filling,
-                    1, 2);
+                    spectrum, weights, AccReal(n_elec), width_ha, filling, 1,
+                    2);
                 const auto fill = electronic::fill_occupations(
                     spectrum, weights, value.auxiliary_mu_ha, width_ha, filling,
                     1, 2);
                 require(fill.occ.size() == static_cast<std::size_t>(bands)
                             && std::isfinite(fill.n_occ)
-                            && std::abs(fill.n_occ - prob.n_elec) < 1e-8
+                            && std::abs(fill.n_occ - n_elec) < 1e-8
                             && std::isfinite(fill.entropy),
                         "final filling electron count/entropy");
                 for (auto f : fill.occ)
@@ -765,9 +804,10 @@ struct FrozenFunctionalWorkspace::Impl {
         if (need_force) {
             ATV_CUDA_CHECK(cudaMemsetAsync(
                 forces, 0, 3 * natoms * sizeof(double), stream));
-            accumulate_local_forces_device(
-                rho_orb, Gview.x, Gview.y, Gview.z, local.value,
-                nonlocal.positions, ng0, natoms, prob.vol_bohr, forces, stream);
+            accumulate_local_forces_device(rho_orb, Gview.x, Gview.y, Gview.z,
+                                           local.value, nonlocal.positions,
+                                           d_atom_species, ng0, natoms,
+                                           volume_bohr, forces, stream);
             accumulate_projected_nonlocal_forces(nonlocal, state, nl_scratch,
                                                  qC, blas, forces, stream);
             add_ionic<<<(3 * natoms + block - 1) / block, block, 0, stream>>>(
@@ -778,9 +818,9 @@ struct FrozenFunctionalWorkspace::Impl {
             ATV_CUDA_CHECK(cudaMemsetAsync(
                 terms, 0, 5 * sizeof(FrozenOperatorVirial), stream));
             kinetic_frozen_virial(qview, state, terms, stream);
-            hartree_frozen_virial(Gview, rho_orb, prob.vol_bohr, terms + 1,
+            hartree_frozen_virial(Gview, rho_orb, volume_bohr, terms + 1,
                                   stream);
-            local_potential_frozen_virial(Gview, rho_orb, prob.vol_bohr, local,
+            local_potential_frozen_virial(Gview, rho_orb, volume_bohr, local,
                                           terms + 2, stream);
             add_projected_nonlocal_virial(nonlocal, state, nl_scratch, blas,
                                           terms + 3, stream);
@@ -788,14 +828,14 @@ struct FrozenFunctionalWorkspace::Impl {
                 evaluate_spin_frozen_virial(functional, *quad, dh, dk, dl,
                                             Gview.x, Gview.y, Gview.z, ng0,
                                             rho_orb_spin[0], rho_orb_spin[1], 1,
-                                            prob.vol_bohr, spin_xc, stream);
+                                            volume_bohr, spin_xc, stream);
             else if (cpu::xc::is_gga(functional))
                 evaluate_pbe_frozen_virial(
                     functional, *quad, dh, dk, dl, Gview.x, Gview.y, Gview.z,
-                    ng0, rho_orb, 1, prob.vol_bohr, gga, stream);
+                    ng0, rho_orb, 1, volume_bohr, gga, stream);
             else
                 evaluate_lsda_frozen_virial(*quad, dh, dk, dl, ng0, rho_orb, 1,
-                                            prob.vol_bohr, xc, stream);
+                                            volume_bohr, xc, stream);
             sum_terms<<<1, 32, 0, stream>>>(terms);
             ATV_CUDA_CHECK(cudaGetLastError());
         }
@@ -811,7 +851,7 @@ struct FrozenFunctionalWorkspace::Impl {
             ATV_CUDA_CHECK(cudaGetLastError());
             fixed_spin_charge_packet<<<1, 1, 0, stream>>>(
                 dC, df, ng, bands, *fixed_spin, rho_orb_spin[0],
-                rho_orb_spin[1], zero_index, prob.vol_bohr, device_spin_charge);
+                rho_orb_spin[1], zero_index, volume_bohr, device_spin_charge);
             ATV_CUDA_CHECK(cudaGetLastError());
             ATV_CUDA_CHECK(cudaMemcpyAsync(
                 &host_spin_charge, device_spin_charge, sizeof(host_spin_charge),
@@ -999,18 +1039,21 @@ struct FrozenFunctionalWorkspace::Impl {
     }
 };
 FrozenFunctionalWorkspace::FrozenFunctionalWorkspace(
-    const cpu::Frame& f, host::PWProblem& p, int b, cpu::xc::XCType type,
+    const cpu::Frame& f, const host::PWIons& ions,
+    const host::GVectorList& density_modes,
+    const host::GVectorList& gamma_modes, int b, cpu::xc::XCType type,
     electronic::Smearing kind, double width,
     std::optional<FixedSpinOccupations> spin, cudaStream_t stream, bool force,
     bool stress)
-    : impl_(std::make_unique<Impl>(f, p, b, type, kind, width, spin, stream,
-                                   force, stress)) {}
+    : impl_(std::make_unique<Impl>(f, ions, density_modes, gamma_modes, b, type,
+                                   kind, width, spin, stream, force, stress)) {}
 FrozenFunctionalWorkspace::~FrozenFunctionalWorkspace() = default;
 FrozenFinishResult FrozenFunctionalWorkspace::finish(
-    DeviceDensity& den, DeviceBandSolver& solver, const cpu::pw::PWResult& r,
+    DeviceDensity& den, DeviceBandSolver& solver,
+    xt::xarray<AccReal>& eigenvalues, const cpu::pw::PWResult& r,
     std::vector<std::array<double, 3>>* f, std::array<double, 6>* w,
     cuda::Frame* target) {
-    return impl_->finish(den, solver, r, f, w, target);
+    return impl_->finish(den, solver, eigenvalues, r, f, w, target);
 }
 void FrozenFunctionalWorkspace::commit_fallback(
     DeviceDensity& den, const cpu::pw::PWResult& result,
@@ -1021,11 +1064,12 @@ void FrozenFunctionalWorkspace::commit_fallback(
 FrozenCandidateView FrozenFunctionalWorkspace::candidate() const {
     require(impl_->value.computed && !impl_->value.legacy_fallback,
             "native candidate is not certified");
-    FrozenCandidateView view{
-        &impl_->prob,   {impl_->dC, impl_->df, impl_->packed_bands, 1},
-        impl_->rho_ref, impl_->rho_orb,
-        impl_->terms,   impl_->forces,
-        impl_->value};
+    FrozenCandidateView view{{impl_->dC, impl_->df, impl_->packed_bands, 1},
+                             impl_->rho_ref,
+                             impl_->rho_orb,
+                             impl_->terms,
+                             impl_->forces,
+                             impl_->value};
     view.reference_spin_density = {impl_->rho_ref_spin[0],
                                    impl_->rho_ref_spin[1]};
     view.orbital_spin_density = {impl_->rho_orb_spin[0],

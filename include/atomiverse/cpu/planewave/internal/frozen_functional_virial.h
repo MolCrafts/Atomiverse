@@ -6,7 +6,8 @@
 
 namespace ATV::cpu::pw::internal {
 struct FinalBandState;
-struct PWProblem;
+struct PWIons;
+struct PWDensityView;
 class XCBuilder;
 class EwaldSummation;
 
@@ -46,7 +47,9 @@ struct FrozenFunctionalVirial {
 // xc_scratch is exclusive to this evaluation. Its prepare/step operate on a new
 // workspace with an owned FFT; no accepted workspace or cache is borrowed.
 FrozenFunctionalVirial assemble_frozen_functional_virial(
-    const PWProblem& problem, const FinalBandState& bands,
+    const PWIons& ions, const GVectorList& density_modes,
+    std::span<const GVectorList> modes, std::span<const AccReal> weights,
+    PWDensityView density, const FinalBandState& bands,
     cpu::xc::XCType functional, const EwaldSummation& ionic,
     XCBuilder& xc_scratch);
 

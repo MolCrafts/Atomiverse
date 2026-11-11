@@ -74,9 +74,11 @@ int run() {
     cell(2, 2) = 0;
     frame.box.set_cell(cell);
 
-    PW method{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
-                                                   "/pw/Si_lda_nc.upf"),
-              kEcutRy, kMesh, cpu::xc::XCType::PBE};
+    PW method{{std::make_shared<UpfPseudopotential>(ATV_REG_DATA_DIR
+                                                    "/pw/Si_lda_nc.upf")},
+              kEcutRy,
+              kMesh,
+              cpu::xc::XCType::PBE};
     method.spin_polarized = true;
     method.multiplicity = 1;
     method.smearing = ATV::electronic::Smearing::fermi_dirac;
