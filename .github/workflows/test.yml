@@ -20,7 +20,7 @@ defaults:
 jobs:
   context:
     name: test
-    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@72813fc0f78b220dab40d9091244a989ba56c92d
     with:
       profile: cpp-python
   native:
@@ -32,9 +32,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@649888661aa133bcdbbc9d8e5702517a6accb1a1
-    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@649888661aa133bcdbbc9d8e5702517a6accb1a1
-    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@72813fc0f78b220dab40d9091244a989ba56c92d
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@72813fc0f78b220dab40d9091244a989ba56c92d
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@72813fc0f78b220dab40d9091244a989ba56c92d
       with:
         native: ${{ runner.os != 'Windows' }}
     - run: molci platform native
@@ -61,9 +61,9 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@649888661aa133bcdbbc9d8e5702517a6accb1a1
-    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@649888661aa133bcdbbc9d8e5702517a6accb1a1
-    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@72813fc0f78b220dab40d9091244a989ba56c92d
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@72813fc0f78b220dab40d9091244a989ba56c92d
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@72813fc0f78b220dab40d9091244a989ba56c92d
       with:
         native: ${{ runner.os != 'Windows' }}
     - run: molci platform ${{ matrix.lane }}
@@ -84,9 +84,9 @@ jobs:
     - context
     - native
     - platform
-    if: always() && needs.context.outputs.validate == 'true'
+    if: always() && (needs.context.result != 'success' || needs.context.outputs.validate != 'false')
     runs-on: ubuntu-latest
     steps:
-    - uses: MolCrafts/molcrafts-ci/actions/validation-result@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/validation-result@72813fc0f78b220dab40d9091244a989ba56c92d
       with:
         needs: ${{ toJSON(needs) }}

@@ -20,7 +20,7 @@ defaults:
 jobs:
   context:
     name: nightly
-    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@72813fc0f78b220dab40d9091244a989ba56c92d
     with:
       profile: cpp-python
   benchmark:
@@ -34,9 +34,9 @@ jobs:
         with:
           ref: ${{ needs.context.outputs.source-ref }}
           persist-credentials: false
-      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@649888661aa133bcdbbc9d8e5702517a6accb1a1
-      - uses: MolCrafts/molcrafts-ci/actions/setup-rust@649888661aa133bcdbbc9d8e5702517a6accb1a1
-      - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@72813fc0f78b220dab40d9091244a989ba56c92d
+      - uses: MolCrafts/molcrafts-ci/actions/setup-rust@72813fc0f78b220dab40d9091244a989ba56c92d
+      - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@72813fc0f78b220dab40d9091244a989ba56c92d
         with:
           scope: hf-benchmark
       - run: molci run benchmark-hf
@@ -59,7 +59,7 @@ jobs:
           if-no-files-found: warn
       - name: Submit the untracked scientific observation
         if: always() && hashFiles('build/hf-benchmark-results/snapshots/benchmark.json') != ''
-        uses: MolCrafts/molcrafts-ci/actions/submit@649888661aa133bcdbbc9d8e5702517a6accb1a1
+        uses: MolCrafts/molcrafts-ci/actions/submit@72813fc0f78b220dab40d9091244a989ba56c92d
         with:
           snapshot-path: build/hf-benchmark-results/snapshots/benchmark.json
           project: atomiverse
