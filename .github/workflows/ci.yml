@@ -123,7 +123,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: MolCrafts/molcrafts-ci
-          ref: dev
+          ref: 9788436330c4f0b95e158bfac0644c7ed36ec001
           path: build/benchmark-partners/molcrafts-ci
       - name: Install benchmark runtime and observation protocol
         run: |
