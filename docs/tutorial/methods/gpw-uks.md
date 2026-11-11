@@ -30,7 +30,7 @@ forces and analytic stress (PADE and the RevPBE/RPBE/BLYP spin GGAs) on
 high-spin H₂; and multi-k UKS with Fermi–Dirac smearing on BCC Na. All of
 these run on the CPU only. The case also has three sections whose oracle
 record lives only in
-[`REFERENCE.md`](../../../regressions/gpw/uks/REFERENCE.md):
+[`REFERENCE.md`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/uks/REFERENCE.md):
 `gpw-uks-metallic-stress` (BCC Na UKS + Fermi–Dirac free-energy analytic
 stress against multi-SCF FD), `cuda-gpw-uks-o2-gate` and
 `cuda-gpw-uks-o2-forces` (Γ O₂ UKS energy, forces and stress on
@@ -1242,7 +1242,7 @@ const cpu::gpw::GpwResult& r = m.run(frame);  // frame.meta[kEnergy] = F [eV]
 // r.e_total [Ha] F; r.e_fermi [Ha]; r.n_elec_occ ≈ 18; r.e_entropy [Ha] (−TS)
 ```
 
-The section [`gpw-uks-metallic-stress`](../../../regressions/gpw/uks/REFERENCE.md)
+The section [`gpw-uks-metallic-stress`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/uks/REFERENCE.md)
 runs the same BCC Na settings with a 9/9 seed and gates the same free-energy
 value.
 

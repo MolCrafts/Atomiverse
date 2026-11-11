@@ -27,6 +27,7 @@ dev      = ["pytest", "pytest-cov", "numpy"]
 # required for the pure wheel; the build runs without isolation, so all three
 # live in this env.
 native   = ["nanobind>=2.4", "scikit-build-core>=0.10", "maturin>=1.0,<2.0"]
+benchmark = ["pyscf>=2.11,<3", "threadpoolctl>=3.5", "pydantic>=2.11"]
 # Docs: only the theme (+ zensical). MolVis and MolPlot fences both live in
 # molcrafts-zensical-theme; browser bundles load from the npm CDN in
 # zensical.toml. Do NOT add molcrafts-molplot here.
@@ -38,6 +39,13 @@ docs     = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts   = "-v --tb=short"
+
+[dependency-groups]
+ci = ["build>=1.2", "twine>=6", "pip>=25", "molcrafts-ci>=0.3"]
+
+[tool.uv.sources]
+molcrafts-molpy = { git = "https://github.com/MolCrafts/molpy", rev = "2ba2b2d974d036da8823e13f4a6c9236bfe46f3f", subdirectory = "molpy" }
+molcrafts-ci = { git = "https://github.com/MolCrafts/molcrafts-ci", rev = "54799bfe986f247edd1788e6242673a527400306" }
 
 [tool.coverage.run]
 source = ["src/atomiverse"]

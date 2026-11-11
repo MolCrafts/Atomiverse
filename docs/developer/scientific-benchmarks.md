@@ -3,12 +3,12 @@
 Status: the framework provides strict method declarations, bounded workers,
 independent numerical comparisons, complete sample records, hardware-annotated
 matrices, roadmap evidence and the molci 0.3 observation protocol. Implemented
-methods are molecular HF and KS-DFT ([`benchmarks/scf`](../../benchmarks/scf/README.md))
-and GAFF parameterization ([`benchmarks/forcefield`](../../benchmarks/forcefield/README.md));
+methods are molecular HF and KS-DFT ([`benchmarks/scf`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/scf/README.md))
+and GAFF parameterization ([`benchmarks/forcefield`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/forcefield/README.md));
 `python -m benchmarks list` prints their rows. Further domains (MD, post-HF),
 historical regression gates, shard merging and automated trace qualification
 remain separate delivery items; this document specifies their target contracts.
-[`benchmarks/README.md`](../../benchmarks/README.md) is the operational entry point.
+[`benchmarks/README.md`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/README.md) is the operational entry point.
 
 ## Purpose and terminology
 
@@ -32,7 +32,7 @@ verdict. A correct calculation can be slow and must remain visible as such.
 
 ```text
 benchmarks/
-  README.md  __init__.py  __main__.py  roadmap.toml  requirements.txt
+  README.md  __init__.py  __main__.py  roadmap.toml
   framework/
     specification.py          # method, system, participant and check contracts
     execution.py              # isolated workers, timeouts, timing and budgets
@@ -585,8 +585,10 @@ compatible campaign/source/protocol identities, detects duplicate conflicting
 cells, and preserves failures; the merge command is not implemented in the HF
 slice. Selective developer runs are marked partial.
 
-The manual `ci / HF scientific benchmark` job builds the public extension with
-molpy 0.20, runs the framework/binding tests and the selected CPU tier, validates
+The weekly or manual `nightly / HF scientific benchmark` job invokes
+`molci run benchmark-hf` against one resolved dev commit and the MolPy source
+pinned in `.github/partners.env`. It runs the framework/binding tests and selected
+CPU tier, validates
 the snapshot through molci, and preserves numerical failures and hardware
 artifacts. It currently submits an **untracked** observation. Source/build and
 CUDA-only qualification must be complete before official roadmap promotion;

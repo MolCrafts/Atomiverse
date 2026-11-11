@@ -241,7 +241,7 @@ in that list.
 For different scalar NC physics, derive `NormConservingPotential` and supply
 immutable radial tables plus the batched local value/derivative operation.
 PW owns all transforms, force contractions and electronic iteration. The
-[independent installed project](../../examples/extensions/nc/README.md)
+[independent installed project](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/nc/README.md)
 demonstrates that extension without a new Driver or a copied solver.
 
 ## Implementation outline

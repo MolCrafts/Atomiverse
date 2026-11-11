@@ -1,0 +1,92 @@
+name: test
+'on':
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - dev
+    - master
+  workflow_dispatch: null
+permissions:
+  contents: read
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(fromJSON('["refs/heads/dev","refs/heads/master"]'), github.ref) && !startsWith(github.ref,
+    'refs/tags/') }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  context:
+    name: test
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@54799bfe986f247edd1788e6242673a527400306
+    with:
+      profile: cpp-python
+  native:
+    name: test / native
+    needs: context
+    if: needs.context.outputs.validate == 'true' && needs.context.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@54799bfe986f247edd1788e6242673a527400306
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@54799bfe986f247edd1788e6242673a527400306
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@54799bfe986f247edd1788e6242673a527400306
+      with:
+        native: ${{ runner.os != 'Windows' }}
+    - run: molci platform native
+    - name: Preserve gate failure logs
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-failure
+        path: |
+          .git/molci/logs/
+          build/molci/*/cmake/Testing/Temporary/
+        include-hidden-files: true
+        if-no-files-found: warn
+    timeout-minutes: 90
+  platform:
+    name: test / platform (${{ matrix.lane }})
+    needs: context
+    if: needs.context.outputs.validate == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.context.outputs.matrix) }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@54799bfe986f247edd1788e6242673a527400306
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@54799bfe986f247edd1788e6242673a527400306
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@54799bfe986f247edd1788e6242673a527400306
+      with:
+        native: ${{ runner.os != 'Windows' }}
+    - run: molci platform ${{ matrix.lane }}
+    - name: Preserve gate failure logs
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: platform-${{ matrix.lane }}-failure
+        path: |
+          .git/molci/logs/
+          build/molci/*/cmake/Testing/Temporary/
+        include-hidden-files: true
+        if-no-files-found: warn
+    timeout-minutes: 90
+  result:
+    name: test / result
+    needs:
+    - context
+    - native
+    - platform
+    if: always() && (needs.context.result != 'success' || needs.context.outputs.validate != 'false')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: MolCrafts/molcrafts-ci/actions/validation-result@54799bfe986f247edd1788e6242673a527400306
+      with:
+        needs: ${{ toJSON(needs) }}

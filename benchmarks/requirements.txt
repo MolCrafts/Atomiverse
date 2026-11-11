@@ -1,9 +1,0 @@
-# Install the ATV wheel compiled with HF in the same environment.
-numpy>=2.0
-pydantic>=2.11
-pyscf>=2.11,<3
-threadpoolctl>=3.5
-molcrafts-molpy==0.20.0
-# Until the new observation protocol is released, install the sibling checkout:
-# python -m pip install -e ../molcrafts-ci
-molcrafts-ci>=0.3

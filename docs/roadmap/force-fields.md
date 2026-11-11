@@ -18,7 +18,7 @@ Coulomb constant), harmonic bond/angle, periodic / charmm torsions as
 are not translated.
 
 Molecular GAFF/GAFF2 parameterization has a separate
-[scientific benchmark](../../benchmarks/forcefield/README.md), using native
+[scientific benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/forcefield/README.md), using native
 Atomiverse AM1 charges and molpy typing against live AmberTools. Its scope is
 fixed-geometry closed-shell molecules and parameter-level comparisons; these
 checks do not qualify geometry optimization, force evaluation or dynamics.

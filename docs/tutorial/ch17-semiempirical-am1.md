@@ -80,7 +80,7 @@ round-off. Independent CPU/CUDA full-vector checks use executed OpenMOPAC 23.2.5
 outputs for distorted H₂O, tilted CO and NH₃, for both AM1 and RM1. The
 oracle numerical-gradient error is qualified separately from Atomiverse.
 These fixtures cover CHNO molecules; broader elements require their own
-external evidence. The [fixture record](../../tools/tb_oracle/inputs/mopac/live-23.2.5/README.md)
+external evidence. The [fixture record](https://github.com/MolCrafts/Atomiverse/blob/dev/tools/tb_oracle/inputs/mopac/live-23.2.5/README.md)
 contains the exact inputs, outputs and oracle gradient qualification. The
 vibrational Hessian remains a finite difference of forces.
 
@@ -243,9 +243,9 @@ fixtures. The numerical-gradient
 oracle's error budget is documented independently of Atomiverse's analytic
 implementation.
 
-The [standing force benchmark](../../benchmarks/perf/semiempirical/nddo_forces/README.md)
+The [standing force benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/perf/semiempirical/nddo_forces/README.md)
 records CPU complete-call timings and measured C++ allocation counts. The
-[energy benchmark](../../benchmarks/perf/semiempirical/nddo_energy/README.md) separates
+[energy benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/perf/semiempirical/nddo_energy/README.md) separates
 CPU/CUDA host-Frame calls from nested resident CUDA solves. Benchmark source
 alone establishes neither device residency nor a speedup; follow the current
 validation status in the roadmap before relying on a backend.

@@ -41,6 +41,7 @@ docs/latex/
 #   rsync -a --delete ../molplot/core/dist/ docs/assets/molplot/
 docs/assets/molvis-core/
 docs/assets/molvis-stage-viewer/
+docs/assets/molvis-sketch-viewer/
 docs/assets/molplot/
 
 # CMake build directory
@@ -123,6 +124,7 @@ ipython_config.py
 
 # pyenv
 .python-version
+!python/.python-version
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/

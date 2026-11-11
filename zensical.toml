@@ -115,6 +115,7 @@ nav = [
     "developer/release.md",
     "developer/scientific-benchmarks.md",
     "developer/project-contract.md",
+    { "Validation and CI" = "developer/ci.md" },
   ] },
   { "Reference" = [
     "api/index.md",

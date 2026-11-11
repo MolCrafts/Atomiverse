@@ -38,7 +38,7 @@ implementation, not complete AmberTools SQM feature or input-file compatibility.
 | FD Hessian via `vib::Hessian` | ✓ | ○ | Existing CPU AM1 workflow; new MNDO/PM3 and CUDA Hessian workflows have no separate acceptance |
 | Heat of formation (MOPAC-style) | ✓ | ✓ | All four methods' executed OpenMOPAC pins; CUDA restricted to neutral closed-shell CHNO |
 | NDDO UHF / COSMO / Γ-PBC | ○ | ○ | Molecular AM1 under wrap unwraps an isolated fragment |
-| CPU NDDO SCF acceleration and input guard | ✓ | ○ | Pulay DIIS (six vectors, residual FP−PF), two-center blocks cached once per geometry (OpenMP build, 2 GiB budget), BLAS-3 pseudo-diagonalization once the commutator is below 0.05 eV, BLAS `dsyrk` density, OpenMP Fock and force pair loops; compensated energy sum. Atom pairs closer than 0.6 × the covalent-radius sum are refused before the SCF. 205-atom PBIX-Br trimer and 674-atom chain vs AmberTools SQM: [`benchmarks/compare/am1-sqm`](../../benchmarks/compare/am1-sqm/README.md); CUDA NDDO keeps its own loop and has no contact guard |
+| CPU NDDO SCF acceleration and input guard | ✓ | ○ | Pulay DIIS (six vectors, residual FP−PF), two-center blocks cached once per geometry (OpenMP build, 2 GiB budget), BLAS-3 pseudo-diagonalization once the commutator is below 0.05 eV, BLAS `dsyrk` density, OpenMP Fock and force pair loops; compensated energy sum. Atom pairs closer than 0.6 × the covalent-radius sum are refused before the SCF. 205-atom PBIX-Br trimer and 674-atom chain vs AmberTools SQM: [`benchmarks/compare/am1-sqm`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/compare/am1-sqm/README.md); CUDA NDDO keeps its own loop and has no contact guard |
 
 ## 2. DFTB
 
@@ -116,7 +116,7 @@ of the complete force vector. DFTB3's current mio-style/3ob-derivative mixed
 parameter check is explicitly an internal snapshot. These evidence limits,
 rather than absence of the code paths, account for the partial markers.
 
-For NDDO, the [executed OpenMOPAC fixture record](../../tools/tb_oracle/inputs/mopac/live-23.2.5/README.md)
+For NDDO, the [executed OpenMOPAC fixture record](https://github.com/MolCrafts/Atomiverse/blob/dev/tools/tb_oracle/inputs/mopac/live-23.2.5/README.md)
 contains inputs, outputs, versions, hashes, extraction and independent oracle
 gradient qualification. CPU and CUDA full forces pass for distorted H₂O,
 tilted CO and NH₃ for both methods, together with energy, charge and heat of
@@ -140,7 +140,7 @@ still describes its most recent child evaluation, independently of whether
 the complete parent operation subsequently succeeds.
 
 MNDO and PM3 each have their own method case and three
-[executed OpenMOPAC fixtures](../../tools/tb_oracle/inputs/mopac/mndo-pm3-23.2.5/README.md).
+[executed OpenMOPAC fixtures](https://github.com/MolCrafts/Atomiverse/blob/dev/tools/tb_oracle/inputs/mopac/mndo-pm3-23.2.5/README.md).
 Both pass E/q/ΔHf/full-force pins, rigid transformations, Frame overwrite versus
 mounted accumulation, normal/trial/initial history behavior, failed-parent retry,
 short MD continuation with host input edits, and actual native line-search
@@ -177,7 +177,7 @@ force-path device-residency claim follows from these sampled trajectories.
 
 ### Current force resources and performance
 
-The [four-method force benchmark](../../benchmarks/perf/semiempirical/nddo_forces/README.md)
+The [four-method force benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/perf/semiempirical/nddo_forces/README.md)
 now records CPU/CUDA complete forces at 3/12/24/48 atoms, cold and independently
 warmed fixed/moving geometry, with exact executable/source hashes, controls,
 per-call SCF counts, full standalone E/q/F and final resident vectors. Six
@@ -228,7 +228,7 @@ Existing external tolerances are unchanged. Scientific arrays are validated
 against the CPU at `1e-6 eV / 1e-7 e / 1e-5 eV/Å`, separately from the
 OpenMOPAC oracle gates. No unverified eigensolver optimization is retained.
 
-The older [energy-only report](../../benchmarks/perf/semiempirical/nddo_energy/README.md)
+The older [energy-only report](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/perf/semiempirical/nddo_energy/README.md)
 remains historical evidence for the revision it names; current force residency
 and memory claims come from the force captures above.
 

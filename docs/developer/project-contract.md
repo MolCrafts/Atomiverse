@@ -52,6 +52,11 @@ so parallel machinery is **ported from LAMMPS, not independently derived**.
 
 ## Build & test
 
+Git hooks and GitHub verification use `molci check` and `molci verify` through
+the pinned shared profile. See [Validation and CI](ci.md) for installation,
+cache rules, platform scope and the separate scientific campaigns. The recipes
+below remain available for interactive builds against a local MolPy checkout.
+
 Run in a **login shell** (`bash -lc`) so Lmod is defined. Nothing auto-loads.
 
 ```bash
@@ -80,18 +85,19 @@ bash -lc '
   `#!/bin/bash -l`, loads `GPU/buildenv-gcccuda/2026.03-cu13.0`, and keeps the
   default aarch64 Rust. `tools/gpu_job.sh` / `tools/cpu_job.sh` are
   parameterised templates, not one script per slug. Never pipe `module load`.
-- **molpy** is consumed from the local MolCrafts/molpy checkout via
+- **Interactive builds** consume molpy from the local MolCrafts/molpy checkout via
   `ATV_MOLPY_PATH` (default `../molpy`). Use its `molcxx/` bridge and `molpy/`
-  wheel together; no revision pin is imposed.
+  wheel together; no revision pin is imposed on interactive builds. CI validation
+  uses the separate pinned checkout described in [Validation and CI](ci.md).
 - Source transport into a reused build tree must invalidate changed files;
   do not preserve older timestamps over newer compiled objects. After class
   layout changes, rebuild every consuming translation unit, including tests
   and regressions. Mixed-layout binaries are not numerical acceptance evidence.
 - Never kill a `git commit` / `git push` mid-hook (pre-commit restores stashed
   unstaged changes only on a normal exit).
-- Machines and workbenches: [arrhenius-workbench.md](../../.claude/notes/arrhenius-workbench.md).
+- Machines and workbenches: [arrhenius-workbench.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/arrhenius-workbench.md).
   Never set `OMP_PROC_BIND`/`OMP_PLACES` when timing BLAS-bound paths:
-  [openblas-thread-binding.md](../../.claude/notes/openblas-thread-binding.md).
+  [openblas-thread-binding.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/openblas-thread-binding.md).
 
 | CMake option | Default | Enables |
 | --- | --- | --- |
@@ -233,7 +239,7 @@ byte budget is exhausted the stepping thread waits on a host condition
 variable (no CUDA sync call) in `Component::before_launch`, before enqueueing
 the step, until a consumer frees space — output is never dropped. Detail and
 open violations:
-[cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md).
+[cuda-only-no-dh.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cuda-only-no-dh.md).
 
 ## Design defaults
 
@@ -379,7 +385,7 @@ Phase enums all start at 0, so an `int` phase is ambiguous. Typed entry points:
 ### CPU MD execution
 
 Binding summary; mechanism and LAMMPS source mapping in
-[cpu-lammps-alignment.md](../../.claude/notes/cpu-lammps-alignment.md).
+[cpu-lammps-alignment.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cpu-lammps-alignment.md).
 
 - **One rebuild boundary** (LAMMPS `Verlet::setup`/`run`): wrap → exchange →
   sort → borders → neighbor. Runtime does migration, borders and force reverse
@@ -600,7 +606,7 @@ ghost: `read_stable` / `read_each_step`) or **data flow** (ghost → owner:
   No third selector.
 - **CPU comm is LAMMPS `CommBrick`:** one swap at a time on tag 0 (standing
   `Irecv` → pack → blocking `Send` → `Wait`), `sendproc != recvproc` swap table,
-  the round only as forwarding unit. Detail: [md-comm.md](../../.claude/notes/md-comm.md).
+  the round only as forwarding unit. Detail: [md-comm.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/md-comm.md).
 - **Only halo and migration compile a `PackPlan`** (`make_wire_plan`,
   `make_exchange_plan` on `kColExchange`). `gather_to_root` / `bcast_frame` move
   columns column-major via `Block::resolve_columns` +
@@ -653,7 +659,7 @@ ghost: `read_stable` / `read_each_step`) or **data flow** (ghost → owner:
   Physics, spatial predicates, fused topology/force packing stay domain kernels.
   Reserve hot-path scratch in build, keep stream order, key noise by seed,
   global tag, step and component domain. Detail:
-  [cuda-md-nvidia-libraries.md](../../.claude/notes/cuda-md-nvidia-libraries.md).
+  [cuda-md-nvidia-libraries.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cuda-md-nvidia-libraries.md).
 - A separate track: not blocked by ES CPU priority, not frozen by ES CUDA freezes.
 
 ## Electronic structure optimization order
@@ -667,7 +673,7 @@ Architecture and shared algorithm shape before micro-perf; CPU before CUDA ES.
 3. **CUDA ES by method slice** — device-only, tiling, minimal H2D;
    **same-settings CPU is the correctness oracle** (plus external pins); no
    giant dual-backend kernel source; mid-path device↔host exchange is a defect
-   ([cuda-only-no-dh.md](../../.claude/notes/cuda-only-no-dh.md)).
+   ([cuda-only-no-dh.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cuda-only-no-dh.md)).
 4. **Large-system CUDA perf** — only after the slice is correct; small
    molecules are correctness-only, never the "CUDA wins" story.
 
@@ -768,6 +774,6 @@ unnecessary splitting, transfers, intermediate storage or duplicate primitives.
   / `run_nested_erased` budgets, PhaseBuilder budgets,
   `Runtime::comm_refresh_(int slot, int step)` (truncates).
 - **ES public shapes** diverge across families:
-  [es-architecture-debt.md](../../.claude/notes/es-architecture-debt.md).
+  [es-architecture-debt.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/es-architecture-debt.md).
 - Namespaces are not aligned to directories; aligning them is a deliberate
   follow-up, not a drive-by.
