@@ -7,6 +7,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
@@ -377,10 +378,11 @@ def test_help_lists_stages(capsys) -> None:
     assert rc == 0
 
 
-def test_config_help(capsys) -> None:
+def test_config_help(capsys, monkeypatch) -> None:
+    monkeypatch.setenv("FORCE_COLOR", "1")
     rc = main(["config", "--help"])
     assert rc == 0
-    out = capsys.readouterr().out.lower()
+    out = Text.from_ansi(capsys.readouterr().out).plain.lower()
     assert "--mpi" in out
     assert "module" in out
     assert "k:v" not in out

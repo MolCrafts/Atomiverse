@@ -159,7 +159,7 @@ def test_minimize_lets_other_python_threads_run() -> None:
     from atomiverse.potentials.pair import LJCut
 
     def minimize() -> None:
-        # test_minimizer.py's recipe on a jittered 4x4x4 cell; repeated so
+        # test_minimizer.py's recipe on a jittered 6x6x6 cell; repeated so
         # the native work outlasts the measurement floor.
         for _ in range(4):
             opt = Minimize()
@@ -168,7 +168,7 @@ def test_minimize_lets_other_python_threads_run() -> None:
             opt.set_optimizer(LBFGS(memory=5, alpha0=0.01, max_ls=10))
             opt.set_neighbor(NeighborList(8.5, 0.3))
             opt.set_evaluator(LJCut(0.0104, 3.4, 8.5))
-            opt.run(_argon_frame(4, jitter=0.1, spacing=3.4), 5000)
+            opt.run(_argon_frame(6, jitter=0.1, spacing=3.4), 5000)
 
     _assert_releases_gil(minimize)
 
