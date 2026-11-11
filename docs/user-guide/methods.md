@@ -193,7 +193,7 @@ A plane-wave run takes a `shared_ptr<const electronic::NormConservingPotential>`
 Use `GthPseudopotential(element, name)`, `UpfPseudopotential(path)`, or derive
 the public physical interface in an independent project. The built-ins and
 custom providers use the same CPU NC operators; every Frame atom must match
-the provider's explicit element. See the [independent extension](../../examples/extensions/nc/README.md).
+the provider's explicit element. See the [independent extension](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/nc/README.md).
 
 ```cpp
 #include "atomiverse/cpu/evaluate/single_point.h"

@@ -1,0 +1,98 @@
+name: test
+'on':
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - dev
+    - master
+  workflow_dispatch: null
+permissions:
+  contents: read
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !contains(fromJSON('["refs/heads/dev","refs/heads/master"]'), github.ref) && !startsWith(github.ref,
+    'refs/tags/') }}
+defaults:
+  run:
+    shell: bash
+jobs:
+  context:
+    name: test
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    with:
+      profile: cpp-python
+  native:
+    name: test / native
+    needs: context
+    if: needs.context.outputs.validate == 'true' && needs.context.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      with:
+        python-version: 3.12.12
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      with:
+        native: ${{ runner.os != 'Windows' }}
+    - run: molci platform native
+    - name: Preserve gate failure logs
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-failure
+        path: |
+          .git/molci/logs/
+          build/molci/*/cmake/Testing/Temporary/
+        include-hidden-files: true
+        if-no-files-found: warn
+    timeout-minutes: 90
+  platform:
+    name: test / platform (${{ matrix.lane }})
+    needs: context
+    if: needs.context.outputs.validate == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.context.outputs.matrix) }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      with:
+        python-version: 3.12.12
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      with:
+        native: ${{ runner.os != 'Windows' }}
+    - run: molci platform ${{ matrix.lane }}
+    - name: Preserve gate failure logs
+      if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: platform-${{ matrix.lane }}-failure
+        path: |
+          .git/molci/logs/
+          build/molci/*/cmake/Testing/Temporary/
+        include-hidden-files: true
+        if-no-files-found: warn
+    timeout-minutes: 90
+  result:
+    name: test / result
+    needs:
+    - context
+    - native
+    - platform
+    if: always() && needs.context.outputs.validate == 'true'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: MolCrafts/molcrafts-ci/actions/validation-result@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      with:
+        needs: ${{ toJSON(needs) }}

@@ -74,7 +74,7 @@ deforming cell no longer rebuilds every step.
 CPU MD uses one Runtime rebuild sequence and explicit periodic ghost rows for
 both serial and MPI execution. Frame owns row extents; neighbor consumers
 declare interaction coverage independently of skin and communication reach.
-The [LJ CPU benchmark](../../benchmarks/compare/lj-lammps/README.md) compared
+The [LJ CPU benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/compare/lj-lammps/README.md) compared
 the same input against LAMMPS at 10,648 and 103,823 atoms (Apple M4,
 2026-10-19): the tested loop meets the performance target, while communication category
 parity remains open. This does not establish parity for other potentials or

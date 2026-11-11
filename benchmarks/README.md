@@ -5,7 +5,7 @@ of them is registered with CTest. The tree has one axis per directory:
 
 ```text
 benchmarks/
-  README.md  __init__.py  __main__.py  framework/  roadmap.toml  requirements.txt
+  README.md  __init__.py  __main__.py  framework/  roadmap.toml
   systems/      hf.json dft.json gaff.json
   scf/          bench_{rhf,uhf,rohf,ghf,rks,uks,rmp2,rmp3}.py  hf.py  dft.py
   periodic/     bench_{pw,gpw}.py
@@ -47,22 +47,16 @@ benchmarks/
 
 ## Framework CLI
 
-For molecular SCF, install the HF-enabled Atomiverse extension and
-`molcrafts-molpy==0.20.0` in one environment. Periodic DFT uses the native
-participant described in [periodic/README.md](periodic/README.md).
-Until the molcrafts-ci 0.3 observation protocol is released,
-install the sibling checkout before `requirements.txt`. The native bridge
-must pass the runtime's ABI fingerprint check; do not bypass it to accept a
-different Rust build. Optional GPU oracles count as available only if they
-actually import and run; an installed package name is not enough.
+The canonical HF campaign is `molci run benchmark-hf`. It builds the native
+extension and MolPy runtime from the same pinned source and uses the existing
+build receipt and independent comparison inventory. Python dependencies come
+from `python/uv.lock`; no second benchmark dependency list is maintained.
+Optional GPU oracles count as available only if they actually import and run.
 
 ```bash
-python -m pip install -e ../molcrafts-ci
-python -m pip install -r benchmarks/requirements.txt
-python -m benchmarks list        # methods and their row IDs
-python -m benchmarks catalog     # declared capabilities, including gaps
-python -m benchmarks run --tier smoke --threads 1 --repeats 1 --warmup 0 \
-  --out build/bench-smoke
+molci run benchmark-hf
+uv run --project python --no-sync python -m benchmarks list
+uv run --project python --no-sync python -m benchmarks catalog
 ```
 
 `run` selects coverage with `--tier {smoke,acceptance,performance}`,

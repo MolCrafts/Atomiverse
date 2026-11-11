@@ -72,7 +72,7 @@
       "name": "cpu-unit-all",
       "inherits": "cpu-unit-base",
       "displayName": "CPU unit + all optional modules",
-      "description": "Manual full slice / GHA. Prefer cmake -P cmake/AtvUnitGate.cmake with ATV_GATE_ALL=1 for the path-aware gate.",
+      "description": "Manual CMake full CPU configuration. Git hooks and CI use molci verify with validated-result caching.",
       "cacheVariables": {
         "ATV_BUILD_HF": "ON",
         "ATV_BUILD_PW": "ON",
@@ -144,7 +144,7 @@
     {
       "name": "cpu-unit",
       "displayName": "Classical unit configure+build+test",
-      "description": "Manual classical gate (optional physics OFF). Pre-push uses path-scoped cmake -P cmake/AtvUnitGate.cmake instead.",
+      "description": "Manual classical configure, build and test. Git hooks use molci verify for all applicable native gates.",
       "steps": [
         {
           "type": "configure",

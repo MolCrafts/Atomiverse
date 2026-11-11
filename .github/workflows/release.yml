@@ -1,104 +1,92 @@
+name: release
+'on':
+  push:
+    tags: [v*]
+  workflow_dispatch:
+permissions: {}
 concurrency:
   group: release-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
-name: release
-
-# Publishes the pure-Python sdist + wheel to PyPI when a vX.Y.Z tag is pushed.
-# The native extension is never published: users build it from the matching
-# tag with `python -m atomiverse config / compile / install`, which pip-installs
-# a machine-local native wheel (docs/user-guide/python.md).
-#
-# One-time setup (repo admin):
-#   - PyPI: add a trusted publisher for project `atomiverse` →
-#     MolCrafts/Atomiverse, workflow release.yml, environment `pypi`.
-#   - GitHub: create environment `pypi` (optionally with required reviewers).
-'on':
-  push:
-    tags:
-    - v*
-
-permissions: {}
-
+defaults:
+  run:
+    shell: bash
 jobs:
   context:
+    name: release
     permissions:
       contents: read
-    name: release
-    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@master
-
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    with:
+      profile: cpp-python
+  guard:
+    name: release / exact commit verification
+    needs: context
+    if: needs.context.outputs.validate == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      - run: molci run pins
+      - uses: MolCrafts/molcrafts-ci/actions/release-verify@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+        with:
+          profile: cpp-python
+          publish: ${{ needs.context.outputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
   build:
-    if: needs.context.outputs.skip-pr != 'true'
-    needs:
-    - context
-    name: release / Build and check dists
+    name: release / pure Python distributions
+    needs: [context, guard]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 0
-
-      - name: Tag matches __version__ and is on master
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          ver=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' python/src/atomiverse/__init__.py)
-          if [ "$tag" != "$ver" ]; then
-            echo "::error::tag v$tag does not match __version__ = $ver"
-            exit 1
-          fi
-
-      - uses: actions/setup-python@v5
+          persist-credentials: false
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      - uses: MolCrafts/molcrafts-ci/actions/setup-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
         with:
-          python-version: "3.12"
-
-      - name: Build sdist + wheel
-        run: |
-          python -m pip install build twine
-          python -m build python --outdir dist
-          python -m twine check --strict dist/*
-
-      - name: Smoke-test the wheel in a clean venv
-        run: |
-          python -m venv /tmp/venv
-          /tmp/venv/bin/pip install dist/*.whl pytest
-          test "$(/tmp/venv/bin/python -m atomiverse --version)" = "${GITHUB_REF_NAME#v}"
-          /tmp/venv/bin/python -m atomiverse status
-          cd python && /tmp/venv/bin/python -m pytest -q tests/test_pure_import.py tests/test_install_cli.py
-
-      - uses: actions/upload-artifact@v4
+          python-version: 3.12.12
+      - uses: MolCrafts/molcrafts-ci/actions/setup-rust@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+      - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+        with:
+          native: 'false'
+          scope: package
+      - run: molci run package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: dist
           path: dist/
-
+          if-no-files-found: error
   publish:
-    if: needs.context.outputs.publish == 'true'
     name: release / Publish to PyPI
-    needs:
-    - context
-    - build
+    needs: [context, guard, build]
+    if: needs.context.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:
-      id-token: write  # trusted publishing; no API token stored
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: dist
           path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
   github-release:
-    if: needs.context.outputs.publish == 'true'
     name: release / GitHub release
-    needs:
-    - context
-    - publish
+    needs: [context, guard, publish]
+    if: needs.context.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: dist
           path: dist/

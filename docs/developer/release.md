@@ -53,7 +53,8 @@ from the installed package) depends on this being the only copy.
 
 ## Cutting a release
 
-1. On `dev`, bump `__version__` and land it.
+1. On `dev`, bump `__version__`, keep the CMake project version consistent,
+   and run `molci verify --full` before landing it.
 2. Merge `dev` into `master` (never commit to `master` directly).
 3. Tag `master` and push the tag:
    ```bash
@@ -63,6 +64,8 @@ from the installed package) depends on this being the only copy.
 4. `.github/workflows/release.yml` then:
    - fails unless the tag equals `__version__` and the tagged commit is on
      `master`;
+   - requires a successful upstream master-push `test / result` with independent
+     native and required platform checks for that exact commit;
    - builds the sdist + wheel, runs `twine check --strict`, installs the
      wheel into a clean venv and runs the pure-Python tests against it;
    - publishes to PyPI by **trusted publishing** (OIDC, no stored token) from
@@ -82,8 +85,7 @@ Native builds require a local molpy checkout.
 ## Checking a release locally
 
 ```bash
-python -m build python --outdir /tmp/dist
-python -m twine check --strict /tmp/dist/*
-python -m venv /tmp/v && /tmp/v/bin/pip install /tmp/dist/*.whl
-/tmp/v/bin/python -m atomiverse --version
+molci run package --full
 ```
+
+Manual dispatch of `release.yml` is a package dry run and cannot publish.

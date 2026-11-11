@@ -182,12 +182,12 @@ def test_wheel_command_shape() -> None:
         Path("/repo/python"), Path("/b"), defines, python="/usr/bin/python"
     )
     assert cmd[:4] == ["/usr/bin/python", "-m", "pip", "wheel"]
-    assert "/repo/python" in cmd
+    assert str(Path("/repo/python")) in cmd
     assert "--no-build-isolation" in cmd and "--no-deps" in cmd
-    assert cmd[cmd.index("--wheel-dir") + 1] == "/b/dist"
+    assert cmd[cmd.index("--wheel-dir") + 1] == str(Path("/b/dist"))
     settings = [cmd[i + 1] for i, a in enumerate(cmd) if a == "-C"]
     assert "wheel.cmake=true" in settings
-    assert "build-dir=/b/cmake" in settings
+    assert f"build-dir={Path('/b/cmake')}" in settings
     assert "cmake.define.ATV_BUILD_MD=ON" in settings
     assert "cmake.define.ATV_BUILD_PW=ON" in settings
     assert "cmake.define.ATV_BUILD_KSPACE=OFF" in settings
@@ -199,13 +199,14 @@ def test_wheel_command_requires_python_define() -> None:
         build_wheel_command(Path("/p"), Path("/b"), {"ATV_BUILD_MD": "ON"})
 
 
-def test_molpy_wheel_command_builds_local_checkout(tmp_path: Path) -> None:
+def test_molpy_wheel_command_builds_local_checkout(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ATV_MOLPY_PATH", raising=False)
     root = _fake_checkout(tmp_path / "atv", "0.1.0")
     cmd = build_molpy_wheel_command(root, Path("/b"), python="/usr/bin/python")
     assert cmd[:4] == ["/usr/bin/python", "-m", "pip", "wheel"]
     assert str(root.parent / "molpy" / "molpy") in cmd
     assert "--no-build-isolation" in cmd and "--no-deps" in cmd
-    assert cmd[cmd.index("--wheel-dir") + 1] == "/b/dist"
+    assert cmd[cmd.index("--wheel-dir") + 1] == str(Path("/b/dist"))
 
 
 def test_install_command_shape() -> None:
@@ -219,8 +220,8 @@ def test_install_command_shape() -> None:
         "install",
         "--no-deps",
         "--force-reinstall",
-        "/b/dist/x.whl",
-        "/b/dist/m.whl",
+        str(Path("/b/dist/x.whl")),
+        str(Path("/b/dist/m.whl")),
     ]
 
 
@@ -277,7 +278,8 @@ def test_resolve_source_version_mismatch(tmp_path: Path) -> None:
         resolve_source(str(root), version="0.1.0")
 
 
-def test_resolve_source_needs_merged_molpy(tmp_path: Path) -> None:
+def test_resolve_source_needs_merged_molpy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ATV_MOLPY_PATH", raising=False)
     root = _fake_checkout(tmp_path, "0.1.0", molpy=False)
     with pytest.raises(ConfigError, match="molpy checkout missing"):
         resolve_source(str(root), version="0.1.0")

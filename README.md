@@ -61,6 +61,8 @@ Read it before planning work around a method.
 
 ## Quickstart
 
+For development hooks and CI, see [Validation and CI](docs/developer/ci.md).
+
 ```bash
 git clone --recursive <repo-url> && cd Atomiverse
 # Use the local molpy checkout (default ../molpy): export ATV_MOLPY_PATH=/path/to/molpy

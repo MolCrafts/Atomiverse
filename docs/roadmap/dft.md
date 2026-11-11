@@ -7,7 +7,7 @@ Molecular KS shares the Gaussian SCF solver with
 §4–6. Legend: [Roadmap index](index.md).
 
 The tables retain the historical **`dev`** inventory and its stated scope.
-The [scientific regression runner was removed](../../regressions/README.md);
+The [scientific regression runner was removed](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/README.md);
 the linked case sources and reference outputs are now archives, not executable
 checks of the current checkout. Current molecular acceptance runs through
 [`benchmarks/scf/bench_rks.py`](../../benchmarks/scf/bench_rks.py) and
@@ -15,7 +15,7 @@ checks of the current checkout. Current molecular acceptance runs through
 PySCF and the public Python methods. Historical marks below do not substitute
 for current benchmark results.
 
-The [periodic acceptance campaign](../../benchmarks/periodic/README.md)
+The [periodic acceptance campaign](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/periodic/README.md)
 runs the archived PBE-family inputs against live QE 7.6 and CP2K 2026.2.
 The PW campaign also includes skew H₂O with H GTH and O NC-UPF.
 It compares energy, every force component and six PW or three GPW stress
@@ -545,7 +545,7 @@ meta-GGA, GAPW/PAW, stock VV10. rVV10 ships.
 | RKS / UKS | ✓ | ○ | [scf/rks][scf-rks], [scf/uks][scf-uks]; no Gaussian KS on device |
 | ROKS | ✓ | ○ | [scf/roks][scf-roks]: energy + analytic gradient |
 | RKS / UKS analytic gradient | ✓ | ○ | Current live matrix (campaign `2026-10-26-dft-wave2`): standard CAM and PBE-family full forces, plus the previous LSDA/PBE/PBE0 envelope; spherical def2-SVP for PBE/PBE0/CAM, including non-symmetric water and empty-spin H₂⁺. The archived external-provider pins cover scaled Slater only; other models remain open |
-| External CPU XC provider | ✓ | ○ | [Independent installed project](../../examples/extensions/xc/README.md); batched rho/sigma contract on existing RKS/UKS, energy + first derivatives; the cited force pins exercise rho-only exchange. No injected PW/GPW, ROKS, meta-GGA, hybrid or response kernel support |
+| External CPU XC provider | ✓ | ○ | [Independent installed project](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/xc/README.md); batched rho/sigma contract on existing RKS/UKS, energy + first derivatives; the cited force pins exercise rho-only exchange. No injected PW/GPW, ROKS, meta-GGA, hybrid or response kernel support |
 | ROKS analytic gradient | ✓ | ○ | [scf/roks][scf-roks], `roks-grad-o2-sto3g`: PySCF full gradient |
 | RKS / UKS Hessian | ✓ | ○ | [scf/rks][scf-rks], [scf/uks][scf-uks]: `Hessian<Method>::run`, FD of analytic forces, PySCF FD-gradient pins (not full CPKS) |
 | Molecular DFT+U / ΔSCF-DFT / GKS | ○ | ○ | Periodic DFT+U is GPW (§4) |
@@ -560,7 +560,7 @@ Hand-coded; libxc is an optional test oracle only (`ATV_BUILD_XC_ORACLE`).
 | PW92 correlation base | ◐ | ◐ | Used inside PBE correlation on both backends; no standalone PW92 `XCType` or registered PW92-functional energy pin; `XCType::LSDA` selects VWN5 |
 | PBE | ✓ | ✓ | CPU molecular energy: [scf/tddft][scf-td]; GPW: [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; CUDA PW: [pw/rks][pw-rks], [pw/collinear-spin][pw-spin]; see PW limits below |
 | BLYP | ✓ | ○ | [scf/rks][scf-rks], `blyp-water-sto3g`; GPW reachable, not separately pinned |
-| PBEsol / revPBE / RPBE | ◐ | ◐ | Current live matrix (campaign `2026-10-26-dft-wave2`): CPU molecular RKS/UKS energies/full forces against live PySCF. Periodic actual-QE/CP2K pins: [pw/pbe-family](../../regressions/pw/pbe-family/REFERENCE.md), [gpw/pbe-family](../../regressions/gpw/pbe-family/REFERENCE.md). Shared-model follow-up: native PW fixed/FD RKS/UKS and GPW RKS energy/full-force/supported-stress twins now pass, including post-Driver acceptance. The five original stage-reference failures are retained and separately repaired. Matched periodic PW follow-up adds CPU FD eight-k RKS/UKS and CUDA Γ fixed-RKS E/full-F/six-stress pins; broader periodic ranges, GPW independent pins and molecular CUDA KS remain open |
+| PBEsol / revPBE / RPBE | ◐ | ◐ | Current live matrix (campaign `2026-10-26-dft-wave2`): CPU molecular RKS/UKS energies/full forces against live PySCF. Periodic actual-QE/CP2K pins: [pw/pbe-family](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/pbe-family/REFERENCE.md), [gpw/pbe-family](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/pbe-family/REFERENCE.md). Shared-model follow-up: native PW fixed/FD RKS/UKS and GPW RKS energy/full-force/supported-stress twins now pass, including post-Driver acceptance. The five original stage-reference failures are retained and separately repaired. Matched periodic PW follow-up adds CPU FD eight-k RKS/UKS and CUDA Γ fixed-RKS E/full-F/six-stress pins; broader periodic ranges, GPW independent pins and molecular CUDA KS remain open |
 | optB88 | ◐ | ○ | GPW (with vdW-DF); no end-to-end pin (cases removed) |
 | BP86 / other GGA catalog | ○ | ○ | |
 | Meta-GGA (TPSS, r2SCAN, …) | ○ | ○ | No τ channel in grid engine |
@@ -600,7 +600,7 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
 | Plane-wave DFT | ✓ | ✓ | [pw/rks][pw-rks]; CPU GTH and scalar NC-UPF share one operator path, including mixed-element cells; the independent NC project below has a matched Si₂ energy/full-force pin. CUDA ⊂ CPU |
-| External scalar NC provider | ✓ | ○ | [Independent installed project](../../examples/extensions/nc/README.md): immutable radial data/local callback on existing PW; published Si GTH-PBE-q4, absolute Mermin energy and all six nonzero forces against actual QE. The independent project covers single-species Si₂. Real scalar l≤2; no USPP/PAW/NLCC/spin-orbit |
+| External scalar NC provider | ✓ | ○ | [Independent installed project](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/nc/README.md): immutable radial data/local callback on existing PW; published Si GTH-PBE-q4, absolute Mermin energy and all six nonzero forces against actual QE. The independent project covers single-species Si₂. Real scalar l≤2; no USPP/PAW/NLCC/spin-orbit |
 | GPW DFT | ✓ | ◐ | [gpw/rks][gpw-rks], [gpw/uks][gpw-uks]; CUDA first product slices |
 | Γ-point RKS | ✓ | ◐ | [gpw/rks][gpw-rks]; CUDA CPU-twin slice |
 | k-point RKS | ✓ | ✓ | [pw/rks][pw-rks] on both; [gpw/rks][gpw-rks] CPU; CUDA GPW remains ◐ |
@@ -618,7 +618,7 @@ Two engines: **plane-wave** (`cpu::pw::PW` / `cuda::pw::PW`) and **GPW**
 
 | Capability | Status | Notes |
 | ---------- | :----: | ----- |
-| Analytic ionic forces | ✓ | [pw/rks][pw-rks]: local HF + Ewald symmetry gate; [external NC project](../../examples/extensions/nc/README.md): local + full off-diagonal KB, all six nonzero Si₂ force components against QE at 1e-4 Ha/Bohr. Broader elements/potentials remain unqualified |
+| Analytic ionic forces | ✓ | [pw/rks][pw-rks]: local HF + Ewald symmetry gate; [external NC project](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/nc/README.md): local + full off-diagonal KB, all six nonzero Si₂ force components against QE at 1e-4 Ha/Bohr. Broader elements/potentials remain unqualified |
 | Cell stress (one-SCF frozen-density strain FD) | ✓ | Current public diagnostic: fixed reference basis, physical shear and shared-μ spin/smearing free energy at strain step 2e-3. Six Γ reference-cell E/σ QE pins pass; five independent full-SCF deformation checks pass, with the LSDA-MP compressed sample explicitly failed. Not a closed-form tensor |
 | Closed-form analytic cell stress | ◐ | Fixed/FD/Gaussian scoped wave: Γ and supported general-k semilocal RKS/populated UKS share one final-band tensor, with serial/MPI2 and ARM checks. MP1 PBE Γ populated UKS and restricted Si2 additionally pass their declared signed-occupation envelopes. Fixed per-k band indices do not imply a global insulating gap. Other MP and nominally empty fixed/Gaussian channels retain numerical paths; Γ fixed-LSDA Na>0/Nb0 has its own zero-channel tangent qualification |
 | True GGA PBE + collinear spin-GGA | ✓ | [pw/rks][pw-rks]: symmetry/activation gates; [pw/collinear-spin][pw-spin]: O₂ absolute energy pinned to an actual QE 7.5 run, alongside magnetization and GGA activation |
@@ -693,7 +693,7 @@ fixed-H optimizers remain internal numerical kernels. Keep
 | Monkhorst–Pack k-mesh | ✓ | ✓ | [pw/rks][pw-rks], [gpw/rks][gpw-rks] |
 | Block Davidson | ✓ | ✓ | [pw/rks][pw-rks]; exercised inside the method, no standalone product claim |
 | NC-UPF (KB) | ✓ | ✓ | [pw/rks][pw-rks]; energy path; KB nonzero-force external pin open |
-| GTH PP | ✓ | ◐ | CPU PW uses the public NC protocol and canonical radial operators; [external Si₂ project](../../examples/extensions/nc/README.md) pins E/full F. CUDA builtin Si₂ now has a matched QE PBE/Γ/smearing E/full-F pin. CPU GPW retains its Gaussian-projector path; CUDA GPW remains partial |
+| GTH PP | ✓ | ◐ | CPU PW uses the public NC protocol and canonical radial operators; [external Si₂ project](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/nc/README.md) pins E/full F. CUDA builtin Si₂ now has a matched QE PBE/Γ/smearing E/full-F pin. CPU GPW retains its Gaussian-projector path; CUDA GPW remains partial |
 | FFT Poisson | ✓ | ✓ | [pw/rks][pw-rks], [gpw/rks][gpw-rks] |
 | Martyna–Tuckerman Poisson | ✓ | ○ | [gpw/rks][gpw-rks], `gpw-water-pbe-mt` |
 | OT minimizer | ✓ | ○ | [gpw/orbital-transformation][gpw-ot]; CPU DIIS/OT now share typed Driver execution, with current scoped lifecycle/MPI checks above. CUDA OT remains unsupported |
@@ -732,36 +732,36 @@ Those output values are not automatically correctness gates: e.g.
 affected by OpenMP binding require an unbound re-measurement before quoting a
 current performance gap. No new performance qualification is implied here.
 
-[scf-rks]: ../../regressions/scf/rks/REFERENCE.md
-[scf-uks]: ../../regressions/scf/uks/REFERENCE.md
-[scf-roks]: ../../regressions/scf/roks/REFERENCE.md
-[scf-td]: ../../regressions/scf/tddft/REFERENCE.md
-[scf-disp]: ../../regressions/scf/dispersion/REFERENCE.md
-[pw-rks]: ../../regressions/pw/rks/REFERENCE.md
-[pw-spin]: ../../regressions/pw/collinear-spin/REFERENCE.md
-[pw-smear]: ../../regressions/pw/smearing/REFERENCE.md
-[pw-bands]: ../../regressions/pw/bands-dos/REFERENCE.md
-[pw-cell]: ../../regressions/pw/variable-cell/REFERENCE.md
-[pw-berry]: ../../regressions/pw/berry-phase/REFERENCE.md
-[pw-wannier]: ../../regressions/pw/wannier/REFERENCE.md
-[gpw-rks]: ../../regressions/gpw/rks/REFERENCE.md
-[gpw-uks]: ../../regressions/gpw/uks/REFERENCE.md
-[gpw-u]: ../../regressions/gpw/dft-plus-u/REFERENCE.md
-[gpw-ot]: ../../regressions/gpw/orbital-transformation/REFERENCE.md
-[gpw-d3]: ../../regressions/gpw/d3/REFERENCE.md
-[gpw-d4]: ../../regressions/gpw/d4/REFERENCE.md
-[gpw-ts]: ../../regressions/gpw/tkatchenko-scheffler/REFERENCE.md
-[gpw-mbd]: ../../regressions/gpw/mbd/REFERENCE.md
-[gpw-hirshfeld]: ../../regressions/gpw/hirshfeld/REFERENCE.md
-[gpw-xdm]: ../../regressions/gpw/xdm/REFERENCE.md
-[gpw-vdw]: ../../regressions/gpw/vdw-df/REFERENCE.md
-[gpw-mp2]: ../../regressions/gpw/periodic-mp2/REFERENCE.md
-[gpw-bands]: ../../regressions/gpw/bands-dos/REFERENCE.md
-[gpw-berry]: ../../regressions/gpw/berry-phase/REFERENCE.md
-[gpw-wannier]: ../../regressions/gpw/wannier/REFERENCE.md
-[bomd]: ../../regressions/dynamics/bomd/REFERENCE.md
-[cpmd]: ../../regressions/dynamics/car-parrinello/REFERENCE.md
-[sgcp]: ../../regressions/dynamics/second-gen-cpmd/REFERENCE.md
-[xlbomd]: ../../regressions/dynamics/xl-bomd/REFERENCE.md
-[dfpt]: ../../regressions/response/dfpt/REFERENCE.md
-[phonons]: ../../regressions/response/phonons/REFERENCE.md
+[scf-rks]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/rks/REFERENCE.md
+[scf-uks]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/uks/REFERENCE.md
+[scf-roks]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/roks/REFERENCE.md
+[scf-td]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/tddft/REFERENCE.md
+[scf-disp]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/dispersion/REFERENCE.md
+[pw-rks]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/rks/REFERENCE.md
+[pw-spin]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/collinear-spin/REFERENCE.md
+[pw-smear]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/smearing/REFERENCE.md
+[pw-bands]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/bands-dos/REFERENCE.md
+[pw-cell]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/variable-cell/REFERENCE.md
+[pw-berry]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/berry-phase/REFERENCE.md
+[pw-wannier]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/pw/wannier/REFERENCE.md
+[gpw-rks]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/rks/REFERENCE.md
+[gpw-uks]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/uks/REFERENCE.md
+[gpw-u]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/dft-plus-u/REFERENCE.md
+[gpw-ot]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/orbital-transformation/REFERENCE.md
+[gpw-d3]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/d3/REFERENCE.md
+[gpw-d4]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/d4/REFERENCE.md
+[gpw-ts]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/tkatchenko-scheffler/REFERENCE.md
+[gpw-mbd]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/mbd/REFERENCE.md
+[gpw-hirshfeld]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/hirshfeld/REFERENCE.md
+[gpw-xdm]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/xdm/REFERENCE.md
+[gpw-vdw]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/vdw-df/REFERENCE.md
+[gpw-mp2]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/periodic-mp2/REFERENCE.md
+[gpw-bands]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/bands-dos/REFERENCE.md
+[gpw-berry]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/berry-phase/REFERENCE.md
+[gpw-wannier]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/gpw/wannier/REFERENCE.md
+[bomd]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/dynamics/bomd/REFERENCE.md
+[cpmd]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/dynamics/car-parrinello/REFERENCE.md
+[sgcp]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/dynamics/second-gen-cpmd/REFERENCE.md
+[xlbomd]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/dynamics/xl-bomd/REFERENCE.md
+[dfpt]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/response/dfpt/REFERENCE.md
+[phonons]: https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/response/phonons/REFERENCE.md

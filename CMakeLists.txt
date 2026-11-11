@@ -166,27 +166,27 @@ if(NOT ATV_DOCS_ONLY)
     FetchContent_Declare(
         xtl
         GIT_REPOSITORY https://github.com/xtensor-stack/xtl.git
-        GIT_TAG 0.8.2
+        GIT_TAG c52350e283b98e5d69dbc50726925a1f8e16c57c # 0.8.2
     )
     FetchContent_Declare(
         xtensor
         GIT_REPOSITORY https://github.com/xtensor-stack/xtensor.git
-        GIT_TAG 0.27.1
+        GIT_TAG f115228a7fc277b9be1bef34572831f8fd53ac73 # 0.27.1
     )
     FetchContent_Declare(
         xtensor-blas
         GIT_REPOSITORY https://github.com/xtensor-stack/xtensor-blas.git
-        GIT_TAG 0.23.0
+        GIT_TAG 836a8047413eb64ce8e034ab6ab7ce1608562bfc # 0.23.0
     )
     FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.17.0
+        GIT_TAG 79524ddd08a4ec981b7fea76afd08ee05f83755d # v1.17.0
     )
     FetchContent_Declare(
         xsimd
         GIT_REPOSITORY https://github.com/xtensor-stack/xsimd.git
-        GIT_TAG 14.3.0
+        GIT_TAG e88a72831858123924f7118f345dfe5d70d95991 # 14.3.0
     )
     if(NOT SKBUILD)
         set(SPDLOG_INSTALL ON CACHE BOOL "Install public C++ dependency" FORCE)
@@ -1262,7 +1262,7 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_MOLPY)
         FetchContent_Declare(Corrosion
             GIT_REPOSITORY https://github.com/corrosion-rs/corrosion
-            GIT_TAG v0.6.1
+            GIT_TAG 1499b14e4906a2890f5cee1547c8848db261753d # v0.6.1
         )
         FetchContent_MakeAvailable(Corrosion)
         # The molpy repository ships its C++ bridge in molcxx/.
