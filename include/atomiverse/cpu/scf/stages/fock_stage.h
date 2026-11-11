@@ -122,8 +122,6 @@ class FockStage : public cpu::Component {
   private:
     template <typename>
     friend class MeanFieldMethod;
-    template <typename>
-    friend class MP2;
     // Physical operator before DIIS/level shifts, including reaction fields.
     // HF energies must use H + J - K, never the DIIS extrapolate. KS also
     // retains it through teardown for density-preserving publication.

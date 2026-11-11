@@ -748,6 +748,19 @@ void MeanFieldMethod<D>::materialize_eri_() {
 }
 
 template <typename D>
+const internal::ExactJK* MeanFieldMethod<D>::post_hf_coulomb_cache_() const {
+    if constexpr (std::is_same_v<D, RHF>) {
+        if (ri == RI::None && coulomb == Coulomb::Direct && fock_stage_
+            && ints_ERI_.size() == 0) {
+            const auto& engine = fock_stage_->hamiltonian_.coulomb_engine();
+            if (engine.cached())
+                return &engine;
+        }
+    }
+    return nullptr;
+}
+
+template <typename D>
 internal::IntegralView
 MeanFieldMethod<D>::rebuild_integrals_(const Frame& frame, bool compute_pvp) {
     // Fill into a temporary, then move into method-owned **fields** (no bag kept).

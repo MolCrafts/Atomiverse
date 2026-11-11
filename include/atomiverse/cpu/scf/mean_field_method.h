@@ -744,6 +744,8 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
 
     /// @brief Materialize working-basis ERIs only for a post-HF consumer.
     void materialize_eri_();
+    /// Borrow the current molecular RHF Coulomb cache after convergence.
+    [[nodiscard]] const internal::ExactJK* post_hf_coulomb_cache_() const;
 
     /// @brief Non-owning view of this method's private integral **members**
     ///        (shells, S, c2s, dense ERI when materialized) for derived
