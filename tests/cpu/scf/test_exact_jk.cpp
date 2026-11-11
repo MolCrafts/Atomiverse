@@ -1,11 +1,15 @@
+#include "atomiverse/cpu/scf/internal/ao2mo.h"
 #include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
+#include "atomiverse/cpu/scf/internal/mp3_pack.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/rys_eri.h"
 #include <cmath>
 #include <gtest/gtest.h>
+#include <numbers>
 #include <span>
 #include <vector>
+#include <xtensor/generators/xbuilder.hpp>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -84,6 +88,45 @@ TEST(ExactJK, ScreenedSphericalPairs) { check(BasisSet::Def2SVP, true, true); }
 TEST(ExactJK, ScreenedSymmetricSphericalPairs) {
     check(BasisSet::Def2SVP, false, true);
 }
+
+TEST(ExactJK, MP3RejectsScreeningWhenThirdOrderErrorExceedsBudget) {
+    auto f = water();
+    f.span(kAtom_x)[1] = 4.5;
+    f.span(kAtom_x)[2] = -4.5;
+    internal::IntegralWorkspace ints(f, BasisSet::STO3G);
+    internal::ExactJK cache;
+    cache.prepare(ints.view(), 4000.0);
+    ASSERT_TRUE(cache.cached());
+
+    const auto n = static_cast<std::size_t>(ints.n_basis);
+    const auto occupied = static_cast<std::size_t>(ints.n_occ());
+    auto C = RealMatrix::from_shape({n, n});
+    auto eps = RealVector::from_shape({n});
+    auto occupations = RealVector::from_shape({n});
+    // A synthetic determinant with a small positive gap amplifies the
+    // omitted integrals enough to distinguish screening from fallback.
+    for (std::size_t p = 0; p < n; ++p) {
+        const double norm = std::sqrt((p == 0 ? 1.0 : 2.0) / n);
+        for (std::size_t mu = 0; mu < n; ++mu)
+            C(mu, p) = norm * std::cos(std::numbers::pi * (mu + 0.5) * p / n);
+        eps(p) = p < occupied ? -1e-5 : 1e-5;
+        occupations(p) = p < occupied ? 1.0 : 0.0;
+    }
+    const SlaterDeterminant det{C, eps, occupations, ints.n_occ()};
+
+    ints.ERI = ints.view().eri_working();
+    const auto dense = mp3_energy(ints.view(), det, 0.0);
+    const xt::xtensor<double, 2> identity = xt::eye<double>(n);
+    ints.ERI = ao2mo_full(cache, identity);
+    const auto screened = mp3_energy(ints.view(), det, 0.0);
+    ASSERT_GT(std::abs(screened.e_corr_mp3 - dense.e_corr_mp3), 1e-7);
+
+    ints.ERI = {};
+    const auto fallback = mp3_energy(ints.view(), det, 0.0, 0, &cache);
+    EXPECT_DOUBLE_EQ(fallback.e_corr_mp2, dense.e_corr_mp2);
+    EXPECT_DOUBLE_EQ(fallback.e_corr_mp3, dense.e_corr_mp3);
+}
+
 TEST(ExactJK, MultipleThreads) {
 #ifdef _OPENMP
     const int previous = omp_get_max_threads();

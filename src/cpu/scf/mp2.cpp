@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #include <xtensor-blas/xlinalg.hpp>
@@ -29,14 +30,15 @@ namespace scf {
 
 namespace {
 
-template <typename LoadRow>
+template <typename LoadRow, typename StoreRow = std::nullptr_t>
 void transform_pair_rows(std::size_t rows, const xt::xtensor<double, 2>& Co,
                          const xt::xtensor<double, 2>& Cv, double* out,
-                         LoadRow load_row) {
+                         LoadRow load_row, StoreRow store_row = nullptr) {
     const int n = static_cast<int>(Co.shape(0));
     const int no = static_cast<int>(Co.shape(1));
     const int nv = static_cast<int>(Cv.shape(1));
     const auto stride = static_cast<std::size_t>(no) * nv;
+    constexpr bool pack_output = !std::is_same_v<StoreRow, std::nullptr_t>;
     using linalg::internal::gemm;
 #ifdef _OPENMP
 #pragma omp parallel if (rows >= 64)
@@ -46,6 +48,8 @@ void transform_pair_rows(std::size_t rows, const xt::xtensor<double, 2>& Co,
             xt::xtensor<double, 2>::from_shape({Co.shape(0), Co.shape(0)});
         auto av =
             xt::xtensor<double, 2>::from_shape({Co.shape(0), Cv.shape(1)});
+        auto product =
+            xt::xtensor<double, 1>::from_shape({pack_output ? stride : 0});
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
@@ -55,10 +59,19 @@ void transform_pair_rows(std::size_t rows, const xt::xtensor<double, 2>& Co,
             // two GEMMs form AO * Cv and then Co^T * (AO * Cv).
             gemm('N', 'N', nv, n, n, 1.0, Cv.data(), nv, ao.data(), n, 0.0,
                  av.data(), nv);
+            double* dest = pack_output ? product.data() : out + row * stride;
             gemm('N', 'T', nv, no, n, 1.0, av.data(), nv, Co.data(), no, 0.0,
-                 out + row * stride, nv);
+                 dest, nv);
+            if constexpr (pack_output)
+                store_row(row, dest);
         }
     }
+}
+
+void restore_pair_row(std::size_t n, const double* packed, double* ao) {
+    for (std::size_t a = 0; a < n; ++a)
+        for (std::size_t b = 0; b <= a; ++b)
+            ao[a * n + b] = ao[b * n + a] = *packed++;
 }
 
 xt::xtensor<double, 4> transform_cached_ovov(const internal::ExactJK& cache,
@@ -76,21 +89,11 @@ xt::xtensor<double, 4> transform_cached_ovov(const internal::ExactJK& cache,
         return xt::xtensor<double, 2>(xt::transpose(pair_ov));
     }();
     auto ovov = xt::xtensor<double, 4>::from_shape({no, nv, no, nv});
-    transform_pair_rows(
-        nov, Co, Cv, ovov.data(), [&](std::size_t ov, double* ao) {
-            const double* packed = half.data() + ov * np;
-            std::size_t pair = 0;
-            for (std::size_t a = 0; a < n; ++a)
-                for (std::size_t b = 0; b <= a; ++b, ++pair)
-                    ao[a * n + b] = ao[b * n + a] = packed[pair];
-        });
+    transform_pair_rows(nov, Co, Cv, ovov.data(),
+                        [&](std::size_t ov, double* ao) {
+                            restore_pair_row(n, half.data() + ov * np, ao);
+                        });
     return ovov;
-}
-
-double coefficient_norm_squared(const xt::xtensor<double, 2>& C) {
-    // The largest absolute row sum of C^T C bounds its spectral radius.
-    const auto gram = xt::linalg::dot(xt::transpose(C), C);
-    return xt::amax(xt::sum(xt::abs(gram), {1}))();
 }
 
 /// @brief Four-index AO→MO transform to chemist (p q | r s) with independent
@@ -230,6 +233,55 @@ xt::xtensor<double, 4> ao2mo_full(const xt::xtensor<double, 4>& ERI,
     const xt::xtensor<double, 2> Cm =
         xt::view(C, xt::all(), xt::range(0, n_mo));
     return ao2mo_pairs(ERI, Cm, Cm);
+}
+
+xt::xtensor<double, 4> ao2mo_full(const internal::ExactJK& cache,
+                                  const xt::xtensor<double, 2>& C) {
+    const auto n = C.shape(0), m = C.shape(1);
+    const auto nao_pairs = n * (n + 1) / 2;
+    std::vector<std::array<std::size_t, 2>> mo_pairs;
+    mo_pairs.reserve(m * (m + 1) / 2);
+    for (std::size_t p = 0; p < m; ++p)
+        for (std::size_t q = 0; q <= p; ++q)
+            mo_pairs.push_back({p, q});
+
+    // Transform one symmetric pair at a time and keep only canonical pairs
+    // in the half transform. Expand the second pair into the final MO tensor.
+    const auto half = [&] {
+        auto pair_mo =
+            xt::xtensor<double, 2>::from_shape({nao_pairs, mo_pairs.size()});
+        transform_pair_rows(
+            nao_pairs, C, C, nullptr,
+            [&](std::size_t row, double* ao) {
+                cache.unpack_coulomb_cache_row(row, ao);
+            },
+            [&](std::size_t row, const double* mo) {
+                auto* dest = pair_mo.data() + row * mo_pairs.size();
+                for (const auto& [p, q] : mo_pairs)
+                    *dest++ = mo[p * m + q];
+            });
+        return xt::xtensor<double, 2>(xt::transpose(pair_mo));
+    }();
+    auto result = xt::xtensor<double, 4>::from_shape({m, m, m, m});
+    const auto stride = m * m;
+    transform_pair_rows(
+        mo_pairs.size(), C, C, nullptr,
+        [&](std::size_t row, double* ao) {
+            restore_pair_row(n, half.data() + row * nao_pairs, ao);
+        },
+        [&](std::size_t row, const double* mo) {
+            const auto [p, q] = mo_pairs[row];
+            std::copy_n(mo, stride, result.data() + (p * m + q) * stride);
+            if (p != q)
+                std::copy_n(mo, stride, result.data() + (q * m + p) * stride);
+        });
+    return result;
+}
+
+double coefficient_norm_squared(const xt::xtensor<double, 2>& C) {
+    // The largest absolute row sum of C^T C bounds its spectral radius.
+    const auto gram = xt::linalg::dot(xt::transpose(C), C);
+    return xt::amax(xt::sum(xt::abs(gram), {1}))();
 }
 
 xt::xtensor<double, 2> mo_hcore(const xt::xtensor<double, 2>& Hcore,

@@ -5,17 +5,22 @@
 #include "atomiverse/core/log.h"
 #include "atomiverse/cpu/linalg/internal/blas.h"
 #include "atomiverse/cpu/scf/internal/ao2mo.h"
+#include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/mp3_pack.h"
 #include "atomiverse/cpu/scf/internal/spin_orbital_eri.h"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
+#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <vector>
 
+#include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/containers/xtensor.hpp>
+#include <xtensor/views/xview.hpp>
 
 namespace ATV {
 namespace cpu {
@@ -75,13 +80,175 @@ double gram_energy(const RealMatrix& t, bool transpose, std::span<double> gram,
     return diagonal + 2.0 * off_diagonal;
 }
 
+struct ScreeningBounds {
+    double oooo = 0.0;
+    double vvvv = 0.0;
+    double ovov = 0.0;
+    double denom = 1.0;
+};
+
+struct MP3Evaluation {
+    double e2;
+    double e3;
+    double e2_error;
+    double e3_error;
+};
+
+template <bool Certify>
+MP3Evaluation evaluate_mp3(const xt::xtensor<double, 4>& g,
+                           const xt::xtensor<double, 1>& eps, int n_occ,
+                           int n_frozen, const ScreeningBounds& bounds) {
+    const int n_mo = static_cast<int>(g.shape(0));
+    const int n_active = n_occ - n_frozen, n_vir = n_mo - n_occ;
+    const auto occupied = orbital_pairs(n_frozen, n_occ, false);
+    const auto virtuals = orbital_pairs(n_occ, n_mo, false);
+    const auto gram_dim = std::max(occupied.size(), virtuals.size());
+    // A highly unequal occupied/virtual split can make a full Gram as
+    // large as the MO integral tensor. Bound its storage by using panels.
+    constexpr std::size_t gram_budget = 32 * 1024 * 1024 / sizeof(double);
+    auto gram = xt::xtensor<double, 1>::from_shape(
+        {std::min(gram_dim * gram_dim, std::max(gram_dim, gram_budget))});
+    const std::span<double> scratch{gram.data(), gram.size()};
+
+    // Unique spin-orbital pairs remove the ordered-pair factors in the
+    // ladders. The alpha-beta block contains all ordered spatial pairs.
+    auto mixed = RealMatrix::from_shape({occupied.size(), virtuals.size()});
+    double e2 = 0.0;
+    for (std::size_t col = 0; col < virtuals.size(); ++col) {
+        const auto [a, b] = virtuals[col];
+        for (std::size_t row = 0; row < occupied.size(); ++row) {
+            const auto [i, j] = occupied[row];
+            const double eri = g(i, a, j, b);
+            const double t =
+                eri / mp_denominator(eps(i), eps(j), eps(a), eps(b));
+            mixed(row, col) = t;
+            e2 += t * eri;
+        }
+    }
+
+    double e3_error = 0.0;
+    const auto screened_gram = [&](const RealMatrix& t, bool transpose,
+                                   const auto& interaction, double dt,
+                                   double dv, double weight) {
+        double v_squared = 0.0;
+        const double energy =
+            gram_energy(t, transpose, scratch, [&](int row, int col) {
+                const double v = interaction(row, col);
+                if constexpr (Certify)
+                    v_squared += (row == col ? 1.0 : 2.0) * v * v;
+                return v;
+            });
+        if constexpr (Certify) {
+            const double* data = t.data();
+            const double t_norm =
+                std::sqrt(std::inner_product(data, data + t.size(), data, 0.0));
+            // |<V+dV,(T+dT)(T+dT)^T> - <V,TT^T>| by Frobenius norms.
+            e3_error += std::abs(weight)
+                        * (std::sqrt(v_squared) * dt * (2.0 * t_norm + dt)
+                           + dv * (t_norm + dt) * (t_norm + dt));
+        }
+        return weight * energy;
+    };
+    const double delta_t = bounds.ovov / bounds.denom;
+    const auto ladders = [&](const RealMatrix& t, const auto& occ,
+                             const auto& vir, bool same_spin, double weight) {
+        const auto interaction = [&](const auto& pairs, int row, int col) {
+            const auto [p, q] = pairs[row];
+            const auto [r, s] = pairs[col];
+            const double direct = g(p, r, q, s);
+            return same_spin ? direct - g(p, s, q, r) : direct;
+        };
+        // Antisymmetrization can double a norm. Keeping one of the four
+        // permutations of two distinct same-spin pairs halves it again.
+        const double occ_energy = screened_gram(
+            t, false,
+            [&](int row, int col) { return interaction(occ, row, col); },
+            delta_t, bounds.oooo, weight);
+        return occ_energy
+               + screened_gram(
+                   t, true,
+                   [&](int row, int col) { return interaction(vir, row, col); },
+                   delta_t, bounds.vvvv, weight);
+    };
+    double e3 = ladders(mixed, occupied, virtuals, false, 1.0);
+    const auto amplitude = [&](int i, int j, int a, int b) {
+        return mixed((i - n_frozen) * n_active + (j - n_frozen),
+                     (a - n_occ) * n_vir + (b - n_occ));
+    };
+    if (n_active > 1 && n_vir > 1) {
+        // Alpha-alpha and beta-beta have the same antisymmetric block.
+        const auto occ = orbital_pairs(n_frozen, n_occ, true);
+        const auto vir = orbital_pairs(n_occ, n_mo, true);
+        auto same = RealMatrix::from_shape({occ.size(), vir.size()});
+        double same_e2 = 0.0;
+        for (std::size_t col = 0; col < vir.size(); ++col) {
+            const auto [a, b] = vir[col];
+            for (std::size_t row = 0; row < occ.size(); ++row) {
+                const auto [i, j] = occ[row];
+                const double t = amplitude(i, j, a, b) - amplitude(i, j, b, a);
+                same(row, col) = t;
+                same_e2 += t * (g(i, a, j, b) - g(i, b, j, a));
+            }
+        }
+        e2 += 2.0 * same_e2;
+        e3 += ladders(same, occ, vir, true, 2.0);
+    }
+
+    // In the scalar ring energy the four external permutations contract
+    // equally with antisymmetric doubles and cancel the spin-orbital 1/4.
+    // In (ia,jb) order write D=t_ijab and X=t_ijba for alpha-beta amplitudes.
+    // The spin-symmetric particle-hole sector uses 2D-X. The spin difference
+    // and two spin-flip sectors give three identical exchange contractions.
+    const auto nov = static_cast<std::size_t>(n_active) * n_vir;
+    auto ring = RealMatrix::from_shape({nov, nov});
+    const auto ring_energy = [&](bool spin_symmetric) {
+        for (std::size_t col = 0; col < nov; ++col) {
+            const int j = n_frozen + static_cast<int>(col / n_vir);
+            const int b = n_occ + static_cast<int>(col % n_vir);
+            for (std::size_t row = 0; row < nov; ++row) {
+                const int i = n_frozen + static_cast<int>(row / n_vir);
+                const int a = n_occ + static_cast<int>(row % n_vir);
+                const double exchange = amplitude(i, j, b, a);
+                ring(row, col) = spin_symmetric
+                                     ? 2.0 * amplitude(i, j, a, b) - exchange
+                                     : exchange;
+            }
+        }
+        // D and X permute the amplitudes, while both ring interactions have
+        // two occupied and two virtual axes. The 2D-X combination can triple
+        // the corresponding perturbation norm.
+        const double scale = spin_symmetric ? 3.0 : 1.0;
+        return screened_gram(
+            ring, false,
+            [&](int row, int col) {
+                const int i = n_frozen + row / n_vir, a = n_occ + row % n_vir;
+                const int k = n_frozen + col / n_vir, c = n_occ + col % n_vir;
+                const double exchange = g(a, c, k, i);
+                return spin_symmetric ? 2.0 * g(a, i, k, c) - exchange
+                                      : exchange;
+            },
+            scale * delta_t, scale * bounds.ovov, spin_symmetric ? 1.0 : -3.0);
+    };
+    e3 += ring_energy(true);
+    e3 += ring_energy(false);
+
+    double e2_error = 0.0;
+    if constexpr (Certify) {
+        // With denominator-weighted amplitudes x and the orthogonal
+        // antisymmetrizer P, E2 = -||x||^2 - 2||P x||^2.
+        const double delta = std::sqrt(3.0 / bounds.denom) * bounds.ovov;
+        e2_error = delta * (2.0 * std::sqrt(-e2) + delta);
+    }
+    return {e2, e3, e2_error, e3_error};
+}
+
 } // namespace
 
 MP3Result mp3_energy(const internal::IntegralView& ints,
                      const SlaterDeterminant& det, double e_scf_ha,
-                     int n_frozen) {
+                     int n_frozen, const internal::ExactJK* cached_jk) {
     using Spin = SlaterDeterminant::Spin;
-    if (ints.ERI.size() == 0) {
+    if (ints.ERI.size() == 0 && !cached_jk) {
         throw std::invalid_argument("mp3_energy: ERI is not materialized; call "
                                     "internal::IntegralWorkspace{..., "
                                     "compute_eri=true}.");
@@ -116,112 +283,68 @@ MP3Result mp3_energy(const internal::IntegralView& ints,
         throw std::overflow_error(
             "mp3_energy: pair dimensions exceed BLAS integer range");
 
+    const auto& eps = det.orbital_energies(Spin::alpha);
+    const auto result = [&](const MP3Evaluation& energy) {
+        const double e_corr = energy.e2 + energy.e3;
+        return MP3Result{e_corr, e_scf_ha + e_corr, energy.e2, energy.e3,
+                         n_frozen};
+    };
+
+    if (cached_jk && ints.ERI.size() == 0) {
+        if (const auto schwarz = cached_jk->coulomb_cache_screening_bound()) {
+            const xt::xtensor<double, 2> Co =
+                xt::view(C, xt::all(), xt::range(n_frozen, n_occ));
+            const xt::xtensor<double, 2> Cv =
+                xt::view(C, xt::all(), xt::range(n_occ, n_mo));
+            const double occ_norm =
+                ints.spherical()
+                    ? coefficient_norm_squared(xt::linalg::dot(ints.c2s, Co))
+                    : coefficient_norm_squared(Co);
+            const double vir_norm =
+                ints.spherical()
+                    ? coefficient_norm_squared(xt::linalg::dot(ints.c2s, Cv))
+                    : coefficient_norm_squared(Cv);
+            // Bound the omitted Cartesian AO Frobenius norm by n_cart^2
+            // times its largest entry, then apply each coefficient norm.
+            const double n_cart = ints.n_ao_cart();
+            const double delta_ao = n_cart * n_cart * *schwarz;
+            const double e_occ =
+                *std::max_element(eps.data() + n_frozen, eps.data() + n_occ);
+            const double e_vir =
+                *std::min_element(eps.data() + n_occ, eps.data() + n_mo);
+            const ScreeningBounds bounds{
+                delta_ao * occ_norm * occ_norm, delta_ao * vir_norm * vir_norm,
+                delta_ao * occ_norm * vir_norm,
+                -mp_denominator(e_occ, e_occ, e_vir, e_vir)};
+            const auto start = LogClock::now();
+            const auto g = ao2mo_full(*cached_jk, C);
+            const auto transformed = LogClock::now();
+            const auto energy =
+                evaluate_mp3<true>(g, eps, n_occ, n_frozen, bounds);
+            // Both orders and their sum must fit inside the screening budget.
+            constexpr double screening_budget_ha = 1e-7;
+            const bool reuse =
+                energy.e2_error + energy.e3_error <= screening_budget_ha
+                && std::isfinite(energy.e2) && std::isfinite(energy.e3);
+            ATV_DEBUG(
+                "[mp3] rhf_cache={} e2_bound_ha={:.3e} e3_bound_ha={:.3e} "
+                "ao2mo_ms={:.3f} contractions_ms={:.3f}",
+                reuse, energy.e2_error, energy.e3_error,
+                elapsed_ms(start, transformed), elapsed_ms(transformed));
+            if (reuse)
+                return result(energy);
+        }
+    }
+
     const auto start = LogClock::now();
-    // Full MO ERI in chemist notation (pq|rs).
-    const xt::xtensor<double, 4> g = ao2mo_full(ints.ERI, C, n_mo);
+    const auto g = ints.ERI.size() != 0
+                       ? ao2mo_full(ints.ERI, C, n_mo)
+                       : ao2mo_full(ints.eri_working(), C, n_mo);
     const auto transformed = LogClock::now();
-    const xt::xtensor<double, 1>& eps = det.orbital_energies(Spin::alpha);
-    const auto occupied = orbital_pairs(n_frozen, n_occ, false);
-    const auto virtuals = orbital_pairs(n_occ, n_mo, false);
-    const auto gram_dim = std::max(occupied.size(), virtuals.size());
-    // A highly unequal occupied/virtual split can make a full Gram as
-    // large as the MO integral tensor. Bound its storage by using panels.
-    constexpr std::size_t gram_budget = 32 * 1024 * 1024 / sizeof(double);
-    auto gram = xt::xtensor<double, 1>::from_shape(
-        {std::min(gram_dim * gram_dim, std::max(gram_dim, gram_budget))});
-    const std::span<double> scratch{gram.data(), gram.size()};
-
-    // Unique spin-orbital pairs remove the ordered-pair factors in the
-    // ladders. The alpha-beta block contains all ordered spatial pairs.
-    auto mixed = RealMatrix::from_shape({occupied.size(), virtuals.size()});
-    double e2 = 0.0;
-    for (std::size_t col = 0; col < virtuals.size(); ++col) {
-        const auto [a, b] = virtuals[col];
-        for (std::size_t row = 0; row < occupied.size(); ++row) {
-            const auto [i, j] = occupied[row];
-            const double eri = g(i, a, j, b);
-            const double t =
-                eri / mp_denominator(eps(i), eps(j), eps(a), eps(b));
-            mixed(row, col) = t;
-            e2 += t * eri;
-        }
-    }
-
-    const auto ladders = [&](const RealMatrix& t, const auto& occ,
-                             const auto& vir, bool same_spin) {
-        const auto interaction = [&](const auto& pairs, int row, int col) {
-            const auto [p, q] = pairs[row];
-            const auto [r, s] = pairs[col];
-            const double direct = g(p, r, q, s);
-            return same_spin ? direct - g(p, s, q, r) : direct;
-        };
-        const double occ_energy =
-            gram_energy(t, false, scratch, [&](int row, int col) {
-                return interaction(occ, row, col);
-            });
-        return occ_energy
-               + gram_energy(t, true, scratch, [&](int row, int col) {
-                     return interaction(vir, row, col);
-                 });
-    };
-    double e3 = ladders(mixed, occupied, virtuals, false);
-    const auto amplitude = [&](int i, int j, int a, int b) {
-        return mixed((i - n_frozen) * n_active + (j - n_frozen),
-                     (a - n_occ) * n_vir + (b - n_occ));
-    };
-    if (n_active > 1 && n_vir > 1) {
-        // Alpha-alpha and beta-beta have the same antisymmetric block.
-        const auto occ = orbital_pairs(n_frozen, n_occ, true);
-        const auto vir = orbital_pairs(n_occ, n_mo, true);
-        auto same = RealMatrix::from_shape({occ.size(), vir.size()});
-        double same_e2 = 0.0;
-        for (std::size_t col = 0; col < vir.size(); ++col) {
-            const auto [a, b] = vir[col];
-            for (std::size_t row = 0; row < occ.size(); ++row) {
-                const auto [i, j] = occ[row];
-                const double t = amplitude(i, j, a, b) - amplitude(i, j, b, a);
-                same(row, col) = t;
-                same_e2 += t * (g(i, a, j, b) - g(i, b, j, a));
-            }
-        }
-        e2 += 2.0 * same_e2;
-        e3 += 2.0 * ladders(same, occ, vir, true);
-    }
-
-    // In the scalar ring energy the four external permutations contract
-    // equally with antisymmetric doubles and cancel the spin-orbital 1/4.
-    // In (ia,jb) order write D=t_ijab and X=t_ijba for alpha-beta amplitudes.
-    // The spin-symmetric particle-hole sector uses 2D-X. The spin difference
-    // and two spin-flip sectors give three identical exchange contractions.
-    const auto nov = static_cast<std::size_t>(n_active) * n_vir;
-    auto ring = RealMatrix::from_shape({nov, nov});
-    const auto ring_energy = [&](bool spin_symmetric) {
-        for (std::size_t col = 0; col < nov; ++col) {
-            const int j = n_frozen + static_cast<int>(col / n_vir);
-            const int b = n_occ + static_cast<int>(col % n_vir);
-            for (std::size_t row = 0; row < nov; ++row) {
-                const int i = n_frozen + static_cast<int>(row / n_vir);
-                const int a = n_occ + static_cast<int>(row % n_vir);
-                const double exchange = amplitude(i, j, b, a);
-                ring(row, col) = spin_symmetric
-                                     ? 2.0 * amplitude(i, j, a, b) - exchange
-                                     : exchange;
-            }
-        }
-        return gram_energy(ring, false, scratch, [&](int row, int col) {
-            const int i = n_frozen + row / n_vir, a = n_occ + row % n_vir;
-            const int k = n_frozen + col / n_vir, c = n_occ + col % n_vir;
-            const double exchange = g(a, c, k, i);
-            return spin_symmetric ? 2.0 * g(a, i, k, c) - exchange : exchange;
-        });
-    };
-    e3 += ring_energy(true);
-    e3 -= 3.0 * ring_energy(false);
-
+    const auto energy = evaluate_mp3<false>(g, eps, n_occ, n_frozen, {});
     ATV_DEBUG("[mp3] ao2mo_ms={:.3f} contractions_ms={:.3f}",
               elapsed_ms(start, transformed), elapsed_ms(transformed));
-    const double e_corr = e2 + e3;
-    return {e_corr, e_scf_ha + e_corr, e2, e3, n_frozen};
+    return result(energy);
 }
 
 } // namespace scf
