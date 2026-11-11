@@ -195,6 +195,8 @@ class ProbeNeighborConsumer : public ATV::cpu::Component,
 class ProbeNeighborProvider : public ATV::cpu::Component,
                               public ATV::cpu::NeighborProvider {
   public:
+    ATV::AccReal supported_cutoff() const override { return 0; }
+    ATV::AccReal neighbor_reach() const override { return 0; }
     std::string name() const override { return "probe_neighbor_provider"; }
     const ATV::cpu::NeighborProvider* as_neighbor_provider() const override {
         return this;

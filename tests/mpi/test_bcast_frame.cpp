@@ -83,9 +83,9 @@ cpu::Frame make_reference_frame() {
             StorageReal((i % 2 == 0 ? 0.42 : -0.42) + 0.01 * i); // nonzero
         f.span(ATV::kAtom_type)[i] = 1 + (i % 3);
         f.span(ATV::kAtom_tag)[i] = kRefTags[i]; // noncontiguous
-        f.span(ATV::kAtom_image)(i, 0) = static_cast<std::int8_t>(i - 4);
-        f.span(ATV::kAtom_image)(i, 1) = static_cast<std::int8_t>(2 * i - 7);
-        f.span(ATV::kAtom_image)(i, 2) = static_cast<std::int8_t>(-i);
+        f.span(ATV::kAtom_image)(i, 0) = static_cast<ATV::ImageInt>(i - 4);
+        f.span(ATV::kAtom_image)(i, 1) = static_cast<ATV::ImageInt>(2 * i - 7);
+        f.span(ATV::kAtom_image)(i, 2) = static_cast<ATV::ImageInt>(-i);
     }
     // add_* prerequisites: nlocal set (Frame ctor), tags set, map usable.
     f.clear_tag_index();
@@ -100,7 +100,7 @@ cpu::Frame make_reference_frame() {
     f.build_special_list();
 
     f.box = ATV::cpu::Box::orthorhombic(12.0, 15.5,
-                                           19.25); // orthorhombic, non-cubic
+                                        19.25); // orthorhombic, non-cubic
 
     f.meta.get(ATV::kEnergy) = -123.5;
     f.meta.get(ATV::kEnergyPair) = -100.25;
@@ -312,6 +312,37 @@ TEST(MpiBcastFrame, NoTopologyFrameStaysAtomic) {
     }
 }
 
+// ── (d') Identity columns: receivers adopt the root's choice ────────────────
+//
+// A boundary leaves out an identity column its source did not carry (a
+// coarse-grained frame has no species). The receivers start from Frame(0),
+// which has both; after the broadcast they hold exactly the root's set, and
+// the root's values.
+TEST(MpiBcastFrame, ReceiversAdoptTheRootsIdentityColumns) {
+    constexpr int n = 3;
+    cpu::Frame frame = (world_rank() == 0) ? cpu::Frame(n) : cpu::Frame(0);
+    if (world_rank() == 0) {
+        frame.block("atoms").erase(ATV::kAtom_atomic_number.key);
+        for (int i = 0; i < n; ++i) {
+            frame.span(ATV::kAtom_x)[i] = StorageReal(1.0 + i);
+            frame.span(ATV::kAtom_tag)[i] = TagInt(i);
+            frame.span(ATV::kAtom_type)[i] = 7 + i;
+        }
+        frame.box = ATV::cpu::Box::cubic(10.0);
+    } else {
+        // A receiver that arrives without the root's type column gets it.
+        frame.block("atoms").erase(ATV::kAtom_type.key);
+    }
+
+    cpu::comm::bcast_frame(frame, /*root=*/0);
+
+    EXPECT_EQ(frame.nlocal(), n);
+    EXPECT_FALSE(frame.has("atoms", "atomic_number"));
+    ASSERT_TRUE(frame.has("atoms", "type"));
+    for (int i = 0; i < n; ++i)
+        EXPECT_EQ(frame.span(ATV::kAtom_type)[i], 7 + i);
+}
+
 // ── (e-i) Exchanged extension column rides the roundtrip exactly ────────────
 //
 // Precondition of bcast_frame: exchanged extension-column registration must
@@ -383,20 +414,20 @@ TEST(MpiBcastFrame, TypedRuntimeMetadataPreservesExactDtypes) {
     constexpr MetaKey<bool> enabled{"runtime_enabled", true};
     constexpr MetaKey<std::uint64_t> epoch{"runtime_epoch", true};
     constexpr MetaKey<std::string> label{"runtime_label", true};
-    constexpr MetaKey<MetaF32x3> origin{"runtime_origin", true};
+    constexpr MetaKey<MetaF64x3> origin{"runtime_origin", true};
     constexpr MetaKey<MetaI64x3> counters{"runtime_counters", true};
 
     cpu::Frame frame(0);
     frame.meta.insert(enabled, false);
     frame.meta.insert(epoch, std::uint64_t{0});
     frame.meta.insert(label, std::string{});
-    frame.meta.insert(origin, MetaF32x3{});
+    frame.meta.insert(origin, MetaF64x3{});
     frame.meta.insert(counters, MetaI64x3{});
     if (world_rank() == 0) {
         frame.meta.set(enabled, true);
         frame.meta.set(epoch, std::uint64_t{9007199254740993ull});
         frame.meta.set(label, std::string{"native-meta"});
-        frame.meta.set(origin, MetaF32x3{1.25f, -2.5f, 3.75f});
+        frame.meta.set(origin, MetaF64x3{1.25, -2.5, 3.75});
         frame.meta.set(counters, MetaI64x3{-7, 0, 9007199254740993LL});
     }
 
@@ -405,19 +436,10 @@ TEST(MpiBcastFrame, TypedRuntimeMetadataPreservesExactDtypes) {
     EXPECT_TRUE(frame.meta.get(enabled));
     EXPECT_EQ(frame.meta.get(epoch), std::uint64_t{9007199254740993ull});
     EXPECT_EQ(frame.meta.get(label), "native-meta");
-    EXPECT_EQ(frame.meta.get(origin), (MetaF32x3{1.25f, -2.5f, 3.75f}));
+    EXPECT_EQ(frame.meta.get(origin), (MetaF64x3{1.25, -2.5, 3.75}));
     EXPECT_EQ(frame.meta.get(counters), (MetaI64x3{-7, 0, 9007199254740993LL}));
 }
 
 // ── Custom main that initializes MPI before/after GoogleTest ────────────
 //
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

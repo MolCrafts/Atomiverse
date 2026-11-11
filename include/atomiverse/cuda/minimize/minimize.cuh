@@ -44,9 +44,10 @@
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cuda/component/zero.cuh"
 #include "atomiverse/cuda/driver/criterion.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
-#include "atomiverse/cuda/dynamics/init.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
 
 namespace ATV {
 namespace cuda {
@@ -67,7 +68,7 @@ namespace minimizer {
 /// min.set_neighbor(cuda::NeighborList{3.0});
 /// min.set_evaluator(cuda::PairLJCut{1.0, 1.0, 3.0});
 /// min.build();          // install_defaults() → validate_components() → compile Plan
-/// int iters = min.run(frame, 500);
+/// BigInt iters = min.run(frame, 500);
 /// bool ok = min.converged();          // the LOOP knows — not the optimizer
 /// @endcode
 ///
@@ -78,9 +79,9 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
     /// @brief Construct the minimizer, binding the phase-agnostic `Zero*`
     ///        infrastructure components to `minimizer::Phase::force`.
     Minimize() {
-        on(ATV::minimizer::Phase::force).add(md::ZeroForces{}, -1000);
-        on(ATV::minimizer::Phase::force).add(md::ZeroEnergy{}, -999);
-        on(ATV::minimizer::Phase::force).add(md::ZeroStress{}, -998);
+        on(ATV::minimizer::Phase::force).add(ZeroForces{}, -1000);
+        on(ATV::minimizer::Phase::force).add(ZeroEnergy{}, -999);
+        on(ATV::minimizer::Phase::force).add(ZeroStress{}, -998);
     }
 
     /// @brief Iterate to convergence, or up to `max_iter` iterations.
@@ -93,18 +94,58 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
     ///        on the device, retrieved D2H, updated in place.
     /// @param max_iter Iteration budget [dimensionless iteration count].
     /// @return Number of iterations actually executed (≤ `max_iter`).
-    int run(cpu::Frame& frame, int max_iter) {
-        setup_pass(frame);
-        int iters = 0;
-        for (int s = 0; s < max_iter; ++s) {
-            this->mutable_outer_status().reset();
-            step_once(s);
-            ++iters;
-            if (this->poll_handlers_(s) != Verdict::Continue)
-                break;
+    BigInt run(cpu::Frame& frame, BigInt max_iter) {
+        if (max_iter < 0)
+            throw std::invalid_argument(
+                "Minimize iteration budget must be nonnegative");
+        try {
+            setup_pass(frame);
+            this->backend_->prepare_run();
+            // Enqueue only: the caller (the L-BFGS line search) judges the
+            // trial on the device, the force fault included.
+            this->backend_->context().opt.reeval_forces = [this](bool) {
+                const int phase = slot_of(ATV::minimizer::Phase::force);
+                this->backend_->execute_phases(0, phase, phase + 1);
+            };
+            // LAMMPS src/min.cpp Min::setup → Output::setup, e8c4c278a8
+            // (Copyright (2003) Sandia Corporation, GPL-2.0-only): the
+            // initial state is written as step 0; iteration s ends at
+            // completed iteration s + 1 (`++update->ntimestep`). The
+            // budget's last iteration is `update->laststep`: thermo prints
+            // it whatever the cadence (`samples_final_step`).
+            this->backend_->setup_output(0);
+            this->backend_->set_report_step(max_iter - 1);
+            BigInt iters = 0;
+            bool stopped = false;
+            for (BigInt s = 0; s < max_iter; ++s) {
+                this->mutable_outer_status().reset();
+                step_once(s);
+                ++iters;
+                if (this->poll_criteria_(s) != Verdict::Continue) {
+                    stopped = true;
+                    break;
+                }
+            }
+            this->backend_->set_report_step(-1);
+            // LAMMPS Min::run: a stop before MAXITER forces output of the
+            // final state (dumps and thermo, each unless already written).
+            // The verdict is host-side already; this enqueues device work
+            // and reads nothing back.
+            if (stopped)
+                this->backend_->final_output(iters);
+            teardown_pass(frame);
+            return iters;
+        } catch (...) {
+            // The backend ledger owns partial builds and reverse destruction.
+            if (this->backend_) {
+                try {
+                    this->backend_->shutdown();
+                } catch (...) {
+                }
+            }
+            this->built_plugins_.clear();
+            throw;
         }
-        teardown_pass(frame);
-        return iters;
     }
 
     /// set_evaluator / set_neighbor / set_observer / set_record come from
@@ -159,7 +200,7 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
     /// `min.add_criterion(cuda::ForceConverged{ftol, …})` before `build()`. Same rule and
     /// same defaults as `cpu::minimizer::Minimize`.
     void install_defaults() override {
-        if (!this->has_handler())
+        if (!this->has_convergence_criterion())
             this->add_criterion(cuda::ForceConverged{});
         const auto s = this->scan_pending_infra_();
         this->throw_if_missing_neighbor_list_(

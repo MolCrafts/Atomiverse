@@ -15,6 +15,10 @@
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/criteria.h"
+#include "atomiverse/cpu/driver/driver.h"
+#ifdef ATV_HAS_MINIMIZER
+#include "atomiverse/cpu/minimize/minimize.h"
+#endif
 #include "atomiverse/cpu/frame/frame.h"
 
 #include <limits>
@@ -38,8 +42,8 @@ class StopWhenTooHot : public cpu::Criterion {
         const int ndof = s.runtime.md.n_dof_global;
         if (ndof <= 0)
             return Verdict::Continue;
-        const double T =
-            2.0 * s.frame.meta.get(ATV::kKinetic) / (ndof * units::kB_ev_per_k);
+        const double T = 2.0 * s.frame.meta.get(ATV::kKinetic)
+                         / (ndof * units::UnitSystem::lj().boltz);
         return (T > t_max_) ? Verdict::Stop : Verdict::Continue;
     }
 
@@ -61,12 +65,7 @@ struct Harness {
 
 } // namespace
 
-/// The composition rule, stated once: Stop > Converged > Continue.
-///
-/// Stop outranks Converged and that ordering is load-bearing: a run that has
-/// gone numerically insane must not be able to report SUCCESS by also happening
-/// to satisfy a force tolerance. Silence would be better than a wrong answer; a
-/// wrong answer wearing a "converged" badge is the worst outcome available.
+/// The enum utility remains available to severity-based callers, including CUDA.
 TEST(CriterionTest, SeverityOrdering) {
     EXPECT_EQ(worse_of(Verdict::Continue, Verdict::Converged),
               Verdict::Converged);
@@ -74,9 +73,7 @@ TEST(CriterionTest, SeverityOrdering) {
     EXPECT_EQ(worse_of(Verdict::Stop, Verdict::Converged), Verdict::Stop);
     EXPECT_EQ(worse_of(Verdict::Continue, Verdict::Continue),
               Verdict::Continue);
-    // Idempotent, and order-independent — it is a max over severity, which is
-    // exactly what lets the driver reduce it across MPI ranks with a single
-    // MPI_MAX.
+    // Idempotent and order-independent. CPU convergence uses its own contract.
     EXPECT_EQ(worse_of(Verdict::Stop, Verdict::Stop), Verdict::Stop);
 }
 
@@ -181,11 +178,12 @@ TEST(CriterionTest, AUserCriterionCanReadTheFrame) {
 
     h.ctx.md.n_dof_global = 300;
     // KE for T = 300 K on 300 DOF: KE = Ndof kB T / 2
-    h.frame.meta.get(ATV::kKinetic) = 0.5 * 300 * units::kB_ev_per_k * 300.0;
+    h.frame.meta.get(ATV::kKinetic) =
+        0.5 * 300 * units::UnitSystem::lj().boltz * 300.0;
     EXPECT_EQ(crit.verdict(h.state(0)), Verdict::Continue);
 
     h.frame.meta.get(ATV::kKinetic) =
-        0.5 * 300 * units::kB_ev_per_k * 5000.0; // runaway
+        0.5 * 300 * units::UnitSystem::lj().boltz * 5000.0; // runaway
     EXPECT_EQ(crit.verdict(h.state(0)), Verdict::Stop);
 }
 
@@ -229,4 +227,165 @@ TEST(CriterionTest, StatusIsBorrowedByTheContextNotOwned) {
 
     EXPECT_EQ(ctx.loop.status, &outer_status);
     EXPECT_FALSE(outer_status.stop_requested);
+}
+
+namespace {
+class PollDriver : public cpu::Driver<ATV::md::Phase> {
+  public:
+    void validate_components() const override {}
+    using cpu::Driver<ATV::md::Phase>::poll_criteria_;
+    using cpu::Driver<ATV::md::Phase>::metrics;
+    using cpu::Driver<ATV::md::Phase>::mutable_outer_status;
+};
+
+class UndeclaredSuccess : public cpu::Criterion {
+  public:
+    std::string name() const override { return "undeclared_success"; }
+    void launch(const cpu::LaunchContext&) override {}
+    Verdict verdict(const cpu::LoopState&) override {
+        return Verdict::Converged;
+    }
+};
+} // namespace
+
+TEST(CriterionPoll, ForceAndPressureBothRequiredInEitherRegistrationOrder) {
+    for (bool reverse : {false, true}) {
+        PollDriver driver;
+        if (reverse) {
+            driver.add_criterion(cpu::PressureConverged{0, 0.1});
+            driver.add_criterion(cpu::ForceConverged{});
+        } else {
+            driver.add_criterion(cpu::ForceConverged{});
+            driver.add_criterion(cpu::PressureConverged{0, 0.1});
+        }
+        cpu::Frame frame(1);
+        frame.box = cpu::Box::cubic(1);
+        cpu::Context context;
+        // Atomic equilibrium alone does not imply cell equilibrium.
+        frame.meta.get(kStress)[0] = 3;
+        EXPECT_EQ(driver.poll_criteria_(0, frame, context), Verdict::Continue);
+        EXPECT_TRUE(driver.mutable_outer_status().reason.empty());
+        // Cell equilibrium alone does not imply atomic equilibrium.
+        frame.meta.get(kStress)[0] = 0;
+        driver.metrics().max_force = 1;
+        EXPECT_EQ(driver.poll_criteria_(1, frame, context), Verdict::Continue);
+        driver.metrics().max_force = 0;
+        EXPECT_EQ(driver.poll_criteria_(2, frame, context), Verdict::Converged);
+        EXPECT_TRUE(driver.mutable_outer_status().converged);
+    }
+}
+
+TEST(CriterionPoll, StopGuardIsNeutralUntilItStops) {
+    PollDriver driver;
+    driver.add_criterion(cpu::StopOnNaN{});
+    driver.add_criterion(cpu::ForceConverged{});
+    cpu::Frame frame(1);
+    cpu::Context context;
+    EXPECT_EQ(driver.poll_criteria_(0, frame, context), Verdict::Converged);
+    driver.metrics().energy = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_EQ(driver.poll_criteria_(1, frame, context), Verdict::Stop);
+    EXPECT_FALSE(driver.mutable_outer_status().converged);
+    EXPECT_EQ(driver.mutable_outer_status().reason, "stop_on_nan");
+}
+
+TEST(CriterionPoll, EmptyAndGuardOnlyLoopsDoNotConverge) {
+    PollDriver driver;
+    cpu::Frame frame(1);
+    cpu::Context context;
+    EXPECT_EQ(driver.poll_criteria_(0, frame, context), Verdict::Continue);
+    driver.add_criterion(StopWhenTooHot{1000});
+    EXPECT_FALSE(driver.has_convergence_criterion());
+    context.md.n_dof_global = 3;
+    EXPECT_EQ(driver.poll_criteria_(1, frame, context), Verdict::Continue);
+    frame.meta.get(kKinetic) = 3 * units::UnitSystem::lj().boltz * 1000;
+    EXPECT_EQ(driver.poll_criteria_(2, frame, context), Verdict::Stop);
+}
+
+TEST(CriterionPoll, PartialReplicaSuccessCannotBeBypassedByForceTolerance) {
+    PollDriver driver;
+    driver.add_criterion(cpu::ForceConverged{});
+    driver.add_criterion(cpu::AllReplicasConverged{});
+    cpu::Frame frame(1);
+    cpu::Context context;
+    driver.metrics().replicas_converged = 0.5;
+    EXPECT_EQ(driver.poll_criteria_(0, frame, context), Verdict::Continue);
+    driver.metrics().replicas_converged = 1;
+    EXPECT_EQ(driver.poll_criteria_(1, frame, context), Verdict::Converged);
+}
+
+TEST(CriterionPoll, GuardCannotDeclareSuccessfulConvergence) {
+    PollDriver driver;
+    driver.add_criterion(UndeclaredSuccess{});
+    cpu::Frame frame(1);
+    cpu::Context context;
+    EXPECT_THROW(driver.poll_criteria_(0, frame, context), std::logic_error);
+    EXPECT_FALSE(driver.mutable_outer_status().converged);
+}
+
+#ifdef ATV_HAS_MINIMIZER
+namespace {
+class DefaultsMinimize : public cpu::minimizer::Minimize {
+  public:
+    using cpu::minimizer::Minimize::install_defaults;
+    using cpu::minimizer::Minimize::metrics;
+    using cpu::minimizer::Minimize::poll_criteria_;
+    size_t criterion_count() const { return criteria_.size(); }
+};
+} // namespace
+
+TEST(CriterionPoll, MinimizeInstallsForceDefaultWhenOnlyGuardsExist) {
+    DefaultsMinimize driver;
+    driver.add_criterion(cpu::StopOnNaN{});
+    driver.install_defaults();
+    driver.install_defaults();
+    ASSERT_TRUE(driver.has_convergence_criterion());
+    EXPECT_EQ(driver.criterion_count(), 2u);
+    cpu::Frame frame(1);
+    cpu::Context context;
+    driver.metrics().max_force = 1;
+    EXPECT_EQ(driver.poll_criteria_(0, frame, context), Verdict::Continue);
+    driver.metrics().max_force = 0;
+    EXPECT_EQ(driver.poll_criteria_(1, frame, context), Verdict::Converged);
+}
+
+TEST(CriterionPoll, ExplicitRequirementSuppressesMinimizeDefault) {
+    DefaultsMinimize driver;
+    driver.add_criterion(cpu::PressureConverged{});
+    driver.install_defaults();
+    EXPECT_EQ(driver.criterion_count(), 1u);
+}
+#endif
+
+TEST(CriterionTest, CellCriteriaRejectNonfiniteParameters) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    for (double invalid : {nan, inf, -inf}) {
+        EXPECT_THROW((void)cpu::PressureConverged{invalid},
+                     std::invalid_argument);
+        EXPECT_THROW(cpu::PressureConverged(0, invalid), std::invalid_argument);
+        EXPECT_THROW((void)cpu::StressConverged{invalid},
+                     std::invalid_argument);
+        EXPECT_THROW(cpu::StressConverged(0, invalid), std::invalid_argument);
+    }
+}
+
+TEST(CriterionTest, NonfiniteCellObservablesStopInsteadOfConverging) {
+    Harness h;
+    h.frame.box = cpu::Box::cubic(10);
+    cpu::PressureConverged pressure;
+    cpu::StressConverged stress;
+    cpu::StressConverged x_only(0, 1e-4, true, false, false);
+    auto& virial = h.frame.meta.get(kStress);
+    for (double invalid : {std::numeric_limits<double>::quiet_NaN(),
+                           std::numeric_limits<double>::infinity()}) {
+        virial = {};
+        virial[1] = invalid;
+        EXPECT_EQ(pressure.verdict(h.state(0)), Verdict::Stop);
+        EXPECT_EQ(stress.verdict(h.state(0)), Verdict::Stop);
+        EXPECT_EQ(x_only.verdict(h.state(0)), Verdict::Converged);
+    }
+    virial = {};
+    h.frame.box = cpu::Box::cubic(1e200);
+    EXPECT_EQ(pressure.verdict(h.state(0)), Verdict::Stop);
+    EXPECT_EQ(stress.verdict(h.state(0)), Verdict::Stop);
 }

@@ -2,6 +2,10 @@
 /// @brief CPU Berendsen weak-coupling thermostat.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -59,8 +63,18 @@ namespace md {
 /// **not** as a conserved quantity: Berendsen dynamics does not come from a
 /// Hamiltonian, so a flat sum here is a diagnostic, not evidence of a good
 /// ensemble.
-class Berendsen : public cpu::Thermostat {
+class Berendsen : public cpu::Thermostat, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "Berendsen: timestep must be finite and positive");
+        dt_ = timestep;
+    }
+
     /// @param T_start Target / ramp-start temperature [K]; must be > 0.
     /// @param tau     Coupling time constant [fs]; must be > 0. (DFTB+ and
     ///                CP2K quote this in ps.)

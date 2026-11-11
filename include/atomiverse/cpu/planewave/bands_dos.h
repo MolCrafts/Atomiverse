@@ -1,17 +1,14 @@
 /// @file cpu/planewave/bands_dos.h
 /// @brief Band structure and density-of-states post-processing (CPU PW).
 ///
-/// After a self-consistent density is obtained from `cpu::pw::PW` members,
+/// After a self-consistent density is obtained from `cpu::pw::PW`,
 /// non-self-consistent diagonalization on a frozen \(V_\mathrm{eff}\) yields
 /// \(\varepsilon_n(\mathbf{k})\) (bands) and a Gaussian-broadened DOS.
 /// Parameters are members of `Bands` / `Dos` — no public `*Config` bag.
 ///
 /// @code
-///   cpu::pw::PW pw;
-///   pw.upf_path = "Si.upf";
-///   pw.ecut_ry = 15.0;
-///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::LSDA;
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf")}, /*ecut_ry=*/15.0,
+///                  /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///
 ///   cpu::pw::Bands bands;
 ///   bands.n_bands = 8;
@@ -68,13 +65,13 @@ struct BandsResult {
     int nspin = 1;
     /// \(N_\uparrow - N_\downarrow\) (fixed occupations; 0 when restricted).
     double magnetization = 0;
-    double e_vbm_ry = 0;        ///< Valence-band maximum [Ry].
-    double e_cbm_ry = 0;        ///< Conduction-band minimum [Ry].
-    double gap_ry = 0;          ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry].
-    int vbm_k = 0;              ///< k-index of VBM.
-    int cbm_k = 0;              ///< k-index of CBM.
-    int vbm_band = 0;           ///< Band index of VBM (0-based).
-    int cbm_band = 0;           ///< Band index of CBM (0-based).
+    double e_vbm_ry = 0; ///< Valence-band maximum [Ry].
+    double e_cbm_ry = 0; ///< Conduction-band minimum [Ry].
+    double gap_ry = 0;   ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry].
+    int vbm_k = 0;       ///< k-index of VBM.
+    int cbm_k = 0;       ///< k-index of CBM.
+    int vbm_band = 0;    ///< Band index of VBM (0-based).
+    int cbm_band = 0;    ///< Band index of CBM (0-based).
     /// Spin channel of VBM/CBM (0=α, 1=β); 0 when restricted.
     int vbm_spin = 0;
     int cbm_spin = 0;
@@ -105,9 +102,10 @@ struct DosResult {
     /// (target \(\approx n_e\)). For fixed occupations \(E_\ast=E_\mathrm{vbm}\);
     /// for metallic smearing \(E_\ast=E_F\) (`e_fermi_ry`).
     double n_elec_to_vbm = 0;
-    double e_vbm_ry = 0;  ///< Valence-band maximum [Ry] (fixed-occ / gapped).
-    double e_cbm_ry = 0;  ///< Conduction-band minimum [Ry].
-    double gap_ry = 0;    ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry] (0 if no empty).
+    double e_vbm_ry = 0; ///< Valence-band maximum [Ry] (fixed-occ / gapped).
+    double e_cbm_ry = 0; ///< Conduction-band minimum [Ry].
+    double gap_ry =
+        0; ///< \(E_\mathrm{cbm}-E_\mathrm{vbm}\) [Ry] (0 if no empty).
     double e_fermi_ry = 0; ///< Fermi level [Ry] (0 if fixed occupations).
     bool scf_converged = false;
     /// @brief SCF free energy \(F\) (smear) or total energy [Ry].

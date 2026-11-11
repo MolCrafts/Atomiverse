@@ -5,9 +5,12 @@
 /// Pure operator math for the Ewald reciprocal sum (P. P. Ewald, *Ann. Phys.*
 /// **369**, 253 (1921). DOI: 10.1002/andp.19213690304):
 ///
-///   E_recip = units::coulomb · (4π/V) Σ_{k∈½} exp(−k²/4α²)/k² · |S(k)|²
-///   E_self  = −units::coulomb · (α/√π) Σ_i q_i²
-///   E_corr  = −units::coulomb · π/(2 V α²) · (Σ_i q_i)²
+///   E_recip = qqrd2e · (4π/V) Σ_{k∈½} exp(−k²/4α²)/k² · |S(k)|²
+///   E_self  = −qqrd2e · (α/√π) Σ_i q_i²
+///   E_corr  = −qqrd2e · π/(2 V α²) · (Σ_i q_i)²
+///
+/// `qqrd2e` is the run's Coulomb constant (`set_qqrd2e`, LAMMPS
+/// `force->qqrd2e`; default 1, the lj row).
 ///
 /// with S(k) = Σ_j q_j exp(i k·r_j). The k-sum is over the **positive
 /// hemisphere** only (kz>0, or kz=0∧ky>0, or kz=ky=0∧kx>0), matching the
@@ -26,6 +29,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/units.h"
@@ -61,26 +65,30 @@ class EwaldSum {
 
     /// @brief Rebuild reciprocal-vector tables from the inverse cell.
     /// @param inv_cell Inverse of the real-space cell matrix [1/Å]
-    ///                 (Mat3 indexing: inv_cell(row, col)).
+    ///                 (Mat3 indexing: inv_cell(row, col); real cell columns are lattice vectors).
     /// @return true if any internal table capacity grew (reserve).
     bool rebuild(const Mat3& inv_cell) {
-        // Reciprocal basis b_i = 2π · (column i of cell⁻¹); g = Σ m_i b_i.
+        // Reciprocal basis b_i = 2π · (row i of cell⁻¹); g = Σ m_i b_i.
         const double tp = 2.0 * ATV::units::pi;
         double b[3][3];
         for (int i = 0; i < 3; ++i) {
-            b[i][0] = tp * inv_cell(0, i);
-            b[i][1] = tp * inv_cell(1, i);
-            b[i][2] = tp * inv_cell(2, i);
+            b[i][0] = tp * inv_cell(i, 0);
+            b[i][1] = tp * inv_cell(i, 1);
+            b[i][2] = tp * inv_cell(i, 2);
         }
-        auto blen = [&](int i) {
-            return std::sqrt(b[i][0] * b[i][0] + b[i][1] * b[i][1]
-                             + b[i][2] * b[i][2]);
-        };
+        const Mat3 cell = inv_cell.inverse();
         const double gcut = 2.0 * alpha_ * std::sqrt(-std::log(accuracy_));
         const double gcut2 = gcut * gcut;
         int kmax[3];
-        for (int i = 0; i < 3; ++i)
-            kmax[i] = std::max(1, static_cast<int>(std::ceil(gcut / blen(i))));
+        for (int i = 0; i < 3; ++i) {
+            // m_i = a_i dot G / (2*pi): reciprocal vector norms alone
+            // underestimate the integer range when basis vectors cancel.
+            const double a_norm =
+                std::sqrt(cell(0, i) * cell(0, i) + cell(1, i) * cell(1, i)
+                          + cell(2, i) * cell(2, i));
+            kmax[i] =
+                std::max(1, static_cast<int>(std::ceil(gcut * a_norm / tp)));
+        }
 
         const std::size_t max_vectors =
             static_cast<std::size_t>(2 * kmax[0] + 1)
@@ -190,7 +198,7 @@ class EwaldSum {
                     AccReal* fx, AccReal* fy, AccReal* fz) const {
         const int ng = static_cast<int>(kx_.size());
         // Half-sphere: energy prefactor is 4π k_e / V; force factor uses 2·ug.
-        const double K = ATV::units::coulomb * 4.0 * ATV::units::pi / volume;
+        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
         const double* __restrict kx = kx_.data();
         const double* __restrict ky = ky_.data();
         const double* __restrict kz = kz_.data();
@@ -220,8 +228,7 @@ class EwaldSum {
     /// @param qsq_sum Σ_i q_i² [e²].
     /// @return E_self [eV].
     double self_energy(double qsq_sum) const {
-        return -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi)
-               * qsq_sum;
+        return longrange::self_energy_prefactor(alpha_, qqrd2e_) * qsq_sum;
     }
 
     /// @brief Net-charge (background) correction [eV].
@@ -229,8 +236,7 @@ class EwaldSum {
     /// @param volume  Cell volume [Å³].
     /// @return E_corr [eV].
     double net_charge_energy(double q_total, double volume) const {
-        return -ATV::units::coulomb * ATV::units::pi
-               / (2.0 * volume * alpha_ * alpha_) * q_total * q_total;
+        return longrange::background_energy(q_total, volume, alpha_, qqrd2e_);
     }
 
     /// @brief Reciprocal energy and virial from global S(k).
@@ -243,7 +249,7 @@ class EwaldSum {
                                   double stress[6]) const {
         const int ng = static_cast<int>(kx_.size());
         // Half-sphere prefactor 4π k_e / V (see rebuild() hemisphere filter).
-        const double K = ATV::units::coulomb * 4.0 * ATV::units::pi / volume;
+        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
         const double* __restrict kx = kx_.data();
         const double* __restrict ky = ky_.data();
         const double* __restrict kz = kz_.data();
@@ -292,7 +298,12 @@ class EwaldSum {
                * sizeof(double);
     }
 
+    /// @brief The run's Coulomb constant (LAMMPS `force->qqrd2e`); the
+    ///        owning solver sets it at build from `ctx.runtime.units`.
+    void set_qqrd2e(double qqrd2e) { qqrd2e_ = qqrd2e; }
+
   private:
+    double qqrd2e_ = 1.0;
     double alpha_;
     double accuracy_;
     std::vector<double> kx_, ky_, kz_, kw_, kvterm_;

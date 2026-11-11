@@ -87,6 +87,27 @@ D4Result dftd4(const std::vector<int>& Z,
                double disp2_cut = 60.0, double s9 = 0.0,
                double disp3_cut = 40.0);
 
+/// @brief Isolated D4 energy and forces for caller-supplied atomic charges.
+///
+/// Self-consistent D4 (as in GFN2-xTB): the C6 charge scaling ζ reads the
+/// given charges instead of EEQ, so E_disp(q) can enter an SCC Fock through
+/// \(\partial E/\partial q_A\). Forces are \(-\partial E/\partial R\) at
+/// fixed q (BJ pair + CN\(_\mathrm{d4}\) chain; ATM at q = 0 when `s9 ≠ 0`).
+/// Charge model parameters are the dftd4 defaults (ga = 3, gc = 2, wf = 6).
+///
+/// @param Z        Atomic numbers (length N).
+/// @param pos_bohr Positions [Bohr].
+/// @param q        Atomic partial charges [e] (length N).
+/// @param s6,s8,a1,a2 BJ scales; a2 [Bohr].
+/// @param s9       ATM three-body scale (0 = off).
+/// @param dEdq     Output \(\partial E/\partial q_A\) [Hartree/e].
+/// @return Energy [Hartree] and forces at fixed q [Hartree/Bohr].
+D4Result dftd4_fixed_charges(const std::vector<int>& Z,
+                             const std::vector<std::array<double, 3>>& pos_bohr,
+                             const std::vector<double>& q, double s6, double s8,
+                             double a1, double a2, double s9,
+                             std::vector<double>& dEdq);
+
 /// @brief Molecular Grimme DFT-D4 with Becke–Johnson (rational) damping.
 ///
 /// Default parameters are the PBE-D4 set of Caldeweyher et al. (SAW190103
@@ -108,7 +129,7 @@ class D4 {
 
     /// @brief Dispersion energy for the Frame geometry.
     ///
-    /// Reads `kAtom_type` (atomic number Z) and `kAtom_x/y/z` [Å]. Isolated
+    /// Reads `kAtom_atomic_number` (atomic number Z) and `kAtom_x/y/z` [Å]. Isolated
     /// (non-periodic) evaluation — the Frame box is ignored. Unsupported Z
     /// (outside the in-tree D4 table, Z > 94 or no reference states) throws.
     ///

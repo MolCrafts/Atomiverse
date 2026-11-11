@@ -6,7 +6,7 @@
 #SBATCH -J atv-cpu
 
 # Parameterised CPU batch job: configure the full CPU product set, build, and
-# run the unit-test suite. Mirrors the login-shell recipe in CLAUDE.md, but as
+# run the unit-test suite. Mirrors the login-shell recipe in docs/developer/project-contract.md, but as
 # a batch job so a full build does not run on a shared login node.
 #
 # Submit from the repository root:
@@ -17,12 +17,19 @@
 #     tools/cpu_job.sh
 #
 # Environment knobs match tools/gpu_job.sh: ATV_CMAKE_FLAGS, ATV_TARGETS,
-# ATV_CTEST_RE, ATV_BUILD_DIR, ATV_KEEP_BUILD.
+# ATV_CTEST_RE (default: every unit test; a pattern matching nothing, e.g.
+# '^$', skips ctest),
+# ATV_BUILD_DIR, ATV_KEEP_BUILD, ATV_RUN (shell command after ctest in this
+# module env; ${BUILD} expands in it). A benchmark needs the whole node:
+#   sbatch -A <account> -n 256 --exclusive -t 02:00:00 \
+#     --export=ALL,ATV_CMAKE_FLAGS="-DATV_BUILD_BENCHMARKS=ON -DATV_USE_MPI=ON -DATV_BUILD_KSPACE=ON",ATV_TARGETS=run_atv_gaff,ATV_CTEST_RE='^$',GAFF_DATA_DIR=<dir>,ATV_RUN='benchmarks/compare/gaff-liquid/run_cpu_matrix.sh' \
+#     tools/cpu_job.sh
 
 set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-git submodule update --init --recursive molrs
+: "${ATV_MOLPY_PATH:=$PWD/../molpy}"
+export ATV_MOLPY_PATH
 
 module load buildenv-gcc/2026.03-mpich
 export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
@@ -57,8 +64,20 @@ else
 fi
 
 RC=0
-ctest --test-dir "${BUILD}" --output-on-failure -j8 \
-      ${ATV_CTEST_RE:+-R "${ATV_CTEST_RE}"} || RC=$?
+# Default: the unit tests. ATV_CTEST_RE selects by name instead (regression
+# cases are named <domain>/<case>).
+if [[ -n "${ATV_CTEST_RE:-}" ]]; then
+    ctest --test-dir "${BUILD}" --output-on-failure -j8 -R "${ATV_CTEST_RE}" || RC=$?
+else
+    ctest --test-dir "${BUILD}" --output-on-failure -j8 -LE regression || RC=$?
+fi
+
+if [[ -n "${ATV_RUN:-}" ]]; then
+    echo "=== ATV_RUN: ${ATV_RUN} ==="
+    # Stay in this shell's module env. A login shell would drop it.
+    export BUILD
+    bash -c "${ATV_RUN}" || RC=$?
+fi
 
 if [[ "${ATV_KEEP_BUILD:-0}" != "1" ]]; then
     rm -rf "${BUILD}"

@@ -10,27 +10,26 @@
 /// each kernel keeps one cache of fully-resolved local-index tuples and
 /// re-resolves only when the cache goes stale.
 ///
-/// **Staleness contract** (same one the NeighborList CSR relies on):
-/// - `DomainDecomposition::neighbor_generation` bumps on migration
-///   (owner rows reshuffled).
-/// - `DomainDecomposition::halo_generation` bumps on every halo *full
-///   rebuild* (ghost slots reshuffled). Position-only halo refreshes keep
-///   slot indices stable.
-/// - Single-rank: rows never move; the cache is built once (`n` guards
-///   driver re-binds to a different frame).
+/// **Staleness contract:** `Frame::row_revision()` changes whenever a row
+/// may hold a different atom — migration (`CommBrick::exchange`), ghost
+/// rebuilds (`borders`), spatial sort, MC insert/delete, rebinding — and
+/// stays put across position-only halo refreshes. Frame identity and the
+/// atom-block generation catch rebinding and topology/schema changes. The
+/// check is O(1); it replaced a per-step O(n_force) tag comparison.
 ///
-/// A tuple whose partner does not resolve on this rank (outside the halo)
-/// is dropped at cache-build time — identical semantics to the previous
-/// per-step `resolve() < 0` skip, except the drop tally advances once per
-/// rebuild instead of once per step.
+/// Missing partners are recorded while rebuilding; require_complete() checks
+/// every rank before the partial tuple set can be used for a force evaluation.
 #pragma once
 
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 namespace ATV {
 namespace cpu {
@@ -49,25 +48,35 @@ struct BondedTupleCache {
 
     /// @brief True when the cache must be rebuilt before use.
     /// @param ctx Launch context (reads `dd` generation counters).
-    bool stale(const cpu::LaunchContext& ctx) const noexcept {
-        const auto* dd = ctx.runtime.md.dd;
-        if (!built_)
-            return true;
-        if (dd == nullptr)
-            return false; // no DD: rows never move after first build
-        return dd->neighbor_generation != neigh_gen_
-               || dd->halo_generation != halo_gen_;
+    bool stale(const cpu::LaunchContext& ctx) const {
+        return !built_ || frame_ != &ctx.frame
+               || row_revision_ != ctx.frame.row_revision()
+               || block_generation_ != ctx.frame.block("atoms").generation();
     }
 
-    /// @brief Record the generation stamps of the build just performed.
-    /// @param ctx Launch context (reads `dd` generation counters).
-    void mark_built(const cpu::LaunchContext& ctx) noexcept {
-        const auto* dd = ctx.runtime.md.dd;
+    /// @brief Record the Frame and row identity used to resolve these tuples.
+    void mark_built(const cpu::LaunchContext& ctx) {
         built_ = true;
-        if (dd != nullptr) {
-            neigh_gen_ = dd->neighbor_generation;
-            halo_gen_ = dd->halo_generation;
-        }
+        frame_ = &ctx.frame;
+        row_revision_ = ctx.frame.row_revision();
+        block_generation_ = ctx.frame.block("atoms").generation();
+    }
+
+    /// @brief Fail together before any rank computes an incomplete force field.
+    /// Called by every rank even when its cache has no local tuples.
+    void require_complete(const cpu::LaunchContext& ctx,
+                          const char* kernel) const {
+        int missing = dropped_at_build != 0;
+#ifdef ATV_HAS_MPI
+        if (multi_rank_dd(ctx.runtime))
+            MPI_Allreduce(MPI_IN_PLACE, &missing, 1, MPI_INT, MPI_MAX,
+                          ctx.runtime.md.dd->cart_comm);
+#endif
+        if (missing)
+            throw std::runtime_error(
+                std::string(kernel)
+                + ": bonded partner is absent from owned/ghost rows; "
+                  "check topology tags and increase the communication halo");
     }
 
     /// @brief Drop contents and force a rebuild on next use.
@@ -76,11 +85,13 @@ struct BondedTupleCache {
         flat.shrink_to_fit();
         dropped_at_build = 0;
         built_ = false;
+        frame_ = nullptr;
     }
 
   private:
-    std::uint64_t neigh_gen_ = 0;
-    std::uint64_t halo_gen_ = 0;
+    const cpu::Frame* frame_ = nullptr;
+    std::uint64_t row_revision_ = 0;
+    std::uint64_t block_generation_ = 0;
     bool built_ = false;
 };
 

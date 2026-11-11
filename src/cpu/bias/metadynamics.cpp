@@ -104,18 +104,22 @@ void Metadynamics::launch(const LaunchContext& ctx) {
                               : nullptr);
     }
 
-    if (step_ > 0 && (step_ % pace_) == 0) {
+    if (!ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation && step_ > 0
+        && (step_ % pace_) == 0) {
         const double Vhere = bias_at_(last_s_);
         double h = h0_;
         if (gamma_ > 1.0) {
-            const double kT = units::kB_ev_per_k * temperature_;
+            const double kT = ctx.runtime.units.boltz * temperature_;
             h = h0_ * std::exp(-Vhere / ((gamma_ - 1.0) * kT));
         }
         for (int a = 0; a < n; ++a)
             centers_.push_back(last_s_[static_cast<std::size_t>(a)]);
         heights_.push_back(h);
     }
-    ++step_;
+    if (!ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation)
+        ++step_;
 
     last_u_ = bias_at_(last_s_);
     f.meta.get(kEnergy) += last_u_;

@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-d3-atm-stress/
+! Offline CP2K twin for regressions/gpw/d3/
 ! Never launched by ctest. Same geometry/settings as
 ! ../gpw-d3-atm-forces/water_dimer_d3_atm_per6_forces.inp (periodic 6 A cell,
 ! D3 zero damping, R_CUTOFF 10.0, CALCULATE_C9_TERM .TRUE.), plus NUMERICAL

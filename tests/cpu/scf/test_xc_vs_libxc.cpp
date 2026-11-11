@@ -1,9 +1,9 @@
 /// @file tests/cpu/scf/test_xc_vs_libxc.cpp
-/// @brief Point-level parity of native evaluate_xc() against the libxc oracle.
+/// @brief Point-level parity of native xc::evaluate_xc() against the libxc oracle.
 ///
 /// Iron rule (from libxc-xc-fix-03-native-parity spec): native XC output must
 /// match libxc to 1e-12 at every point of the curated battery, on every
-/// output channel (exc, vrho_alpha, vrho_beta; PBE adds vsigma_aa, vsigma_ab,
+/// output channel (energy_density, vrho_alpha, vrho_beta; PBE adds vsigma_aa, vsigma_ab,
 /// vsigma_bb). Any larger discrepancy is a bug in the native code -- not a
 /// "numerical difference". Fully-polarized points (one spin = 0) are not
 /// exempted: native code must handle the (1-zeta)^{-1/3} singularity the
@@ -12,16 +12,16 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cpu/scf/xc_internal.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_internal.h"
 #include "oracle/xc_libxc_oracle.h"
 
-using ATV::cpu::scf::b88_exchange_spin;
-using ATV::cpu::scf::evaluate_xc;
-using ATV::cpu::scf::lyp_correlation;
-using ATV::cpu::scf::vwn_rpa_correlation;
-using ATV::cpu::scf::XCOutput;
-using ATV::cpu::scf::XCType;
+using ATV::cpu::xc::b88_exchange_spin;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::lyp_correlation;
+using ATV::cpu::xc::vwn_rpa_correlation;
+using ATV::cpu::xc::XCOutput;
+using ATV::cpu::xc::XCType;
 using ATV::test::xc_oracle::evaluate_gga_c_lyp;
 using ATV::test::xc_oracle::evaluate_gga_x_b88;
 using ATV::test::xc_oracle::evaluate_lda_c_vwn_rpa;
@@ -66,10 +66,10 @@ constexpr DensityPoint kPoints[] = {
 constexpr double kSigmaValues[] = {0.0, 0.01, 0.1, 1.0};
 
 void expect_channel(double native, double oracle, const char* channel,
-                    const char* point_label) {
+                    const char* point_label, double abs_tol = kAbsTol) {
     double diff = std::abs(native - oracle);
     double scale = std::max(std::abs(native), std::abs(oracle));
-    double bound = std::max(kAbsTol, kRelTol * scale);
+    double bound = std::max(abs_tol, kRelTol * scale);
     EXPECT_LE(diff, bound) << "Channel " << channel << " mismatch at point '"
                            << point_label << "' (native=" << native
                            << ", oracle=" << oracle
@@ -77,16 +77,19 @@ void expect_channel(double native, double oracle, const char* channel,
                            << ", bound=" << bound << ")";
 }
 
-void compare_lsda(const XCOutput& native, const XCOutput& oracle,
-                  const char* label) {
-    expect_channel(native.exc, oracle.exc, "exc", label);
+void compare_lsda(const ATV::cpu::xc::XCOutput& native,
+                  const ATV::cpu::xc::XCOutput& oracle, const char* label,
+                  double rho) {
+    expect_channel(native.energy_density, oracle.energy_density,
+                   "energy_density", label, rho * kAbsTol);
     expect_channel(native.vrho_alpha, oracle.vrho_alpha, "vrho_alpha", label);
     expect_channel(native.vrho_beta, oracle.vrho_beta, "vrho_beta", label);
 }
 
-void compare_pbe(const XCOutput& native, const XCOutput& oracle,
-                 const char* label) {
-    compare_lsda(native, oracle, label);
+void compare_pbe(const ATV::cpu::xc::XCOutput& native,
+                 const ATV::cpu::xc::XCOutput& oracle, const char* label,
+                 double rho) {
+    compare_lsda(native, oracle, label, rho);
     expect_channel(native.vsigma_aa, oracle.vsigma_aa, "vsigma_aa", label);
     expect_channel(native.vsigma_ab, oracle.vsigma_ab, "vsigma_ab", label);
     expect_channel(native.vsigma_bb, oracle.vsigma_bb, "vsigma_bb", label);
@@ -98,9 +101,10 @@ void compare_pbe(const XCOutput& native, const XCOutput& oracle,
 
 TEST(XCvsLibxc, LsdaBattery) {
     for (const auto& pt : kPoints) {
-        XCOutput native = evaluate_xc(XCType::LSDA, pt.rho_a, pt.rho_b);
-        XCOutput oracle = evaluate_lsda(pt.rho_a, pt.rho_b);
-        compare_lsda(native, oracle, pt.label);
+        ATV::cpu::xc::XCOutput native = ATV::cpu::xc::evaluate_xc(
+            ATV::cpu::xc::XCType::LSDA, pt.rho_a, pt.rho_b);
+        ATV::cpu::xc::XCOutput oracle = evaluate_lsda(pt.rho_a, pt.rho_b);
+        compare_lsda(native, oracle, pt.label, pt.rho_a + pt.rho_b);
     }
 }
 
@@ -118,33 +122,35 @@ TEST(XCvsLibxc, PbeBattery) {
             std::snprintf(label, sizeof(label), "%s, sigma=%.2f", pt.label,
                           sigma_diag);
 
-            XCOutput native = evaluate_xc(XCType::PBE, pt.rho_a, pt.rho_b,
-                                          sigma_aa, sigma_ab, sigma_bb);
-            XCOutput oracle =
+            ATV::cpu::xc::XCOutput native = ATV::cpu::xc::evaluate_xc(
+                ATV::cpu::xc::XCType::PBE, pt.rho_a, pt.rho_b, sigma_aa,
+                sigma_ab, sigma_bb);
+            ATV::cpu::xc::XCOutput oracle =
                 evaluate_pbe(pt.rho_a, pt.rho_b, sigma_aa, sigma_ab, sigma_bb);
-            compare_pbe(native, oracle, label);
+            compare_pbe(native, oracle, label, pt.rho_a + pt.rho_b);
         }
     }
 }
 
 // ── VWN-RPA: libxc XC_LDA_C_VWN_RPA (id 8) ──
 //
-// vwn_rpa_correlation returns ec (energy per electron) and the per-spin
-// LDA potential vc_a, vc_b == d(rho*ec)/drho_sigma. libxc id 8 returns
-// exc and vrho in exactly that convention.
+// vwn_rpa_correlation returns f_c [Hartree/Bohr^3] and the per-spin
+// LDA potential vc_a, vc_b == df_c/drho_sigma. The oracle converts
+// libxc id8 epsilon to f_c using the physical total density.
 
 TEST(XCvsLibxc, VwnRpaBattery) {
     for (const auto& pt : kPoints) {
-        double ec, vc_a, vc_b;
-        vwn_rpa_correlation(pt.rho_a, pt.rho_b, ec, vc_a, vc_b);
+        double fc, vc_a, vc_b;
+        vwn_rpa_correlation(pt.rho_a, pt.rho_b, fc, vc_a, vc_b);
 
-        XCOutput native{};
-        native.exc = ec;
+        ATV::cpu::xc::XCOutput native{};
+        native.energy_density = fc;
         native.vrho_alpha = vc_a;
         native.vrho_beta = vc_b;
 
-        XCOutput oracle = evaluate_lda_c_vwn_rpa(pt.rho_a, pt.rho_b);
-        compare_lsda(native, oracle, pt.label);
+        ATV::cpu::xc::XCOutput oracle =
+            evaluate_lda_c_vwn_rpa(pt.rho_a, pt.rho_b);
+        compare_lsda(native, oracle, pt.label, pt.rho_a + pt.rho_b);
     }
 }
 
@@ -172,27 +178,25 @@ TEST(XCvsLibxc, B88Battery) {
             b88_exchange_spin(pt.rho_a, sigma_aa, ex_a, vrho_a, vsigma_aa);
             b88_exchange_spin(pt.rho_b, sigma_bb, ex_b, vrho_b, vsigma_bb);
 
-            const double rho = pt.rho_a + pt.rho_b;
-            XCOutput native{};
-            native.exc = (ex_a + ex_b) / rho;
+            ATV::cpu::xc::XCOutput native{};
+            native.energy_density = ex_a + ex_b;
             native.vrho_alpha = vrho_a;
             native.vrho_beta = vrho_b;
             native.vsigma_aa = vsigma_aa;
             native.vsigma_ab = 0.0;
             native.vsigma_bb = vsigma_bb;
 
-            XCOutput oracle = evaluate_gga_x_b88(pt.rho_a, pt.rho_b, sigma_aa,
-                                                 sigma_ab, sigma_bb);
-            compare_pbe(native, oracle, label);
+            ATV::cpu::xc::XCOutput oracle = evaluate_gga_x_b88(
+                pt.rho_a, pt.rho_b, sigma_aa, sigma_ab, sigma_bb);
+            compare_pbe(native, oracle, label, pt.rho_a + pt.rho_b);
         }
     }
 }
 
 // ── LYP correlation: libxc XC_GGA_C_LYP (id 131) ──
 //
-// lyp_correlation is the full spin-polarized GGA correlation: returns ec
-// (energy per electron) and all six potential channels in the libxc
-// d(rho*ec)/d{rho,sigma} convention.
+// lyp_correlation returns f_c [Hartree/Bohr^3] and its five density/gradient
+// derivatives. Only the external oracle converts libxc epsilon to f_c.
 
 TEST(XCvsLibxc, LypBattery) {
     for (const auto& pt : kPoints) {
@@ -205,21 +209,21 @@ TEST(XCvsLibxc, LypBattery) {
             std::snprintf(label, sizeof(label), "%s, sigma=%.2f", pt.label,
                           sigma_diag);
 
-            double ec, vc_a, vc_b, vsigma_aa, vsigma_ab, vsigma_bb;
+            double fc, vc_a, vc_b, vsigma_aa, vsigma_ab, vsigma_bb;
             lyp_correlation(pt.rho_a, pt.rho_b, sigma_aa, sigma_ab, sigma_bb,
-                            ec, vc_a, vc_b, vsigma_aa, vsigma_ab, vsigma_bb);
+                            fc, vc_a, vc_b, vsigma_aa, vsigma_ab, vsigma_bb);
 
-            XCOutput native{};
-            native.exc = ec;
+            ATV::cpu::xc::XCOutput native{};
+            native.energy_density = fc;
             native.vrho_alpha = vc_a;
             native.vrho_beta = vc_b;
             native.vsigma_aa = vsigma_aa;
             native.vsigma_ab = vsigma_ab;
             native.vsigma_bb = vsigma_bb;
 
-            XCOutput oracle = evaluate_gga_c_lyp(pt.rho_a, pt.rho_b, sigma_aa,
-                                                 sigma_ab, sigma_bb);
-            compare_pbe(native, oracle, label);
+            ATV::cpu::xc::XCOutput oracle = evaluate_gga_c_lyp(
+                pt.rho_a, pt.rho_b, sigma_aa, sigma_ab, sigma_bb);
+            compare_pbe(native, oracle, label, pt.rho_a + pt.rho_b);
         }
     }
 }
@@ -227,10 +231,11 @@ TEST(XCvsLibxc, LypBattery) {
 // ── Density cutoff: native and libxc both return zero below kRhoMin ──
 
 TEST(XCvsLibxc, DensityCutoff) {
-    XCOutput native = evaluate_xc(XCType::LSDA, 1e-14, 1e-14);
-    XCOutput oracle = evaluate_lsda(1e-14, 1e-14);
-    EXPECT_DOUBLE_EQ(native.exc, 0.0);
-    EXPECT_DOUBLE_EQ(oracle.exc, 0.0);
+    ATV::cpu::xc::XCOutput native =
+        ATV::cpu::xc::evaluate_xc(ATV::cpu::xc::XCType::LSDA, 1e-14, 1e-14);
+    ATV::cpu::xc::XCOutput oracle = evaluate_lsda(1e-14, 1e-14);
+    EXPECT_DOUBLE_EQ(native.energy_density, 0.0);
+    EXPECT_DOUBLE_EQ(oracle.energy_density, 0.0);
     EXPECT_DOUBLE_EQ(native.vrho_alpha, 0.0);
     EXPECT_DOUBLE_EQ(oracle.vrho_alpha, 0.0);
 }

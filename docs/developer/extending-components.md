@@ -8,7 +8,7 @@ practical guide to doing that without fighting the architecture.
 Before writing code, decide which of these categories your change belongs to.
 
 If the new feature is part of the staged runtime loop on the GPU, it should be a
-CUDA component under `include/atomiverse/cuda` and `src/cuda`.
+CUDA component under `cuda` and `src/cuda`.
 
 If the feature is host-side analysis, formatting, file output, or a reference
 solver that works naturally with xtensor, it usually belongs under `cpu` as a
@@ -43,25 +43,31 @@ component may size work buffers.
 Use `launch()` for the repeated work only. In the CUDA backend, this should be
 the part you would still want to run one million times. Hidden allocation,
 device-to-host transfers, and synchronization in `launch()` are almost always a
-design mistake unless the component is explicitly an async bridge.
+design mistake; host-side output belongs in an asynchronous consumer.
 
 Use `destroy()` for cleanup only. Free what you allocated in `build()`, and do
 not assume components are destroyed in the same order they were built. The
 backend tears them down in reverse plan order.
 
-## Step 4: Decide Whether You Need `AsyncBridge`
+## Step 4: Decide Whether You Need `AsyncConsumer`
 
-If your component needs to move a small amount of data from the GPU to the CPU
-and then perform host-side logic, do not reimplement the defer-stream plumbing
-yourself. Use `AsyncBridge`.
+If your component needs state from each step on the CPU and then performs
+host-side logic, do not reimplement any copy, ring or worker plumbing
+yourself. Derive from `AsyncConsumer` (`cuda::AsyncObserver` /
+`cuda::AsyncRecorder`, `cpu::md::AsyncObserver`): declare the columns you
+read (`capture_columns()`, plus a device payload block if you need one) and
+your cadence (`frequency()`), and implement `consume` / `on_snapshot`, which
+runs on your own worker thread with an immutable copy of the step.
 
 That is the right tool for observers and recorders whose real logic is CPU-side:
 thermo printing, trajectory writing, RDF accumulation, Mulliken analysis, and
-similar post-processing tasks.
+similar post-processing tasks. The driver's shared capture buffer captures
+each step once for every consumer due on it, is lossless (a full buffer makes
+the run wait), and stops the run with your error if `consume` throws.
 
 The split should look like this:
 
-1. CUDA subclass manages the async copy boundary.
+1. The consumer subclass declares what it reads and when.
 2. CPU helper owns formatting, analysis, or file writing.
 
 This keeps GPU orchestration and host logic separate and makes the code much
@@ -74,7 +80,7 @@ clear way to use it and a regression test that protects it.
 
 The normal checklist is:
 
-1. Add or update the public header under `include/atomiverse/...`
+1. Add or update the public header under `...`
 2. Implement the source file under `src/...`
 3. Add a runnable example if the feature is user-facing
 4. Add a test under `tests`
@@ -105,6 +111,6 @@ Before opening a pull request, make sure you can answer yes to these questions.
 
 1. Does the component have a clearly justified phase and ordering?
 2. Does `launch()` avoid one-time work that belongs in `build()`?
-3. If the component crosses the GPU-to-CPU boundary, does it use `AsyncBridge`?
+3. If the component crosses the GPU-to-CPU boundary, is it an `AsyncConsumer`?
 4. Is there at least one example or test showing how the feature is meant to be used?
 5. Did you update the documentation entry point that a new contributor would read first?

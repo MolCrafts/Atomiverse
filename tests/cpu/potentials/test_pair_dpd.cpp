@@ -102,9 +102,11 @@ cpu::Frame make_dpd_dimer() {
 ///              dissipative and the random term off (σ = √(2γk_BT)).
 /// @param step  Loop step handed to `launch` [count].
 /// @return `{fx, fy, fz}` on atom 0 [eV/Å].
-std::array<double, 3> dpd_force_at_step(double gamma, int step) {
+std::array<double, 3> dpd_force_at_step(double gamma, int step,
+                                        bool initializing = false) {
     cpu::Frame f = make_dpd_dimer();
     cpu::Context ctx;
+    ctx.exec.initializing_forces = initializing;
     cpu::PairDpd dpd(kA, gamma, kT, kRc, kDt, kSeed);
     dpd.build({ctx, f});
     dpd.launch({ctx, f, /*stage=*/0, step});
@@ -150,4 +152,62 @@ TEST(PairDpd, RandomForcesAdvanceWithDriverStep) {
     // …and that control is itself non-vacuous: the conservative force is
     // live, so "equal" is not "both zero".
     EXPECT_GT(std::abs(quiet0[0]), 1e-9);
+}
+
+TEST(PairDpd, SetupNoiseIsDistinctRepeatableAndUsesPreviousCompletedStep) {
+    const auto setup = dpd_force_at_step(1.0, 0, true);
+    EXPECT_EQ(setup, dpd_force_at_step(1.0, 0, true));
+    EXPECT_NE(setup, dpd_force_at_step(1.0, 0));
+    EXPECT_EQ(setup, dpd_force_at_step(1.0, -1));
+    EXPECT_EQ(dpd_force_at_step(1.0, 7, true), dpd_force_at_step(1.0, 6));
+    // With the thermostat disabled, setup cannot alter conservative forces.
+    EXPECT_EQ(dpd_force_at_step(0.0, 0, true), dpd_force_at_step(0.0, 0));
+}
+
+TEST(PairDpd, DissipativeForceRemovesRelativeKineticEnergy) {
+    auto moving = make_dpd_dimer();
+    auto stationary = moving;
+    for (int i = 0; i < 2; ++i)
+        stationary.span(kAtom_vx)[i] = stationary.span(kAtom_vy)[i] =
+            stationary.span(kAtom_vz)[i] = 0;
+    cpu::Context ctx;
+    cpu::PairDpd pair(0.0, 2.0, kT, kRc, kDt, kSeed);
+    pair.build({ctx, moving});
+    pair.launch({ctx, moving, 0, 3});
+    pair.launch({ctx, stationary, 0, 3});
+    // Same tags, geometry, step and seed cancel the random force exactly.
+    double work = 0;
+    for (int i = 0; i < 2; ++i) {
+        work += (moving.span(kAtom_fx)[i] - stationary.span(kAtom_fx)[i])
+                * moving.span(kAtom_vx)[i];
+        work += (moving.span(kAtom_fy)[i] - stationary.span(kAtom_fy)[i])
+                * moving.span(kAtom_vy)[i];
+        work += (moving.span(kAtom_fz)[i] - stationary.span(kAtom_fz)[i])
+                * moving.span(kAtom_vz)[i];
+    }
+    EXPECT_LT(work, -1e-6);
+    pair.destroy({ctx, moving});
+}
+
+TEST(PairDpd, RowPermutationAndTimestepConsumerPreservePhysicalIdentity) {
+    auto f = make_dpd_dimer();
+    auto reversed = f;
+    reversed.copy_row_from(f, 0, 1);
+    reversed.copy_row_from(f, 1, 0);
+    cpu::Context ctx;
+    cpu::PairDpd pair(kA, 1.0, kT, kRc, kDt, kSeed);
+    cpu::PairDpd reference(kA, 1.0, kT, kRc, 2 * kDt, kSeed);
+    ASSERT_NE(pair.as_timestep_consumer(), nullptr);
+    pair.as_timestep_consumer()->set_timestep(2 * kDt);
+    pair.build({ctx, f});
+    reference.build({ctx, reversed});
+    pair.launch({ctx, f, 0, 11});
+    reference.launch({ctx, reversed, 0, 11});
+    for (int i = 0; i < 2; ++i) {
+        EXPECT_DOUBLE_EQ(f.span(kAtom_fx)[i], reversed.span(kAtom_fx)[1 - i]);
+        EXPECT_DOUBLE_EQ(f.span(kAtom_fy)[i], reversed.span(kAtom_fy)[1 - i]);
+        EXPECT_DOUBLE_EQ(f.span(kAtom_fz)[i], reversed.span(kAtom_fz)[1 - i]);
+    }
+    pair.destroy({ctx, f});
+    reference.destroy({ctx, reversed});
 }

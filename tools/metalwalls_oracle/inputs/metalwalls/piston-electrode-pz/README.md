@@ -79,4 +79,4 @@ converge"*). `perf_exempt: true`, reason recorded in REFERENCE.md.
 
 ## Numbers live in
 
-`regressions/md/piston-electrode-pz/REFERENCE.md`
+`regressions/md/constant-potential/REFERENCE.md`

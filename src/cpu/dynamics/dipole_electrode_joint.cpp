@@ -140,16 +140,16 @@ double DipoleElectrodeJoint::alpha_of_(int type) const {
 double DipoleElectrodeJoint::pair_A_(double r, double eta_i,
                                      double eta_j) const {
     if (r < 1e-14)
-        return units::coulomb * eta_i * kSqrt2OverPi;
+        return qqrd2e_ * eta_i * kSqrt2OverPi;
     const double etaij =
         eta_i * eta_j / std::sqrt(eta_i * eta_i + eta_j * eta_j);
-    return units::coulomb * std::erf(etaij * r) / r;
+    return qqrd2e_ * std::erf(etaij * r) / r;
 }
 
 double DipoleElectrodeJoint::pair_b_(double r, double q, double eta_i) const {
     if (r < 1e-14)
         return 0.0;
-    return units::coulomb * q * std::erf(eta_i * r) / r;
+    return qqrd2e_ * q * std::erf(eta_i * r) / r;
 }
 
 void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
@@ -159,7 +159,8 @@ void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
     const int n = frame.nlocal();
     auto type = frame.span(kAtom_type);
     is_elec_.assign(static_cast<std::size_t>(n), 0);
-    for (int i = 0; i < n; ++i) {
+    // Tag order: the site order must survive atom sorting (ElectrodeRows).
+    for (int i : ElectrodeRows::owned_by_tag(frame)) {
         for (std::size_t g = 0; g < groups_.size(); ++g) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
@@ -170,6 +171,7 @@ void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
             }
         }
     }
+    sites_.bind(frame, elec_atoms_);
     const int m = static_cast<int>(elec_atoms_.size());
     Q_.assign(static_cast<std::size_t>(m), 0.0);
     b_.assign(static_cast<std::size_t>(m), 0.0);
@@ -192,8 +194,7 @@ void DipoleElectrodeJoint::build_matrix_(const cpu::Frame& frame) {
     std::fill(A_.begin(), A_.end(), 0.0);
     for (int a = 0; a < m; ++a) {
         const int ia = elec_atoms_[static_cast<std::size_t>(a)];
-        A_[static_cast<std::size_t>(a) * m + a] =
-            units::coulomb * eta * kSqrt2OverPi;
+        A_[static_cast<std::size_t>(a) * m + a] = qqrd2e_ * eta * kSqrt2OverPi;
 
         for (int b = a + 1; b < m; ++b) {
             const int ib = elec_atoms_[static_cast<std::size_t>(b)];
@@ -231,8 +232,7 @@ void DipoleElectrodeJoint::build_matrix_(const cpu::Frame& frame) {
                         continue;
                     const double r = std::sqrt((nx * Lx) * (nx * Lx)
                                                + (ny * Ly) * (ny * Ly));
-                    self_img +=
-                        units::coulomb * std::erf((eta / kSqrt2) * r) / r;
+                    self_img += qqrd2e_ * std::erf((eta / kSqrt2) * r) / r;
                 }
             }
             A_[static_cast<std::size_t>(a) * m + a] += self_img;
@@ -253,7 +253,7 @@ void DipoleElectrodeJoint::build_rhs_(const Spans& s,
     const double Lx = box.length(0);
     const double Ly = box.length(1);
     const int R = xy_image_range < 0 ? 0 : xy_image_range;
-    const double k = units::coulomb;
+    const double k = qqrd2e_;
 
     std::fill(b_.begin(), b_.end(), 0.0);
     for (int a = 0; a < m; ++a) {
@@ -545,6 +545,7 @@ double DipoleElectrodeJoint::scc_mu_(const Spans& s) {
 }
 
 void DipoleElectrodeJoint::build(const BuildContext& ctx) {
+    qqrd2e_ = ctx.runtime.units.qqrd2e();
     if (groups_.empty())
         throw std::runtime_error(
             "DipoleElectrodeJoint: add at least one electrode via "
@@ -568,6 +569,18 @@ void DipoleElectrodeJoint::launch(const LaunchContext& ctx) {
         collect_electrodes_(ctx.frame);
         build_matrix_(ctx.frame);
         matrix_ready_ = true;
+    }
+    {
+        // Rows moved (sort / migration): re-resolve the sites, re-mark the
+        // electrode rows, and drop the row-indexed dipole warm start.
+        const std::vector<int> before = elec_atoms_;
+        sites_.refresh(ctx, elec_atoms_, "DipoleElectrodeJoint");
+        if (elec_atoms_ != before) {
+            std::fill(is_elec_.begin(), is_elec_.end(), 0);
+            for (int ia : elec_atoms_)
+                is_elec_[static_cast<std::size_t>(ia)] = 1;
+            std::fill(last_mu_.begin(), last_mu_.end(), 0.0);
+        }
     }
 
     // Resolve Frame columns once per launch (resolution budget).
@@ -614,13 +627,12 @@ void DipoleElectrodeJoint::launch(const LaunchContext& ctx) {
 }
 
 void DipoleElectrodeJoint::destroy(const DestroyContext&) {
+    // Release the elastance only; the last joint solution (charges, dipoles,
+    // convergence) stays readable after the driver is gone, as for
+    // ConstPotBO. build() resets it.
     matrix_ready_ = false;
-    elec_atoms_.clear();
     A_.clear();
-    Q_.clear();
-    last_mu_.clear();
-    last_joint_iters_ = 0;
-    last_joint_converged_ = false;
+    A_.shrink_to_fit();
 }
 
 double DipoleElectrodeJoint::total_charge(std::size_t ie) const {

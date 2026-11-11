@@ -1,8 +1,8 @@
 /// @file core/driver_template_impl.h
 /// @brief Driver method definitions -- shared between CPU and CUDA instantiation units.
 ///
-/// Uses if constexpr to branch by DeviceTag. Discarded branches are not
-/// instantiated, so backend-specific methods (materialize vs set_frame) are safe.
+/// Backend traits own materialization, execution and retrieval. The shared
+/// driver owns registration and delegates execution through that contract.
 ///
 /// Include this file in BOTH src/cpu/driver/driver.cpp AND src/cuda/driver/driver.cu,
 /// then provide the explicit instantiations for the appropriate DeviceTag.
@@ -16,38 +16,15 @@
 namespace ATV {
 
 template <typename PhaseEnum, typename DeviceTag>
-void Driver<PhaseEnum, DeviceTag>::run(cpu::Frame& frame, int n_steps) {
+void Driver<PhaseEnum, DeviceTag>::run(frame_type& frame, int n_steps) {
     if (!backend_)
         backend_ = std::make_unique<BackendT>();
-    backend_->init();
-
-    if constexpr (std::is_same_v<DeviceTag, cpu::device_tag>) {
-        // CPU path: zero-copy, operate directly on user's Frame
-        backend_->load(plan_);
-        backend_->set_frame(frame);
-    } else {
-        // CUDA path: transfer to device
-        if (timer_)
-            backend_->set_timer(timer_.get());
-        backend_->load(plan_);
-        backend_->materialize(frame);
-    }
-
-    backend_->build_components();
-    backend_->run(n_steps);
-    backend_->destroy_components();
-
-    if constexpr (!std::is_same_v<DeviceTag, cpu::device_tag>) {
-        // CUDA path: retrieve results to host
-        backend_->retrieve(frame);
-    }
-
-    backend_->shutdown();
+    traits::run(*backend_, frame, plan_, timer_.get(), units_, n_steps);
 }
 
 template <typename PhaseEnum, typename DeviceTag>
 void Driver<PhaseEnum, DeviceTag>::enable_timing() {
-    if constexpr (!std::is_same_v<DeviceTag, cpu::device_tag>) {
+    if constexpr (traits::has_device_timing) {
         if (!timer_) {
             timer_ = std::make_unique<Timer>();
             timer_->init();
@@ -58,7 +35,7 @@ void Driver<PhaseEnum, DeviceTag>::enable_timing() {
 
 template <typename PhaseEnum, typename DeviceTag>
 std::string Driver<PhaseEnum, DeviceTag>::summary() const {
-    if constexpr (!std::is_same_v<DeviceTag, cpu::device_tag>) {
+    if constexpr (traits::has_device_timing) {
         if (!timer_)
             return "";
         auto names = phase_names(PhaseEnum{});
@@ -70,11 +47,16 @@ std::string Driver<PhaseEnum, DeviceTag>::summary() const {
 
 template <typename PhaseEnum, typename DeviceTag>
 void Driver<PhaseEnum, DeviceTag>::shutdown() {
+    require_mutable_();
     if (backend_) {
         backend_->shutdown();
         backend_.reset();
     }
-    if constexpr (!std::is_same_v<DeviceTag, cpu::device_tag>) {
+    // The bound system is released: like LAMMPS `clear`, a new style may be
+    // selected for the next run.
+    units_bound_ = false;
+    mutation_lock_ = nullptr;
+    if constexpr (traits::has_device_timing) {
         if (timer_) {
             timer_->shutdown();
             timer_.reset();

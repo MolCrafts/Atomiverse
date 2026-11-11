@@ -44,7 +44,7 @@ cpu::Frame two_sheet_plate(double Q = 1.0) {
 
 TEST(PotentialProfile, ParallelPlateMidGapFieldAndDrop) {
     // Offline pin (REFERENCE.md): σ = 0.01 e/Å², E = 4π ke σ
-    constexpr double ke = units::coulomb;
+    constexpr double ke = units::UnitSystem::lj().qqrd2e();
     constexpr double four_pi_ke = 4.0 * units::pi * ke;
     constexpr double A = 100.0;
     constexpr double sigma = 1.0 / A;

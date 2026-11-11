@@ -7,11 +7,14 @@
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/gpw/internal/collocate.h"
-#include "atomiverse/cpu/gpw/internal/one_electron.h"
+#include "atomiverse/cpu/gpw/internal/kpoints.h"
 #include "atomiverse/cpu/gpw/internal/periodic.h"
 
+#include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -20,10 +23,11 @@ namespace ATV {
 namespace cpu {
 namespace gpw {
 
+using internal::GpwAtom;
+
 namespace {
 
 using Cdouble = std::complex<double>;
-constexpr Cdouble I{0.0, 1.0};
 constexpr double kTwoPi = 6.283185307179586476925286766559;
 
 /// Determinant of a dense complex n x n matrix (in-place LU, partial pivot).
@@ -57,98 +61,6 @@ Cdouble det_lu(std::vector<Cdouble>& a, int n) {
         }
     }
     return det;
-}
-
-/// ⟨a|e^{-i b·r}|b⟩ for Cartesian Gaussian primitives (product-center phase).
-Cdouble prim_overlap_phase(const GridPrimitive& a, const GridPrimitive& b,
-                           const double bvec[3]) {
-    const double s = prim_overlap(a, b);
-    if (s == 0.0)
-        return Cdouble{0.0, 0.0};
-    const double p = a.alpha + b.alpha;
-    if (!(p > 0.0))
-        return Cdouble{s, 0.0};
-    const double Rp[3] = {(a.alpha * a.center[0] + b.alpha * b.center[0]) / p,
-                          (a.alpha * a.center[1] + b.alpha * b.center[1]) / p,
-                          (a.alpha * a.center[2] + b.alpha * b.center[2]) / p};
-    const double b2 =
-        bvec[0] * bvec[0] + bvec[1] * bvec[1] + bvec[2] * bvec[2];
-    const double phase =
-        bvec[0] * Rp[0] + bvec[1] * Rp[1] + bvec[2] * Rp[2];
-    const double damp = std::exp(-b2 / (4.0 * p));
-    return Cdouble{s, 0.0} * damp * std::exp(-I * phase);
-}
-
-/// Cross-k AO overlap S^{k, k+b}_{μν} = Σ_T e^{i q·T} ⟨φ_μ|e^{-ib·r}|φ_ν^T⟩
-/// with q = k+b (phase on ket image) and b = q−k.
-void build_S_cross(const std::vector<GridBasisFunction>& basis,
-                   const std::vector<double>& radii, const double L[3],
-                   const int m[3], double screen,
-                   const std::array<double, 3>& k_frac_nb,
-                   const double b_bohr[3], int nb,
-                   std::vector<Cdouble>& S /* nb*nb row-major */) {
-    S.assign(static_cast<std::size_t>(nb * nb), Cdouble{0, 0});
-    for (int i = 0; i < nb; ++i) {
-        const auto& a = basis[static_cast<std::size_t>(i)];
-        if (a.empty())
-            continue;
-        for (int j = 0; j < nb; ++j) {
-            const auto& b = basis[static_cast<std::size_t>(j)];
-            if (b.empty())
-                continue;
-            double best = 0.0;
-            for (const auto& p : a)
-                for (const auto& q : b) {
-                    double d2 = 0.0;
-                    for (int d = 0; d < 3; ++d) {
-                        double e = p.center[d] - q.center[d];
-                        if (L[d] > 0.0)
-                            e -= L[d] * std::nearbyint(e / L[d]);
-                        d2 += e * e;
-                    }
-                    best = std::max(
-                        best, std::abs(p.coeff * q.coeff)
-                                  * std::exp(-p.alpha * q.alpha
-                                             / (p.alpha + q.alpha) * d2));
-                }
-            if (best < screen)
-                continue;
-            const double reach =
-                radii[static_cast<std::size_t>(i)]
-                + radii[static_cast<std::size_t>(j)];
-            const double reach2 = reach * reach;
-            const double* ac = a[0].center;
-            const double* bc = b[0].center;
-            Cdouble s{0, 0};
-            for (int tx = -m[0]; tx <= m[0]; ++tx)
-                for (int ty = -m[1]; ty <= m[1]; ++ty)
-                    for (int tz = -m[2]; tz <= m[2]; ++tz) {
-                        const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
-                        const double dx = ac[0] - bc[0] - T[0];
-                        const double dy = ac[1] - bc[1] - T[1];
-                        const double dz = ac[2] - bc[2] - T[2];
-                        if (dx * dx + dy * dy + dz * dz > reach2)
-                            continue;
-                        const double arg =
-                            kTwoPi
-                            * (k_frac_nb[0] * static_cast<double>(tx)
-                               + k_frac_nb[1] * static_cast<double>(ty)
-                               + k_frac_nb[2] * static_cast<double>(tz));
-                        const Cdouble phase(std::cos(arg), std::sin(arg));
-                        Cdouble local{0, 0};
-                        for (const auto& pa : a)
-                            for (const auto& pb : b) {
-                                GridPrimitive q = pb;
-                                q.center[0] += T[0];
-                                q.center[1] += T[1];
-                                q.center[2] += T[2];
-                                local += prim_overlap_phase(pa, q, b_bohr);
-                            }
-                        s += phase * local;
-                    }
-            S[static_cast<std::size_t>(i * nb + j)] = s;
-        }
-    }
 }
 
 /// M = C†(k) S_cross C(k+b); C is nb × n_occ (columns = occupied MOs).
@@ -195,8 +107,7 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
     if (!occ_stack.empty() && static_cast<int>(occ_stack.size()) > ik
         && !occ_stack[static_cast<std::size_t>(ik)].empty()) {
         const auto& raw = occ_stack[static_cast<std::size_t>(ik)];
-        const int ncol =
-            static_cast<int>(raw.size()) / std::max(nbas, 1);
+        const int ncol = static_cast<int>(raw.size()) / std::max(nbas, 1);
         const int nuse = std::min(n_occ, ncol);
         for (int mu = 0; mu < nbas; ++mu)
             for (int o = 0; o < nuse; ++o)
@@ -219,12 +130,15 @@ std::vector<Cdouble> flatten_C_occ(const GpwResult& res, int ik, int nbas,
     return C;
 }
 
-/// String-averaged Berry phase for one occupied channel on a string mesh.
-double string_phase_channel(
-    const GpwResult& res, int n_occ, int spin, int dir, int k_string,
-    int k_perp, const std::vector<GridBasisFunction>& basis,
-    const std::vector<double>& radii, const double cell[3], const int mimg[3],
-    double screen) {
+/// String-averaged phases of the occupied channels on one string mesh.
+/// The AO cross-k operator is spin independent; build it once per link.
+std::array<double, 2> string_phases(const GpwResult& res,
+                                    const std::array<int, 2>& n_occ, int dir,
+                                    int k_string, int k_perp,
+                                    const std::vector<GridBasisFunction>& basis,
+                                    const std::vector<double>& radii,
+                                    const double cell[3], const int mimg[3],
+                                    double screen) {
     const int J = k_string;
     const int n_strings = k_perp * k_perp;
     const int nbas = static_cast<int>(basis.size());
@@ -232,44 +146,79 @@ double string_phase_channel(
     if (nk != n_strings * J)
         throw std::runtime_error(
             "BerryPolarization: string-mesh n_kpts mismatch (got "
-            + std::to_string(nk) + ", want "
-            + std::to_string(n_strings * J) + ")");
+            + std::to_string(nk) + ", want " + std::to_string(n_strings * J)
+            + ")");
 
     // Short reciprocal step along `dir` [1/Bohr]: b = 2π / (L_dir * J).
     double b_bohr[3] = {0, 0, 0};
     b_bohr[dir] = kTwoPi / (cell[dir] * static_cast<double>(J));
 
-    std::vector<std::vector<Cdouble>> C(static_cast<std::size_t>(nk));
-    for (int ik = 0; ik < nk; ++ik)
-        C[static_cast<std::size_t>(ik)] =
-            flatten_C_occ(res, ik, nbas, n_occ, spin);
+    std::array<std::vector<std::vector<Cdouble>>, 2> C;
+    std::array<std::vector<double>, 2> phis;
+    for (int spin = 0; spin < 2; ++spin) {
+        if (n_occ[spin] < 1)
+            continue;
+        C[spin].resize(static_cast<std::size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik)
+            C[spin][static_cast<std::size_t>(ik)] =
+                flatten_C_occ(res, ik, nbas, n_occ[spin], spin);
+        phis[spin].reserve(static_cast<std::size_t>(n_strings));
+    }
 
-    std::vector<double> phis;
-    phis.reserve(static_cast<std::size_t>(n_strings));
-    for (int s = 0; s < n_strings; ++s) {
-        std::vector<Cdouble> dets(static_cast<std::size_t>(J));
+    std::vector<internal::FourierOverlapLink> links(
+        static_cast<std::size_t>(nk));
+    for (int s = 0; s < n_strings; ++s)
         for (int j = 0; j < J; ++j) {
             const int ib = s * J + j;
             const int ik = s * J + (j + 1) % J;
-            const auto& kfn = res.k_frac[static_cast<std::size_t>(ik)];
-            std::vector<Cdouble> S;
-            build_S_cross(basis, radii, cell, mimg, screen, kfn, b_bohr, nbas,
-                          S);
-            std::vector<Cdouble> M;
-            mo_overlap(C[static_cast<std::size_t>(ib)],
-                       C[static_cast<std::size_t>(ik)], S, nbas, n_occ, M);
-            dets[static_cast<std::size_t>(j)] = det_lu(M, n_occ);
+            links[static_cast<std::size_t>(ib)] = {
+                res.k_frac[static_cast<std::size_t>(ik)],
+                {b_bohr[0], b_bohr[1], b_bohr[2]}};
         }
-        phis.push_back(phase_from_link_dets(dets));
-        ATV_DEBUG_CAT("gpw", "berry dir={} spin={} n_occ={} string={} phi={:+.6f}",
-                      dir, spin, n_occ, s, phis.back());
+    const auto S_cross = internal::build_fourier_overlap_links(
+        basis, radii, cell, mimg, screen, links);
+
+    for (int s = 0; s < n_strings; ++s) {
+        std::array<std::vector<Cdouble>, 2> dets;
+        for (int spin = 0; spin < 2; ++spin)
+            if (n_occ[spin] > 0)
+                dets[spin].resize(static_cast<std::size_t>(J));
+        for (int j = 0; j < J; ++j) {
+            const int ib = s * J + j;
+            const int ik = s * J + (j + 1) % J;
+            const auto& S = S_cross[static_cast<std::size_t>(ib)];
+            for (int spin = 0; spin < 2; ++spin) {
+                if (n_occ[spin] < 1)
+                    continue;
+                std::vector<Cdouble> M;
+                mo_overlap(C[spin][static_cast<std::size_t>(ib)],
+                           C[spin][static_cast<std::size_t>(ik)], S, nbas,
+                           n_occ[spin], M);
+                dets[spin][static_cast<std::size_t>(j)] =
+                    det_lu(M, n_occ[spin]);
+            }
+        }
+        for (int spin = 0; spin < 2; ++spin) {
+            if (n_occ[spin] < 1)
+                continue;
+            phis[spin].push_back(phase_from_link_dets(dets[spin]));
+            ATV_DEBUG_CAT("gpw",
+                          "berry dir={} spin={} n_occ={} string={} phi={:+.6f}",
+                          dir, spin, n_occ[spin], s, phis[spin].back());
+        }
     }
 
-    const double phi0 = phis[0];
-    double acc = 0.0;
-    for (const double phi : phis)
-        acc += phi0 + wrap_centered(phi - phi0, kTwoPi);
-    return acc / static_cast<double>(n_strings);
+    std::array<double, 2> phases{};
+    for (int spin = 0; spin < 2; ++spin) {
+        if (n_occ[spin] < 1)
+            continue;
+        const double phi0 = phis[spin][0];
+        double acc = 0.0;
+        for (const double phi : phis[spin])
+            acc += phi0 + wrap_centered(phi - phi0, kTwoPi);
+        phases[spin] = acc / static_cast<double>(n_strings);
+    }
+    return phases;
 }
 
 void fill_ionic(BerryPolarizationResult& out, const std::vector<GpwAtom>& atoms,
@@ -362,10 +311,13 @@ BerryPolarization::string_kpoints(int dir) const {
     return kf;
 }
 
-BerryPolarizationResult
-BerryPolarization::compute(GpwDft& method,
-                           const std::vector<GpwAtom>& atoms) const {
-    if (method.smearing != Smearing::none)
+BerryPolarizationResult BerryPolarization::compute(GpwDft& method,
+                                                   Frame& frame) const {
+    internal::GpwDftAccess::set_cell(method,
+                                     internal::cell_from_box(frame.box));
+    const std::vector<GpwAtom> atoms =
+        internal::GpwDftAccess::atoms_from_frame(method, frame);
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "BerryPolarization::compute: Berry-phase polarization requires "
             "an insulator (no metallic smearing)");
@@ -384,7 +336,7 @@ BerryPolarization::compute(GpwDft& method,
             "BerryPolarization::compute: n_alpha + n_beta must be >= 1");
 
     BerryPolarizationResult out;
-    fill_ionic(out, atoms, method.cell);
+    fill_ionic(out, atoms, method.cell_bohr().data());
     out.scf_converged = true;
 
     const auto basis = flatten_basis(atoms);
@@ -397,17 +349,17 @@ BerryPolarization::compute(GpwDft& method,
         rmax = std::max(rmax, radii[static_cast<std::size_t>(i)]);
     }
     int mimg[3];
-    pair_image_counts(method.cell, /*periodic=*/true, 2.0 * rmax, mimg);
+    pair_image_counts(method.cell_bohr().data(), /*periodic=*/true, 2.0 * rmax,
+                      mimg);
     const double screen = method.eps_default;
 
     const int n_up = uks ? method.n_alpha : method.n_occ;
     const int n_dn = uks ? method.n_beta : 0;
     const double quantum = uks ? 1.0 : 2.0;
 
-    // One multi-k SCF per requested direction (string mesh). Directions share
-    // no common mesh in general (string-major layouts differ), so each active
-    // direction gets its own run. Callers that only need one axis (e.g. Born
-    // Z*) set directions accordingly.
+    // Each direction solves its own physical k-mesh through the canonical
+    // public method path. Only its spin-independent AO links are shared.
+    const bool prof = std::getenv("ATV_GPW_PROF") != nullptr;
     for (int dir = 0; dir < 3; ++dir) {
         if (!directions[static_cast<std::size_t>(dir)])
             continue;
@@ -420,7 +372,9 @@ BerryPolarization::compute(GpwDft& method,
         method.k_point_weights.assign(static_cast<std::size_t>(nk),
                                       1.0 / static_cast<double>(nk));
 
-        const GpwResult& res = method.run(atoms);
+        const auto scf_start = std::chrono::steady_clock::now();
+        const GpwResult& res = method.run(frame);
+        const auto scf_end = std::chrono::steady_clock::now();
         out.scf_converged = out.scf_converged && res.converged;
         out.energy_ha = res.e_total;
         if (!res.converged) {
@@ -433,32 +387,36 @@ BerryPolarization::compute(GpwDft& method,
                 "BerryPolarization::compute: multi-k payload missing after "
                 "string-mesh run");
 
+        const auto phases =
+            string_phases(res, {n_up, n_dn}, dir, k_string, k_perp, basis,
+                          radii, method.cell_bohr().data(), mimg, screen);
         if (!uks) {
-            const double phase = string_phase_channel(
-                res, n_up, /*spin=*/0, dir, k_string, k_perp, basis, radii,
-                method.cell, mimg, screen);
-            out.phase_el[static_cast<std::size_t>(dir)] = phase;
-            out.p_el_frac[static_cast<std::size_t>(dir)] = 2.0 * phase / kTwoPi;
+            out.phase_el[static_cast<std::size_t>(dir)] = phases[0];
+            out.p_el_frac[static_cast<std::size_t>(dir)] =
+                2.0 * phases[0] / kTwoPi;
         } else {
-            double phase_sum = 0.0;
-            for (int s = 0; s < 2; ++s) {
-                const int n_ch = (s == 0) ? n_up : n_dn;
-                if (n_ch < 1)
-                    continue;
-                const double phi_s = string_phase_channel(
-                    res, n_ch, s, dir, k_string, k_perp, basis, radii,
-                    method.cell, mimg, screen);
-                phase_sum += phi_s;
-                ATV_DEBUG_CAT("gpw", "berry-spin dir={} spin={} phi={:+.6f}",
-                              dir, s, phi_s);
-            }
+            const double phase_sum = phases[0] + phases[1];
             out.phase_el[static_cast<std::size_t>(dir)] = 0.5 * phase_sum;
             out.p_el_frac[static_cast<std::size_t>(dir)] = phase_sum / kTwoPi;
+        }
+
+        if (prof) {
+            const auto end = std::chrono::steady_clock::now();
+            std::fprintf(
+                stderr,
+                "[gpw berry] dir=%d scf=%.0f ms links=%.0f ms "
+                "iterations=%d energy=%.12f Ha\n",
+                dir,
+                std::chrono::duration<double, std::milli>(scf_end - scf_start)
+                    .count(),
+                std::chrono::duration<double, std::milli>(end - scf_end)
+                    .count(),
+                res.iters, res.e_total);
         }
         out.computed[static_cast<std::size_t>(dir)] = true;
     }
 
-    assemble_totals(out, method.cell, quantum);
+    assemble_totals(out, method.cell_bohr().data(), quantum);
     return out;
 }
 

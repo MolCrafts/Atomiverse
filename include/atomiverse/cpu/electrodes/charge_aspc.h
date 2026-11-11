@@ -1,5 +1,5 @@
 /// @file cpu/electrodes/charge_aspc.h
-/// @brief Kolafa ASPC predictor-corrector for electrode charge vectors.
+/// @brief Kolafa ASPC predictor for electrode charge vectors (CG warm start).
 ///
 /// MetalWalls warm-starts the iterative (CG) electrode charge solve from a
 /// short history of prior \(Q\) vectors, using Kolafa's ASPC predictor
@@ -9,8 +9,10 @@
 /// order is a constructor argument and \(K=5\) reproduces it exactly.
 ///
 /// The predictor is **not** Lagrange polynomial extrapolation: ASPC is exact
-/// only through degree 1, trading higher-order accuracy for the unconditional
-/// stability and time-reversibility that the corrector blend relies on.
+/// only through degree 1, trading higher-order accuracy for stability. The
+/// weights come from `electronic::kolafa_aspc_weights` (shared with the SCF
+/// density predictor); here `order` K uses K+1 vectors, MetalWalls' convention.
+/// The converged charges are recorded as-is: MetalWalls applies no corrector.
 ///
 /// No public `*Config` bag; order is a constructor argument.
 #pragma once
@@ -52,18 +54,6 @@ class ChargeASPC {
     /// @param[out] Q_predicted Extrapolated charges [e] (resized).
     /// @return True if \(K+1\) history points were available; false otherwise.
     bool predict(std::vector<double>& Q_predicted) const;
-
-    /// @brief Kolafa corrector blend for time-reversibility.
-    ///
-    /// \(Q_{\mathrm{corr}} = \frac{K+2}{2K+3} Q_{\mathrm{scf}}
-    ///   + \frac{K+1}{2K+3} Q_{\mathrm{pred}}\).
-    ///
-    /// @param Q_scf       Converged charges [e].
-    /// @param Q_predicted Predictor output [e].
-    /// @param[out] Q_corrected Blended vector to record [e].
-    void correct(const std::vector<double>& Q_scf,
-                 const std::vector<double>& Q_predicted,
-                 std::vector<double>& Q_corrected) const;
 
     /// @brief Drop all history (geometry jump / restart).
     void reset();

@@ -44,11 +44,14 @@ void KSpaceEwald::ensure_kvectors(const cpu::Frame& frame, bool initial_build) {
 
     Mat3 inv = box.inv_cell();
     if (slab_active()) {
-        // unitk_z = 2π / (Lz * f)  ⇔  scale column 2 of inv_cell by 1/f
-        // (EwaldSum::rebuild forms b_i from column i of inv_cell).
+        if (!box.is_orthorhombic())
+            throw std::invalid_argument(
+                "KSpaceEwald: slab correction requires an orthorhombic box");
+        // unitk_z = 2π / (Lz * f)  ⇔  scale row 2 of inv_cell by 1/f
+        // (EwaldSum::rebuild forms b_i from row i of inv_cell).
         const double inv_f = 1.0 / slab_factor;
         for (int r = 0; r < 3; ++r)
-            inv(r, 2) *= inv_f;
+            inv(2, r) *= inv_f;
     }
 
     const bool table_grew = sum_.rebuild(inv);
@@ -82,13 +85,15 @@ void KSpaceEwald::build(const BuildContext& ctx) {
 }
 
 void KSpaceEwald::compute(const LaunchContext& ctx) {
+    sum_.set_qqrd2e(ctx.runtime.units.qqrd2e());
     auto& f = ctx.frame;
     ensure_kvectors(f, false);
+#ifdef ATV_HAS_MPI
     const int ng = static_cast<int>(sum_.size());
-
     const auto* dd = ctx.runtime.md.dd;
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_local = mpi ? dd->n_local : f.nlocal();
+#endif
+    const bool mpi = cpu::multi_rank_dd(ctx.runtime);
+    const int n_local = f.nlocal();
     const bool first_rank = !mpi || ctx.runtime.mpi_rank == 0;
 
     const StorageReal* __restrict x = f.span(kAtom_x);
@@ -118,8 +123,9 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
 #endif
 
     // ── Reciprocal forces on owned atoms from global S(k) ──────────────
-    sum_.add_forces(x, y, z, q, n_local, vol, sr_.data(), si_.data(), sp_fx,
-                    sp_fy, sp_fz);
+    if (ctx.forces_requested)
+        sum_.add_forces(x, y, z, q, n_local, vol, sr_.data(), si_.data(), sp_fx,
+                        sp_fy, sp_fz);
 
     // ── Self energy (partitions across ranks: owned atoms only) ────────
     double qsq_local = 0.0, q_local = 0.0;
@@ -167,24 +173,28 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
 
         double e_slab = 0.0;
         if (slab_active()) {
-            e_slab =
-                longrange::slab_corr_energy(mz, q_total, mz_r2, vol, zprd_slab);
+            e_slab = longrange::slab_corr_energy(
+                mz, q_total, mz_r2, vol, zprd_slab, ctx.runtime.units.qqrd2e());
             // Slab forces: every rank must apply using the *global* Mz.
             // Publish globals via a second pass on non-root below — here we
             // apply on rank 0's owned atoms; other ranks apply after the
             // collective that mirrors q_total/mz (see else branch).
-            longrange::slab_corr_add_forces(q, z, n_local, mz, q_total, vol,
-                                            sp_fz);
+            if (ctx.forces_requested)
+                longrange::slab_corr_add_forces(q, z, n_local, mz, q_total, vol,
+                                                ctx.runtime.units.qqrd2e(),
+                                                sp_fz);
         }
 
         f.meta.get(kEnergy) += e_recip + e_net + e_slab;
         f.meta.get(kEnergyPair) += e_recip + e_net + e_slab;
-        f.meta.get(kStress)[0] += stress[0];
-        f.meta.get(kStress)[1] += stress[1];
-        f.meta.get(kStress)[2] += stress[2];
-        f.meta.get(kStress)[3] += stress[3];
-        f.meta.get(kStress)[4] += stress[4];
-        f.meta.get(kStress)[5] += stress[5];
+        if (ctx.stress_requested) {
+            f.meta.get(kStress)[0] += stress[0] + e_net + e_slab;
+            f.meta.get(kStress)[1] += stress[1] + e_net + e_slab;
+            f.meta.get(kStress)[2] += stress[2] + e_net - e_slab;
+            f.meta.get(kStress)[3] += stress[3];
+            f.meta.get(kStress)[4] += stress[4];
+            f.meta.get(kStress)[5] += stress[5];
+        }
     }
 #ifdef ATV_HAS_MPI
     else if (mpi) {
@@ -200,8 +210,10 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
                           dd->cart_comm);
             MPI_Allreduce(MPI_IN_PLACE, &mz_r2, 1, MPI_DOUBLE, MPI_SUM,
                           dd->cart_comm);
-            longrange::slab_corr_add_forces(q, z, n_local, mz, q_total, vol,
-                                            sp_fz);
+            if (ctx.forces_requested)
+                longrange::slab_corr_add_forces(q, z, n_local, mz, q_total, vol,
+                                                ctx.runtime.units.qqrd2e(),
+                                                sp_fz);
         }
     }
 #endif

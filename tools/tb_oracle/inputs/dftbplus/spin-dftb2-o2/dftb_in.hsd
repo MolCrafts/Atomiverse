@@ -1,5 +1,5 @@
 # Offline DFTB+ 24.1 twin for ATV slug spin-dftb2-o2.
-# Cluster O2 triplet, r=1.21 Å, matching regressions/semiempirical/spin-dftb2-o2/.
+# Cluster O2 triplet, r=1.21 Å, matching regressions/semiempirical/dftb2/.
 # PBE spin table (DFTB+ manual app:spinconst): O = {-0.035, -0.030, -0.030, -0.028} Ha
 # (ss, sp, ps, pp; l' fastest). DFTB+ ShellResolvedSpin = No accepts a single
 # constant and fills W_ll' with it; ATV's HOAO collapse uses W_pp, so the

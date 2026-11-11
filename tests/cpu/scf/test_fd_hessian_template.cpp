@@ -1,23 +1,10 @@
 /// @file tests/cpu/scf/test_fd_hessian_template.cpp
 /// @brief scf-review-04-meanfield-dedup (Item 3): the central-difference
-///        nuclear-Hessian skeleton — three byte-identical copies in
-///        rks.cpp / uks.cpp / rohf.cpp — is hoisted to a protected CRTP
-///        member template
-///        MeanFieldMethod<Derived>::central_difference_nuclear_hessian(
-///            Frame&, const std::function<GradientResult(Frame&)>& forces_at).
-///        This RED-first unit pins that skeleton in ISOLATION with an analytic
-///        quadratic mock force field passed as forces_at — no SCF, microseconds.
-///
-/// PINNED SHAPE — protected CRTP member template (direct, not a free core).
-///   The FD template is reached through a test-local subclass of a concrete
-///   method (RHF, whose ctor is trivial member init — no SCF machinery, no
-///   build()/run()) that re-exposes the protected member via a using-decl.
-///   MeanFieldMethod<RHF> is already explicitly instantiated in
-///   mean_field_method.cpp, so no template link fork is introduced. A
-///   test-local subclass of MeanFieldMethod<TestType> would instead be
-///   unlinkable (the member definitions live in the .cpp behind explicit
-///   instantiation for RHF/UHF/RKS/UKS/ROHF only); that is why we wrap a real
-///   concrete method rather than a synthetic Derived.
+///        nuclear-Hessian skeleton is the free function
+///        central_difference_nuclear_hessian(Frame&, forces_at).
+///        It is not a MeanFieldMethod member (PySCF cphf.solve is not an
+///        SCF method). This unit pins it with an analytic quadratic mock
+///        force field — no SCF, microseconds.
 ///
 /// Mock physics: F(R) = -K.(R - R0), forces in eV/Angstrom, R in Angstrom,
 /// K in eV/Angstrom^2. This is the force field of E = 1/2 (R-R0)^T K (R-R0),
@@ -40,21 +27,12 @@
 
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
-#include "atomiverse/cpu/scf/mean_field_method.h"
-#include "atomiverse/cpu/scf/rhf.h"
+#include "atomiverse/cpu/scf/nuclear_hessian.h"
 #include "atomiverse/cpu/vibration/hessian_result.h"
 
 using namespace ATV;
 
 namespace {
-
-/// @brief Test hook: re-expose the protected FD-Hessian template as public by
-///        subclassing a concrete method with a trivial ctor.
-class HessianProbe : public cpu::scf::RHF {
-  public:
-    using cpu::scf::MeanFieldMethod<
-        cpu::scf::RHF>::central_difference_nuclear_hessian;
-};
 
 /// @brief Quadratic mock force field F(R) = -K.(R - R0) [eV/Angstrom].
 ///        Atom-major flatten: coordinate index = 3*atom + axis.
@@ -94,7 +72,7 @@ cpu::Frame make_frame(const std::vector<double>& r0) {
     const int natm = static_cast<int>(r0.size() / 3);
     cpu::Frame f(natm);
     for (int a = 0; a < natm; ++a) {
-        f.span(kAtom_type)[a] = 1;
+        f.span(kAtom_atomic_number)[a] = 1;
         f.span(kAtom_x)[a] =
             static_cast<StorageReal>(r0[static_cast<std::size_t>(3 * a + 0)]);
         f.span(kAtom_y)[a] =
@@ -130,9 +108,8 @@ TEST(TestFdHessianTemplate, RecoversSymmetrizedQuadraticStiffness) {
     K(1, 0) = -1.0; // symmetric part 0.0
 
     cpu::Frame frame = make_frame(r0);
-    HessianProbe probe;
     cpu::vib::HessianResult H =
-        probe.central_difference_nuclear_hessian(frame, mock_forces(K, r0));
+        cpu::scf::central_difference_nuclear_hessian(frame, mock_forces(K, r0));
 
     EXPECT_EQ(H.n_atoms, 2);
     ASSERT_EQ(H.hessian.shape()[0], 6u);
@@ -151,8 +128,7 @@ TEST(TestFdHessianTemplate, RestoresGeometryToReference) {
         K(i, i) = 3.0;
 
     cpu::Frame frame = make_frame(r0);
-    HessianProbe probe;
-    probe.central_difference_nuclear_hessian(frame, mock_forces(K, r0));
+    cpu::scf::central_difference_nuclear_hessian(frame, mock_forces(K, r0));
 
     auto x = frame.span(kAtom_x);
     auto y = frame.span(kAtom_y);
@@ -180,9 +156,8 @@ TEST(TestFdHessianTemplate, SingleAtomSymmetricInputIsIdempotent) {
     K(1, 2) = K(2, 1) = 5.0;
 
     cpu::Frame frame = make_frame(r0);
-    HessianProbe probe;
     cpu::vib::HessianResult H =
-        probe.central_difference_nuclear_hessian(frame, mock_forces(K, r0));
+        cpu::scf::central_difference_nuclear_hessian(frame, mock_forces(K, r0));
 
     EXPECT_EQ(H.n_atoms, 1);
     ASSERT_EQ(H.hessian.shape()[0], 3u);

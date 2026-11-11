@@ -12,13 +12,14 @@ import numpy as np
 import pytest
 import molpy
 
-from atomiverse._binding import extension_available
+from atomiverse._binding import _cpp, extension_available
 
-# Compute imports only when the native extension is present. Pure-import
-# tests (test_pure_import.py) never use these fixtures; they run in
-# isolated subprocesses.
+# Compute imports only when the native extension is present and carries MD.
+# Pure-import tests (test_pure_import.py) never use these fixtures; they run
+# in isolated subprocesses.
 _HAS_EXT = extension_available()
-if _HAS_EXT:
+_HAS_MD = _HAS_EXT and hasattr(_cpp, "MD")
+if _HAS_MD:
     from atomiverse.md import MD, InitVelocity
     from atomiverse.md.integrator import VelocityVerlet
     from atomiverse.neighbor import NeighborList
@@ -74,7 +75,12 @@ def n_atoms() -> int:
 
 @pytest.fixture
 def argon_frame(n_atoms: int) -> "molpy.Frame":
-    """Single-type Ar molpy.Frame on a simple cubic lattice."""
+    """Single-type Ar molpy.Frame on a simple cubic lattice.
+
+    Carries both identity columns: ``atomic_number`` (the species, Z = 18)
+    and ``type_id`` (the force-field type, 1) — a per-type pair table keys
+    on the second, never on the first.
+    """
     xs, ys, zs, box_len = _argon_columns(n_atoms)
     frame = molpy.Frame()
     atoms = molpy.Block()
@@ -83,6 +89,7 @@ def argon_frame(n_atoms: int) -> "molpy.Frame":
     atoms.insert("z", zs)
     atoms.insert("mass", np.full(n_atoms, 39.948, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n_atoms, 18, dtype=np.uint32))
+    atoms.insert("type_id", np.full(n_atoms, 1, dtype=np.uint32))
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(box_len)
     return frame
@@ -112,10 +119,10 @@ _BONDED_BOX: float = 20.0
 def bonded_frame() -> "molpy.Frame":
     """Four carbons carrying one bond, one dihedral and one improper.
 
-    Topology travels as molrs blocks: ``bonds`` (atomi/atomj/type_id),
+    Topology travels as molpy blocks: ``bonds`` (atomi/atomj/type_id),
     ``dihedrals`` and ``impropers`` (atomi..atoml/type_id), all
-    ``np.uint32`` — the dtypes ``cpu::from_molrs`` requires
-    (src/cpu/frame/molrs_exchange.cpp:147-165, :240-276; connectivity
+    ``np.uint32`` — the dtypes ``cpu::from_molpy`` requires
+    (src/cpu/frame/molpy_exchange.cpp:147-165, :240-276; connectivity
     columns are read as u32, kinds as ``type_id``).
 
     Deliberately **no** ``atoms.tag`` column: without one the CPU frame
@@ -161,9 +168,9 @@ def bonded_frame() -> "molpy.Frame":
 
 @pytest.fixture
 def full_lj_md():
-    """Full LJ MD via categorical setters (mirrors examples/07_md_lj.cpp)."""
-    if not _HAS_EXT:
-        pytest.skip("C++ extension (_atomiverse) not installed")
+    """Full LJ MD via categorical setters (mirrors examples/cpp/08_md_lj.cpp)."""
+    if not _HAS_MD:
+        pytest.skip("needs ATV_BUILD_MD")
     cutoff = 8.5
     sim = MD()
     sim.set_integrator(VelocityVerlet(0.001))

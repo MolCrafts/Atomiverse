@@ -7,7 +7,7 @@ That was a self-golden: it agreed with Atomiverse by construction and could not
 detect that the sum was 6 % away from the converged 2D-periodic answer.
 
 This script is the diagnosis, not the pin. The pin is MetalWalls c8ad175d -
-see `mw_twin/` and regressions/md/thomas-fermi-electrode/REFERENCE.md.
+see `mw_twin/` and regressions/md/thomas-fermi/REFERENCE.md.
 
 It prints, for the gold-capacitor toy:
   1. the ConstPotBO truncated square-image sum as a function of the half-range R

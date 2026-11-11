@@ -1,0 +1,38 @@
+# units real: LAMMPS style/coefficient commands (included by every in.*.lmp)
+pair_style lj/cut/coul/long 7.0 7.0
+pair_coeff 1 1 0.195 3.75
+pair_coeff 1 2 0.13321035995747477 3.85
+pair_coeff 1 3 0.12489995996796797 3.975
+pair_coeff 1 4 0.18207141456033127 3.375
+pair_coeff 1 5 0.1738533865071371 3.425
+pair_coeff 2 2 0.091 3.95
+pair_coeff 2 3 0.08532291603080616 4.075
+pair_coeff 2 4 0.12437845472588893 3.475
+pair_coeff 2 5 0.11876447280226524 3.5250000000000004
+pair_coeff 3 3 0.08 4.2
+pair_coeff 3 4 0.11661903789690602 3.6
+pair_coeff 3 5 0.11135528725660043 3.6500000000000004
+pair_coeff 4 4 0.17 3.0
+pair_coeff 4 5 0.16232683080747928 3.05
+pair_coeff 5 5 0.155 3.1
+bond_style harmonic
+bond_coeff 1 260.0 1.54
+bond_coeff 2 260.0 1.54
+bond_coeff 3 320.0 1.43
+bond_coeff 4 320.0 1.43
+bond_coeff 5 320.0 1.43
+angle_style harmonic
+angle_coeff 1 62.1 114.0
+angle_coeff 2 50.0 112.0
+angle_coeff 3 60.0 112.0
+angle_coeff 4 50.0 112.0
+angle_coeff 5 45.0 109.5
+dihedral_style charmm
+dihedral_coeff 1 1.4 3 0 0.0
+dihedral_coeff 2 0.8 2 180 0.0
+dihedral_coeff 3 0.5 1 0 0.0
+dihedral_coeff 4 0.3 3 0 0.0
+improper_style cvff
+improper_coeff 1 1.0 -1 2
+special_bonds lj 0.0 0.0 0.5 coul 0.0 0.0 0.8333333333
+kspace_style pppm 1.0e-5

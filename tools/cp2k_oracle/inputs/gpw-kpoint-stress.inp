@@ -1,7 +1,7 @@
-! CP2K twin for regressions/gpw/gpw-kpoint-stress — Monkhorst-Pack k-point GPW
+! CP2K twin for regressions/gpw/rks — Monkhorst-Pack k-point GPW
 ! stress on diamond Si bct 4-atom (DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
-! Pin: STRESS_TENSOR (NUMERICAL or ANALYTICAL) [Ha/Bohr^3] + total energy [Ha].
+! Pin: STRESS_TENSOR ANALYTICAL [Ha/Bohr^3] + total energy [Ha].
 &GLOBAL
   PROJECT si_kpoint_stress_bct
   RUN_TYPE ENERGY_FORCE
@@ -9,7 +9,7 @@
 &END GLOBAL
 &FORCE_EVAL
   METHOD Quickstep
-  STRESS_TENSOR NUMERICAL
+  STRESS_TENSOR ANALYTICAL
   &DFT
     BASIS_SET_FILE_NAME BASIS_MOLOPT
     POTENTIAL_FILE_NAME GTH_POTENTIALS
@@ -18,20 +18,27 @@
       NGRIDS 1
     &END MGRID
     &QS
-      EPS_DEFAULT 1.0E-7
+      CORE_PPL GRID
+      EPS_DEFAULT 1.0E-12
+      EPS_PGF_ORB 1.0E-12
+      EPS_PPNL 1.0E-12
+      EPS_FILTER_MATRIX 0.0
     &END QS
     &KPOINTS
       SCHEME MONKHORST-PACK 1 1 2
     &END KPOINTS
     &SCF
       SCF_GUESS ATOMIC
-      EPS_SCF 1.0E-8
-      MAX_SCF 60
+      EPS_SCF 1.0E-10
+      EPS_DIIS 0.0
+      MAX_SCF 200
       &DIAGONALIZATION
         ALGORITHM STANDARD
       &END DIAGONALIZATION
       &MIXING
-        METHOD DIRECT_P_MIXING
+        METHOD BROYDEN_MIXING
+        ALPHA 0.4
+        NBROYDEN 8
       &END MIXING
     &END SCF
     &XC
@@ -41,7 +48,7 @@
   &END DFT
   &SUBSYS
     &CELL
-      ABC 3.83959 3.83959 5.43000
+      ABC 3.839589821842952 3.839589821842952 5.430000000000000
       PERIODIC XYZ
     &END CELL
     &COORD

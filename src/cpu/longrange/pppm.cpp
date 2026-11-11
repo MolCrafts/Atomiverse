@@ -8,8 +8,26 @@
 /// `remap_3d`), checkout `78a7ddf`: plans built once per mesh shape /
 /// decomposition / FFT group, replayed each step as value-only
 /// Irecv/Isend/Waitall between overlapping ranks — no per-step collectives.
+///
+/// Charge assignment and the brick extents it needs are ports of LAMMPS
+/// `src/KSPACE/pppm.cpp` (`set_grid_local`, `particle_map`, `make_rho`,
+/// `fieldforce_ik`, `init`'s `set_distance(0.5*neighbor->skin + qdist)`) and
+/// `src/grid3d.cpp` (`partition_grid`, `ghost_grid`, with
+/// `MathExtra::tribbox` for the triclinic distance), checkout e8c4c278a8: the
+/// centred order-p stencil nx + nlower … nx + nupper and the owned/ghost cell
+/// ranges LAMMPS derives from it. The r2c/c2r ik field and the half-spectrum
+/// energy/virial fold each stored mode with its conjugate partner
+/// (`core/pppm_ik.h` `pppm_half_mode`) to equal LAMMPS `poisson_ik`'s full
+/// complex transform and real part.
 /// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 #include "atomiverse/cpu/longrange/pppm.h"
+
+#include "atomiverse/cpu/device/chunked_range.h"
+#include "atomiverse/cpu/device/fftw_threads.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +43,8 @@
 #endif
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/longrange_math.h"
+#include "atomiverse/core/pppm_ik.h"
 #include "atomiverse/core/timer.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
@@ -44,10 +64,45 @@ namespace ATV {
 namespace cpu {
 namespace {
 
+// Distributed mesh bricks currently follow uniform fractional spatial cuts.
+// Check the replicated cut table locally before FFT setup or MPI collectives;
+// the explicit replicated mesh path has no such ownership constraint.
+void require_supported_mesh_partition(const cpu::Context& ctx) {
+#if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
+    if (!cpu::multi_rank_dd(ctx)
+        || std::getenv("ATV_PPPM_ALLREDUCE") != nullptr)
+        return;
+    const auto& dd = *ctx.md.dd;
+    for (int d = 0; d < 3; ++d) {
+        const auto& cuts = dd.cuts[d];
+        if (cuts.empty())
+            continue;
+        if (dd.dims[d] <= 0
+            || cuts.size() != static_cast<std::size_t>(dd.dims[d] + 1))
+            throw std::invalid_argument(
+                "KSpacePPPM: invalid spatial cut table");
+        for (int i = 0; i <= dd.dims[d]; ++i)
+            if (cuts[i] != static_cast<double>(i) / dd.dims[d])
+                throw std::invalid_argument(
+                    "KSpacePPPM: distributed mesh requires uniform spatial "
+                    "cuts; "
+                    "nonuniform Rebalance cuts are unsupported. "
+                    "Use the explicit replicated mesh path "
+                    "ATV_PPPM_ALLREDUCE=1.");
+    }
+#else
+    (void)ctx;
+#endif
+}
+
+// Fold a stencil index into [0, K). Indices lie in [nlower, K + nupper] and
+// K ≥ order + 1, so one period either way suffices (no integer division in
+// the spread / gather loops).
 inline int wrap_k(int g, int K) noexcept {
-    g %= K;
     if (g < 0)
         g += K;
+    else if (g >= K)
+        g -= K;
     return g;
 }
 
@@ -70,11 +125,22 @@ KSpacePPPM::KSpacePPPM(double alpha, double grid_spacing, int order,
         throw std::invalid_argument("KSpacePPPM: alpha must be > 0");
     if (!(grid_spacing > 0.0))
         throw std::invalid_argument("KSpacePPPM: grid_spacing must be > 0");
-    if (order < 3)
-        throw std::invalid_argument("KSpacePPPM: order must be ≥ 3");
+    if (order < 3 || order > 12)
+        throw std::invalid_argument("KSpacePPPM: order must be in [3, 12]");
     if (fft_ranks < 0)
         throw std::invalid_argument(
             "KSpacePPPM: fft_ranks must be ≥ 0 (0 = derive from the mesh)");
+}
+
+KSpacePPPM::KSpacePPPM(double alpha, std::array<int, 3> mesh, int order,
+                       int fft_ranks)
+    : KSpacePPPM(alpha, /*grid_spacing=*/1.0, order, fft_ranks) {
+    for (int d = 0; d < 3; ++d) {
+        if (mesh[d] <= 0)
+            throw std::invalid_argument(
+                "KSpacePPPM: every mesh entry must be > 0");
+        fixed_K_[d] = mesh[d];
+    }
 }
 
 KSpacePPPM::~KSpacePPPM() { release_storage(); }
@@ -82,19 +148,23 @@ KSpacePPPM::~KSpacePPPM() { release_storage(); }
 KSpacePPPM::KSpacePPPM(KSpacePPPM&& other) noexcept
     : KSpace(std::move(other)), alpha_(other.alpha_), spacing_(other.spacing_),
       order_(other.order_), fft_ranks_requested_(other.fft_ranks_requested_),
-      box_identity_(other.box_identity_), cell_revision_(other.cell_revision_),
-      have_grid_(other.have_grid_), nxlo_in_(other.nxlo_in_),
-      nxhi_in_(other.nxhi_in_), nylo_in_(other.nylo_in_),
-      nyhi_in_(other.nyhi_in_), nzlo_in_(other.nzlo_in_),
-      nzhi_in_(other.nzhi_in_), nxlo_out_(other.nxlo_out_),
-      nxhi_out_(other.nxhi_out_), nylo_out_(other.nylo_out_),
-      nyhi_out_(other.nyhi_out_), nzlo_out_(other.nzlo_out_),
-      nzhi_out_(other.nzhi_out_), nxl_(other.nxl_), nyl_(other.nyl_),
-      nzl_(other.nzl_), nghost_lo_(other.nghost_lo_),
-      nghost_hi_(other.nghost_hi_), brick_(std::move(other.brick_)),
-      work_(std::move(other.work_)), green_(std::move(other.green_)),
-      plan_fwd_(other.plan_fwd_), plan_bwd_(other.plan_bwd_),
-      mpi_fft_ready_(other.mpi_fft_ready_), mpi_local_n0_(other.mpi_local_n0_),
+      part_skin_(other.part_skin_), box_identity_(other.box_identity_),
+      cell_revision_(other.cell_revision_), have_grid_(other.have_grid_),
+      nxlo_in_(other.nxlo_in_), nxhi_in_(other.nxhi_in_),
+      nylo_in_(other.nylo_in_), nyhi_in_(other.nyhi_in_),
+      nzlo_in_(other.nzlo_in_), nzhi_in_(other.nzhi_in_),
+      nxlo_out_(other.nxlo_out_), nxhi_out_(other.nxhi_out_),
+      nylo_out_(other.nylo_out_), nyhi_out_(other.nyhi_out_),
+      nzlo_out_(other.nzlo_out_), nzhi_out_(other.nzhi_out_), nxl_(other.nxl_),
+      nyl_(other.nyl_), nzl_(other.nzl_), brick_(std::move(other.brick_)),
+      // The serial FFTW plans are bound to these two buffers; a vector move
+      // keeps the storage they point at.
+      dens_full_(std::move(other.dens_full_)), work_(std::move(other.work_)),
+      density_(std::move(other.density_)), green_(std::move(other.green_)),
+      ik_coef_(std::move(other.ik_coef_)),
+      virial_coef_(std::move(other.virial_coef_)), plan_fwd_(other.plan_fwd_),
+      plan_bwd_(other.plan_bwd_), mpi_fft_ready_(other.mpi_fft_ready_),
+      mpi_local_n0_(other.mpi_local_n0_),
       mpi_local_0_start_(other.mpi_local_0_start_),
       mpi_alloc_(other.mpi_alloc_), mpi_data_(other.mpi_data_),
       plan_mpi_fwd_(other.plan_mpi_fwd_), plan_mpi_bwd_(other.plan_mpi_bwd_),
@@ -112,12 +182,15 @@ KSpacePPPM::KSpacePPPM(KSpacePPPM&& other) noexcept
       grid_self_(std::move(other.grid_self_)),
       mesh_plans_ready_(other.mesh_plans_ready_),
       atom_capacity_(other.atom_capacity_), base_(std::move(other.base_)),
-      theta_(std::move(other.theta_)), dtheta_(std::move(other.dtheta_)),
+      theta_(std::move(other.theta_)),
       stencil_min_(std::move(other.stencil_min_)) {
     other.mesh_plans_ready_ = false;
     for (int d = 0; d < 3; ++d) {
+        fixed_K_[d] = other.fixed_K_[d];
+        part_K_[d] = other.part_K_[d];
+        part_dims_[d] = other.part_dims_[d];
+        part_dist_cells_[d] = other.part_dist_cells_[d];
         K_[d] = other.K_[d];
-        bsp_mod_[d] = std::move(other.bsp_mod_[d]);
         mpi_fft_K_[d] = other.mpi_fft_K_[d];
         other.K_[d] = 0;
         other.mpi_fft_K_[d] = 0;
@@ -139,43 +212,65 @@ KSpacePPPM::KSpacePPPM(KSpacePPPM&& other) noexcept
     owns_fft_comm_ = other.owns_fft_comm_;
     other.fft_comm_ = MPI_COMM_NULL;
     other.owns_fft_comm_ = false;
+    // Sized with the plans: mesh_plans_ready_ moved true needs them.
+    grid_reqs_ = std::move(other.grid_reqs_);
 #endif
 }
 
 void KSpacePPPM::setup_brick_partition_(const int (&coords)[3],
-                                        const int (&dims)[3]) {
-    // LAMMPS-style uniform partition of the mesh among the proc grid.
-    auto split = [](int n, int me, int p, int& lo, int& hi) {
-        lo = me * n / p;
-        hi = (me + 1) * n / p - 1;
+                                        const int (&dims)[3],
+                                        const double (&dist_cells)[3]) {
+    // Owned cells: LAMMPS Grid3d::partition_grid with shift_grid = 0.5 —
+    // grid point i belongs to the rank whose fractional slab holds i + 0.5.
+    // Uniform spatial cuts only (require_supported_mesh_partition), so the
+    // slab of coordinate c is [c/p, (c+1)/p).
+    auto partition = [](int ngrid, double fraclo, double frachi, int& lo,
+                        int& hi) {
+        constexpr double shift_grid = 0.5;
+        lo = static_cast<int>(fraclo * ngrid);
+        while (lo + shift_grid < fraclo * ngrid)
+            ++lo;
+        hi = static_cast<int>(frachi * ngrid);
+        while (hi + shift_grid >= frachi * ngrid)
+            --hi;
     };
-    split(K_[0], coords[0], dims[0], nxlo_in_, nxhi_in_);
-    split(K_[1], coords[1], dims[1], nylo_in_, nyhi_in_);
-    split(K_[2], coords[2], dims[2], nzlo_in_, nzhi_in_);
-    // The one-sided B-spline stencil deposits on [base-(order-1), base]
-    // with base = floor(u), so an owned atom needs order-1 ghost layers
-    // BELOW its subdomain and none above. On top of the stencil reach:
-    //   * one cell of drift margin per side, for owned atoms that move
-    //     past their subdomain edge between reneighbourings (LAMMPS
-    //     Grid3d sizes its ghosts with a 0.5*skin margin likewise) — a
-    //     cell covers any skin up to ~2 cell widths, beyond which
-    //     map_stencils_ throws its out-of-range error rather than
-    //     depositing silently wrong;
-    //   * one MORE cell on the high side for the partition mismatch:
-    //     owned cells tile as `i*K/p` (integer division) while atom
-    //     ownership follows the spatial cut `i*L/p`, so the topmost owned
-    //     atoms can map one cell past the brick's last owned cell
-    //     (exactly `floor(subhi*K/L) <= in_hi + 1`).
-    // Asymmetric depths still cut the mesh-halo volume by ~2x against a
-    // symmetric order-deep shell.
-    nghost_lo_ = order_;
-    nghost_hi_ = 2;
-    nxlo_out_ = nxlo_in_ - nghost_lo_;
-    nxhi_out_ = nxhi_in_ + nghost_hi_;
-    nylo_out_ = nylo_in_ - nghost_lo_;
-    nyhi_out_ = nyhi_in_ + nghost_hi_;
-    nzlo_out_ = nzlo_in_ - nghost_lo_;
-    nzhi_out_ = nzhi_in_ + nghost_hi_;
+    // Ghost cells: LAMMPS Grid3d::ghost_grid with PPPM's
+    // set_stencil_atom(-nlower, nupper), set_shift_atom(shift, shift) and
+    // set_distance(0.5·skin + qdist): an owned atom lies within dist_cells[d]
+    // grid cells of its subdomain until it is exchanged, so its grid point
+    // nx is in [lo, hi] below and its stencil in [lo + nlower, hi + nupper].
+    // Farther drift makes map_stencils_ throw rather than deposit wrong
+    // (LAMMPS "Out of range atoms - cannot compute PPPM").
+    const int nlower = longrange::pppm_stencil_lower(order_);
+    const int nupper = longrange::pppm_stencil_upper(order_);
+    const double shift_atom = longrange::pppm_stencil_shift(order_);
+    constexpr int offset = longrange::kPppmOffset;
+    int in_lo[3], in_hi[3], out_lo[3], out_hi[3];
+    for (int d = 0; d < 3; ++d) {
+        const double fraclo = static_cast<double>(coords[d]) / dims[d];
+        const double frachi = static_cast<double>(coords[d] + 1) / dims[d];
+        partition(K_[d], fraclo, frachi, in_lo[d], in_hi[d]);
+        const int lo = static_cast<int>(fraclo * K_[d] - dist_cells[d]
+                                        + shift_atom + offset)
+                       - offset;
+        const int hi = static_cast<int>(frachi * K_[d] + dist_cells[d]
+                                        + shift_atom + offset)
+                       - offset;
+        out_lo[d] = std::min(lo + nlower, in_lo[d]);
+        out_hi[d] = std::max(hi + nupper, in_hi[d]);
+    }
+    nxlo_in_ = in_lo[0];
+    nxhi_in_ = in_hi[0];
+    nylo_in_ = in_lo[1];
+    nyhi_in_ = in_hi[1];
+    nzlo_in_ = in_lo[2];
+    nzhi_in_ = in_hi[2];
+    nxlo_out_ = out_lo[0];
+    nxhi_out_ = out_hi[0];
+    nylo_out_ = out_lo[1];
+    nyhi_out_ = out_hi[1];
+    nzlo_out_ = out_lo[2];
+    nzhi_out_ = out_hi[2];
     nxl_ = nxhi_out_ - nxlo_out_ + 1;
     nyl_ = nyhi_out_ - nylo_out_ + 1;
     nzl_ = nzhi_out_ - nzlo_out_ + 1;
@@ -185,19 +280,77 @@ void KSpacePPPM::setup_brick_partition_(const int (&coords)[3],
         brick_.assign(n, 0.0);
 }
 
+void KSpacePPPM::partition_for_decomposition_(const int (&coords)[3],
+                                              const int (&dims)[3], double skin,
+                                              const Mat3& inv_cell) {
+    bool same = skin == part_skin_;
+    for (int d = 0; d < 3; ++d)
+        same = same && part_K_[d] == K_[d] && part_dims_[d] == dims[d];
+    if (!same) {
+        // Grid3d::ghost_grid: dist = maxdist per axis for an orthogonal box,
+        // MathExtra::tribbox(h, maxdist) in lamda units otherwise — both are
+        // maxdist·|row d of H⁻¹| (the inverse spacing of the lattice planes
+        // normal to axis d), here in grid cells. maxdist = 0.5·skin + qdist,
+        // qdist = 0 (no TIP4P site).
+        const double maxdist = 0.5 * skin;
+        for (int d = 0; d < 3; ++d) {
+            const double row = std::sqrt(inv_cell(d, 0) * inv_cell(d, 0)
+                                         + inv_cell(d, 1) * inv_cell(d, 1)
+                                         + inv_cell(d, 2) * inv_cell(d, 2));
+            part_dist_cells_[d] = maxdist * row * K_[d];
+            part_K_[d] = K_[d];
+            part_dims_[d] = dims[d];
+        }
+        part_skin_ = skin;
+        // Every rank sees the same mesh, processor grid and skin, so every
+        // rank drops its plans together: the rebuild's Allgather matches.
+        mesh_plans_ready_ = false;
+    }
+    setup_brick_partition_(coords, dims, part_dist_cells_);
+}
+
+void KSpacePPPM::fill_stencils_(const StorageReal* x, const StorageReal* y,
+                                const StorageReal* z, int n_local,
+                                const Mat3& inv_cell) {
+    // LAMMPS particle_map + make_rho / compute_rho1d on the position wrapped
+    // into the cell (u in [0, K)); the brick path image-maps the stencil
+    // back next to the owner in map_stencils_. θ is the centred cardinal
+    // B-spline: θ[a] at grid point nx + nlower + a is rho1d[nlower + a].
+    const int n = order_;
+    const int nlower = longrange::pppm_stencil_lower(n);
+#pragma omp parallel for schedule(static)
+    for (int i = 0; i < n_local; ++i) {
+        double dtheta[12];
+        const double r[3] = {x[i], y[i], z[i]};
+        for (int d = 0; d < 3; ++d) {
+            const double s = inv_cell(d, 0) * r[0] + inv_cell(d, 1) * r[1]
+                             + inv_cell(d, 2) * r[2];
+            const int K = K_[d];
+            double u = s * K;
+            u -= std::floor(u / K) * K; // wrap into [0, K)
+            double frac = 0.0;
+            const int nx = longrange::pppm_particle_map(u, n, frac);
+            longrange::bspline(frac, n, &theta_[(3 * i + d) * n], dtheta);
+            base_[3 * i + d] = nx + nlower;
+        }
+    }
+}
+
 void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
     const auto& box = frame.box;
     if (have_grid_ && box_identity_ == &box && box.revision() == cell_revision_)
         return;
 
+    // ⌈|a_d| / spacing⌉ (or the explicit mesh) on LAMMPS factorable sizes
+    // (2, 3, 5), at least order + 1 — the cuda::KSpacePPPM rule.
     int next_K[3];
     for (int d = 0; d < 3; ++d) {
-        next_K[d] = longrange::good_fft_size(
-            static_cast<int>(std::ceil(box.length(d) / spacing_)));
+        next_K[d] = longrange::pppm_fft_size(
+            fixed_K_[d] > 0
+                ? fixed_K_[d]
+                : static_cast<int>(std::ceil(box.lengths()[d] / spacing_)));
         if (next_K[d] < order_ + 1)
-            next_K[d] = longrange::good_fft_size(order_ + 1);
-        if (d == 2 && (next_K[d] & 1))
-            next_K[d] = longrange::good_fft_size(next_K[d] + 1);
+            next_K[d] = longrange::pppm_fft_size(order_ + 1);
     }
 
     const bool shape_changed = !have_grid_ || next_K[0] != K_[0]
@@ -227,76 +380,58 @@ void KSpacePPPM::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         }
         mpi_fft_ready_ = false;
 #endif
-        for (int d = 0; d < 3; ++d) {
+        for (int d = 0; d < 3; ++d)
             K_[d] = next_K[d];
-            bsp_mod_[d] = longrange::spline_moduli(K_[d], order_);
-        }
         const int ntot = K_[0] * K_[1] * K_[2];
         const int ncomplex = K_[0] * K_[1] * (K_[2] / 2 + 1);
         dens_full_.assign(static_cast<std::size_t>(ntot), 0.0);
         work_.assign(static_cast<std::size_t>(ncomplex),
                      std::complex<double>(0, 0));
+        density_.assign(static_cast<std::size_t>(ncomplex),
+                        std::complex<double>(0, 0));
         green_.assign(static_cast<std::size_t>(ncomplex), 0.0);
+        ik_coef_.assign(3 * static_cast<std::size_t>(ncomplex), 0.0);
+        virial_coef_.assign(6 * static_cast<std::size_t>(ncomplex), 0.0);
 
         // Serial plans bind to dens_full_ / work_ (reused every step).
+        // FFTW_ESTIMATE, as LAMMPS: a MEASURE plan is picked by timing, so two
+        // processes could run different FFT algorithms and round differently;
+        // a minimization then followed a different path from identical input.
+        // Plans run on the OpenMP team (fftw_threads.h).
+        device::ensure_fftw_threads();
         plan_fwd_ = fftw_plan_dft_r2c_3d(
             K_[0], K_[1], K_[2], dens_full_.data(),
-            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_MEASURE);
+            reinterpret_cast<fftw_complex*>(work_.data()), FFTW_ESTIMATE);
         plan_bwd_ = fftw_plan_dft_c2r_3d(
             K_[0], K_[1], K_[2], reinterpret_cast<fftw_complex*>(work_.data()),
-            dens_full_.data(), FFTW_MEASURE);
+            dens_full_.data(), FFTW_ESTIMATE);
         if (!plan_fwd_ || !plan_bwd_) {
             release_storage();
             throw std::runtime_error("KSpacePPPM: serial r2c/c2r plan failed");
         }
     }
 
-    // SPME H(m) on half-spectrum (full m0,m1, m2=0..K2/2).
+    // Hockney–Eastwood G(k) on the r2c half-spectrum (not the Essmann
+    // Euler factor), folded with each mode's conjugate partner.
     {
         const auto& ic = box.inv_cell();
-        const int K0 = K_[0], K1 = K_[1], K2 = K_[2];
-        const int n2 = K2 / 2 + 1;
-        const double inv_pi2_a2 =
-            ATV::units::pi * ATV::units::pi / (alpha_ * alpha_);
-        const double* bm0 = bsp_mod_[0].data();
-        const double* bm1 = bsp_mod_[1].data();
-        const double* bm2 = bsp_mod_[2].data();
-        for (int m0 = 0; m0 < K0; ++m0) {
-            const int h0 = (m0 <= K0 / 2) ? m0 : m0 - K0;
-            const double b0 = bm0[m0];
-            for (int m1 = 0; m1 < K1; ++m1) {
-                const int h1 = (m1 <= K1 / 2) ? m1 : m1 - K1;
-                const double b01 = b0 * bm1[m1];
-                for (int m2 = 0; m2 < n2; ++m2) {
-                    const int idx = m2 + n2 * (m1 + K1 * m0);
-                    if (m0 == 0 && m1 == 0 && m2 == 0) {
-                        green_[static_cast<std::size_t>(idx)] = 0.0;
-                        continue;
-                    }
-                    const int h2 = m2;
-                    double mx = 0, my = 0, mz = 0;
-                    const int hh[3] = {h0, h1, h2};
-                    for (int d = 0; d < 3; ++d) {
-                        mx += hh[d] * ic(0, d);
-                        my += hh[d] * ic(1, d);
-                        mz += hh[d] * ic(2, d);
-                    }
-                    const double msq = mx * mx + my * my + mz * mz;
-                    if (msq < 1e-30) {
-                        green_[static_cast<std::size_t>(idx)] = 0.0;
-                        continue;
-                    }
-                    green_[static_cast<std::size_t>(idx)] =
-                        std::exp(-inv_pi2_a2 * msq) / msq * b01 * bm2[m2];
-                }
+        const auto& h = box.cell();
+        double inv[9], cell[9];
+        for (int d = 0; d < 3; ++d)
+            for (int r = 0; r < 3; ++r) {
+                inv[3 * d + r] = ic(d, r);
+                cell[3 * d + r] = h(d, r);
             }
-        }
+        longrange::pppm_fill_half_modes(K_, cell, inv, alpha_, order_,
+                                        green_.data(), ik_coef_.data(),
+                                        virial_coef_.data());
     }
 
     // Default serial brick = full mesh (overwritten under multi-rank).
     int coords[3] = {0, 0, 0};
     int dims[3] = {1, 1, 1};
-    setup_brick_partition_(coords, dims);
+    const double no_drift[3] = {0.0, 0.0, 0.0};
+    setup_brick_partition_(coords, dims, no_drift);
 
     box_identity_ = &box;
     cell_revision_ = box.revision();
@@ -310,21 +445,20 @@ void KSpacePPPM::ensure_atom_capacity(int required, bool initial_build) {
     const int next = std::max(required, grown);
     base_.resize(static_cast<std::size_t>(3 * next));
     theta_.resize(static_cast<std::size_t>(3 * order_ * next));
-    dtheta_.resize(static_cast<std::size_t>(3 * order_ * next));
     stencil_min_.resize(static_cast<std::size_t>(3 * next));
     atom_capacity_ = next;
     if (!initial_build)
         note_capacity_rebuild();
 }
 
-void KSpacePPPM::map_stencils_(int n_local) {
+std::string KSpacePPPM::map_stencils_(int n_local) {
     const int nm1 = order_ - 1;
     const int lo[3] = {nxlo_out_, nylo_out_, nzlo_out_};
     const int hi[3] = {nxhi_out_, nyhi_out_, nzhi_out_};
     for (int i = 0; i < n_local; ++i) {
         for (int d = 0; d < 3; ++d) {
             const int K = K_[d];
-            const int s = base_[3 * i + d] - nm1;
+            const int s = base_[3 * i + d];
             int sm = s;
             if (!(sm >= lo[d] && sm + nm1 <= hi[d])) {
                 if (s + K >= lo[d] && s + K + nm1 <= hi[d])
@@ -332,7 +466,7 @@ void KSpacePPPM::map_stencils_(int n_local) {
                 else if (s - K >= lo[d] && s - K + nm1 <= hi[d])
                     sm = s - K;
                 else
-                    throw std::runtime_error(
+                    return std::string(
                         "KSpacePPPM: atom " + std::to_string(i)
                         + " maps to mesh cells outside this rank's "
                           "ghost-extended brick on axis "
@@ -349,6 +483,7 @@ void KSpacePPPM::map_stencils_(int n_local) {
             stencil_min_[3 * i + d] = sm;
         }
     }
+    return {};
 }
 
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
@@ -378,17 +513,31 @@ void KSpacePPPM::build_grid_plans_(MPI_Comm comm, int me, int nprocs) {
     remap_fwd_ = {};
     remap_bwd_ = {};
 
-    // Owned-brick extents of every rank; out extents derive from the
-    // uniform ghost depth. 6 ints per rank, gathered once per rebuild.
-    std::vector<int> owned(static_cast<std::size_t>(6 * nprocs));
+    // Owned and ghost-extended extents of every rank (Grid3d::ghost_grid
+    // rounds per rank, so ghost depths are not uniform). 12 ints per rank,
+    // gathered once per rebuild: [0, 6) owned, [6, 12) out.
     const int mine[6] = {nxlo_in_, nxhi_in_, nylo_in_,
                          nyhi_in_, nzlo_in_, nzhi_in_};
-    MPI_Allgather(const_cast<int*>(mine), 6, MPI_INT, owned.data(), 6, MPI_INT,
-                  comm);
-
-    const int K0 = K_[0], K1 = K_[1], K2 = K_[2];
     const int myout[6] = {nxlo_out_, nxhi_out_, nylo_out_,
                           nyhi_out_, nzlo_out_, nzhi_out_};
+    int mine_both[12];
+    for (int k = 0; k < 6; ++k) {
+        mine_both[k] = mine[k];
+        mine_both[6 + k] = myout[k];
+    }
+    std::vector<int> extents(static_cast<std::size_t>(12 * nprocs));
+    MPI_Allgather(mine_both, 12, MPI_INT, extents.data(), 12, MPI_INT, comm);
+    std::vector<int> owned(static_cast<std::size_t>(6 * nprocs));
+    std::vector<int> outs(static_cast<std::size_t>(6 * nprocs));
+    for (int r = 0; r < nprocs; ++r)
+        for (int k = 0; k < 6; ++k) {
+            owned[static_cast<std::size_t>(6 * r + k)] =
+                extents[static_cast<std::size_t>(12 * r + k)];
+            outs[static_cast<std::size_t>(6 * r + k)] =
+                extents[static_cast<std::size_t>(12 * r + 6 + k)];
+        }
+
+    const int K0 = K_[0], K1 = K_[1], K2 = K_[2];
 
     auto grid_push = [](std::vector<GridMsg>& list, int& tot, int proc,
                         const int b[6]) {
@@ -466,12 +615,12 @@ void KSpacePPPM::build_grid_plans_(MPI_Comm comm, int me, int nprocs) {
                     }
                     // Owner side = me. r's shifted out-box vs my owned box.
                     if (r != me) {
-                        const int rout[6] = {rown[0] - nghost_lo_ + sx * K0,
-                                             rown[1] + nghost_hi_ + sx * K0,
-                                             rown[2] - nghost_lo_ + sy * K1,
-                                             rown[3] + nghost_hi_ + sy * K1,
-                                             rown[4] - nghost_lo_ + sz * K2,
-                                             rown[5] + nghost_hi_ + sz * K2};
+                        const int* rbox =
+                            &outs[static_cast<std::size_t>(6 * r)];
+                        const int rout[6] = {
+                            rbox[0] + sx * K0, rbox[1] + sx * K0,
+                            rbox[2] + sy * K1, rbox[3] + sy * K1,
+                            rbox[4] + sz * K2, rbox[5] + sz * K2};
                         int b[6];
                         if (grid_isect(rout, mine, b)) {
                             grid_push(mesh_rev_.recvs, mesh_rev_.recvtot, r, b);
@@ -605,21 +754,16 @@ void KSpacePPPM::run_grid_plan_(const GridPlan& plan, MPI_Comm comm,
 #endif // ATV_HAS_MPI && ATV_HAS_FFTW_MPI
 
 void KSpacePPPM::build(const BuildContext& ctx) {
+    require_supported_mesh_partition(ctx.runtime);
     note_build();
     ensure_grid(ctx.frame, true);
     ensure_atom_capacity(ctx.frame.capacity(), true);
-#ifdef ATV_HAS_MPI
-    // Re-partition brick from DD if multi-rank.
-    if (ctx.runtime.md.dd && ctx.runtime.mpi_size > 1) {
-        auto* dd = ctx.runtime.md.dd;
-        setup_brick_partition_(dd->coords, dd->dims);
-    }
-#else
-    (void)ctx;
-#endif
+    // The multi-rank brick is partitioned by compute(), with the neighbor
+    // skin the Runtime publishes by then.
 }
 
 void KSpacePPPM::compute(const LaunchContext& ctx) {
+    require_supported_mesh_partition(ctx.runtime);
     auto& f = ctx.frame;
     ensure_grid(f, false);
 
@@ -630,7 +774,9 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
     const auto* dd = mpi ? ctx.runtime.md.dd : nullptr;
     const bool first_rank = !mpi || ctx.runtime.mpi_rank == 0;
     if (mpi)
-        setup_brick_partition_(dd->coords, dd->dims);
+        partition_for_decomposition_(dd->coords, dd->dims,
+                                     ctx.runtime.md.neighbor_skin,
+                                     f.box.inv_cell());
 #else
     const bool first_rank = true;
 #endif
@@ -648,13 +794,28 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
     const double vol = f.box.volume();
     const int K0 = K_[0], K1 = K_[1], K2 = K_[2];
     const int n = order_;
-    const int nm1 = n - 1;
 
-    longrange::pme_fill_atom_splines(x, y, z, n_local, ic, K_, order_,
-                                     base_.data(), theta_.data(),
-                                     dtheta_.data());
+    fill_stencils_(x, y, z, n_local, ic);
 
     double e_recip = 0;
+    double stress[6]{};
+    // ρ̂ here is the unnormalized FFT of q·θ, with no N/V. LAMMPS stores
+    // (N/V) times that density, so its (G/N) ρ̂_lammps is our (G/V) ρ̂ and
+    // the energy prefactor is coulomb/(2V), not the SPME coulomb/(2πV).
+    const double energy_scale = ctx.runtime.units.qqrd2e() / (2.0 * vol);
+    const double coulomb = ctx.runtime.units.qqrd2e();
+    const int n2c = K2 / 2 + 1;
+    const std::size_t nhalf = static_cast<std::size_t>(K0)
+                              * static_cast<std::size_t>(K1)
+                              * static_cast<std::size_t>(n2c);
+    // Folded virial planes (pppm_half_mode): ug = herm·|ρ̂|² times the mode's
+    // coefficient, the same (k_e/2V) normalization as the energy.
+    auto tally_mode = [&](std::size_t gidx, double ug) {
+        if (!ctx.stress_requested)
+            return;
+        for (int c = 0; c < 6; ++c)
+            stress[c] += ug * virial_coef_[c * nhalf + gidx];
+    };
 
     // ── Mesh arm selection (three arms, decided once per compute) ──────
     // Ranks sharing the mesh: 1 without a domain decomposition.
@@ -675,8 +836,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
     // The brick family is the multi-rank default. The old "mesh ≤ 64³ &&
     // ranks ≥ 16 → replicated" rule is deleted: it was falsified by the
-    // three-arm matrix in tools/bench_gaff_lammps/README.md (2026-08-26
-    // snapshot, 24048-atom MIL0PEGM18, 32³ mesh), where at np=64 the brick
+    // three-arm GAFF PEO timing matrix (2026-08-26, 24048-atom MIL0PEGM18,
+    // 32³ mesh; harness: benchmarks/compare/gaff-peo-lammps), where at np=64 the brick
     // arm spends 4.78 s in Kspace against 5.43 s replicated — the interval
     // the old rule sent to replicated. The same matrix shows np=256 with
     // the two arms tied (brick 9.85 s vs replicated 9.87 s) because 32
@@ -716,9 +877,49 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
         {
             ATV_PROFILE_SCOPE(ctx, "pppm/spread", ctx.stage, kTimerCategory);
             std::fill(dens_full_.begin(), dens_full_.end(), 0.0);
-            longrange::pme_spread_charges_real(q, n_local, order_, K_,
-                                               base_.data(), theta_.data(),
-                                               dens_full_.data());
+            // LAMMPS make_rho on the periodic full mesh: θ[a] lands on grid
+            // point base + a (base = nx + nlower), folded into [0, K).
+            // Threads own disjoint slabs of x planes and each walks every
+            // atom, so every grid point still sums its atoms in index order
+            // (bitwise the serial result) with no private grids.
+            double* __restrict dens = dens_full_.data();
+#pragma omp parallel
+            {
+                int tid = 0, team = 1;
+#ifdef _OPENMP
+                tid = omp_get_thread_num();
+                team = omp_get_num_threads();
+#endif
+                const int lo =
+                    static_cast<int>(static_cast<long long>(K0) * tid / team);
+                const int hi = static_cast<int>(static_cast<long long>(K0)
+                                                * (tid + 1) / team);
+                for (int i = 0; i < n_local; ++i) {
+                    const double qi = q[i];
+                    if (qi == 0.0)
+                        continue;
+                    const double* thx = &theta_[(3 * i + 0) * n];
+                    const double* thy = &theta_[(3 * i + 1) * n];
+                    const double* thz = &theta_[(3 * i + 2) * n];
+                    const int b0 = base_[3 * i + 0];
+                    const int b1 = base_[3 * i + 1];
+                    const int b2 = base_[3 * i + 2];
+                    for (int a = 0; a < n; ++a) {
+                        const int g0 = wrap_k(b0 + a, K0);
+                        if (g0 < lo || g0 >= hi)
+                            continue;
+                        const double wa = qi * thx[a];
+                        for (int b = 0; b < n; ++b) {
+                            const int g1 = wrap_k(b1 + b, K1);
+                            const double wab = wa * thy[b];
+                            const int plane = K2 * (g1 + K1 * g0);
+                            for (int c = 0; c < n; ++c)
+                                dens[plane + wrap_k(b2 + c, K2)] +=
+                                    wab * thz[c];
+                        }
+                    }
+                }
+            } // omp parallel
         }
 #ifdef ATV_HAS_MPI
         if (mpi) {
@@ -731,89 +932,116 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                           MPI_SUM, dd->cart_comm);
         }
 #endif
-        // Every rank runs the (small) FFT + influence identically on the
-        // Allreduced grid — deterministic, so no Bcast is needed and no
-        // rank idles. e_recip is identical on every rank; the caller adds
-        // it on first_rank only.
+        // Every rank runs the same forward FFT and G(k) on the Allreduced
+        // grid. e_recip is identical on every rank; the caller adds it on
+        // first_rank only. Forces are three ik inverse FFTs, gathered with θ.
         {
             ATV_PROFILE_SCOPE(ctx, "pppm/fft", ctx.stage, kTimerCategory);
             fftw_execute(static_cast<fftw_plan>(plan_fwd_));
-            const int n2 = K2 / 2 + 1;
+            const int n2 = n2c;
             const int m2_nyquist = (K2 % 2 == 0) ? (K2 / 2) : -1;
-            for (int m0 = 0; m0 < K0; ++m0)
-                for (int m1 = 0; m1 < K1; ++m1)
+            const double inv_vol = 1.0 / vol;
+            // ρ̂/V; the ik field of axis a is i·ik_a·ρ̂/V (pppm_half_mode).
+            std::complex<double>* __restrict density = density_.data();
+            const bool do_virial = ctx.stress_requested;
+            const double* __restrict vcoef = virial_coef_.data();
+            // Energy and virial: a fixed partition of the (m0, m1) rows into
+            // ChunkedRange pieces, each summing into its own partial, folded
+            // in chunk order — the same bits at any thread count and in any
+            // run (an OpenMP `reduction` combines in thread-arrival order).
+            constexpr long kGreenChunks = 64;
+            const device::ChunkedRange rows(static_cast<long>(K0) * K1,
+                                            kGreenChunks);
+            double part[kGreenChunks][7] = {};
+            const long n_rows_chunks = rows.chunks();
+#pragma omp parallel for schedule(static)
+            for (long c = 0; c < n_rows_chunks; ++c) {
+                double e = 0, s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0;
+                for (long r = rows.begin(c); r < rows.end(c); ++r) {
+                    const int m0 = static_cast<int>(r / K1);
+                    const int m1 = static_cast<int>(r % K1);
                     for (int m2 = 0; m2 < n2; ++m2) {
-                        const int idx = m2 + n2 * (m1 + K1 * m0);
-                        const double H = green_[static_cast<std::size_t>(idx)];
-                        auto& w = work_[static_cast<std::size_t>(idx)];
-                        if (H == 0.0) {
-                            w = 0;
+                        const std::size_t u =
+                            static_cast<std::size_t>(m2 + n2 * (m1 + K1 * m0));
+                        const double G = green_[u];
+                        const auto w = work_[u];
+                        density[u] = w * inv_vol;
+                        if (G == 0.0)
                             continue;
-                        }
                         const double q2 =
                             w.real() * w.real() + w.imag() * w.imag();
                         const double herm =
                             (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
-                        e_recip += herm * H * q2;
-                        w *= H;
+                        e += herm * G * q2;
+                        if (do_virial) {
+                            const double ug = herm * q2;
+                            s0 += ug * vcoef[0 * nhalf + u];
+                            s1 += ug * vcoef[1 * nhalf + u];
+                            s2 += ug * vcoef[2 * nhalf + u];
+                            s3 += ug * vcoef[3 * nhalf + u];
+                            s4 += ug * vcoef[4 * nhalf + u];
+                            s5 += ug * vcoef[5 * nhalf + u];
+                        }
                     }
-            e_recip *= ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
-            fftw_execute(static_cast<fftw_plan>(plan_bwd_));
-        }
-
-        // Force from dens_full_ (same as pre-brick serial path).
-        ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage, kTimerCategory);
-        const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
-        const double ic00 = ic(0, 0), ic01 = ic(0, 1), ic02 = ic(0, 2);
-        const double ic10 = ic(1, 0), ic11 = ic(1, 1), ic12 = ic(1, 2);
-        const double ic20 = ic(2, 0), ic21 = ic(2, 1), ic22 = ic(2, 2);
-        const double K0d = static_cast<double>(K0);
-        const double K1d = static_cast<double>(K1);
-        const double K2d = static_cast<double>(K2);
-        const double* dens = dens_full_.data();
-        for (int i = 0; i < n_local; ++i) {
-            const double qi = q[i];
-            if (qi == 0.0)
-                continue;
-            const double* thx = &theta_[(3 * i + 0) * n];
-            const double* thy = &theta_[(3 * i + 1) * n];
-            const double* thz = &theta_[(3 * i + 2) * n];
-            const double* dthx = &dtheta_[(3 * i + 0) * n];
-            const double* dthy = &dtheta_[(3 * i + 1) * n];
-            const double* dthz = &dtheta_[(3 * i + 2) * n];
-            const int b0 = base_[3 * i + 0] - nm1;
-            const int b1 = base_[3 * i + 1] - nm1;
-            const int b2 = base_[3 * i + 2] - nm1;
-            double g0s = 0, g1s = 0, g2s = 0;
-            for (int a = 0; a < n; ++a) {
-                const int g0 = wrap_k(b0 + a, K0);
-                const double tx = thx[a];
-                const double dxa = dthx[a];
-                for (int b = 0; b < n; ++b) {
-                    const int g1 = wrap_k(b1 + b, K1);
-                    const int plane = K2 * (g1 + K1 * g0);
-                    double s0 = 0, s1 = 0;
-                    for (int c = 0; c < n; ++c) {
-                        const int g2 = wrap_k(b2 + c, K2);
-                        const double cval = dens[plane + g2];
-                        s0 += cval * thz[c];
-                        s1 += cval * dthz[c];
+                }
+                double* pc = part[c];
+                pc[0] = e;
+                pc[1] = s0;
+                pc[2] = s1;
+                pc[3] = s2;
+                pc[4] = s3;
+                pc[5] = s4;
+                pc[6] = s5;
+            }
+            for (long c = 0; c < n_rows_chunks; ++c) {
+                e_recip += part[c][0];
+                for (int d = 0; d < 6; ++d)
+                    stress[d] += part[c][1 + d];
+            }
+            e_recip *= energy_scale;
+            if (ctx.forces_requested) {
+                const double* dens = dens_full_.data();
+                AccReal* fout[3] = {fx, fy, fz};
+                for (int axis = 0; axis < 3; ++axis) {
+                    const double* ik = &ik_coef_[axis * nhalf];
+                    std::complex<double>* __restrict wk = work_.data();
+                    const std::ptrdiff_t nh =
+                        static_cast<std::ptrdiff_t>(nhalf);
+#pragma omp parallel for schedule(static)
+                    for (std::ptrdiff_t u = 0; u < nh; ++u)
+                        wk[u] = {-ik[u] * density[u].imag(),
+                                 ik[u] * density[u].real()};
+                    fftw_execute(static_cast<fftw_plan>(plan_bwd_));
+                    AccReal* __restrict fa = fout[axis];
+#pragma omp parallel for schedule(static)
+                    for (int i = 0; i < n_local; ++i) {
+                        const double qi = q[i];
+                        if (qi == 0.0)
+                            continue;
+                        const double* thx = &theta_[(3 * i + 0) * n];
+                        const double* thy = &theta_[(3 * i + 1) * n];
+                        const double* thz = &theta_[(3 * i + 2) * n];
+                        const int b0 = base_[3 * i + 0];
+                        const int b1 = base_[3 * i + 1];
+                        const int b2 = base_[3 * i + 2];
+                        double acc = 0;
+                        for (int a = 0; a < n; ++a) {
+                            const int g0 = wrap_k(b0 + a, K0);
+                            const double tx = thx[a];
+                            for (int b = 0; b < n; ++b) {
+                                const int g1 = wrap_k(b1 + b, K1);
+                                const int plane = K2 * (g1 + K1 * g0);
+                                const double txy = tx * thy[b];
+                                for (int c = 0; c < n; ++c) {
+                                    const int g2 = wrap_k(b2 + c, K2);
+                                    acc += dens[plane + g2] * txy * thz[c];
+                                }
+                            }
+                        }
+                        fa[i] += static_cast<AccReal>(-coulomb * qi * acc);
                     }
-                    g0s += dxa * thy[b] * s0;
-                    g1s += tx * dthy[b] * s0;
-                    g2s += tx * thy[b] * s1;
                 }
             }
-            const double fxi =
-                g0s * K0d * ic00 + g1s * K1d * ic01 + g2s * K2d * ic02;
-            const double fyi =
-                g0s * K0d * ic10 + g1s * K1d * ic11 + g2s * K2d * ic12;
-            const double fzi =
-                g0s * K0d * ic20 + g1s * K1d * ic21 + g2s * K2d * ic22;
-            const double s = -fscale * qi;
-            fx[i] += s * fxi;
-            fy[i] += s * fyi;
-            fz[i] += s * fzi;
         }
     } else
 #if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
@@ -825,30 +1053,62 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             // into the contiguous ghost-extended brick (LAMMPS
             // `PPPM::make_rho` shape); the mesh reverse fold below routes
             // ghost cells to their owners, wherever they live.
-            map_stencils_(n_local);
-            for (int i = 0; i < n_local; ++i) {
-                const double qi = q[i];
-                if (qi == 0.0)
-                    continue;
-                const double* thx = &theta_[(3 * i + 0) * n];
-                const double* thy = &theta_[(3 * i + 1) * n];
-                const double* thz = &theta_[(3 * i + 2) * n];
-                const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
-                const int by = stencil_min_[3 * i + 1] - nylo_out_;
-                const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
-                for (int a = 0; a < n; ++a) {
-                    const double wa = qi * thx[a];
-                    const int xoff = (bx + a) * nyl_;
-                    for (int b = 0; b < n; ++b) {
-                        const double wab = wa * thy[b];
-                        double* __restrict row =
-                            &brick_[static_cast<std::size_t>(
-                                (xoff + by + b) * nzl_ + bz)];
-                        for (int c = 0; c < n; ++c)
-                            row[c] += wab * thz[c];
+            // LAMMPS `particle_map` aborts every rank (`error->one`) on an
+            // out-of-range atom. Agree on the verdict collectively instead,
+            // so every rank throws and none is left waiting in the next
+            // collective.
+            {
+                const std::string drift = map_stencils_(n_local);
+                int bad = drift.empty() ? 0 : 1, any_bad = 0;
+                MPI_Allreduce(&bad, &any_bad, 1, MPI_INT, MPI_MAX,
+                              dd->cart_comm);
+                if (any_bad)
+                    throw std::runtime_error(
+                        bad ? drift
+                            : std::string(
+                                  "KSpacePPPM: another rank found an atom "
+                                  "outside its ghost-extended brick (LAMMPS "
+                                  "'out of range atoms - cannot compute "
+                                  "PPPM')"));
+            }
+            // Disjoint x-plane slabs per thread, as in the full-mesh arm.
+#pragma omp parallel
+            {
+                int tid = 0, team = 1;
+#ifdef _OPENMP
+                tid = omp_get_thread_num();
+                team = omp_get_num_threads();
+#endif
+                const int lo =
+                    static_cast<int>(static_cast<long long>(nxl_) * tid / team);
+                const int hi = static_cast<int>(static_cast<long long>(nxl_)
+                                                * (tid + 1) / team);
+                for (int i = 0; i < n_local; ++i) {
+                    const double qi = q[i];
+                    if (qi == 0.0)
+                        continue;
+                    const double* thx = &theta_[(3 * i + 0) * n];
+                    const double* thy = &theta_[(3 * i + 1) * n];
+                    const double* thz = &theta_[(3 * i + 2) * n];
+                    const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
+                    const int by = stencil_min_[3 * i + 1] - nylo_out_;
+                    const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
+                    for (int a = 0; a < n; ++a) {
+                        if (bx + a < lo || bx + a >= hi)
+                            continue;
+                        const double wa = qi * thx[a];
+                        const int xoff = (bx + a) * nyl_;
+                        for (int b = 0; b < n; ++b) {
+                            const double wab = wa * thy[b];
+                            double* __restrict row =
+                                &brick_[static_cast<std::size_t>(
+                                    (xoff + by + b) * nzl_ + bz)];
+                            for (int c = 0; c < n; ++c)
+                                row[c] += wab * thz[c];
+                        }
                     }
                 }
-            }
+            } // omp parallel
         }
 
         // Mesh-halo and remap exchanges are plan-based point-to-point
@@ -864,7 +1124,6 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             fftw_mpi_init();
             mpi_fft_inited = true;
         }
-        const int n2c = K2 / 2 + 1;
         if (!mpi_fft_ready_ || mpi_fft_K_[0] != K0 || mpi_fft_K_[1] != K1
             || mpi_fft_K_[2] != K2 || mpi_nprocs_ != nprocs) {
             if (plan_mpi_fwd_)
@@ -901,7 +1160,7 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
             digest = mix(digest, K2);
             digest = mix(digest, fft_ranks_resolved_);
             digest = mix(digest, static_cast<long long>(mesh_arm_));
-            comm::require_collective_fingerprint(/*version=*/1, digest, comm,
+            comm::require_collective_fingerprint(digest, comm,
                                                  "KSpacePPPM::fft_comm");
 
             int cart_rank = 0;
@@ -1007,120 +1266,145 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                            /*add=*/false);
         }
 
-        // ── forward FFT + influence + backward FFT (FFT group only) ───
+        // ── forward FFT + ik Green's function (FFT group only) ────────
+        // ρ̂/V is kept aside. Each Cartesian force is one c2r of
+        // i·ik_a·ρ̂/V (pppm_half_mode), then the same brick remap and a θ
+        // gather. Energy and the
+        // virial are reduced once, before that axis loop.
+        std::vector<std::complex<double>> potential;
         {
             ATV_PROFILE_SCOPE(ctx, "pppm/fft", ctx.stage, kTimerCategory);
             if (fft_member)
                 fftw_execute(static_cast<fftw_plan>(plan_mpi_fwd_));
 
-            auto* cdata = reinterpret_cast<fftw_complex*>(mpi_data_);
             const int m2_nyquist = (K2 % 2 == 0) ? (K2 / 2) : -1;
+            const double inv_vol = 1.0 / vol;
             double e_local = 0;
-            for (ptrdiff_t a = 0; a < ln0; ++a) {
-                const int m0 = static_cast<int>(l0s + a);
-                for (int m1 = 0; m1 < K1; ++m1) {
-                    for (int m2 = 0; m2 < n2c; ++m2) {
-                        const ptrdiff_t cidx =
-                            m2 + static_cast<ptrdiff_t>(n2c) * (m1 + K1 * a);
-                        const int gidx = m2 + n2c * (m1 + K1 * m0);
-                        const double H = green_[static_cast<std::size_t>(gidx)];
-                        double& re = cdata[cidx][0];
-                        double& im = cdata[cidx][1];
-                        if (H == 0.0) {
-                            re = im = 0;
-                            continue;
+            if (fft_member) {
+                auto* cdata = reinterpret_cast<fftw_complex*>(mpi_data_);
+                potential.assign(static_cast<std::size_t>(ln0)
+                                     * static_cast<std::size_t>(K1)
+                                     * static_cast<std::size_t>(n2c),
+                                 {});
+                for (ptrdiff_t a = 0; a < ln0; ++a) {
+                    const int m0 = static_cast<int>(l0s + a);
+                    for (int m1 = 0; m1 < K1; ++m1) {
+                        for (int m2 = 0; m2 < n2c; ++m2) {
+                            const ptrdiff_t cidx =
+                                m2
+                                + static_cast<ptrdiff_t>(n2c) * (m1 + K1 * a);
+                            const int gidx = m2 + n2c * (m1 + K1 * m0);
+                            const double G =
+                                green_[static_cast<std::size_t>(gidx)];
+                            const double re = cdata[cidx][0];
+                            const double im = cdata[cidx][1];
+                            potential[static_cast<std::size_t>(cidx)] = {
+                                re * inv_vol, im * inv_vol};
+                            if (G == 0.0)
+                                continue;
+                            const double q2 = re * re + im * im;
+                            const double herm =
+                                (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
+                            e_local += herm * G * q2;
+                            tally_mode(static_cast<std::size_t>(gidx),
+                                       herm * q2);
                         }
-                        const double q2 = re * re + im * im;
-                        const double herm =
-                            (m2 == 0 || m2 == m2_nyquist) ? 1.0 : 2.0;
-                        e_local += herm * H * q2;
-                        re *= H;
-                        im *= H;
                     }
                 }
-            }
-            // Reciprocal energy lives entirely on the FFT group, so the sum
-            // stays inside it — one fewer world collective. A non-member keeps
-            // e_recip = 0 and never reads it: only first_rank (cart rank 0,
-            // always a member) accumulates it into the Frame below.
-            if (fft_member) {
+                // Reciprocal energy lives on the FFT group. A non-member
+                // keeps e_recip = 0: only first_rank (cart rank 0, always a
+                // member) banks it into the Frame below.
                 MPI_Allreduce(&e_local, &e_recip, 1, MPI_DOUBLE, MPI_SUM,
                               fft_comm_);
-                e_recip *= ATV::units::coulomb / (2.0 * ATV::units::pi * vol);
-
-                fftw_execute(static_cast<fftw_plan>(plan_mpi_bwd_));
+                e_recip *= energy_scale;
+                if (ctx.stress_requested)
+                    MPI_Allreduce(MPI_IN_PLACE, stress, 6, MPI_DOUBLE, MPI_SUM,
+                                  fft_comm_);
             }
         }
 
-        // ── FFT → brick remap: slab potential back to brick owners ─────
-        {
-            ATV_PROFILE_SCOPE(ctx, "pppm/remap", ctx.stage, kTimerCategory);
-            run_grid_plan_(remap_bwd_, comm, /*tag_base=*/340,
-                           /*src_brick=*/false, /*dst_brick=*/true,
-                           /*add=*/false);
-        }
-
-        // ── mesh forward fill: ghost potential from owners ─────────────
-        {
-            ATV_PROFILE_SCOPE(ctx, "pppm/halo", ctx.stage, kTimerCategory);
-            run_grid_plan_(mesh_fwd_, comm, /*tag_base=*/320,
-                           /*src_brick=*/true, /*dst_brick=*/true,
-                           /*add=*/false);
-        }
-
-        // AD force interpolation from the local brick — stencil rows are
-        // contiguous (z-fastest) and in-range by map_stencils_; the mesh
-        // forward fill above populated every ghost cell they touch.
-        ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage, kTimerCategory);
-        const double fscale = ATV::units::coulomb / (ATV::units::pi * vol);
-        const double ic00 = ic(0, 0), ic01 = ic(0, 1), ic02 = ic(0, 2);
-        const double ic10 = ic(1, 0), ic11 = ic(1, 1), ic12 = ic(1, 2);
-        const double ic20 = ic(2, 0), ic21 = ic(2, 1), ic22 = ic(2, 2);
-        const double K0d = static_cast<double>(K0);
-        const double K1d = static_cast<double>(K1);
-        const double K2d = static_cast<double>(K2);
-        for (int i = 0; i < n_local; ++i) {
-            const double qi = q[i];
-            if (qi == 0.0)
-                continue;
-            const double* thx = &theta_[(3 * i + 0) * n];
-            const double* thy = &theta_[(3 * i + 1) * n];
-            const double* thz = &theta_[(3 * i + 2) * n];
-            const double* dthx = &dtheta_[(3 * i + 0) * n];
-            const double* dthy = &dtheta_[(3 * i + 1) * n];
-            const double* dthz = &dtheta_[(3 * i + 2) * n];
-            const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
-            const int by = stencil_min_[3 * i + 1] - nylo_out_;
-            const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
-            double g0s = 0, g1s = 0, g2s = 0;
-            for (int a = 0; a < n; ++a) {
-                const int xoff = (bx + a) * nyl_;
-                const double tx = thx[a];
-                const double dxa = dthx[a];
-                for (int b = 0; b < n; ++b) {
-                    const double* __restrict row =
-                        &brick_[static_cast<std::size_t>((xoff + by + b) * nzl_
-                                                         + bz)];
-                    double s0 = 0, s1 = 0;
-                    for (int c = 0; c < n; ++c) {
-                        s0 += row[c] * thz[c];
-                        s1 += row[c] * dthz[c];
+        if (ctx.forces_requested) {
+            AccReal* fout[3] = {fx, fy, fz};
+            for (int axis = 0; axis < 3; ++axis) {
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/fft", ctx.stage,
+                                      kTimerCategory);
+                    if (fft_member) {
+                        auto* cdata =
+                            reinterpret_cast<fftw_complex*>(mpi_data_);
+                        for (ptrdiff_t a = 0; a < ln0; ++a) {
+                            const int m0 = static_cast<int>(l0s + a);
+                            for (int m1 = 0; m1 < K1; ++m1) {
+                                for (int m2 = 0; m2 < n2c; ++m2) {
+                                    const ptrdiff_t cidx =
+                                        m2
+                                        + static_cast<ptrdiff_t>(n2c)
+                                              * (m1 + K1 * a);
+                                    const std::size_t gidx =
+                                        static_cast<std::size_t>(
+                                            m2 + n2c * (m1 + K1 * m0));
+                                    const double ik =
+                                        ik_coef_[axis * nhalf + gidx];
+                                    const auto rho =
+                                        potential[static_cast<std::size_t>(
+                                            cidx)];
+                                    cdata[cidx][0] = -ik * rho.imag();
+                                    cdata[cidx][1] = ik * rho.real();
+                                }
+                            }
+                        }
+                        fftw_execute(static_cast<fftw_plan>(plan_mpi_bwd_));
                     }
-                    g0s += dxa * thy[b] * s0;
-                    g1s += tx * dthy[b] * s0;
-                    g2s += tx * thy[b] * s1;
+                }
+                // Members finish the backward FFT before this collective.
+                // Non-members still remap and interpolate. Waitall inside
+                // the plan reclaims the tag, so the next axis can reuse it.
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/remap", ctx.stage,
+                                      kTimerCategory);
+                    run_grid_plan_(remap_bwd_, comm, /*tag_base=*/340,
+                                   /*src_brick=*/false, /*dst_brick=*/true,
+                                   /*add=*/false);
+                }
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/halo", ctx.stage,
+                                      kTimerCategory);
+                    run_grid_plan_(mesh_fwd_, comm, /*tag_base=*/320,
+                                   /*src_brick=*/true, /*dst_brick=*/true,
+                                   /*add=*/false);
+                }
+                {
+                    ATV_PROFILE_SCOPE(ctx, "pppm/interp", ctx.stage,
+                                      kTimerCategory);
+                    AccReal* __restrict fa = fout[axis];
+#pragma omp parallel for schedule(static)
+                    for (int i = 0; i < n_local; ++i) {
+                        const double qi = q[i];
+                        if (qi == 0.0)
+                            continue;
+                        const double* thx = &theta_[(3 * i + 0) * n];
+                        const double* thy = &theta_[(3 * i + 1) * n];
+                        const double* thz = &theta_[(3 * i + 2) * n];
+                        const int bx = stencil_min_[3 * i + 0] - nxlo_out_;
+                        const int by = stencil_min_[3 * i + 1] - nylo_out_;
+                        const int bz = stencil_min_[3 * i + 2] - nzlo_out_;
+                        double acc = 0;
+                        for (int a = 0; a < n; ++a) {
+                            const int xoff = (bx + a) * nyl_;
+                            const double tx = thx[a];
+                            for (int b = 0; b < n; ++b) {
+                                const double* __restrict row =
+                                    &brick_[static_cast<std::size_t>(
+                                        (xoff + by + b) * nzl_ + bz)];
+                                const double txy = tx * thy[b];
+                                for (int c = 0; c < n; ++c)
+                                    acc += row[c] * txy * thz[c];
+                            }
+                        }
+                        fa[i] += static_cast<AccReal>(-coulomb * qi * acc);
+                    }
                 }
             }
-            const double fxi =
-                g0s * K0d * ic00 + g1s * K1d * ic01 + g2s * K2d * ic02;
-            const double fyi =
-                g0s * K0d * ic10 + g1s * K1d * ic11 + g2s * K2d * ic12;
-            const double fzi =
-                g0s * K0d * ic20 + g1s * K1d * ic21 + g2s * K2d * ic22;
-            const double s = -fscale * qi;
-            fx[i] += s * fxi;
-            fy[i] += s * fyi;
-            fz[i] += s * fzi;
         }
     } else
 #endif // MPI + FFTW_MPI
@@ -1140,7 +1424,8 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
         q_local += q[i];
     }
     const double e_self =
-        -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi) * qsq_local;
+        longrange::self_energy_prefactor(alpha_, ctx.runtime.units.qqrd2e())
+        * qsq_local;
     f.meta.get(kEnergy) += e_self;
     f.meta.get(kEnergyPair) += e_self;
 
@@ -1151,11 +1436,15 @@ void KSpacePPPM::compute(const LaunchContext& ctx) {
                       dd->cart_comm);
 #endif
     if (first_rank) {
-        const double e_net = -ATV::units::coulomb * ATV::units::pi
-                             / (2.0 * vol * alpha_ * alpha_) * q_total
-                             * q_total;
+        const double e_net = longrange::background_energy(
+            q_total, vol, alpha_, ctx.runtime.units.qqrd2e());
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
+        if (ctx.stress_requested) {
+            for (int d = 0; d < 6; ++d)
+                f.meta.get(kStress)[d] +=
+                    energy_scale * stress[d] + (d < 3 ? e_net : 0.0);
+        }
     }
 }
 
@@ -1201,11 +1490,10 @@ void KSpacePPPM::release_storage() noexcept {
     std::vector<double>().swap(dens_full_);
     std::vector<std::complex<double>>().swap(work_);
     std::vector<double>().swap(green_);
-    for (int d = 0; d < 3; ++d)
-        std::vector<double>().swap(bsp_mod_[d]);
+    std::vector<double>().swap(ik_coef_);
+    std::vector<double>().swap(virial_coef_);
     std::vector<int>().swap(base_);
     std::vector<double>().swap(theta_);
-    std::vector<double>().swap(dtheta_);
     std::vector<int>().swap(stencil_min_);
     mesh_rev_ = {};
     mesh_fwd_ = {};
@@ -1220,18 +1508,25 @@ void KSpacePPPM::release_storage() noexcept {
     box_identity_ = nullptr;
     cell_revision_ = 0;
     have_grid_ = false;
+    for (int d = 0; d < 3; ++d) {
+        part_K_[d] = 0;
+        part_dims_[d] = 0;
+        part_dist_cells_[d] = 0.0;
+    }
+    part_skin_ = -1.0;
 }
 
 void KSpacePPPM::destroy(const DestroyContext&) { release_storage(); }
 
 std::size_t KSpacePPPM::memory_bytes() const {
-    std::size_t b = brick_.capacity() * sizeof(double)
-                    + work_.capacity() * sizeof(std::complex<double>)
-                    + green_.capacity() * sizeof(double)
-                    + base_.capacity() * sizeof(int)
-                    + (theta_.capacity() + dtheta_.capacity()) * sizeof(double);
-    for (int d = 0; d < 3; ++d)
-        b += bsp_mod_[d].capacity() * sizeof(double);
+    std::size_t b =
+        (brick_.capacity() + dens_full_.capacity() + green_.capacity()
+         + ik_coef_.capacity() + virial_coef_.capacity() + theta_.capacity()
+         + grid_send_.capacity() + grid_recv_.capacity()
+         + grid_self_.capacity())
+            * sizeof(double)
+        + work_.capacity() * sizeof(std::complex<double>)
+        + (base_.capacity() + stencil_min_.capacity()) * sizeof(int);
     if (mpi_data_)
         b += static_cast<std::size_t>(2 * mpi_alloc_) * sizeof(double);
     return b;

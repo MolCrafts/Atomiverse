@@ -11,6 +11,7 @@
 /// constructed frames. Serial, sub-second, no MPI, no I/O.
 
 #include <gtest/gtest.h>
+#include <memory>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -52,10 +53,11 @@
 #include "atomiverse/cpu/minimize/minimize.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #ifdef ATV_HAS_PW
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #endif
+#include "atomiverse/cpu/dynamics/fix_efield.h"
+#include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
@@ -66,13 +68,20 @@
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/mrec_recorder.h"
+#include "atomiverse/molpy.hpp"
+#endif
+#ifdef ATV_HAS_SEMIEMPIRICAL
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
+#endif
 #include "atomiverse/cpu/task/task_materializer.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -99,14 +108,17 @@ namespace {
 // ── LJ fixture ──────────────────────────────────────────────────────────
 
 // Argon-like LJ parameters; kSpacing ≈ 2^(1/6)·σ so the cluster starts near
-// the LJ minimum and 5 steps at 1 fs stay tame.
-constexpr double kEps = 0.0104;  // [eV]
-constexpr double kSigma = 3.4;   // [Å]
-constexpr double kCutoff = 6.0;  // [Å]
-constexpr double kSkin = 0.3;    // [Å]
-constexpr double kDt = 1.0;      // [fs]
-constexpr double kSpacing = 3.8; // [Å]
-constexpr double kTinit = 10.0;  // [K]
+// the LJ minimum and 5 steps at 1 fs stay tame. Classical MD runs on the
+// LAMMPS lj row (boltz = mvv2e = ftm2v = 1), so with energies in
+// eV, lengths in Å and masses in amu the time unit is sqrt(amu·Å²/eV)
+// ≈ 10.18 fs and temperatures are k_B·T in eV.
+constexpr double kEps = 0.0104;             // [eV]
+constexpr double kSigma = 3.4;              // [Å]
+constexpr double kCutoff = 6.0;             // [Å]
+constexpr double kSkin = 0.3;               // [Å]
+constexpr double kDt = 0.09822694585667956; // 1 fs = 1/sqrt(103.6427)
+constexpr double kSpacing = 3.8;            // [Å]
+constexpr double kTinit = 8.617333262e-4;   // k_B · 10 K [eV]
 constexpr unsigned kSeed = 42u;
 constexpr int kNSteps = 5;
 
@@ -115,7 +127,7 @@ constexpr int kNSteps = 5;
 // (`KSpacePME`) halves or the driver refuses to build, so both the TaskSpec
 // entries and the hand-built twin read it from here. 3.5/r_c is the LAMMPS
 // rule of thumb: erfc(3.5) ≈ 7e-7, i.e. the screened real-space pair term
-// is negligible by the cutoff (regressions/md/npt_pme_nacl/REFERENCE.md).
+// is negligible by the cutoff (regressions/md/npt/REFERENCE.md).
 constexpr double kAlpha = 3.5 / kCutoff; // [1/Å]
 constexpr double kPmeSpacing = 1.0;      // [Å] target PME grid spacing
 constexpr int kPmeOrder = 6;             // B-spline interpolation order
@@ -134,7 +146,8 @@ cpu::Frame make_lj_frame() {
             10.0 + kSpacing * static_cast<double>(row);
         frame.span(ATV::kAtom_z)[i] = 15.0;
         frame.span(ATV::kAtom_mass)[i] = 39.948;
-        frame.span(ATV::kAtom_type)[i] = 18;
+        frame.span(ATV::kAtom_type)[i] = 18;          // per-type table key
+        frame.span(ATV::kAtom_atomic_number)[i] = 18; // argon, for XYZ
     }
     frame.box = ATV::cpu::Box::cubic(30.0);
     return frame;
@@ -415,9 +428,9 @@ TEST(TaskMaterializer, MdNptKnobsRunMatchesHandBuiltDriverBitwise) {
 
 // ParrinelloRahmanNPT is an Integrator (it replaces VelocityVerlet, like
 // NoseHooverNPT). Note the constructor order T, P, tau_T, tau_P, dt — it
-// differs from NoseHooverNPT's T, tau_T, P, tau_P, dt, so a swapped
-// materializer arm would show up as a bitwise mismatch here.
-TEST(TaskMaterializer, MdPrNptRunMatchesHandBuiltDriverBitwise) {
+// differs from NoseHooverNPT's T, tau_T, P, tau_P, dt. Check that the
+// materialized plan binds PR-NPT in the same phases as the direct driver.
+TEST(TaskMaterializer, MdPrNptPlanMatchesDirectDriver) {
     std::vector<MDComponentEntry> entries;
     entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
                                        MDBinding{ATV::md::Phase::force, -10}});
@@ -428,13 +441,9 @@ TEST(TaskMaterializer, MdPrNptRunMatchesHandBuiltDriverBitwise) {
     entries.push_back(MDComponentEntry{
         ParrinelloRahmanNptParams{kTinit, 0.0, 100.0, 1000.0, kDt},
         std::nullopt});
-    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+    const TaskSpec spec(MDTask{std::move(entries), 1});
 
-    cpu::Frame materialized_frame = make_bonded_lj_frame();
     TaskMaterializer mat(spec);
-    mat.run(materialized_frame);
-
-    cpu::Frame direct_frame = make_bonded_lj_frame();
     cpu::md::MD sim;
     sim.on(ATV::md::Phase::force)
         .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
@@ -444,12 +453,9 @@ TEST(TaskMaterializer, MdPrNptRunMatchesHandBuiltDriverBitwise) {
     sim.set_integrator(
         cpu::md::ParrinelloRahmanNPT{kTinit, 0.0, 100.0, 1000.0, kDt});
     sim.build();
-    sim.run(direct_frame, kNSteps);
-
-    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0)
-        << "fixture produced zero LJ energy — the equivalence check would "
-           "be vacuous";
-    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+    // Test materialization without running a trajectory; triclinic PR-NPT
+    // dynamics are checked by regressions/md/pr_npt_lj.
+    EXPECT_EQ(plan_signature(mat.plan()), plan_signature(sim.plan()));
 }
 
 // The Berendsen barostat is a Barostat kind: it rides alongside a plain
@@ -584,7 +590,90 @@ TEST(TaskMaterializer, MdCoulLongPmeRunMatchesHandBuiltDriverBitwise) {
            "be vacuous";
     expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
+
+// ID 36: the fused typed LJ + Ewald real space, every knob off its default
+// (per-pair cutoff, unshifted, non-Amber specials, r^-4 rows), against the
+// same component built by hand.
+TEST(TaskMaterializer, MdPairLJCutCoulLongRunMatchesHandBuiltDriverBitwise) {
+    const std::vector<LJTypeCoeff> rows = {{18, 18, kEps, kSigma, 5.5}};
+    const std::vector<R4TypeCoeff> r4 = {{18, 18, 0.004, 3.0, 5.0}};
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{
+        PairLJCutCoulLongParams{rows, kAlpha, kCutoff, 0.0, 0.5, 1.0, 0.0, 0.5,
+                                1.0, false, r4, /*tail=*/true},
+        std::nullopt});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        KSpacePmeParams{kAlpha, kPmeSpacing, kPmeOrder}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_charged_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_charged_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.set_evaluator(cpu::PairLJCutCoulLong{rows, kAlpha, kCutoff}
+                          .set_special_bonds(0.0, 0.5, 1.0, 0.0, 0.5, 1.0)
+                          .set_energy_shift(false)
+                          .set_tail_correction(true)
+                          .set_r4_attraction(r4));
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(cpu::KSpacePME{kAlpha, kPmeSpacing, kPmeOrder});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0);
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
 #endif // ATV_HAS_KSPACE
+
+// The typed PairLJCut mirror (rows + per-pair cutoff + r^-4) replays the
+// per-type constructor, not the single-type one.
+TEST(TaskMaterializer, MdTypedPairLJCutRunMatchesHandBuiltDriverBitwise) {
+    const std::vector<LJTypeCoeff> rows = {{18, 18, kEps, kSigma, 5.5}};
+    const std::vector<R4TypeCoeff> r4 = {{18, 18, 0.004, 3.0, 5.0}};
+    PairLJCutParams typed{0.0, 0.0, kCutoff};
+    typed.coeffs = rows;
+    typed.r4 = r4;
+    typed.tail = true;
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{typed, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_lj_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_lj_frame();
+    cpu::md::MD sim;
+    sim.on(ATV::md::Phase::force)
+        .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+    sim.set_evaluator(
+        cpu::PairLJCut{rows, kCutoff}.set_r4_attraction(r4).set_tail_correction(
+            true));
+    sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.build();
+    sim.run(direct_frame, kNSteps);
+
+    ASSERT_NE(direct_frame.meta.get(ATV::kEnergy), 0.0);
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
 
 // The matched-pair rule is the driver's, not the materializer's, but the
 // materializer is what a launcher payload reaches it through: a spec that
@@ -704,10 +793,10 @@ constexpr double kMorseD = 0.35;
 constexpr double kMorseAlpha = 1.4;
 constexpr double kMorseR0 = 3.9;
 constexpr double kMorseCutoff = 6.0;
-// Born-Mayer-Huggins, keyed on the value `make_lj_frame` actually writes to
-// `kAtom_type`: 18, argon's atomic number. Frame type columns are Z-keyed in
-// this tree, not 0-based dense indices, which is exactly why the wire mirror
-// carries the type pair explicitly instead of implying it from a row index.
+// Born-Mayer-Huggins, keyed on the force-field type `make_lj_frame` writes
+// to `kAtom_type` (18). Type keys are used as-is, not as 0-based dense
+// indices, which is exactly why the wire mirror carries the type pair
+// explicitly instead of implying it from a row index.
 // One row, i.e. the single-type C++ constructor expressed as length-1
 // vectors — the shape the multi-type mirror has to keep expressible.
 constexpr int kBornType = 18;
@@ -871,13 +960,54 @@ TEST(TaskMaterializer, MdBondedFullRunMatchesHandBuiltDriverBitwise) {
     expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
 
+/// @brief The torsion fixture plus a 90° angle 0-1-2 and ±charges.
+cpu::Frame make_charged_angle_frame() {
+    cpu::Frame frame = make_torsion_frame();
+    frame.add_angle(/*ti=*/0, /*tj=*/1, /*tk=*/2, /*type=*/0);
+    const double q[4] = {0.5, -0.25, 0.75, -1.0};
+    for (int i = 0; i < 4; ++i)
+        frame.span(ATV::kAtom_charge)[i] = q[i];
+    return frame;
+}
+
+TEST(TaskMaterializer, MdAngleCosineAndFieldMatchHandBuiltDriverBitwise) {
+    // K(1 + cos θ) [K in eV] and a uniform field [V/Å] on the charges.
+    constexpr double kCosK = 0.4;
+    constexpr double kEx = 0.02, kEy = -0.01, kEz = 0.03;
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{AngleCosineParams{/*K=*/{kCosK}}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{FixEfieldParams{kEx, kEy, kEz}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kCatalogueSteps});
+
+    cpu::Frame materialized_frame = make_charged_angle_frame();
+    TaskMaterializer mat(spec);
+    mat.run(materialized_frame);
+
+    cpu::Frame direct_frame = make_charged_angle_frame();
+    cpu::md::MD sim;
+    sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+    sim.set_evaluator(cpu::AngleCosine{{kCosK}});
+    sim.set_evaluator(cpu::md::FixEfield{kEx, kEy, kEz});
+    sim.build();
+    sim.run(direct_frame, kCatalogueSteps);
+
+    ASSERT_NE(direct_frame.span(ATV::kAtom_x)[0], 10.0)
+        << "no atom moved — the equivalence check would compare two "
+           "untouched frames";
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+}
+
 // ── (b″) Recorder through the categorical recorder slot ─────────────────
 
 #ifdef ATV_HAS_IO
 /// @brief Per-frame atom lines of an XYZ trajectory ("symbol x y z" each).
 ///
 /// The comment line is deliberately dropped: it carries typed meta rendered
-/// from a molrs hash map, so its field ORDER is not reproducible between two
+/// from a molpy hash map, so its field ORDER is not reproducible between two
 /// runs even when the physics is bit-identical. The count line and the atom
 /// lines are.
 std::vector<std::vector<std::string>>
@@ -962,7 +1092,8 @@ TEST(TaskMaterializer, MdXyzRecorderRunMatchesHandBuiltDriverBitwise) {
     ASSERT_TRUE(std::filesystem::exists(path_b));
     const auto frames_a = read_xyz_atom_lines(path_a);
     const auto frames_b = read_xyz_atom_lines(path_b);
-    // kNSteps = 5 → ctx.step ∈ {0…4}; the freq-2 gate opens on 0, 2, 4.
+    // kNSteps = 5 at freq 2 → the initial state and the ends of steps 2, 4
+    // (LAMMPS dump convention: completed steps 0, 2, 4).
     EXPECT_EQ(frames_a.size(), 3u);
     ASSERT_EQ(frames_a.size(), frames_b.size());
     for (std::size_t f = 0; f < frames_a.size(); ++f) {
@@ -1003,6 +1134,114 @@ TEST(TaskMaterializer, MdXyzRecorderWithoutIoBuildThrows) {
 }
 #endif // ATV_HAS_IO
 
+// The `*.mrec` recorder rides the same categorical recorder slot. With the
+// molpy streaming writer the materialized plan records the same frames a
+// hand-built `cpu::MrecRecorder` does, and the physics stays bit-identical;
+// without it the payload decodes but is refused where it would be built.
+#ifdef ATV_HAS_IO
+TEST(TaskMaterializer, MdMrecRecorderRunMatchesHandBuiltDriver) {
+    const auto dir = std::filesystem::temp_directory_path();
+    const auto path_a = (dir / "atv_task_mrec_spec.mrec").string();
+    const auto path_b = (dir / "atv_task_mrec_direct.mrec").string();
+    std::error_code ec;
+    std::filesystem::remove_all(path_a, ec);
+    std::filesystem::remove_all(path_b, ec);
+
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(MDComponentEntry{NeighborListParams{kCutoff, kSkin},
+                                       MDBinding{ATV::md::Phase::force, -10}});
+    entries.push_back(MDComponentEntry{PairLJCutParams{kEps, kSigma, kCutoff},
+                                       MDBinding{ATV::md::Phase::force, 0}});
+    entries.push_back(
+        MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{MrecRecorderParams{path_a, 2, 0, false},
+                                       std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    cpu::Frame materialized_frame = make_lj_frame();
+    {
+        TaskMaterializer mat(spec);
+        mat.run(materialized_frame);
+    } // teardown commits the store
+
+    cpu::Frame direct_frame = make_lj_frame();
+    {
+        cpu::md::MD sim;
+        sim.on(ATV::md::Phase::force)
+            .add(cpu::md::NeighborList<>{kCutoff, kSkin}, -10);
+        sim.on(ATV::md::Phase::force)
+            .add(cpu::PairLJCut{kEps, kSigma, kCutoff}, 0);
+        sim.set_observer(cpu::md::InitVelocity{kTinit, kSeed});
+        sim.set_integrator(cpu::md::VelocityVerlet{kDt});
+        sim.set_record(cpu::MrecRecorder{path_b, 2, 0, false});
+        sim.build();
+        sim.run(direct_frame, kNSteps);
+    }
+    expect_frames_bitwise_equal(materialized_frame, direct_frame);
+
+    // kNSteps = 5 → steps 0, 2, 4 in both stores, identical columns.
+    for (std::uint64_t f = 0; f < 3; ++f) {
+        SCOPED_TRACE("frame " + std::to_string(f));
+        auto a = molrs::read_mrec_trajectory_frame(
+            {path_a.data(), path_a.size()}, f);
+        auto b = molrs::read_mrec_trajectory_frame(
+            {path_b.data(), path_b.size()}, f);
+        for (const char* col : {"x", "y", "z", "vx", "vy", "vz"}) {
+            auto va = molrs::frame_column_f64(*a, "atoms", col);
+            auto vb = molrs::frame_column_f64(*b, "atoms", col);
+            ASSERT_EQ(va.size(), 10u) << col;
+            EXPECT_EQ(std::vector<double>(va.begin(), va.end()),
+                      std::vector<double>(vb.begin(), vb.end()))
+                << col;
+        }
+    }
+    EXPECT_THROW(
+        molrs::read_mrec_trajectory_frame({path_a.data(), path_a.size()}, 3),
+        std::exception);
+
+    std::filesystem::remove_all(path_a, ec);
+    std::filesystem::remove_all(path_b, ec);
+}
+
+TEST(TaskMaterializer, MdTaskRejectsAZeroCaptureBufferBudget) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps,
+                               /*capture_buffer_bytes=*/0});
+    try {
+        TaskMaterializer mat(spec);
+        FAIL() << "capture_buffer_bytes 0 was accepted";
+    } catch (const std::invalid_argument& err) {
+        EXPECT_NE(std::string(err.what()).find("capture_buffer_bytes"),
+                  std::string::npos)
+            << err.what();
+    }
+}
+#else
+TEST(TaskMaterializer, MdMrecRecorderWithoutTrajectoryWriterThrows) {
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        MrecRecorderParams{"traj.mrec", 1, 0, false}, std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+    try {
+        TaskMaterializer mat(spec);
+        cpu::Frame frame = make_lj_frame();
+        mat.run(frame);
+        FAIL() << "an MrecRecorder payload was accepted without the writer";
+    } catch (const std::runtime_error& err) {
+        EXPECT_NE(std::string(err.what()).find("ATV_BUILD_IO"),
+                  std::string::npos)
+            << err.what();
+    }
+}
+#endif // ATV_HAS_IO
+
+#ifdef ATV_HAS_SEMIEMPIRICAL
 // ── (c) SinglePoint AM1 equivalence on H2 ───────────────────────────────
 
 /// @brief Fixed-geometry H2 (0.74 Å, 20 Å box) — the ms-scale AM1 fixture
@@ -1011,8 +1250,8 @@ TEST(TaskMaterializer, MdXyzRecorderWithoutIoBuildThrows) {
 ///        replica. Literals only, so two constructions here are identical too.
 cpu::Frame make_h2_frame() {
     cpu::Frame frame(2);
-    frame.span(ATV::kAtom_type)[0] = 1; // Z = 1 (hydrogen)
-    frame.span(ATV::kAtom_type)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[0] = 1; // Z = 1 (hydrogen)
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
     frame.span(ATV::kAtom_x)[0] = 0.0;
     frame.span(ATV::kAtom_y)[0] = 0.0;
     frame.span(ATV::kAtom_z)[0] = 0.0;
@@ -1024,9 +1263,9 @@ cpu::Frame make_h2_frame() {
 }
 
 TEST(TaskMaterializer, SinglePointAm1H2MatchesHandBuiltEvaluateBitwise) {
-    // AM1EvaluatorParams mirroring the NDDOConfig defaults, spelled out so
+    // AM1Params mirroring the NDDOConfig defaults, spelled out so
     // the two pipelines demonstrably share one configuration.
-    AM1EvaluatorParams params{};
+    AM1Params params{};
     params.charge = 0;
     params.multiplicity = 1;
     params.max_iter = 200;
@@ -1039,12 +1278,12 @@ TEST(TaskMaterializer, SinglePointAm1H2MatchesHandBuiltEvaluateBitwise) {
     EXPECT_EQ(mat.kind(), TaskKind::SinglePoint);
     mat.run(materialized_frame);
 
-    // Directly-built single point: Evaluate + AM1Evaluator (same args as
-    // AM1EvaluatorParams / constructor — no intermediate Config bag).
+    // Directly-built single point: Evaluate + AM1 (same args as
+    // AM1Params / constructor — no intermediate Config bag).
     cpu::Frame direct_frame = make_h2_frame();
     cpu::Evaluate eval;
     eval.on(ATV::evaluate::Phase::evaluate)
-        .add(cpu::semiempirical::AM1Evaluator{0, 1, 200, 1.0e-8, 1.0e-10});
+        .add(cpu::semiempirical::AM1{0, 1, 200, 1.0e-8, 1.0e-10});
     eval.build();
     eval.run(direct_frame);
 
@@ -1079,7 +1318,7 @@ cpu::Frame make_h2_bomd_frame() {
 }
 
 // AM1 as an MD force source (py-am1-forces ac-002): the same
-// `AM1EvaluatorParams` payload that drives a SinglePoint task is legal in an
+// `AM1Params` payload that drives a SinglePoint task is legal in an
 // MDTask, where it rides the categorical (`std::nullopt`) evaluator slot —
 // `set_evaluator`, which binds at md::Phase::force order 0, the same slot
 // `on(force).add(evaluator)` fills in
@@ -1102,7 +1341,7 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     entries.push_back(
         MDComponentEntry{InitVelocityParams{kBomdT, kBomdSeed}, std::nullopt});
     entries.push_back(MDComponentEntry{
-        AM1EvaluatorParams{0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol},
+        AM1Params{0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol},
         std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kBomdSteps});
 
@@ -1111,17 +1350,14 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     EXPECT_EQ(mat.kind(), TaskKind::MD);
     mat.run(materialized_frame);
 
-    // Hand-built twin, registered in the spec's entry order. `with_gradient`
-    // is spelled explicitly on both sides: forces are what makes the
-    // evaluator an MD force source, so the materializer arm must ask for
-    // them rather than inherit the component default.
+    // Hand-built twin, registered in the spec's entry order: the method is
+    // mounted directly and computes forces because the MD force phase asks.
     cpu::Frame direct_frame = make_h2_bomd_frame();
     cpu::md::MD sim;
     sim.set_integrator(cpu::md::VelocityVerlet{kBomdDt});
     sim.set_observer(cpu::md::InitVelocity{kBomdT, kBomdSeed});
-    sim.set_evaluator(cpu::semiempirical::AM1Evaluator{
-        0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol}
-                          .with_gradient(true));
+    sim.set_evaluator(cpu::semiempirical::AM1{0, 1, kBomdMaxIter, kBomdDensTol,
+                                              kBomdEnergyTol});
     sim.build();
     sim.run(direct_frame, kBomdSteps);
 
@@ -1136,6 +1372,32 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     ASSERT_NE(direct_frame.span(ATV::kAtom_z)[1], 0.74);
     expect_frames_bitwise_equal(materialized_frame, direct_frame);
 }
+
+#else
+// Gating contract, same shape as the PW one below: `AM1Params` and
+// `SinglePointTask` decode on an SE-less build and must be refused at
+// materialize time, on every AM1 home.
+TEST(TaskMaterializer, Am1PayloadsWithoutSemiempiricalBuildThrow) {
+    auto expect_refused = [](const TaskSpec& spec, const char* what) {
+        try {
+            TaskMaterializer mat(spec);
+            FAIL() << what << " was accepted in an SE-less build";
+        } catch (const std::runtime_error& err) {
+            EXPECT_NE(std::string(err.what()).find("ATV_BUILD_SEMIEMPIRICAL"),
+                      std::string::npos)
+                << err.what();
+        }
+    };
+    expect_refused(TaskSpec(SinglePointTask{AM1Params{}}),
+                   "a SinglePoint task");
+
+    std::vector<MDComponentEntry> entries;
+    entries.push_back(
+        MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
+    entries.push_back(MDComponentEntry{AM1Params{}, std::nullopt});
+    expect_refused(TaskSpec(MDTask{std::move(entries), 1}), "an AM1 MD entry");
+}
+#endif // ATV_HAS_SEMIEMPIRICAL
 
 // ── (c″) MD with a plane-wave force source — PW BOMD ────────────────────
 
@@ -1161,8 +1423,8 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
 cpu::Frame make_si2_bomd_frame() {
     cpu::Frame frame(2);
     for (int i = 0; i < 2; ++i) {
-        frame.span(ATV::kAtom_type)[i] = 14;      // Z = 14 (silicon)
-        frame.span(ATV::kAtom_mass)[i] = 28.0855; // [amu]
+        frame.span(ATV::kAtom_atomic_number)[i] = 14; // Z = 14 (silicon)
+        frame.span(ATV::kAtom_mass)[i] = 28.0855;     // [amu]
     }
     frame.span(ATV::kAtom_x)[0] = 0.0;
     frame.span(ATV::kAtom_y)[0] = 0.0;
@@ -1174,10 +1436,10 @@ cpu::Frame make_si2_bomd_frame() {
     return frame;
 }
 
-// PW as an MD force source (py-pw-forces): the `PwEvaluatorParams` payload
+// PW as an MD force source (py-pw-forces): the `PWParams` payload
 // rides the categorical (`std::nullopt`) evaluator slot — `set_evaluator`,
 // which binds at md::Phase::force order 0, the same slot
-// `on(force).add(PWEvaluator{…}.with_gradient(true))` fills in
+// `on(force).add(PW{…})` fills in
 // regressions/pw/pw-bomd-h. Two steps, each one a full plane-wave SCF plus
 // analytic forces.
 //
@@ -1213,23 +1475,22 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // ignored the field) would silently run PBE and the twin below — which
     // names the enumerator — would disagree. It is also the cheaper
     // functional, no gradient corrections.
-    entries.push_back(
-        MDComponentEntry{PwEvaluatorParams{/*upf_path=*/"",
-                                           /*gth_name=*/"GTH-PBE-q4",
-                                           /*ecut_ry=*/kPwEcut,
-                                           /*k_mesh=*/kPwKMesh,
-                                           /*tol=*/kPwTol,
-                                           /*max_iter=*/kPwMaxIter,
-                                           /*mix_beta=*/kPwMixBeta,
-                                           /*pulay_depth=*/kPwPulayDepth,
-                                           /*xc=*/0,
-                                           /*spin_polarized=*/false,
-                                           /*multiplicity=*/1,
-                                           /*smearing=*/0,
-                                           /*degauss=*/kPwDegauss,
-                                           /*mp_order=*/kPwMpOrder,
-                                           /*extra_bands=*/kPwExtraBands},
-                         std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PWParams{/*potentials=*/{{14, PWPotentialFormat::gth, "GTH-PBE-q4"}},
+                 /*ecut_ry=*/kPwEcut,
+                 /*k_mesh=*/kPwKMesh,
+                 /*tol=*/kPwTol,
+                 /*max_iter=*/kPwMaxIter,
+                 /*mix_beta=*/kPwMixBeta,
+                 /*pulay_depth=*/kPwPulayDepth,
+                 /*xc=*/0,
+                 /*spin_polarized=*/false,
+                 /*multiplicity=*/1,
+                 /*smearing=*/0,
+                 /*degauss=*/kPwDegauss,
+                 /*mp_order=*/kPwMpOrder,
+                 /*extra_bands=*/kPwExtraBands},
+        std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), kPwSteps});
 
     cpu::Frame materialized_frame = make_si2_bomd_frame();
@@ -1238,26 +1499,25 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     mat.run(materialized_frame);
 
     // Hand-built twin, registered in the spec's entry order. Every one of
-    // the fifteen knobs is assigned in the params' declaration order — the
-    // order the codec writes and the materializer replays — so a dropped or
-    // swapped field shows up as a bitwise mismatch rather than as a silent
-    // default. `with_gradient` is spelled explicitly on both sides: forces
-    // are what makes the evaluator an MD force source, and the component
-    // default is false.
+    // the fifteen fields is spelled in the params' declaration order — the
+    // order the codec writes and the materializer replays — the identity
+    // fields (pseudopotential, ecut, k-mesh, xc) through the constructor and
+    // the knobs by assignment, so a dropped or swapped field shows up as a
+    // bitwise mismatch rather than as a silent default. The method is
+    // mounted directly; the MD force phase requests its forces.
     cpu::Frame direct_frame = make_si2_bomd_frame();
-    cpu::pw::PW pw;
-    pw.upf_path = "";
-    pw.gth_name = "GTH-PBE-q4";
-    pw.ecut_ry = kPwEcut;
-    pw.k_mesh = kPwKMesh;
+    cpu::pw::PW pw{{std::make_shared<cpu::pw::GthPseudopotential>(
+                       molrs::Element::Si, "GTH-PBE-q4")},
+                   kPwEcut,
+                   kPwKMesh,
+                   cpu::xc::XCType::LSDA};
     pw.tol = kPwTol;
     pw.max_iter = kPwMaxIter;
     pw.mix_beta = kPwMixBeta;
     pw.pulay_depth = kPwPulayDepth;
-    pw.xc = cpu::scf::XCType::LSDA;
     pw.spin_polarized = false;
     pw.multiplicity = 1;
-    pw.smearing = cpu::pw::Smearing::none;
+    pw.smearing = ATV::electronic::Smearing::none;
     pw.degauss = kPwDegauss;
     pw.mp_order = kPwMpOrder;
     pw.extra_bands = kPwExtraBands;
@@ -1268,7 +1528,7 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the
     // solver moves into the evaluator and the evaluator prvalue moves into
     // the owning setter — no named local to copy from.
-    sim.set_evaluator(cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true));
+    sim.set_evaluator(std::move(pw));
     sim.build();
     sim.run(direct_frame, kPwSteps);
 
@@ -1294,8 +1554,8 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
     entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
     entries.push_back(
-        MDComponentEntry{PwEvaluatorParams{"", "GTH-PBE-q4", 2.0, 1, 1e-4, 2,
-                                           0.7, 5, 0, false, 1, 0, 0.02, 1, 4},
+        MDComponentEntry{PWParams{"", "GTH-PBE-q4", 14, 2.0, 1, 1e-4, 2, 0.7, 5,
+                                  0, false, 1, 0, 0.02, 1, 4},
                          std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), 1});
 
@@ -1303,7 +1563,7 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
         TaskMaterializer mat(spec);
         cpu::Frame frame = make_lj_frame();
         mat.run(frame);
-        FAIL() << "a PWEvaluator payload was accepted in a PW-less build";
+        FAIL() << "a PW payload was accepted in a PW-less build";
     } catch (const std::runtime_error& err) {
         EXPECT_NE(std::string(err.what()).find("ATV_BUILD_PW"),
                   std::string::npos)
@@ -1439,7 +1699,7 @@ TEST(TaskMaterializer, MinimizeCgRunMatchesHandBuiltDriverBitwise) {
 }
 
 TEST(TaskMaterializer, MinimizeFireRunMatchesHandBuiltDriverBitwise) {
-    // The LJ-tuned FIRE 1.0 knobs of regressions/minimizer/fire_lj_dimer:
+    // The LJ-tuned FIRE 1.0 knobs of regressions/minimizer/geometry:
     // ASE's dt0 = 0.1 assumes O(1) forces, and an LJ residual is ≪ 1 eV/Å,
     // so the pseudo-timestep and its ceiling are raised. Both are live
     // within five iterations (dt grows after n_min accelerating steps), and
@@ -1510,7 +1770,7 @@ TEST(TaskMaterializer, MinimizeFireRunMatchesHandBuiltDriverBitwise) {
 }
 
 /// @brief Two LJ atoms 3.0 Å apart in a 6 Å cubic cell — the fixture of
-///        regressions/minimizer/cell_lj_pressure, scaled to a unit-test
+///        regressions/minimizer/cell-relax, scaled to a unit-test
 ///        iteration budget.
 ///
 /// Compressed on both counts: the pair sits inside r_min AND the cell is
@@ -1580,7 +1840,7 @@ TEST(TaskMaterializer, MinimizeCellRelaxRunMatchesHandBuiltDriverBitwise) {
     // Two of the four knobs are constructor arguments and two are public
     // members, so the twin spells the ctor first and then assigns the rest
     // in declaration order — the shape the materializer arm has to use, and
-    // the one regressions/minimizer/cell_lj_pressure uses.
+    // the one regressions/minimizer/cell-relax uses.
     cpu::minimizer::IsotropicCellRelax cell(kCellPTarget, kCellAlpha0);
     cell.max_scale = kCellMaxScale;
     cell.bulk_mod = kCellBulkMod;
@@ -1612,8 +1872,10 @@ TEST(TaskMaterializer, KindReportsTaskKindOfTheSpec) {
     const TaskSpec md_spec(MDTask{std::move(entries), 1});
     EXPECT_EQ(TaskMaterializer(md_spec).kind(), TaskKind::MD);
 
-    const TaskSpec sp_spec(SinglePointTask{AM1EvaluatorParams{}});
+#ifdef ATV_HAS_SEMIEMPIRICAL
+    const TaskSpec sp_spec(SinglePointTask{AM1Params{}});
     EXPECT_EQ(TaskMaterializer(sp_spec).kind(), TaskKind::SinglePoint);
+#endif
 
     std::vector<MinimizeComponentEntry> min_entries;
     min_entries.push_back(MinimizeComponentEntry{

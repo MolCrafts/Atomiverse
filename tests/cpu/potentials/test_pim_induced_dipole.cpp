@@ -70,6 +70,8 @@ PolResult run_pim(double r, double thole_a, double tt_b,
         out.fz[i] = f.span(kAtom_fz)[i];
     }
     EXPECT_NEAR(f.meta.get(kEnergy), out.e_pol, 1e-14);
+    // Polarization is pair energy: the total stays the sum of the terms.
+    EXPECT_DOUBLE_EQ(f.meta.get(kEnergyPair), f.meta.get(kEnergy));
     return out;
 }
 
@@ -85,7 +87,7 @@ void undamped_two_site(double r, double q0, double q1, double a0, double a1,
     const double den = 1.0 - a0 * a1 * T * T;
     mu0 = (a0 * E0 + a0 * a1 * T * E1) / den;
     mu1 = (a1 * E1 + a1 * a0 * T * E0) / den;
-    e_pol = units::coulomb * (-0.5 * (mu0 * E0 + mu1 * E1));
+    e_pol = units::UnitSystem::lj().qqrd2e() * (-0.5 * (mu0 * E0 + mu1 * E1));
 }
 
 } // namespace
@@ -109,7 +111,7 @@ TEST(PimInducedDipole, OnePolUndampedAnalyticForce) {
     // U=-½ k α/r⁴, F0x = 2 k α / r⁵, F1x = −F0x.
     const double r = 3.0, a0 = 1.0;
     auto out = run_pim(r, 0.0, 0.0, {0.0, a0, 0.0});
-    const double k = units::coulomb;
+    const double k = units::UnitSystem::lj().qqrd2e();
     const double F0 = 2.0 * k * a0 / std::pow(r, 5);
     const double U = -0.5 * k * a0 / std::pow(r, 4);
     EXPECT_NEAR(out.e_pol, U, 1e-12);
@@ -227,8 +229,7 @@ TEST(PimInducedDipole, VirialTraceMatchesFdScalingUndamped) {
             f.span(kAtom_type)[i] = t[i];
             f.span(kAtom_mass)[i] = 1.0;
             f.span(kAtom_tag)[i] = i + 1;
-            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] =
-                0;
+            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
         }
         f.box = cpu::Box::cubic(s * L0);
         f.meta.get(kEnergy) = 0;
@@ -248,10 +249,9 @@ TEST(PimInducedDipole, VirialTraceMatchesFdScalingUndamped) {
     energy_and_stress(1.0, w);
     const double trace = w[0] + w[1] + w[2];
     const double h = 1e-5;
-    const double dEds =
-        (energy_and_stress(1.0 + h, nullptr)
-         - energy_and_stress(1.0 - h, nullptr))
-        / (2.0 * h);
+    const double dEds = (energy_and_stress(1.0 + h, nullptr)
+                         - energy_and_stress(1.0 - h, nullptr))
+                        / (2.0 * h);
     ASSERT_NE(trace, 0.0);
     EXPECT_NEAR(trace, -dEds, std::max(1e-8, 1e-5 * std::fabs(trace)));
 }

@@ -50,7 +50,8 @@ RealMatrix g_contraction(const xt::xtensor<double, 4>& eri,
 
 } // namespace
 
-GradientResult mp2_analytic_forces(const Frame& frame, const internal::IntegralView& pack,
+GradientResult mp2_analytic_forces(const Frame& frame,
+                                   const internal::IntegralView& pack,
                                    const SlaterDeterminant& det,
                                    double e_scf_ha, double e_corr_ha) {
     if (!det.restricted())

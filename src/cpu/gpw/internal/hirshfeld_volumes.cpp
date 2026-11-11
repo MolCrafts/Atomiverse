@@ -3,7 +3,10 @@
 
 #include "atomiverse/cpu/gpw/internal/hirshfeld_volumes.h"
 
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -27,6 +30,8 @@ hirshfeld_volume_ratios(const UniformGrid& grid, const std::vector<double>& rho,
                         const std::vector<int>& Z,
                         const std::vector<std::array<double, 3>>& pos_bohr,
                         const double cell_bohr[3], bool periodic) {
+    const bool prof = std::getenv("ATV_GPW_PROF") != nullptr;
+    const auto start = std::chrono::steady_clock::now();
     const std::size_t n = Z.size();
     if (pos_bohr.size() != n)
         throw std::runtime_error("GPW Hirshfeld: Z and pos size mismatch");
@@ -87,11 +92,18 @@ hirshfeld_volume_ratios(const UniformGrid& grid, const std::vector<double>& rho,
             throw std::runtime_error("GPW Hirshfeld: V_free must be positive");
         const double v = V_eff[a] / v_free[a];
         if (!(v > 0.0) || !std::isfinite(v))
-            throw std::runtime_error(
-                "GPW Hirshfeld: non-positive or non-finite volume ratio for atom "
-                + std::to_string(a));
+            throw std::runtime_error("GPW Hirshfeld: non-positive or "
+                                     "non-finite volume ratio for atom "
+                                     + std::to_string(a));
         ratios[a] = v;
     }
+    if (prof)
+        std::fprintf(stderr,
+                     "[gpw hirshfeld] atoms=%zu ngrid=%ld partition=%.0f ms\n",
+                     n, npts,
+                     std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - start)
+                         .count());
     return ratios;
 }
 

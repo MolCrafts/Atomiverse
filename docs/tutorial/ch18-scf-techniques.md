@@ -1,25 +1,74 @@
-# Chapter 18. SCF Convergence
+# Self-Consistency
 
-Roothaan–Hall iteration is a fixed-point search: nothing guarantees that it
-converges. This chapter covers three staged controls—initial guess, Fock/density
-mixing, and second-order orbital updates—each written as **Theory → Practice →
-Results**.
+Status tables: [Hartree–Fock roadmap](../roadmap/hartree-fock.md).
 
-See also [Ch. 2](ch02-rhf.md) and [Ch. 3](ch03-open-shell.md).
+An electronic iteration can fail even when the underlying physical model is
+reasonable. Oscillations and slow convergence are information about the
+nonlinear solve. Understanding that information is more productive than
+changing several numerical controls at once.
+
+**Learning goals.** Read residuals, distinguish damping from DIIS, and separate
+convergence, stability, and state selection.
+
+**Before you begin.** The SCF loop in [Hartree–Fock Theory](ch02-rhf.md) and
+fixed points in [Mathematical Tools](mathematical-tools.md).
+
+## A nonlinear fixed point
+
+SCF maps an input density into an output density. Near a fixed point,
+the Jacobian of this map determines whether small errors shrink or grow.
+The contraction theorem guarantees convergence only under its contraction
+and domain assumptions; a generic molecular SCF map need not satisfy them.
+Small gaps and competing occupations can make a density highly sensitive
+to potential changes.
+
+For real AO matrices a commutator residual is $R=FPS-SPF$. It vanishes at
+the corresponding self-consistent occupied solution. A small energy change
+alone does not imply a small residual, and a small residual alone does not
+prove that the solution is the intended electronic minimum.
+
+Damping combines old and new densities:
+$P_{k+1}=(1-\alpha)P_{\mathrm{out}}+\alpha P_k$.
+Here $\alpha$ is the retained fraction of the *old* density. Level shifting
+reduces mixing into virtual orbitals during iteration, but the final
+unshifted equations still need verification.
+
+DIIS seeks coefficients whose combined residual is small, with
+$\sum_i c_i=1$. Minimizing
+$\sum_{ij}c_i\langle R_i,R_j\rangle c_j$ is a constrained least-squares
+problem. Nearly dependent history vectors make it ill-conditioned.
+Energy-based mixing can help away from stationarity, while orbital-rotation
+methods use gradient and curvature information locally. None bypasses
+correct electron counts, basis conditioning, or state selection.
+
+## Practice plan
+
+Stretch a hydrogen bond with a fixed basis and log energy, density change,
+residual, and iteration count. Change one remedy at a time and compare runs
+at the same final accuracy, not merely at the same iteration budget.
+Continuation from a neighboring geometry is useful, but independent guesses
+help reveal branch trapping.
+
+If a run reaches its budget, report nonconvergence. Do not pass an
+unconverged last iterate to a correlated calculation, Hessian, or nuclear
+time step as though it were a validated reference.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
 
 > **Build flag.** Everything in this chapter lives behind `ATV_BUILD_HF`, which
 > is **OFF by default** — with it off the `cpu::scf::…` headers, sources, tests
 > and regressions are excluded from the build entirely.
 >
-> ```bash
+> ``bash
 > cmake -B build -DCMAKE_BUILD_TYPE=Release \
 >       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
 > cmake --build build -j$(nproc)
-> ```
+> ``
 
----
-
-## 18.1 Why iterations fail
+## Why iterations fail
 
 ### Theory
 
@@ -38,13 +87,15 @@ Classical remedies:
 - **Level shift** (Saunders–Hillier): raise virtual levels by \(\lambda\). After
   convergence the engine re-diagonalises the unshifted Fock matrix.
 
-Recommended staging: good guess (§18.2) → far-region mixer (§18.3) → CDIIS or
-SOSCF near SCF (§18.3–18.4).
+A useful strategy to test is a physically informed initial guess, followed
+by energy-based mixing away from stationarity and residual-based DIIS or
+second-order orbital optimization nearby. Compare alternatives at the same
+final convergence criteria rather than treating this sequence as universal.
 
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.damping_factor = 0.5;  // retain half the previous density
 rhf.level_shift = 0.2;     // Hartree; 0 disables
 rhf.run(frame);
@@ -58,7 +109,7 @@ once the iteration is stable enough for CDIIS.
 
 ---
 
-## 18.2 Initial guesses
+## Initial guesses
 
 ### Theory
 
@@ -99,7 +150,7 @@ parameterisations differ). Regression: `h2o_scf_convergence`.
 
 ---
 
-## 18.3 Mixing: CDIIS, EDIIS, ADIIS
+## Mixing: CDIIS, EDIIS, ADIIS
 
 ### Theory
 
@@ -115,7 +166,7 @@ switch to CDIIS when \(\max|e|\) falls below a threshold.
 ### Practice
 
 ```cpp
-cpu::scf::UHF uhf(5, 5);
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/5};
 uhf.mixer = cpu::scf::MixerKind::ADIIS_CDIIS;
 uhf.mixer_switch_tol = 1e-2;
 uhf.run(frame);
@@ -135,7 +186,7 @@ diradical target, \(\langle S^2\rangle\approx 1.97\)):
 
 ---
 
-## 18.4 Second-Order SCF
+## Second-Order SCF
 
 ### Theory
 
@@ -153,7 +204,7 @@ Cost per Newton step exceeds one CDIIS extrapolation. Staging: DIIS until
 ### Practice
 
 ```cpp
-cpu::scf::UHF uhf(5, 5);
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/5};
 uhf.soscf = true;
 uhf.soscf_start = 0.25;
 uhf.soscf_max_micro = 12;
@@ -180,3 +231,7 @@ uhf.run(frame);
   **116**, 8255 (2002); Hu & Yang, *J. Chem. Phys.* **132**, 054109 (2010).
 - Sun, arXiv:1610.08423 (CIAH).
 - Helgaker, Jørgensen, Olsen, *Molecular Electronic-Structure Theory*, Ch. 10.
+
+## Questions for reflection
+
+Why can adding more DIIS history make convergence worse? What does an orbital-stability test ask that a residual threshold does not?

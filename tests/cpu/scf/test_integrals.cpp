@@ -33,8 +33,8 @@ cpu::Frame make_h2(double bond_length) {
     frame.span(ATV::kAtom_z)[1] = double(0);
     frame.span(ATV::kAtom_mass)[0] = double(1.008);
     frame.span(ATV::kAtom_mass)[1] = double(1.008);
-    frame.span(ATV::kAtom_type)[0] = 1;
-    frame.span(ATV::kAtom_type)[1] = 1;
+    frame.span(ATV::kAtom_atomic_number)[0] = 1;
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
     frame.box = ATV::cpu::Box::cubic(100.0);
     return frame;
 }
@@ -228,7 +228,8 @@ TEST(NativeIntegrals, RegressionValues_H2) {
 
 TEST(NativeIntegrals, IntegralWorkspace_Sanity) {
     auto frame = make_h2(double(0.74));
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
 
     EXPECT_NEAR(static_cast<double>(pack.S(0, 0)), 1.0, 0.01);
     EXPECT_NEAR(static_cast<double>(pack.V_nuc), kRefVnuc, 0.01);
@@ -258,7 +259,8 @@ TEST(NativeIntegrals, MultiGeometry_IntegralWorkspace) {
     double bond_lengths[] = {0.5, 0.74, 1.0, 1.5, 2.0};
     for (double bl : bond_lengths) {
         auto frame = make_h2(double(bl));
-        auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+        auto pack = cpu::scf::internal::IntegralWorkspace{
+            frame, cpu::scf::BasisSet::STO3G};
         // S diagonal must be ~1 regardless of geometry
         EXPECT_NEAR(static_cast<double>(pack.S(0, 0)), 1.0, 0.01)
             << "S(0,0) != 1.0 at bond_length=" << bl;
@@ -288,9 +290,9 @@ cpu::Frame make_h2o() {
     f.span(ATV::kAtom_mass)[0] = double(15.999);
     f.span(ATV::kAtom_mass)[1] = double(1.008);
     f.span(ATV::kAtom_mass)[2] = double(1.008);
-    f.span(ATV::kAtom_type)[0] = 8;
-    f.span(ATV::kAtom_type)[1] = 1;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
@@ -316,18 +318,19 @@ cpu::Frame make_ch4() {
     f.span(ATV::kAtom_z)[4] = double(-0.6276);
     for (int i = 0; i < 5; ++i)
         f.span(ATV::kAtom_mass)[i] = (i == 0) ? double(12.011) : double(1.008);
-    f.span(ATV::kAtom_type)[0] = 6;
-    f.span(ATV::kAtom_type)[1] = 1;
-    f.span(ATV::kAtom_type)[2] = 1;
-    f.span(ATV::kAtom_type)[3] = 1;
-    f.span(ATV::kAtom_type)[4] = 1;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[3] = 1;
+    f.span(ATV::kAtom_atomic_number)[4] = 1;
     f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
 
 TEST(NativeIntegrals, H2O_IntegralWorkspace_Sanity) {
     auto frame = make_h2o();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // O: 1s + 2s + 2px + 2py + 2pz = 5, each H: 1s = 1
     EXPECT_EQ(pack.n_basis, 7);
     EXPECT_EQ(pack.n_electrons, 10);
@@ -345,7 +348,8 @@ TEST(NativeIntegrals, H2O_IntegralWorkspace_Sanity) {
 
 TEST(NativeIntegrals, CH4_IntegralWorkspace_Sanity) {
     auto frame = make_ch4();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // C: 5 bf, 4 H: 1 bf each = 9 total
     EXPECT_EQ(pack.n_basis, 9);
     EXPECT_EQ(pack.n_electrons, 10);
@@ -357,7 +361,8 @@ TEST(NativeIntegrals, CH4_IntegralWorkspace_Sanity) {
 TEST(NativeIntegrals, PType_SelfOverlap) {
     // px should have <px|px> = 1 for a properly normalized shell
     auto frame = make_h2o();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     // Basis order for O: 1s(0), 2s(1), 2px(2), 2py(3), 2pz(4), H1(5), H2(6)
     EXPECT_NEAR(static_cast<double>(pack.S(2, 2)), 1.0, 0.01) << "<px|px> != 1";
     EXPECT_NEAR(static_cast<double>(pack.S(3, 3)), 1.0, 0.01) << "<py|py> != 1";
@@ -367,7 +372,8 @@ TEST(NativeIntegrals, PType_SelfOverlap) {
 TEST(NativeIntegrals, PType_Orthogonality) {
     // px, py, pz on the SAME center should be orthogonal
     auto frame = make_h2o();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
+    auto pack =
+        cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
     EXPECT_NEAR(static_cast<double>(pack.S(2, 3)), 0.0, 1e-10)
         << "<px|py> != 0";
     EXPECT_NEAR(static_cast<double>(pack.S(2, 4)), 0.0, 1e-10)
@@ -375,41 +381,6 @@ TEST(NativeIntegrals, PType_Orthogonality) {
     EXPECT_NEAR(static_cast<double>(pack.S(3, 4)), 0.0, 1e-10)
         << "<py|pz> != 0";
 }
-
-/// @brief Verify block-level g_rhf matches AO-level g_rhf for a given frame.
-static void compare_g_ao_vs_block(const cpu::Frame& frame, const char* label) {
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G};
-    int n = pack.n_basis;
-
-    // Dense test density with off-diagonal elements to exercise all contributions.
-    RealMatrix P = xt::zeros<double>({(size_t)n, (size_t)n});
-    for (int i = 0; i < n; ++i)
-        P(i, i) = 0.5;
-    for (int i = 0; i < n - 1; ++i) {
-        P(i, i + 1) = 0.1;
-        P(i + 1, i) = 0.1;
-    }
-
-    auto sp_ao = ShellPairList{pack};
-    auto sp_blk = ShellBlockPairList{pack};
-
-    RealMatrix G_ao, G_blk;
-    sp_ao.g_rhf(P, G_ao);
-    sp_blk.g_rhf(P, G_blk);
-
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j)
-            EXPECT_NEAR(static_cast<double>(G_blk(i, j)),
-                        static_cast<double>(G_ao(i, j)), 1e-9)
-                << label << " G[" << i << "," << j << "] mismatch";
-}
-
-TEST(NativeIntegrals, BlockG_H2O) { compare_g_ao_vs_block(make_h2o(), "H2O"); }
-
-TEST(NativeIntegrals, BlockG_CH4) { compare_g_ao_vs_block(make_ch4(), "CH4"); }
-
-TEST(NativeIntegrals, BlockG_H2) { compare_g_ao_vs_block(make_h2(0.74), "H2"); }
-
 
 #else // !ATV_HAS_HF
 

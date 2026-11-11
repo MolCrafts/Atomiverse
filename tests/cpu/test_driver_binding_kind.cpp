@@ -4,9 +4,7 @@
 ///        bindings at registration time.
 ///
 /// Covers:
-///   - `cpu::md::MD::add(AM1Evaluator{})` throws (the evaluator loses its
-///     hardcoded `default_bindings()` and falls onto the existing
-///     "no default bindings" rejection path);
+///   - an MD force slot accepts a nested electronic method (`AM1`);
 ///   - kind-gate errors name BOTH workflows: Evaluate/Minimize rejecting an
 ///     MD-kind `VelocityVerlet` (rvalue `add()` branch), MD rejecting an
 ///     Evaluate-kind probe component (lvalue `add()` branch);
@@ -44,7 +42,7 @@
 #include "atomiverse/cpu/montecarlo/translate_move.h"
 #include "atomiverse/cpu/path/neb.h"
 #include "atomiverse/cpu/path/path_driver.h"
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/vibration/hessian.h"
 
 #include "cpu/driver_test_helpers.h"
@@ -124,7 +122,7 @@ TEST(DriverBindingKind, MdSetObserverEvaluateKindProbeThrows) {
 // AIMD-style explicit force binding is legal (no default_bindings kind gate).
 TEST(DriverBindingKind, MdSetEvaluatorAm1NoThrow) {
     ATV::cpu::md::MD md;
-    EXPECT_NO_THROW(md.set_evaluator(ATV::cpu::semiempirical::AM1Evaluator{}));
+    EXPECT_NO_THROW(md.set_evaluator(ATV::cpu::semiempirical::AM1{}));
 }
 
 // ─── Same-kind add() unchanged ──────────────────────────────────────────
@@ -200,8 +198,12 @@ TEST(DriverBindingKind, MdPlanShapeUnchanged) {
         slot_names(plan, static_cast<std::size_t>(P::pre_neighbor)).empty());
     EXPECT_TRUE(
         slot_names(plan, static_cast<std::size_t>(P::neighbor)).empty());
+    // zero_stress is a default too: force styles accumulate the virial on
+    // every force phase, and without it an unconsumed `stress` summed over
+    // all steps (and was exported so by to_molpy / the recorders).
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::pre_force)),
-              (std::vector<std::string>{"zero_forces", "zero_energy"}));
+              (std::vector<std::string>{"zero_forces", "zero_energy",
+                                        "zero_stress"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::force)),
               (std::vector<std::string>{"noop_force"}));
     EXPECT_TRUE(
@@ -234,8 +236,10 @@ TEST(DriverBindingKind, MinimizePlanShapeUnchanged) {
                                   "stub_force", "reduce"}));
     EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::convergence_check)),
               (std::vector<std::string>{"lbfgs"}));
-    EXPECT_EQ(slot_names(plan, static_cast<std::size_t>(P::end_of_step)),
-              (std::vector<std::string>{"publish"}));
+    // No `publish` default: asynchronous observers read the driver's shared
+    // capture buffer, so end_of_step carries only what the user binds.
+    EXPECT_TRUE(
+        slot_names(plan, static_cast<std::size_t>(P::end_of_step)).empty());
 }
 
 TEST(DriverBindingKind, HessianPlanShapeUnchanged) {

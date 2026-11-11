@@ -3,7 +3,7 @@
 ///        both land in `kEnergy` (driver-owned zero + `+=` contract).
 ///
 /// e2e-in-tests wave-2: no RHF/SCF under this unit. QM×MM co-binding pin is
-/// `regressions/architecture/lj_rhf_coupled`. Spec background:
+/// `regressions/multiscale/qmmm`. Spec background:
 /// `.claude/specs/esmm-contract-05-accumulate-switch` (U7).
 
 #include <cmath>
@@ -32,8 +32,7 @@ constexpr double kEnergyTol = 1e-12;
 /// @brief Minimal classical energy source: `kEnergy += ...` only.
 class AccumulatingStub final : public cpu::Potential {
   public:
-    AccumulatingStub(double e, std::string tag)
-        : e_(e), tag_(std::move(tag)) {}
+    AccumulatingStub(double e, std::string tag) : e_(e), tag_(std::move(tag)) {}
 
     std::string name() const override { return tag_; }
 
@@ -57,8 +56,8 @@ cpu::Frame make_h2() {
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[0] = 1;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = 1.008;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
@@ -84,8 +83,8 @@ TEST(SourceCoBinding, TwoAccumulatingStubsSum) {
 
     ASSERT_EQ(a.launches, 1);
     ASSERT_EQ(b.launches, 1);
-    EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)),
-                3.0 * kStubEnergy, kEnergyTol)
+    EXPECT_NEAR(static_cast<double>(frame.meta.get(kEnergy)), 3.0 * kStubEnergy,
+                kEnergyTol)
         << "two classical `+=` sources in one Evaluate pass did not sum — the "
            "harness (ZeroEnergy @ -999 + one pass) is broken";
 }

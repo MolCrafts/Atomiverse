@@ -14,10 +14,10 @@ namespace ATV {
 
 /// @brief What a criterion says after an iteration. Ordered by severity.
 ///
-/// Composition rule, and it is not negotiable: **Stop > Converged > Continue**. With
-/// several criteria attached, the most severe verdict wins. `Stop` outranks `Converged`
-/// because a run that has gone numerically insane must not be able to report success by
-/// also happening to satisfy a force tolerance.
+/// Stop represents failure and must take precedence over successful convergence.
+/// Composition belongs to the backend's criterion contract: CPU requires all
+/// declared convergence requirements on all ranks, while stop-only guards are
+/// neutral. The numeric ordering remains available to severity-based callers.
 enum class Verdict {
     Continue = 0, ///< Keep looping.
     Converged =
@@ -84,13 +84,14 @@ struct ConvergenceMetrics {
     /// out by hand. Left at 0 by every non-replica loop, which is why
     /// `AllReplicasConverged` is the only criterion that reads it.
     double replicas_converged = 0.0;
-};
 
-/// @brief CUDA-only compatibility alias for the pre-rename name.
-///
-/// The CUDA backend still spells `LoopMetrics` (its handler machinery is
-/// unchanged until CUDA grows a Criterion kind — deferred GPU-node work); CPU
-/// code must use `ConvergenceMetrics`. Remove with the CUDA criterion migration.
-using LoopMetrics = ConvergenceMetrics;
+    /// @brief Dimensionless residual of this iteration (0 when the loop has none).
+    ///
+    /// Amplitude change max|Δt| for coupled cluster; max |g| of the CASSCF
+    /// orbital gradient. Other loops leave it 0 and judge `energy_change` /
+    /// forces instead. The stage publishes it; a Criterion decides. Units
+    /// are not eV.
+    double residual = 0.0;
+};
 
 } // namespace ATV

@@ -30,6 +30,27 @@ namespace ATV {
 namespace cpu {
 namespace gpw {
 
+namespace internal {
+
+/// @brief PBE-MBD@rsSCS energy [Hartree], without ionic force evaluation.
+/// @param Z Atomic numbers; positions and optional volume ratios match its size.
+/// @param pos_bohr Atomic positions [Bohr].
+/// @param cell_bohr Positive orthorhombic edges [Bohr] when periodic.
+/// @param periodic Select isolated or Ewald/k-mesh evaluation.
+/// @param beta Positive range-separation parameter (PBE: 0.83).
+/// @param a_fermi Positive Fermi steepness (PBE: 6).
+/// @param vol_ratio Optional positive finite V/V_free; empty means one.
+/// @param k_mesh Periodic mesh with positive components; null selects {2,2,2}.
+/// @throws std::runtime_error for invalid physical input.
+double mbd_rsscs_energy(const std::vector<int>& Z,
+                        const std::vector<std::array<double, 3>>& pos_bohr,
+                        const double cell_bohr[3], bool periodic,
+                        double beta = 0.83, double a_fermi = 6.0,
+                        const std::vector<double>& vol_ratio = {},
+                        const int* k_mesh = nullptr);
+
+} // namespace internal
+
 /// @brief Result of an MBD evaluation.
 struct MbdResult {
     double energy = 0.0; ///< Dispersion energy [Hartree].

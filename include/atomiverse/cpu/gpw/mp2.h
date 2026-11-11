@@ -1,14 +1,12 @@
 /// @file cpu/gpw/mp2.h
 /// @brief GPW MP2 correlation energy result (public value type).
 ///
-/// User path: `GpwDft::mp2(atoms)` after a converged `run()` — the GPW
-/// analogue of molecular `RHF::mp2` / `UHF::mp2` (`cpu/scf/mp2.h`).
+/// User path: `GpwDft::mp2()` after a converged `run()` — the GPW analogue
+/// of molecular `MP2<RHF>` / `MP2<UHF>` (`cpu/scf/post_hf.h`).
 ///
 /// - **RKS:** Γ (real) or multi-k (complex Bloch + momentum conservation).
 /// - **UKS:** Γ unrestricted MP2 (UMP2) on α/β orbitals **and multi-k UMP2**
-///   (`reg_periodic-ump2-si` / `reg_periodic-ump2-kpoints`), with optional
-///   Grimme SCS scales (`reg_periodic-scs-ump2-si` /
-///   `reg_periodic-scs-ump2-kpoints`).
+///   with optional Grimme SCS scales (regression `gpw/periodic-mp2`).
 ///
 /// Product default (`mp2_ri = true`) is the RI-GPW plane-wave
 /// resolution-of-identity assembly of \((ia|jb)\) (Del Ben, Hutter,

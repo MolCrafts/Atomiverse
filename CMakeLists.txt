@@ -28,12 +28,15 @@ if(NOT ATV_DOCS_ONLY)
     # propagates to every target linking xtensor. Before this line said 20 the
     # `atomiverse` target was ALREADY compiling at -std=gnu++20 via that
     # interface requirement while this variable claimed 17 — declaring 20 makes
-    # the build honest and also lifts the non-xtensor targets (molrs_cxx) that
+    # the build honest and also lifts the non-xtensor targets (molpy_cxx) that
     # were still getting gnu++17.
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    option(ATV_BUILD_CUDA "Build CUDA backend (requires CUDA toolkit)" ON)
+    option(ATV_BUILD_CUDA "Build CUDA backend (requires CUDA toolkit)" OFF)
+    option(ATV_BUILD_KOKKOS
+        "Build the Kokkos Serial CPU-execution-space LJ foothold (does not vendor Kokkos)"
+        OFF)
     if(ATV_BUILD_CUDA)
         # Prefer an explicit arch when building for GH200 (sm_90). `native`
         # only works when configure+compile run on the target GPU node; a
@@ -60,38 +63,25 @@ if(NOT ATV_DOCS_ONLY)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     endif()
 
-    # CUDA precision — aligned with LAMMPS Kokkos `KOKKOS_PREC` (one knob, three
-    # modes). LAMMPS uses two types only: KK_FLOAT (storage + force math) and
-    # KK_ACC_FLOAT (force/energy/virial accumulation). We mirror that as
-    # real_t/work_t (= KK_FLOAT) and prec_t (= KK_ACC_FLOAT). There is no free
-    # independent "work" axis — WORK always tracks REAL.
-    #   double (default, KK default): real=work=prec=double
-    #   mixed:                        real=work=float, prec=double
-    #   single:                       real=work=prec=float
+    # CUDA precision mode (cuda/frame/types.cuh): one knob, one type per
+    # physical role. mixed follows OpenMM: FP32 force math and coordinates
+    # plus an FP32 coordinate correction, FP64 integration and reductions,
+    # 64-bit fixed-point force accumulation.
     set(ATV_CUDA_PREC_MODE "double" CACHE STRING
-        "CUDA precision mode (LAMMPS KOKKOS_PREC): double | mixed | single")
+        "CUDA precision mode: double | mixed | single")
     set_property(CACHE ATV_CUDA_PREC_MODE PROPERTY STRINGS double mixed single)
     string(TOLOWER "${ATV_CUDA_PREC_MODE}" _atv_cuda_prec_mode)
     if(_atv_cuda_prec_mode STREQUAL "double")
-        set(ATV_CUDA_REAL "double")
-        set(ATV_CUDA_WORK "double")
-        set(ATV_CUDA_PREC "double")
+        set(ATV_CUDA_PRECISION_DEFINE "ATV_CUDA_PRECISION_DOUBLE")
     elseif(_atv_cuda_prec_mode STREQUAL "mixed")
-        set(ATV_CUDA_REAL "float")
-        set(ATV_CUDA_WORK "float")
-        set(ATV_CUDA_PREC "double")
+        set(ATV_CUDA_PRECISION_DEFINE "ATV_CUDA_PRECISION_MIXED")
     elseif(_atv_cuda_prec_mode STREQUAL "single")
-        set(ATV_CUDA_REAL "float")
-        set(ATV_CUDA_WORK "float")
-        set(ATV_CUDA_PREC "float")
+        set(ATV_CUDA_PRECISION_DEFINE "ATV_CUDA_PRECISION_SINGLE")
     else()
         message(FATAL_ERROR
             "ATV_CUDA_PREC_MODE must be double|mixed|single (got '${ATV_CUDA_PREC_MODE}')")
     endif()
-    message(STATUS
-        "CUDA precision mode=${_atv_cuda_prec_mode} "
-        "(real_t=${ATV_CUDA_REAL} work_t=${ATV_CUDA_WORK} prec_t=${ATV_CUDA_PREC}; "
-        "mirrors LMP KK_FLOAT/KK_ACC_FLOAT)")
+    message(STATUS "CUDA precision mode=${_atv_cuda_prec_mode}")
 
     # CPU/shared numerical precision — LAMMPS-style tiered control (see
     # include/atomiverse/core/precision.h). Storage and kernel-work reals may be
@@ -106,9 +96,23 @@ if(NOT ATV_DOCS_ONLY)
 
     # Default bigbig (64-bit IDs) preserves the legacy always-int64 tag width, so
     # the default build is byte-identical to pre-migration. smallbig (32-bit IDs,
-    # the LAMMPS default + molrs's on-disk tag width) is the memory-saving opt-in.
+    # the LAMMPS default + molpy's on-disk tag width) is the memory-saving opt-in.
     set(ATV_ID_SIZE "bigbig" CACHE STRING "Global-ID integer width: bigbig (64-bit IDs, default) or smallbig (32-bit IDs)")
     set_property(CACHE ATV_ID_SIZE PROPERTY STRINGS smallbig bigbig)
+
+    # Byte budget of a driver's shared asynchronous capture buffer: every
+    # frame captured for an asynchronous recorder or online-analysis
+    # observer and not yet consumed lives in it, allocated once when a run
+    # starts. A full buffer makes the run wait, never drops a step. A
+    # driver's `set_capture_buffer_bytes` (Python `capture_buffer_bytes=`)
+    # overrides it at run time.
+    set(ATV_CAPTURE_BUFFER_BYTES "268435456" CACHE STRING
+        "Default asynchronous capture buffer budget per driver [bytes] (256 MiB)")
+    if(NOT ATV_CAPTURE_BUFFER_BYTES MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "ATV_CAPTURE_BUFFER_BYTES must be a positive integer byte count "
+            "(got '${ATV_CAPTURE_BUFFER_BYTES}')")
+    endif()
 
     option(ATV_BUILD_HF "Build RHF electronic structure code" OFF)
     option(ATV_BUILD_PW "Build plane-wave DFT module (requires FFTW3)" OFF)
@@ -117,14 +121,13 @@ if(NOT ATV_DOCS_ONLY)
     option(ATV_BUILD_XC_ORACLE
            "Build libxc-backed XC oracle (test-only scaffolding; deletable after native parity is locked in)"
            OFF)
-    # molrs path (optional product — gated by ATV_BUILD_MOLRS after module DAG).
-    # Two documented sources (cmake/MolrsContract.cmake, "Pin policy"):
-    #   * CI / plain `cmake -B`: the ./molrs submodule gitlink (this default);
-    #   * developer presets (CMakePresets.json): the sibling MolCrafts checkout
-    #     ${sourceDir}/../molrs, whose uncommitted dev tree no gitlink can pin.
-    set(ATV_MOLRS_PATH "${CMAKE_SOURCE_DIR}/molrs" CACHE PATH
-        "Path to molrs source tree (default: git submodule ./molrs; presets: ../molrs)")
-    include("${CMAKE_SOURCE_DIR}/cmake/MolrsContract.cmake")
+    # The local MolCrafts/molpy checkout (sibling ../molpy); no revision is pinned.
+    set(_atv_molpy_default "${CMAKE_SOURCE_DIR}/../molpy")
+    if(DEFINED ENV{ATV_MOLPY_PATH})
+        set(_atv_molpy_default "$ENV{ATV_MOLPY_PATH}")
+    endif()
+    set(ATV_MOLPY_PATH "${_atv_molpy_default}" CACHE PATH
+        "Path to the MolCrafts/molpy repository containing molcxx/ and molpy/")
     option(ATV_BUILD_PYTHON "Build Python bindings (nanobind)" OFF)
     # The nanobind module is a shared object linking the static atomiverse
     # and fetched-dependency archives (spdlog, ...): everything must be PIC.
@@ -134,57 +137,25 @@ if(NOT ATV_DOCS_ONLY)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     endif()
     option(ATV_BUILD_TESTS "Build tests" OFF)
-    option(ATV_BUILD_REGRESSIONS
-        "Build end-to-end textbook regression cases (regressions/)" OFF)
     option(ATV_BUILD_BENCHMARKS "Build benchmarks" OFF)
     option(ATV_BUILD_EXAMPLES "Build examples" OFF)
-    option(ATV_BUILD_CLI
-           "Build the atomiverse command-line driver (native -in + optional Python host)" ON)
     option(ATV_BUILD_LAUNCHER
            "Embed MPI Python hosting in the atomiverse CLI (rank-0 CPython)" OFF)
 
-    # Product-module gates (MD/MC/… + ANALYSIS/IO/MOLRS DAG).
+    # Product-module gates (MD/MC/… + ANALYSIS/IO/MOLPY DAG).
     # Must run after ATV_BUILD_KSPACE / HF / GPW / PYTHON are declared.
     include("${CMAKE_SOURCE_DIR}/cmake/AtvProductModules.cmake")
 
-    # molrs contract only when the DAG left MOLRS on.
-    set(ATV_MOLRS_HAS_WHAM OFF)
-    set(ATV_MOLRS_HAS_TRAJECTORY_WRITER OFF)
-    if(ATV_BUILD_MOLRS)
-        if(NOT EXISTS "${ATV_MOLRS_PATH}/Cargo.toml")
+    # molpy CXX only when the DAG left MOLPY on.
+    if(ATV_BUILD_MOLPY)
+        if(NOT EXISTS "${ATV_MOLPY_PATH}/molcxx/Cargo.toml")
             message(FATAL_ERROR
-                "ATV_BUILD_MOLRS=ON but molrs not found at "
-                "ATV_MOLRS_PATH='${ATV_MOLRS_PATH}'.\n"
-                "  Submodule: git submodule update --init --recursive molrs\n"
-                "  Presets:   clone MolCrafts/molrs (branch dev) next to this "
-                "repo as ../molrs\n"
-                "  Or turn off ANALYSIS/IO/PYTHON/GPW/HF/SEMIEMPIRICAL "
-                "(those products enable molrs).")
+                "molpy source not found at ATV_MOLPY_PATH='${ATV_MOLPY_PATH}'. "
+                "Set ATV_MOLPY_PATH to the local MolCrafts/molpy checkout.")
         endif()
-        if(ATV_MOLRS_PATH STREQUAL "${CMAKE_SOURCE_DIR}/molrs")
-            message(STATUS "molrs source: ./molrs submodule (CI pin)")
-        else()
-            message(STATUS
-                "molrs source: ${ATV_MOLRS_PATH} (developer checkout; "
-                "the ./molrs submodule is bypassed)")
-        endif()
-        atv_validate_molrs_source_contract("${ATV_MOLRS_PATH}")
-        atv_detect_molrs_wham("${ATV_MOLRS_PATH}" ATV_MOLRS_HAS_WHAM)
-        if(ATV_MOLRS_HAS_WHAM)
-            message(STATUS "molrs WhamCompute: available")
-        else()
-            message(STATUS "molrs WhamCompute: not in this pin (wham skipped)")
-        endif()
-        atv_detect_molrs_trajectory_writer("${ATV_MOLRS_PATH}"
-                                           ATV_MOLRS_HAS_TRAJECTORY_WRITER)
-        if(ATV_MOLRS_HAS_TRAJECTORY_WRITER)
-            message(STATUS "molrs TrajectoryWriter: available (cpu::MrecRecorder)")
-        else()
-            message(STATUS
-                "molrs TrajectoryWriter: not in this pin (MrecRecorder skipped)")
-        endif()
+        message(STATUS "molpy source: ${ATV_MOLPY_PATH} (local checkout, unpinned)")
     else()
-        message(STATUS "molrs CXX: OFF (no Rust link; pure engine build)")
+        message(STATUS "molpy CXX: OFF (no Rust link; pure engine build)")
     endif()
 
     list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/deps")
@@ -195,39 +166,37 @@ if(NOT ATV_DOCS_ONLY)
     FetchContent_Declare(
         xtl
         GIT_REPOSITORY https://github.com/xtensor-stack/xtl.git
-        GIT_TAG 0.8.2
+        GIT_TAG c52350e283b98e5d69dbc50726925a1f8e16c57c # 0.8.2
     )
     FetchContent_Declare(
         xtensor
         GIT_REPOSITORY https://github.com/xtensor-stack/xtensor.git
-        GIT_TAG 0.27.1
+        GIT_TAG f115228a7fc277b9be1bef34572831f8fd53ac73 # 0.27.1
     )
     FetchContent_Declare(
         xtensor-blas
         GIT_REPOSITORY https://github.com/xtensor-stack/xtensor-blas.git
-        GIT_TAG 0.23.0
+        GIT_TAG 836a8047413eb64ce8e034ab6ab7ce1608562bfc # 0.23.0
     )
     FetchContent_Declare(
         spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
-        GIT_TAG v1.17.0
+        GIT_TAG 79524ddd08a4ec981b7fea76afd08ee05f83755d # v1.17.0
     )
     FetchContent_Declare(
         xsimd
         GIT_REPOSITORY https://github.com/xtensor-stack/xsimd.git
-        GIT_TAG 14.3.0
+        GIT_TAG e88a72831858123924f7118f345dfe5d70d95991 # 14.3.0
     )
+    if(NOT SKBUILD)
+        set(SPDLOG_INSTALL ON CACHE BOOL "Install public C++ dependency" FORCE)
+    endif()
     FetchContent_MakeAvailable(xtl xtensor xtensor-blas spdlog xsimd)
 
-    # ── spdlog bundled fmt: Apple Clang 21+ consteval workaround ───────
-    # spdlog 1.15's bundled fmt base.h defines FMT_USE_CONSTEVAL=1 for
-    # Apple Clang >= 14, but Apple Clang 21 has a stricter consteval
-    # enforcement that rejects valid fmt code. Patch the version boundary.
+    # Apple Clang 21 needs fmt's runtime formatting path. Configure the
+    # dependency target instead of rewriting its headers on every configure.
     if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-        execute_process(COMMAND sed -i ""
-            "s/__apple_build_version__ < 14000029L/__apple_build_version__ < 14000029L || __apple_build_version__ >= 21000000L/"
-            "${spdlog_SOURCE_DIR}/include/spdlog/fmt/bundled/base.h"
-        )
+        target_compile_definitions(spdlog PRIVATE FMT_USE_CONSTEVAL=0)
     endif()
 
     # ── Library ──
@@ -243,11 +212,17 @@ if(NOT ATV_DOCS_ONLY)
             include_directories(/opt/homebrew/opt/libomp/include)
         endif()
     endif()
-    find_package(OpenMP)
+    if(ATV_BUILD_HF)
+        find_package(OpenMP REQUIRED COMPONENTS CXX)
+    else()
+        find_package(OpenMP)
+    endif()
 
     # ── MPI (optional) ──
-    find_package(MPI QUIET)
-    option(ATV_USE_MPI "Enable MPI domain decomposition for CPU MD" ${MPI_CXX_FOUND})
+    option(ATV_USE_MPI "Enable optional MPI support (MD decomposition and HF J/K)" OFF)
+    if(ATV_USE_MPI)
+        find_package(MPI QUIET)
+    endif()
     if(ATV_USE_MPI AND NOT MPI_CXX_FOUND)
         message(FATAL_ERROR
             "ATV_USE_MPI=ON but no MPI installation was found. "
@@ -258,9 +233,13 @@ if(NOT ATV_DOCS_ONLY)
     # Always-on core + product-module gated domain sources (see AtvProductModules.cmake).
     set(ATOMIVERSE_SRCS
         # Cross-cutting core (logging registry, metrics)
+        src/core/capture_ledger.cpp
         src/core/log.cpp
+        src/core/lj_type_table.cpp
+        src/core/periodic_torsion.cpp
+        src/core/pppm_accuracy.cpp
         src/core/real_harmonics.cpp
-        # molrs_contract.cpp — only with ATV_BUILD_MOLRS (below)
+        src/core/thermo_style.cpp
         # Backend-agnostic longrange operator math (Ewald/PME headers are
         # header-only; FMM needs translation-operator / tree sources). Always
         # compiled — not gated by ATV_BUILD_*.
@@ -273,6 +252,8 @@ if(NOT ATV_DOCS_ONLY)
         # used by the GPW OT minimizer and by the electronic-state propagators,
         # so they are never gated on a method flag.
         src/cpu/linalg/orbital_tangent.cpp
+        src/cpu/linalg/pulay.cpp
+        src/cpu/linalg/internal/diis_mixer.cpp
         # Niklasson dissipative XL recursion (cpu/electronic/xl_bomd.cpp):
         # depends only on cpu/linalg header types. Consumed by Gaussian SCF /
         # GPW (ATV_BUILD_HF) *and* by the classical extended-Lagrangian PIM
@@ -286,7 +267,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/electronic/aspc_predictor.cpp
         src/cpu/io/lammps_data.cpp
         src/cpu/io/lammps_coeffs.cpp
-        # molrs-backed IO / ANALYSIS / exchange — gated below (ATV_BUILD_*)
+        # molpy-backed IO / ANALYSIS / exchange — gated below (ATV_BUILD_*)
         src/cpu/record/thermo.cpp
         src/cpu/record/timing_report.cpp
         # CPU runtime infrastructure (Runtime + composed sub-runtimes)
@@ -294,7 +275,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/driver/runtime.cpp
         src/cpu/communication/domain_runtime.cpp
         src/cpu/device/device_runtime.cpp
-        src/cpu/asynchronous/analysis_runtime.cpp
+        src/cpu/asynchronous/capture_buffer.cpp
         src/cpu/driver/dof.cpp
         src/cpu/frame/box.cpp
         src/cpu/component/zero.cpp
@@ -302,9 +283,7 @@ if(NOT ATV_DOCS_ONLY)
         # Multiscale shared machinery (QmEngine slot; used by SE and HF couplings)
         src/cpu/multiscale/internal/qm_subsystem.cpp
         src/cpu/multiscale/internal/qm_mm_vdw.cpp
-        src/cpu/asynchronous/analysis_executor.cpp
-        src/cpu/asynchronous/async_component_base.cpp
-        src/cpu/asynchronous/snapshot_publisher.cpp
+        src/cpu/asynchronous/async_consumer.cpp
         src/cpu/observe/virial_stress.cpp
         src/cpu/observe/widom.cpp
         src/cpu/observe/electrode_charge.cpp
@@ -320,6 +299,10 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/communication/atom_pack.cpp
         src/cpu/communication/bcast_frame.cpp
         src/cpu/communication/comm_brick.cpp
+        # comm_brick.cpp calls md::sort_owned_atoms on every border refresh.
+        # The function is not an MD integrator, so an SE-only build (MD OFF)
+        # still has to link it.
+        src/cpu/dynamics/atom_sort.cpp
         src/cpu/communication/halo.cpp
         src/cpu/communication/domain.cpp
         src/cpu/communication/reduce.cpp
@@ -330,29 +313,22 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/longrange/ewald.cpp
     )
 
-    # ── molrs surfaces (IO / ANALYSIS / exchange / Element tables) ─────────
-    if(ATV_BUILD_MOLRS)
+    # ── molpy surfaces (IO / ANALYSIS / exchange / Element tables) ─────────
+    if(ATV_BUILD_MOLPY)
         list(APPEND ATOMIVERSE_SRCS
-            src/core/molrs_contract.cpp
-            src/cpu/frame/molrs_exchange.cpp
+            src/cpu/frame/molpy_exchange.cpp
         )
     endif()
-    # Products own features; MOLRS is already derived (AtvProductModules).
+    # Products own features; MOLPY is already derived (AtvProductModules).
     if(ATV_BUILD_IO)
         list(APPEND ATOMIVERSE_SRCS
             src/cpu/io/frame_writer.cpp
             src/cpu/io/extxyz.cpp
             src/cpu/record/xyz.cpp
             src/cpu/record/xyz_recorder.cpp
+            src/cpu/record/mrec.cpp
+            src/cpu/record/mrec_recorder.cpp
         )
-        # Streaming `*.mrec` recorder — needs the molrs TrajectoryWriter bridge
-        # (capability bit 3); gated on the pin like WHAM, sources AND tests.
-        if(ATV_MOLRS_HAS_TRAJECTORY_WRITER)
-            list(APPEND ATOMIVERSE_SRCS
-                src/cpu/record/mrec.cpp
-                src/cpu/record/mrec_recorder.cpp
-            )
-        endif()
     endif()
     if(ATV_BUILD_ANALYSIS)
         list(APPEND ATOMIVERSE_SRCS
@@ -366,8 +342,12 @@ if(NOT ATV_DOCS_ONLY)
 
     if(ATV_BUILD_SEMIEMPIRICAL)
         list(APPEND ATOMIVERSE_SRCS
-            src/cpu/semiempirical/am1_parameters.cpp
-            src/cpu/semiempirical/rm1_parameters.cpp
+            src/semiempirical/am1_parameters.cpp
+            src/semiempirical/rm1_parameters.cpp
+            src/semiempirical/mndo_parameters.cpp
+            src/semiempirical/pm3_parameters.cpp
+            src/semiempirical/nddo_parameters.cpp
+            src/semiempirical/nddo_geometry.cpp
             src/cpu/semiempirical/nddo_density.cpp
             src/cpu/semiempirical/nddo_fock.cpp
             src/cpu/semiempirical/nddo_hcore.cpp
@@ -376,10 +356,12 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/semiempirical/nddo_system.cpp
             src/cpu/semiempirical/nddo_two_electron.cpp
             src/cpu/semiempirical/nddo_solver.cpp
+            src/cpu/semiempirical/nddo_method.cpp
+            src/cpu/semiempirical/scc_method.cpp
             src/cpu/semiempirical/am1_solver.cpp
             src/cpu/semiempirical/rm1_solver.cpp
-            src/cpu/semiempirical/am1_evaluator.cpp
-            src/cpu/semiempirical/rm1_evaluator.cpp
+            src/cpu/semiempirical/mndo_solver.cpp
+            src/cpu/semiempirical/pm3_solver.cpp
             src/cpu/semiempirical/dftb2.cpp
             src/cpu/semiempirical/dftb0.cpp
             src/cpu/semiempirical/gfn0.cpp
@@ -393,11 +375,8 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/multiscale/qmmm_mechanical.cpp
             src/cpu/multiscale/qmmm_oniom.cpp
             src/cpu/multiscale/internal/classical_nonbonded.cpp
+            src/cpu/semiempirical/am1_bcc_charges.cpp
         )
-        if(ATV_BUILD_MOLRS)
-            list(APPEND ATOMIVERSE_SRCS
-                src/cpu/semiempirical/am1_bcc_charge_assigner.cpp)
-        endif()
         if(ATV_BUILD_HF)
             list(APPEND ATOMIVERSE_SRCS
                 src/cpu/multiscale/qmmm_polarizable.cpp
@@ -436,7 +415,6 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_MD)
         list(APPEND ATOMIVERSE_SRCS
             src/cpu/dynamics/init.cpp
-            src/cpu/dynamics/atom_sort.cpp
             src/cpu/dynamics/cpmd_conserved.cpp
             src/cpu/dynamics/velocity_verlet.cpp
             src/cpu/dynamics/nve_limit.cpp
@@ -467,10 +445,17 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/brownian.cpp
             src/cpu/dynamics/barostat.cpp
             src/cpu/dynamics/deform.cpp
+            src/cpu/dynamics/nvt_sllod.cpp
             # Electrochemical electrode bookkeeping (MetalWalls E1/E2 map)
             src/cpu/electrodes/charging_work.cpp
             src/cpu/electrodes/charge_aspc.cpp
         )
+        # cuda::md::Brownian host launch. The .cu owns the symbol when CUDA
+        # is on; this TU is only the CPU-only build, and it throws the
+        # kernel name rather than stepping positions on the host.
+        if(NOT ATV_BUILD_CUDA)
+            list(APPEND ATOMIVERSE_SRCS src/cuda/dynamics/brownian.cpp)
+        endif()
     endif()
 
     if(ATV_BUILD_VIB)
@@ -535,27 +520,31 @@ if(NOT ATV_DOCS_ONLY)
     # CPU task infrastructure (TaskSpec + codec + materializer + protocol).
     # Serves the MPI Python launcher only; the materializer instantiates
     # components across domains (EAM/SW/PW headers reach molrs::Element), so
-    # the whole block follows MOLRS (LAUNCHER ⇒ PYTHON ⇒ IO ⇒ MOLRS).
-    if(ATV_BUILD_MOLRS)
+    # the whole block follows MOLPY (LAUNCHER ⇒ PYTHON ⇒ IO ⇒ MOLPY).
+    if(ATV_BUILD_MOLPY)
         list(APPEND ATOMIVERSE_SRCS
             src/cpu/task/task_spec.cpp
             src/cpu/task/task_codec.cpp
             src/cpu/task/task_materializer.cpp
-            # Typed Minimize params -> components/criterion, shared by the
-            # materializer replay and the Python Minimize handle.
-            src/cpu/task/internal/minimize_builders.cpp
             src/cpu/task/task_protocol.cpp
             src/cpu/task/launcher_gate.cpp
         )
+        # Typed Minimize params -> components/criterion, shared by the
+        # materializer replay and the Python Minimize handle; the materializer
+        # gates its MD and Minimize replay on ATV_HAS_MD / ATV_HAS_MINIMIZER.
+        if(ATV_BUILD_MINIMIZER)
+            list(APPEND ATOMIVERSE_SRCS
+                src/cpu/task/internal/minimize_builders.cpp)
+        endif()
     endif()
 
     # CPU potentials — globbed so new pair/bond/angle/dihedral styles drop in.
-    # EAM/SW table lookups use molrs::Element — omit when MOLRS is off.
+    # EAM/SW table lookups use molrs::Element — omit when MOLPY is off.
     if(ATV_BUILD_POTENTIALS)
         file(GLOB CPU_POTENTIALS_SRCS CONFIGURE_DEPENDS
             "${CMAKE_SOURCE_DIR}/src/cpu/potentials/*.cpp"
         )
-        if(NOT ATV_BUILD_MOLRS)
+        if(NOT ATV_BUILD_MOLPY)
             list(FILTER CPU_POTENTIALS_SRCS EXCLUDE REGEX ".*/eam\\.cpp$")
             list(FILTER CPU_POTENTIALS_SRCS EXCLUDE REGEX ".*/sw\\.cpp$")
         endif()
@@ -574,11 +563,11 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/device/log_callback.cpp
             src/cuda/device/device_manager.cu
             src/cuda/communication/spatial_grid.cu
-            src/cuda/asynchronous/async_bridge.cu
-            src/cuda/asynchronous/record_base.cu
+            src/cuda/asynchronous/capture_buffer.cu
             src/cuda/frame/transfer.cu
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
+            src/cuda/component/zero.cu
             src/cuda/observe/stress.cu
             src/cuda/scf/hamiltonian.cu
             src/cuda/scf/eigen_solver.cu
@@ -588,8 +577,8 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/scf/scf_evaluator.cu
             src/cuda/longrange/ewald.cu
         )
-        if(ATV_BUILD_MOLRS)
-            list(APPEND ATOMIVERSE_SRCS src/cuda/frame/molrs_exchange.cu)
+        if(ATV_BUILD_MOLPY)
+            list(APPEND ATOMIVERSE_SRCS src/cuda/frame/molpy_exchange.cu)
         endif()
         if(ATV_BUILD_MD)
             # multi_gpu.cu owns multi-rank NVE and links launch_nve_limit_*;
@@ -599,25 +588,46 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/dynamics/velocity_verlet.cu
                 src/cuda/dynamics/nve_limit.cu
                 src/cuda/dynamics/fix_langevin.cu
+                src/cuda/dynamics/fix_rattle.cu
+                src/cuda/dynamics/fix_settle.cu
+                src/cuda/dynamics/fix_efield.cu
+                src/cuda/dynamics/brownian.cu
                 src/cuda/dynamics/nose_hoover_npt.cu
                 src/cuda/dynamics/init.cu
                 src/cuda/dynamics/kinetic_energy.cu
                 src/cuda/dynamics/nose_hoover.cu
                 src/cuda/dynamics/deform.cu
+                src/cuda/dynamics/nvt_sllod.cu
+                src/cuda/record/pressure_series.cu
                 src/cuda/dynamics/barostat.cu
             )
+            # The CUDA `*.mrec` recorder appends through cpu::MrecWriter, so
+            # it follows the same IO gate.
+            if(ATV_BUILD_IO)
+                list(APPEND ATOMIVERSE_SRCS src/cuda/record/mrec_recorder.cu)
+            endif()
         endif()
         if(ATV_BUILD_NEIGHBOR)
             list(APPEND ATOMIVERSE_SRCS
                 src/cuda/neighbor/neighbor_list.cu
                 src/cuda/neighbor/sort_and_cluster.cu
-                src/cuda/neighbor/grid.cu
                 src/cuda/neighbor/pair_search.cu
                 src/cuda/neighbor/fused_search.cu
                 src/cuda/neighbor/atom_cell_sort.cu
                 src/cuda/neighbor/setup.cu
-                src/cuda/neighbor/export_pairs.cu
             )
+        endif()
+        if(ATV_BUILD_SEMIEMPIRICAL)
+            list(APPEND ATOMIVERSE_SRCS
+                src/cuda/semiempirical/nddo_fock.cu
+                src/cuda/semiempirical/nddo_hcore.cu
+                src/cuda/semiempirical/nddo_forces.cu
+                src/cuda/semiempirical/nddo_two_electron.cu
+                src/cuda/semiempirical/nddo_workspace.cu
+                src/cuda/semiempirical/am1_solver.cu
+                src/cuda/semiempirical/rm1_solver.cu
+                src/cuda/semiempirical/mndo_solver.cu
+                src/cuda/semiempirical/pm3_solver.cu)
         endif()
         if(ATV_BUILD_MINIMIZER)
             list(APPEND ATOMIVERSE_SRCS
@@ -636,29 +646,11 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_KSPACE)
             list(APPEND ATOMIVERSE_SRCS src/cuda/longrange/pme.cu)
         endif()
-    else()
-        # CUDA-free build still links against cuda::Timer (PIMPL in core/driver_template.h).
-        list(APPEND ATOMIVERSE_SRCS src/cuda/device/timer_cpu_stub.cpp)
     endif()
 
     add_library(atomiverse ${ATOMIVERSE_SRCS})
-    if(ATV_BUILD_MOLRS)
-        target_compile_definitions(atomiverse PRIVATE
-            ATV_MOLRS_CXX_API_VERSION=${ATV_MOLRS_CXX_API_VERSION}
-            ATV_MOLRS_CXX_REQUIRED_CAPABILITIES=${ATV_MOLRS_CXX_REQUIRED_CAPABILITIES})
-    endif()
     atv_apply_product_module_defs(atomiverse)
 
-    # Multi-window WHAM — needs ANALYSIS + molrs pin with WhamCompute.
-    if(ATV_BUILD_ANALYSIS AND ATV_BUILD_MOLRS AND ATV_MOLRS_HAS_WHAM)
-        target_sources(atomiverse PRIVATE src/cpu/observe/wham.cpp)
-        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS_WHAM=1)
-    endif()
-    # Streaming mrec recorder — needs IO + molrs pin with the TrajectoryWriter.
-    if(ATV_BUILD_IO AND ATV_MOLRS_HAS_TRAJECTORY_WRITER)
-        target_compile_definitions(atomiverse PUBLIC
-                                   ATV_HAS_MOLRS_TRAJECTORY_WRITER=1)
-    endif()
 
     if(ATV_BUILD_HF)
         target_sources(atomiverse PRIVATE
@@ -679,15 +671,18 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/observe/lowdin.cpp
             src/cpu/observe/esp_charges.cpp
             src/cpu/scf/internal/cart2sph.cpp
-            src/cpu/scf/internal/diis_mixer.cpp
             src/cpu/scf/internal/ediis_adiis.cpp
             src/cpu/scf/internal/hueckel_guess.cpp
             src/cpu/scf/internal/sap_guess.cpp
             src/cpu/scf/internal/hamiltonian_builder.cpp
+            src/cpu/scf/internal/exact_jk.cpp
+            src/cpu/scf/internal/exact_jk_screened_cache.cpp
             src/cpu/scf/internal/periodic_hf.cpp
+            src/cpu/scf/internal/kpoint_hf.cpp
             src/cpu/scf/internal/cfmm_j.cpp
             src/cpu/scf/internal/density_fitting.cpp
-            src/cpu/scf/internal/alda_kernel.cpp
+            src/cpu/scf/internal/xc_response_kernel.cpp
+            src/cpu/scf/xc_grid_engine.cpp
             src/cpu/scf/internal/tda_gradient.cpp
             src/cpu/scf/internal/mp2_gradient.cpp
             src/cpu/scf/internal/ccsd_gradient.cpp
@@ -699,6 +694,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/internal/point_charges.cpp
             src/cpu/scf/internal/pcm.cpp
             src/cpu/scf/internal/soscf.cpp
+            src/cpu/scf/internal/orbital_canonicalization.cpp
             src/cpu/scf/internal/x2c.cpp
             # Multiscale electrostatic QM/MM (esmm-qmmm-03) — HF engine required.
             src/cpu/multiscale/qmmm_electrostatic.cpp
@@ -707,6 +703,9 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/stages/density_stage.cpp
             src/cpu/scf/internal/mean_field_energy.cpp
             src/cpu/scf/mean_field_method.cpp
+            src/cpu/scf/post_hf.cpp
+            src/cpu/scf/nuclear_hessian.cpp
+            src/cpu/scf/response.cpp
             src/cpu/scf/internal/orbital_hessian.cpp
             src/cpu/scf/internal/stability.cpp
             src/cpu/scf/tdhf.cpp
@@ -716,17 +715,21 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/scf/rpa.cpp
             src/cpu/scf/bse.cpp
             src/cpu/scf/rhf.cpp
+            src/cpu/scf/krhf.cpp
+            src/cpu/scf/kuhf.cpp
             src/cpu/scf/gf2.cpp
             src/cpu/scf/rohf.cpp
             src/cpu/scf/uhf.cpp
             src/cpu/scf/ghf.cpp
+            src/cpu/scf/complex_ghf.cpp
+            src/cpu/scf/internal/complex_ghf.cpp
+            src/cpu/scf/dhf.cpp
+            src/cpu/scf/internal/dhf.cpp
             src/cpu/scf/rks.cpp
             src/cpu/scf/uks.cpp
             src/cpu/scf/roks.cpp
             src/cpu/scf/minao_data.cpp
             src/cpu/scf/internal/minao.cpp
-            src/cpu/scf/xc_functional.cpp
-            src/cpu/scf/xc_gga.cpp
             src/cpu/scf/grid.cpp
             src/cpu/scf/internal/integral_derivatives.cpp
             src/cpu/scf/internal/cphf_pack.cpp
@@ -760,10 +763,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/gpw/internal/ts_dispersion.cpp
             src/cpu/gpw/internal/xdm_dispersion.cpp
             src/cpu/gpw/internal/mbd_dispersion.cpp
-            src/cpu/gpw/internal/vdw_df.cpp
-            src/cpu/gpw/internal/vdw_df_kernel_data.cpp
-            src/cpu/gpw/internal/rvv10.cpp
-            src/cpu/gpw/internal/rvv10_kernel_data.cpp
             src/cpu/gpw/internal/hirshfeld_volumes.cpp
             src/cpu/scf/dftd3.cpp
             src/cpu/scf/dftd4.cpp
@@ -783,14 +782,32 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_CUDA)
             target_sources(atomiverse PRIVATE
                 src/cuda/scf/rhf.cu
+                src/cuda/scf/mp2.cu
                 src/cuda/scf/rhf_scf_cycle.cu
                 src/cuda/scf/rhf_fock.cu
                 src/cuda/scf/rhf_density.cu
+                src/cuda/linalg/pulay.cu
                 src/cuda/scf/diis_mixer.cu
                 src/cuda/scf/device_integrals.cu
+                src/cuda/scf/uhf.cu
+                src/cuda/scf/uhf_minao.cpp
+                src/cuda/scf/uhf_guess.cu
+                src/cuda/scf/uhf_scf_cycle.cu
+                src/cuda/scf/uhf_fock.cu
+                src/cuda/scf/uhf_density.cu
+                src/cuda/scf/krhf.cu
             )
         endif()
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_HF)
+    endif()
+
+    # Semilocal XC is shared by Gaussian SCF and plane waves; a PW-only
+    # product must not depend on enabling the Gaussian method domain.
+    if(ATV_BUILD_HF OR ATV_BUILD_PW)
+        target_sources(atomiverse PRIVATE
+            src/cpu/xc/xc_functional.cpp
+            src/cpu/xc/xc_gga.cpp
+            src/cpu/xc/pade.cpp)
     endif()
 
     if(ATV_BUILD_GPW)
@@ -811,15 +828,10 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/gpw/internal/local_pp.cpp
             src/cpu/gpw/gaussian_basis.cpp
             src/cpu/gpw/internal/gth_integrals.cpp
-            src/cpu/gpw/internal/diis.cpp
             src/cpu/gpw/internal/ot.cpp
             src/cpu/gpw/internal/collocate.cpp
             src/cpu/gpw/internal/multigrid.cpp
             src/cpu/gpw/internal/xc_grid.cpp
-            # PADE (GTH Padé) LDA XC — CP2K-native functional used by the first
-            # GPW examples; lives under cpu/xc/, built with the GPW module until
-            # a dedicated ATV_BUILD_XC flag exists.
-            src/cpu/xc/pade.cpp
             src/cpu/gpw/internal/one_electron.cpp
             # The electronic-state propagators GPWEvaluator drives live in
             # src/cpu/electronic/: CPMD + ASPC compile under ATV_BUILD_HF
@@ -832,6 +844,12 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_PW)
             target_sources(atomiverse PRIVATE
                 src/cpu/gpw/internal/fft_cache.cpp
+                # Nonlocal grid correlation uses GPW FFTs and compressed kernels,
+                # not the molecular dispersion path shared with Gaussian SCF.
+                src/cpu/gpw/internal/vdw_df.cpp
+                src/cpu/gpw/internal/vdw_df_kernel_data.cpp
+                src/cpu/gpw/internal/rvv10.cpp
+                src/cpu/gpw/internal/rvv10_kernel_data.cpp
                 src/cpu/gpw/internal/poisson_fft.cpp
                 src/cpu/gpw/internal/hartree_grid.cpp
                 src/cpu/gpw/internal/grid_fft.cpp
@@ -853,17 +871,6 @@ if(NOT ATV_DOCS_ONLY)
                 src/cpu/gpw/gpw_evaluator.cpp
             )
             target_compile_definitions(atomiverse PUBLIC ATV_GPW_HAS_FFT)
-            # Optional FFTW3 OpenMP threading — the FFTs over the (large) density
-            # grid dominate GPW's cost. fftw_plan_with_nthreads is global, so one
-            # GPWSolver initialization threads every plan. Link libfftw3_omp if present.
-            find_library(FFTW3_OMP_LIB fftw3_omp HINTS
-                $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
-                $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
-            if(FFTW3_OMP_LIB AND OpenMP_CXX_FOUND)
-                target_link_libraries(atomiverse PUBLIC ${FFTW3_OMP_LIB} OpenMP::OpenMP_CXX)
-                target_compile_definitions(atomiverse PUBLIC ATV_GPW_FFTW_THREADS)
-                message(STATUS "GPW: FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
-            endif()
             # CUDA GPW foothold: Γ-point device Poisson/FFT + Padé LDA XC grid
             # + product ρ collocate / V·shape integrate + composed KS chain
             # stage with closed-shell PBE-GGA (spectral ∇ρ / −∇·flux) +
@@ -873,7 +880,7 @@ if(NOT ATV_DOCS_ONLY)
             if(ATV_BUILD_CUDA)
                 target_sources(atomiverse PRIVATE
                     src/cuda/gpw/internal/poisson_fft.cu
-                    src/cuda/gpw/internal/xc_lda.cu
+                    src/cuda/xc/xc_pade.cu
                     src/cuda/gpw/internal/product_collocate.cu
                     src/cuda/gpw/internal/product_integrate.cu
                     src/cuda/gpw/internal/spectral_fft.cu
@@ -910,7 +917,8 @@ if(NOT ATV_DOCS_ONLY)
             /opt/homebrew/opt/fftw/include /usr/local/include)
         if(NOT FFTW3_LIB OR NOT FFTW3_INC)
             message(FATAL_ERROR "FFTW3 required for ATV_BUILD_PW but not found. "
-                               "Install via: brew install fftw")
+                               "Install it (apt: libfftw3-dev, brew: fftw) or "
+                               "set FFTW3_ROOT.")
         endif()
         add_library(fftw3_stub INTERFACE)
         target_link_libraries(fftw3_stub INTERFACE ${FFTW3_LIB})
@@ -920,15 +928,21 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/internal/g_vector.cpp
             src/cpu/planewave/internal/fft.cpp
             src/cpu/planewave/internal/upf_reader.cpp
+            src/cpu/planewave/internal/nc_potential.cpp
+            src/cpu/planewave/norm_conserving_potential.cpp
             # Analytic GTH pseudopotentials. gth_potential.cpp is shared data
             # (GPW consumes it too) and is built here because PW is the wider
             # of the two flags; its home under cpu/gpw/ is a directory-layering
             # debt, not a dependency — it pulls in only its own table header.
             src/cpu/gpw/gth_potential.cpp
-            src/cpu/planewave/internal/gth_upf.cpp
+            src/cpu/planewave/internal/gth_radial.cpp
             src/cpu/planewave/internal/kpoint.cpp
             src/cpu/planewave/internal/ewald.cpp
             src/cpu/planewave/internal/pw_setup.cpp
+            src/cpu/planewave/internal/pw_radial_derivatives.cpp
+            src/cpu/planewave/internal/frozen_operator_virial.cpp
+            src/cpu/planewave/internal/frozen_functional_virial.cpp
+            src/cpu/planewave/internal/pw_final_state.cpp
             src/cpu/planewave/internal/scf_loop.cpp
             src/cpu/planewave/internal/pw_forces.cpp
             src/cpu/planewave/internal/pw_stress.cpp
@@ -940,20 +954,29 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/planewave/internal/davidson.cpp
             src/cpu/planewave/internal/density_builder.cpp
             src/cpu/planewave/internal/convergence.cpp
-            src/cpu/planewave/internal/smearing.cpp
+            src/cpu/electronic/smearing.cpp
             src/cpu/planewave/internal/restricted_scf.cpp
             src/cpu/planewave/pw_solver.cpp
-            src/cpu/planewave/pw_evaluator.cpp
             src/cpu/planewave/bands_dos.cpp
             src/cpu/planewave/dfpt_phonon.cpp
             src/cpu/planewave/berry_polarization.cpp
             src/cpu/planewave/periodic_wannier.cpp
         )
+        # Public DFPT phonons use supercell construction and IFC Fourier
+        # assembly even when the optional vibration product is disabled.
+        if(NOT ATV_BUILD_VIB)
+            target_sources(atomiverse PRIVATE
+                src/cpu/vibration/supercell.cpp
+                src/cpu/vibration/phonon_dispersion.cpp
+            )
+        endif()
         if(NOT ATV_BUILD_HF)
             target_sources(atomiverse PRIVATE
             )
         endif()
-        target_link_libraries(atomiverse PUBLIC fftw3_stub)
+        target_link_libraries(atomiverse PUBLIC
+            $<BUILD_INTERFACE:fftw3_stub>
+            $<INSTALL_INTERFACE:Atomiverse::fftw>)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_PW)
 
         # CUDA plane-wave backend — device-resident kernels mirroring the CPU
@@ -965,10 +988,13 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/planewave/internal/fft.cu
                 src/cuda/planewave/internal/poisson.cu
                 src/cuda/planewave/internal/grid_map.cu
-                src/cuda/planewave/internal/xc_lda.cu
-                src/cuda/planewave/internal/xc_pbe.cu
+                src/cuda/xc/xc_lsda.cu
+                src/cuda/xc/xc_pbe.cu
                 src/cuda/planewave/internal/veff.cu
                 src/cuda/planewave/internal/device_solver.cu
+                src/cuda/planewave/internal/frozen_operator_virial.cu
+                src/cuda/planewave/internal/xc_frozen_virial.cu
+                src/cuda/planewave/internal/frozen_functional_virial.cu
                 src/cuda/planewave/internal/device_density.cu
                 src/cuda/planewave/internal/pw_forces.cu
                 src/cuda/planewave/internal/pw_stress.cu
@@ -994,7 +1020,9 @@ if(NOT ATV_DOCS_ONLY)
             target_link_libraries(fftw3_stub INTERFACE ${FFTW3_LIB})
             target_include_directories(fftw3_stub INTERFACE ${FFTW3_INC})
         endif()
-        target_link_libraries(atomiverse PUBLIC fftw3_stub)
+        target_link_libraries(atomiverse PUBLIC
+            $<BUILD_INTERFACE:fftw3_stub>
+            $<INSTALL_INTERFACE:Atomiverse::fftw>)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_KSPACE)
         # FFTW3 MPI (slab/pencil distributed FFT for multi-rank PPPM).
         if(ATV_USE_MPI)
@@ -1002,7 +1030,9 @@ if(NOT ATV_DOCS_ONLY)
                 $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
                 $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
             if(FFTW3_MPI_LIB)
-                target_link_libraries(atomiverse PUBLIC ${FFTW3_MPI_LIB})
+                target_link_libraries(atomiverse PUBLIC
+                    $<BUILD_INTERFACE:${FFTW3_MPI_LIB}>
+                    $<INSTALL_INTERFACE:Atomiverse::fftw_mpi>)
                 target_compile_definitions(atomiverse PUBLIC ATV_HAS_FFTW_MPI)
                 message(STATUS "KSPACE: FFTW3 MPI enabled (${FFTW3_MPI_LIB})")
             else()
@@ -1013,6 +1043,23 @@ if(NOT ATV_DOCS_ONLY)
         # CUDA PME (cuFFT) — only when the CUDA backend is also enabled.
         if(ATV_BUILD_CUDA)
             target_link_libraries(atomiverse PUBLIC CUDA::cufft)
+        endif()
+    endif()
+
+    # Optional FFTW3 OpenMP threading for every CPU FFT (GPW grids, PPPM/PME
+    # meshes). fftw_plan_with_nthreads is global, so the one
+    # `cpu::device::ensure_fftw_threads()` before the first plan threads all
+    # of them. Link libfftw3_omp if present.
+    if(TARGET fftw3_stub)
+        find_library(FFTW3_OMP_LIB fftw3_omp HINTS
+            $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
+            $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
+        if(FFTW3_OMP_LIB AND OpenMP_CXX_FOUND)
+            target_link_libraries(atomiverse PUBLIC
+                $<BUILD_INTERFACE:${FFTW3_OMP_LIB}>
+                $<INSTALL_INTERFACE:Atomiverse::fftw_omp> OpenMP::OpenMP_CXX)
+            target_compile_definitions(atomiverse PUBLIC ATV_FFTW_THREADS)
+            message(STATUS "FFTW3 OpenMP threading enabled (${FFTW3_OMP_LIB})")
         endif()
     endif()
 
@@ -1091,8 +1138,20 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_CUDA)
         target_include_directories(atomiverse PRIVATE src/cuda/neighbor)
     endif()
-    target_include_directories(atomiverse PUBLIC include)
-    target_link_libraries(atomiverse PUBLIC xtensor xtensor-blas xsimd spdlog::spdlog ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+    if(ATV_BUILD_HF)
+        # Append the specialized cache workers to preserve the existing source order.
+        target_sources(atomiverse PRIVATE
+            src/cpu/scf/internal/exact_jk_dense_cache.cpp
+            src/cpu/scf/internal/exact_jk_screened_symmetric_cache.cpp
+        )
+    endif()
+    include(GNUInstallDirs)
+    target_include_directories(atomiverse PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_compile_features(atomiverse PUBLIC cxx_std_20)
+    target_link_libraries(atomiverse PUBLIC xtensor xtensor-blas xsimd spdlog::spdlog
+        LAPACK::LAPACK BLAS::BLAS)
 
     # xsimd is linked for direct use in native_integrals.cpp ERI hot loops.
     # XTENSOR_USE_XSIMD is NOT set globally. Precise reason (traced 2026-07-26,
@@ -1161,16 +1220,14 @@ if(NOT ATV_DOCS_ONLY)
     #     test_lj_nve / test_pe_small_box test.
     #   - Integrator translation units (`src/cpu/dynamics/velocity_verlet.cpp`,
     #     `src/cpu/dynamics/nose_hoover.cpp`, `src/cpu/dynamics/init.cpp`) MUST NOT
-    #     be in any per-file opt-in list. Document any opt-in here and
-    #     in the relevant run's notes under `benchmarks/md/<sys>/performance/runs/`
-    #     with the exact compiler + flag string used to produce the
-    #     reported `bench_md_step` numbers (ac-022).
+    #     be in any per-file opt-in list. Document any opt-in here with the
+    #     exact compiler + flag string and the `bench_lj_cpu` numbers that
+    #     justified it (ac-022).
     #
     # No file currently opts in. When the first FF kernel does, add
     # `set_source_files_properties(... PROPERTIES COMPILE_FLAGS ...)`
     # immediately below this comment block.
-    # Apple Clang 21+ enforces consteval strictly; spdlog 1.15 fmt bundled lib
-    # triggers a false consteval-in-non-constexpr-context error. Disable it.
+    # Export the same fmt mode for consumers of the public logging headers.
     if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         target_compile_definitions(atomiverse PUBLIC FMT_USE_CONSTEVAL=0)
     endif()
@@ -1179,7 +1236,7 @@ if(NOT ATV_DOCS_ONLY)
         set_target_properties(atomiverse PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_CUDA)
     endif()
-    target_compile_definitions(atomiverse PUBLIC ATV_CUDA_REAL_TYPE=${ATV_CUDA_REAL} ATV_CUDA_WORK_TYPE=${ATV_CUDA_WORK} ATV_CUDA_PREC_TYPE=${ATV_CUDA_PREC})
+    target_compile_definitions(atomiverse PUBLIC ${ATV_CUDA_PRECISION_DEFINE})
 
     # CPU/shared tiered precision (core/precision.h). Accumulators are always
     # double and intentionally not configurable here.
@@ -1189,6 +1246,8 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_ID_SIZE STREQUAL "bigbig")
         target_compile_definitions(atomiverse PUBLIC ATV_ID_BIGBIG)
     endif()
+    target_compile_definitions(atomiverse PUBLIC
+        ATV_CAPTURE_BUFFER_BYTES=${ATV_CAPTURE_BUFFER_BYTES})
 
     if(OpenMP_CXX_FOUND)
         target_link_libraries(atomiverse PUBLIC OpenMP::OpenMP_CXX)
@@ -1199,26 +1258,23 @@ if(NOT ATV_DOCS_ONLY)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_MPI)
     endif()
 
-    # ── molrs CXX (only when products derived ATV_BUILD_MOLRS) ──
-    if(ATV_BUILD_MOLRS)
+    # ── molpy CXX (only when products derived ATV_BUILD_MOLPY) ──
+    if(ATV_BUILD_MOLPY)
         FetchContent_Declare(Corrosion
             GIT_REPOSITORY https://github.com/corrosion-rs/corrosion
-            GIT_TAG v0.6.1
+            GIT_TAG 1499b14e4906a2890f5cee1547c8848db261753d # v0.6.1
         )
         FetchContent_MakeAvailable(Corrosion)
-        # molrs >= 0.14 makes molrs-cxxapi a standalone workspace root (its
-        # own `[workspace]` + Cargo.lock), so it is no longer reachable from
-        # the repo-root manifest; the 0.13 submodule layout resolves the same
-        # path to the root workspace member, so one MANIFEST_PATH serves both.
+        # The molpy repository ships its C++ bridge in molcxx/.
         corrosion_import_crate(
-            MANIFEST_PATH "${ATV_MOLRS_PATH}/molrs-cxxapi/Cargo.toml"
-            CRATES molcrafts-molrs-cxxapi
+            MANIFEST_PATH "${ATV_MOLPY_PATH}/molcxx/Cargo.toml"
+            CRATES molcrafts-molcxx
         )
-        # molrs-core hardcodes F = f64.  Bridge always uses double.
-        # Package is `molcrafts-molrs-cxxapi` in Cargo.toml, but `[lib] name` is
-        # `molrs_cxxapi` -- corrosion exposes the target under the lib name.
-        corrosion_add_cxxbridge(molrs_cxx
-            CRATE molrs_cxxapi
+        # molpy-core hardcodes F = f64.  Bridge always uses double.
+        # Package is `molcrafts-molcxx` in Cargo.toml, but `[lib] name` is
+        # `molcxx` -- corrosion exposes the target under the lib name.
+        corrosion_add_cxxbridge(molpy_cxx
+            CRATE molcxx
             FILES bridge.rs
         )
 
@@ -1226,18 +1282,20 @@ if(NOT ATV_DOCS_ONLY)
         if(POLICY CMP0118)
             cmake_policy(SET CMP0118 NEW)
         endif()
-        set(_molrs_cxx_gen_dir
-            "${CMAKE_BINARY_DIR}/corrosion_generated/cxxbridge/molrs_cxx")
+        set(_molpy_cxx_gen_dir
+            "${CMAKE_BINARY_DIR}/corrosion_generated/cxxbridge/molpy_cxx")
         set_source_files_properties(
-            "${_molrs_cxx_gen_dir}/include/rust/cxx.h"
-            "${_molrs_cxx_gen_dir}/include/molrs_cxx/src/bridge.rs.h"
-            "${_molrs_cxx_gen_dir}/src/bridge.rs.cc"
+            "${_molpy_cxx_gen_dir}/include/rust/cxx.h"
+            "${_molpy_cxx_gen_dir}/include/molpy_cxx/src/bridge.rs.h"
+            "${_molpy_cxx_gen_dir}/src/bridge.rs.cc"
             PROPERTIES GENERATED TRUE)
 
-        target_link_libraries(atomiverse PUBLIC molrs_cxx)
+        target_link_libraries(atomiverse PUBLIC
+            $<BUILD_INTERFACE:molpy_cxx>
+            $<INSTALL_INTERFACE:Atomiverse::molpy_cxx>)
         # Headers gate their molrs::FrameRef convenience overloads on this
-        # (md.h / minimize.h / evaluate.h compile molrs-free without it).
-        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLRS)
+        # (md.h / minimize.h / evaluate.h compile molpy-free without it).
+        target_compile_definitions(atomiverse PUBLIC ATV_HAS_MOLPY)
     endif()
 
 
@@ -1247,7 +1305,7 @@ if(NOT ATV_DOCS_ONLY)
     # `python -m nanobind --cmake_dir`.  For standalone cmake builds, nanobind
     # must be installed in the active Python environment (pip install nanobind).
     if(ATV_BUILD_PYTHON)
-        find_package(Python 3.9 COMPONENTS Interpreter Development.Module REQUIRED)
+        find_package(Python 3.12 COMPONENTS Interpreter Development.Module REQUIRED)
 
         # Locate nanobind from the active Python environment
         execute_process(
@@ -1264,6 +1322,9 @@ if(NOT ATV_DOCS_ONLY)
         find_package(nanobind CONFIG REQUIRED)
 
         set(_ATV_NB_SRCS python/src/bindings/bind.cpp)
+        if(ATV_BUILD_POTENTIALS)
+            list(APPEND _ATV_NB_SRCS python/src/bindings/bind_potentials.cpp)
+        endif()
         if(ATV_BUILD_MD)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_md.cpp)
         endif()
@@ -1282,10 +1343,25 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_SEMIEMPIRICAL)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_semiempirical.cpp)
         endif()
+        # CUDA Evaluate / MD / Minimize handles. Semiempirical is one client,
+        # not the gate (bind.cpp mirrors this condition).
+        if(ATV_BUILD_CUDA AND (ATV_BUILD_SEMIEMPIRICAL OR ATV_BUILD_MD
+                               OR ATV_BUILD_MINIMIZER))
+            list(APPEND _ATV_NB_SRCS python/src/bindings/bind_cuda.cu)
+        endif()
         if(ATV_BUILD_HF)
             list(APPEND _ATV_NB_SRCS python/src/bindings/bind_scf.cpp)
+            if(ATV_BUILD_CUDA)
+                list(APPEND _ATV_NB_SRCS python/src/bindings/bind_cuda_scf.cu)
+            endif()
         endif()
         nanobind_add_module(_atomiverse ${_ATV_NB_SRCS})
+        if(ATV_BUILD_HF)
+            target_compile_definitions(_atomiverse PRIVATE
+                ATV_HF_CXX_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+                ATV_HF_CXX_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+                ATV_HF_CXX_COMPILER_PATH="${CMAKE_CXX_COMPILER}")
+        endif()
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
 
@@ -1313,8 +1389,16 @@ if(NOT ATV_DOCS_ONLY)
                 # link option instead: CMake places LINK_OPTIONS ahead of the
                 # rpath flags it generates itself, and the loader takes the
                 # first DT_RPATH entry that resolves.
-                target_link_options(_atomiverse PRIVATE
-                                    "LINKER:-rpath,${_atv_py_blas_dir}")
+                if(APPLE)
+                    # Let CMake manage Mach-O paths at both build and install
+                    # time; a manual linker rpath is otherwise added twice by
+                    # install_name_tool during installation.
+                    set_property(TARGET _atomiverse APPEND PROPERTY
+                                 BUILD_RPATH "${_atv_py_blas_dir}")
+                else()
+                    target_link_options(_atomiverse PRIVATE
+                                        "LINKER:-rpath,${_atv_py_blas_dir}")
+                endif()
                 set_property(TARGET _atomiverse APPEND PROPERTY
                              INSTALL_RPATH "${_atv_py_blas_dir}")
                 message(STATUS
@@ -1324,23 +1408,44 @@ if(NOT ATV_DOCS_ONLY)
         if(ATV_BUILD_PW)
             target_link_libraries(_atomiverse PRIVATE ${FFTW3_LIB})
         endif()
-        install(TARGETS _atomiverse LIBRARY DESTINATION atomiverse)
+        install(TARGETS _atomiverse LIBRARY DESTINATION atomiverse
+                COMPONENT python)
+
+        # The configuration this extension was compiled with, shipped beside
+        # it so `python -m atomiverse status` reports the installed build.
+        set(_atv_build_info "")
+        foreach(_atv_key IN ITEMS
+                ATV_BUILD_MD ATV_BUILD_MINIMIZER ATV_BUILD_MC
+                ATV_BUILD_EVALUATE ATV_BUILD_VIB ATV_BUILD_PATH ATV_BUILD_HF
+                ATV_BUILD_PW ATV_BUILD_GPW ATV_BUILD_SEMIEMPIRICAL
+                ATV_BUILD_CUDA ATV_BUILD_KSPACE ATV_BUILD_POTENTIALS
+                ATV_BUILD_NEIGHBOR ATV_USE_MPI ATV_REAL_STORAGE ATV_REAL_WORK
+                ATV_ID_SIZE ATV_CAPTURE_BUFFER_BYTES)
+            if(_atv_build_info)
+                string(APPEND _atv_build_info ",\n")
+            endif()
+            string(APPEND _atv_build_info "    \"${_atv_key}\": \"${${_atv_key}}\"")
+        endforeach()
+        file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/atomiverse_build_info.json"
+             "{\n  \"defines\": {\n${_atv_build_info}\n  }\n}\n")
+        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/atomiverse_build_info.json"
+                DESTINATION atomiverse RENAME _build_info.json
+                COMPONENT python)
     endif()
 
     # ── Plain `cmake --install` layout (wheel builds carry none of this;
     #    scikit-build-core owns their install tree) ──
     if(NOT SKBUILD)
         include(GNUInstallDirs)
-        install(TARGETS atomiverse
+        install(TARGETS atomiverse EXPORT AtomiverseTargets
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-        install(DIRECTORY include/atomiverse TYPE INCLUDE)
+        include(cmake/AtvInstallHeaders.cmake)
+        atv_install_headers(atomiverse)
+        include(cmake/AtvPackage.cmake)
     endif()
 
-    # ── atomiverse CLI (native -in always; MPI Python host optional) ──
-    if(ATV_BUILD_LAUNCHER AND NOT ATV_BUILD_CLI)
-        set(ATV_BUILD_CLI ON)
-    endif()
+    # ── atomiverse binary: native -in with MD, MPI Python host with LAUNCHER ──
     if(ATV_BUILD_LAUNCHER)
         if(NOT ATV_USE_MPI)
             message(FATAL_ERROR
@@ -1357,13 +1462,7 @@ if(NOT ATV_DOCS_ONLY)
                 "-DATV_BUILD_LAUNCHER.")
         endif()
     endif()
-    if(ATV_BUILD_CLI)
-        if(NOT ATV_BUILD_MD)
-            message(FATAL_ERROR
-                "ATV_BUILD_CLI=ON requires ATV_BUILD_MD=ON (native -in runs "
-                "classical MD). Configure with -DATV_BUILD_MD=ON or "
-                "-DATV_BUILD_CLI=OFF.")
-        endif()
+    if(ATV_BUILD_MD OR ATV_BUILD_LAUNCHER)
         add_subdirectory(app/atomiverse)
     endif()
 
@@ -1373,21 +1472,23 @@ if(NOT ATV_DOCS_ONLY)
         enable_testing()
     endif()
 
+    # Kokkos Serial foothold (atomiverse_kokkos). OFF returns immediately
+    # and adds no sources. Included after atomiverse so Kokkos's own
+    # project() cannot rewrite the main library's flags.
+    include("${CMAKE_SOURCE_DIR}/cmake/AtvKokkos.cmake")
+
     if(ATV_BUILD_TESTS)
         # Surface the build option as a compile definition so library code
-        # that wants to enable test-only hooks (e.g. the
-        # cuda::stream_synchronize counter in src/cuda/asynchronous/record_base.cu
-        # used by msu-pe-cuda-components-07's hot-path zero-sync gate) can
-        # compile in those hooks. PUBLIC so test executables that link
-        # atomiverse pick up the same definition.
+        # that wants to enable test-only hooks can compile them in. PUBLIC so
+        # test executables that link atomiverse pick up the same definition.
         target_compile_definitions(atomiverse PUBLIC ATV_BUILD_TESTS)
         add_subdirectory(tests)
     endif()
 
-    # End-to-end textbook regressions. Deliberately NOT registered with ctest —
-    # tests/ is unit-only and "if it is registered, it runs" (see CLAUDE.md).
-    if(ATV_BUILD_REGRESSIONS)
-        add_subdirectory(regressions)
+    # Kokkos unit test. Kept out of tests/CMakeLists.txt so an OFF build
+    # adds no Kokkos test target. Requires GTest from add_subdirectory(tests).
+    if(ATV_BUILD_TESTS AND ATV_BUILD_KOKKOS)
+        add_subdirectory(tests/kokkos)
     endif()
 
     if(ATV_BUILD_BENCHMARKS)
@@ -1396,17 +1497,6 @@ if(NOT ATV_DOCS_ONLY)
 
     if(ATV_BUILD_EXAMPLES)
         add_subdirectory(examples)
-    endif()
-
-    option(ATV_BUILD_DEBUG_AMORPHOUS
-        "Build debug_amorphous LAMMPS-comparison runner" OFF)
-    if(ATV_BUILD_DEBUG_AMORPHOUS)
-        add_subdirectory(tools/debug_amorphous)
-    endif()
-    option(ATV_BUILD_BENCH_GAFF
-        "Build tools/bench_gaff_lammps (GAFF vs LAMMPS timing)" OFF)
-    if(ATV_BUILD_BENCH_GAFF)
-        add_subdirectory(tools/bench_gaff_lammps)
     endif()
 endif()
 

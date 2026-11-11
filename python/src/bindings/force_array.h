@@ -2,11 +2,11 @@
 /// @brief The one numpy currency for nuclear forces returned to Python.
 ///
 /// Every binding that publishes forces (`RHF/UHF/RKS/UKS.forces`,
-/// `AM1Evaluator.forces`, `PW.forces`) hands back the same thing: a freshly
+/// `AM1.forces`, `PW.forces`) hands back the same thing: a freshly
 /// allocated, numpy-owned `(n_atoms, 3)` double array [eV/Å]. The engine's
 /// own force storage is not exposed — it is either reused by the next solve
-/// (`AM1Result::forces_ev_a`) or a temporary (`GradientResult::forces`,
-/// `pw_forces_analytic`'s returned vector), so the array Python keeps must
+/// (`AM1Result::forces_ev_a`, the Frame force columns) or a temporary
+/// (`GradientResult::forces`), so the array Python keeps must
 /// own its buffer.
 ///
 /// `to_force_array()` is that copy: it adds the force-specific size check and
@@ -15,8 +15,8 @@
 /// lifetime follows the numpy array and nothing in the engine has to outlive
 /// the call.
 ///
-/// This is deliberately *not* in `molrs_frame_bridge.h`, whose charter is the
-/// molrs.Frame capsule boundary; a numpy return currency is a different
+/// This is deliberately *not* in `molpy_frame_bridge.h`, whose charter is the
+/// molpy.Frame capsule boundary; a numpy return currency is a different
 /// concern with a different dependency (`nanobind/ndarray.h`).
 #pragma once
 

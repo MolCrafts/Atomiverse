@@ -9,10 +9,13 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/observer.h"
-#include "atomiverse/cpu/dynamics/const_pot_bo.h"
 
 namespace ATV {
 namespace cpu {
+
+namespace md {
+class ConstPotBO;
+}
 
 /// @brief Samples \(\kappa(A)\) and empty-plate \(C=|Q|/|\Delta\Psi|\) from ConstPotBO.
 class ElastanceObserver : public cpu::Observer {

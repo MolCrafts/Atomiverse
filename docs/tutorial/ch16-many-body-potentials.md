@@ -1,7 +1,146 @@
-# Chapter 16. Many-Body Potentials
+# Many-Body Potentials
 
-Pair potentials are qualitatively wrong for metals and covalent solids.
-This chapter uses `cpu::EAM` and `cpu::StillingerWeber`.
+Status tables: [Force Fields roadmap](../roadmap/force-fields.md).
+
+The energy of a bond can depend on its surroundings. Metals respond to
+coordination, while covalent crystals prefer particular angles. A central
+pair potential cannot describe every such effect, however carefully its
+parameters are adjusted.
+
+**Learning goals.** Identify environment dependence, differentiate an
+embedding energy, and design separate metallic and covalent validation cases.
+
+**Before you begin.** Pair forces in [Molecular Dynamics](ch10-classical-md.md)
+and the chain rule in [Mathematical Tools](mathematical-tools.md).
+
+## From pairs to environments
+
+The embedded-atom method writes
+
+$$U=\sum_A F(\rho_A)+\frac12\sum_A\sum_{B\ne A}\phi(r_{AB}),
+\qquad \rho_A=\sum_{B\ne A}f(r_{AB}).$$
+
+$\rho_A$ is a model of the local environment, not necessarily an observable
+electron density. If $F$ were linear, its contribution could be rewritten
+as a pair sum. Nonlinearity is what makes embedding genuinely many-body.
+For the Sutton–Chen form $F(\rho)=-\epsilon c\sqrt\rho$, positive parameters
+and $\rho>0$ give $F'<0$ and $F''>0$: this function is convex.
+
+The derivative associated with a pair includes
+$\phi'(r_{AB})+[F'(\rho_A)+F'(\rho_B)]f'(r_{AB})$. Both environments respond
+when the pair separation changes. Omitting either response gives an
+incorrect force even when the energy formula has been implemented correctly.
+
+Stillinger–Weber models add angular interactions. A tetrahedral angular
+penalty contains $(\cos\theta+1/3)^2$, minimized near $109.47$ degrees.
+This expresses a preference for a local geometry; it does not make one
+parameter set transferable to all tetrahedrally bonded materials.
+
+## Limits of pair models
+
+### Crystal structure
+
+For equivalent sites in a perfect monatomic crystal, the pair energy per
+atom is $E/N=\tfrac12\sum_{j\ne i}\phi(r_{ij})$. Neighbor distances and
+their multiplicities both matter. A simple attractive-well model often
+favors highly coordinated arrangements, but there is no theorem that every
+isotropic pair potential must prefer close packing.
+
+Indeed, deliberately designed isotropic pair potentials can stabilize
+diamond-like open structures; the example by Rechtsman, Stillinger, and
+Torquato is listed in the references. This does not make a radial pair model
+a transferable description of covalent chemistry. It shows why a useful
+physical motivation should not be mistaken for an impossibility theorem.
+
+In silicon and diamond, tetrahedral coordination motivates interactions
+that explicitly depend on local geometry. A Stillinger–Weber angular term
+provides one such representation. Its suitability should be tested against
+the structures and deformations relevant to the proposed calculation.
+
+### Elastic response
+
+Elastic constants describe the curvature of energy with respect to small
+strains. For a monatomic cubic Bravais lattice with central pair interactions,
+the zero-temperature, zero-pressure Born elastic constants satisfy
+
+$$C_{12}=C_{44}.$$
+
+This Cauchy relation has specific assumptions. Pressure corrections, thermal
+fluctuations, and internal relaxation in crystals with a multi-atom basis
+require separate treatment. Inversion symmetry alone is not sufficient to
+justify the displayed equality for every measured elastic modulus.
+
+The inherited room-temperature values below illustrate why independent
+elastic measurements are useful when assessing a potential. They should
+not be treated as a temperature-matched proof of a zero-temperature identity.
+
+| Metal | $C_{12}$ (GPa) | $C_{44}$ (GPa) | $C_{12}/C_{44}$ |
+|---|---|---|---|
+| Cu | 121 | 75 | 1.6 |
+| Ag | 93 | 46 | 2.0 |
+| Au | 157 | 42 | 3.7 |
+
+The numerical values are retained from the original manual, which attributes
+them to Kittel. Their experimental conditions and provenance should be
+checked before quantitative fitting. Matching a cohesive energy and a
+lattice constant does not determine the full elastic response.
+
+### Vacancy formation
+
+Removing an atom requires a reference for where it goes. At zero pressure,
+a common large-cell definition relative to a bulk reservoir is
+
+$$E_v=E_{N-1}^{\mathrm{defect}}-\frac{N-1}{N}E_N^{\mathrm{bulk}}.$$
+
+For an ideal monatomic pair crystal, let $e_b<0$ be the energy per atom
+relative to separated atoms. The incident pair sum at one equivalent site
+is $2e_b$. Removing that atom without relaxing any remaining coordinates
+therefore gives $E_{N-1}^{\mathrm{unrelaxed}}=E_N-2e_b$, and the definition
+above yields $E_v^{\mathrm{unrelaxed}}=-e_b=E_{\mathrm{coh}}$ in the
+appropriate bulk limit.
+
+The qualification *unrelaxed* matters. Atomic and cell relaxation, finite
+cell interactions between defects, and reservoir conventions can change the
+comparison. There is no universal relaxed-vacancy-to-cohesive-energy ratio
+for all metals. In an embedding model, removal also changes the environment
+energy of neighboring atoms. Vacancy formation therefore provides a useful
+test beyond reproducing the bulk cohesive energy.
+
+## Implementation scope
+
+The theory of EAM and angular potentials is distinct from the capabilities
+of a particular implementation. Element coverage, MPI, CUDA and parameter
+loading are stated on the
+[many-body potentials method page](methods/md-manybody-potentials.md#scope),
+next to the regression case that pins both potentials.
+
+## Practice plan
+
+Use two different materials because they expose different model responses.
+
+1. For Sutton–Chen copper, scan the lattice constant of a periodic fcc sample.
+   Report energy per atom, the parameter set, and the cutoff. Distinguish
+   quantities used in fitting from genuinely independent validation targets.
+2. Remove one atom from a converged bulk cell. Evaluate the unrelaxed vacancy
+   energy with the stated bulk reference, then relax the defect and repeat
+   at larger cell sizes. Do not compare these two quantities as if they were
+   the same observable.
+3. For Stillinger–Weber silicon, perturb a bond length and a bond angle.
+   Compare diamond and a competing structure at specified density; then
+   distinguish that fixed-density test from a comparison of separately
+   relaxed phases at equal pressure.
+4. Check forces at nonsymmetric configurations using several finite-difference
+   displacements. Symmetry can cancel errors and hide a missing contribution.
+
+Record the original and perturbed configurations so that a failed test can
+be reproduced. The short setup sketch is retained as historical interface
+material; the later explicit force-stage examples show the intended binding
+pattern for those examples, not a promise of compatibility with every revision.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
 
 ```cpp
 sim.set_evaluator(cpu::EAM{/* Sutton-Chen Cu lookup */});
@@ -10,97 +149,9 @@ sim.set_evaluator(cpu::StillingerWeber{/* Si parameters */});
 sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
 ```
 
-Pair LJ NVE conservation ([Chapter 10](ch10-classical-md.md)) proves the MD
-pipeline; many-body styles reuse the same neighbor list and force reduction.
-Always re-check FD forces after parameter changes — the two-pass EAM force is a
-common source of sign/density bugs.
+## Embedding energy
 
-Every classical potential in this book so far has been a **pair potential**: the
-energy is a sum over separations,
-
-$$
-E = \tfrac{1}{2}\sum_i \sum_{j \ne i} \phi(r_{ij}),
-$$
-
-and the force between two atoms depends only on how far apart *they* are. Chapter 10
-built a Lennard-Jones argon fluid this way, and for argon it is the right model —
-a closed-shell noble gas really is held together by pairwise dispersion.
-
-For a metal or a covalent solid it is not just inaccurate; it is **qualitatively
-wrong**. This chapter explains why, then builds the two potentials that fix it:
-the **embedded-atom method** (EAM) for metals and the **Stillinger–Weber** (SW)
-potential for covalent silicon.
-
-Runnable end-to-end cases, checked against the original papers:
-
-- [`regressions/md/eam_cu/`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/eam_cu/reg_eam_cu.cpp) — EAM copper
-- [`regressions/md/sw_si/`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/sw_si/reg_sw_si.cpp) — SW silicon
-
----
-
-## 1. Why Pair Potentials Fail
-
-### The close-packing catastrophe
-
-Take a pair potential — *any* pair potential — and ask which crystal structure it
-prefers. The energy per atom is
-
-$$
-\frac{E}{N} = \tfrac{1}{2}\sum_{j \ne i} \phi(r_{ij}),
-$$
-
-a sum of attractive contributions, one per neighbour. Adding another neighbour near
-the minimum of $\phi$ *lowers* the energy. So a pair potential is always happiest
-with as many neighbours as geometry allows: it favours **close packing** (fcc or hcp,
-coordination 12).
-
-Silicon has coordination **4**. Carbon (diamond) has coordination 4. These are
-extremely *open* structures — most of the space is empty. **No pair potential can
-explain them.** The reason silicon is tetrahedral is that its bonds are $sp^3$
-hybrids pointing at 109.47° to each other, and bond *directions* matter. A pair
-potential cannot see an angle: it only ever sees $r_{ij}$.
-
-### The Cauchy relation
-
-There is a sharper, quantitative version of the same failure. For any crystal with
-inversion symmetry whose atoms interact through central pair forces, the elastic
-constants must satisfy the **Cauchy relation**
-
-$$
-C_{12} = C_{44}.
-$$
-
-This is not an approximation — it follows from the pair form. And it is violated by
-essentially every real metal:
-
-| Metal | $C_{12}$ (GPa) | $C_{44}$ (GPa) | $C_{12}/C_{44}$ |
-|---|---|---|---|
-| Cu | 121 | 75 | 1.6 |
-| Ag | 93 | 46 | 2.0 |
-| Au | 157 | 42 | 3.7 |
-
-(Room-temperature values; see Kittel, *Introduction to Solid State Physics*, Table 3.)
-A pair potential fitted to a metal's cohesive energy and lattice constant will get
-its elastic response badly wrong, no matter what functional form you choose.
-
-### The vacancy paradox
-
-A third symptom, and the one that historically drove the development of EAM. Remove
-one atom from a crystal. In a pair model, the energy cost is exactly the bonds you
-broke — so the vacancy formation energy should equal the cohesive energy,
-$E_v/E_{\text{coh}} = 1$. Experimentally, for fcc metals, that ratio is about
-**0.3**.
-
-Why? Because when an atom leaves, its neighbours do not simply lose a bond; they
-find themselves in a **thinner electron density**, and the bonds they still have
-*get stronger*. A bond's strength depends on its environment. That is the physical
-insight the embedded-atom method formalizes.
-
----
-
-## 2. The Embedded-Atom Method
-
-### The physics
+### Model functions
 
 EAM (Daw & Baskes, *Phys. Rev. B* **29**, 6443, 1984) starts from a result of
 density-functional theory: the energy of an impurity embedded in a host is, to a
@@ -111,14 +162,15 @@ all the others:
 
 $$
 E = \underbrace{\sum_i F(\rho_i)}_{\text{embedding}}
-  + \underbrace{\tfrac{1}{2}\sum_i\sum_{j\ne i}\phi(r_{ij})}_{\text{core–core repulsion}},
+  + \underbrace{\tfrac{1}{2}\sum_i\sum_{j\ne i}\phi(r_{ij})}_{\text{pair contribution}},
 \qquad
 \rho_i = \sum_{j \ne i} f(r_{ij}).
 $$
 
-Three functions: $f(r)$, the electron density one atom contributes at distance $r$;
-$\rho_i$, the total density at atom $i$; and $F(\rho)$, the energy of embedding an
-atom into density $\rho$.
+The three supplied functions are the pair term $\phi(r)$, the environment
+contribution $f(r)$, and the embedding term $F(\rho)$. The local quantity
+$\rho_i$ is constructed by summing $f$ over neighbors; it is not a fourth
+independent function or necessarily a directly measurable electron density.
 
 **Everything hinges on $F$ being nonlinear.** If $F(\rho) = a\rho$ were linear, then
 $\sum_i F(\rho_i) = a\sum_i\sum_j f(r_{ij})$ — a sum over pairs, and EAM would collapse
@@ -126,10 +178,11 @@ back into a pair potential. It is the **curvature** of $F$ that makes the energy
 many-body: it makes the cost of a bond depend on how many other bonds the atom
 already has.
 
-$F$ is concave ($F'' > 0$, $F' < 0$): the first neighbours buy a lot of binding, later
-ones buy less. This single fact fixes all three failures above. It gives $E_v/E_{\text{coh}} < 1$
-(a neighbour that loses density becomes more tightly bound), it breaks the Cauchy
-relation, and it correctly balances close packing against the core repulsion.
+$F=-\epsilon c\sqrt{\rho}$ is convex for positive parameters and density:
+$F''>0$ while $F'<0$. Additional neighbors provide diminishing embedding
+binding. This environment dependence removes some restrictions of central
+pair models, but vacancy energies, elastic relations, and structural
+stability still require validation for the chosen parameterization.
 
 ### The Sutton–Chen form
 
@@ -156,8 +209,9 @@ Copper (`cpu/potentials/eam_data/eam_tables.h`):
 
 ### Running it
 
-`cpu::EAM` is a force component like any other. It is **not** a `Pair` — see §5 —
-so it is bound explicitly rather than through `set_evaluator`:
+`cpu::EAM` is a force component rather than a `Pair`. The detailed example
+therefore binds it explicitly at the force phase instead of relying on the
+short introductory `set_evaluator` sketch:
 
 ```cpp
 #include "atomiverse/cpu/potentials/eam.h"
@@ -183,7 +237,7 @@ the cutoff is a convergence parameter you own. It matters; see the results below
 
 ### Results — copper
 
-`regressions/md/eam_cu` scans the fcc lattice constant, refines the minimum
+`eam_cu` scans the fcc lattice constant, refines the minimum
 parabolically, and compares against the two properties Sutton and Chen *fitted* to:
 
 | Quantity | Atomiverse | Reference | Error |
@@ -191,14 +245,15 @@ parabolically, and compares against the two properties Sutton and Chen *fitted* 
 | Lattice constant $a_0$ | 3.6121 Å | 3.61 Å | **0.06 %** |
 | Cohesive energy $E_{\text{coh}}$ | 3.483 eV/atom | 3.54 eV/atom | 1.6 % |
 
-The lattice constant is the strong statement: it lands within 0.06 %, which says the
-functional form and every parameter are right.
+The reported lattice constant is a useful consistency check for this fitted
+model. Agreement of one property does not establish that every parameter,
+force, or implementation detail is correct.
 
-The cohesive energy is systematically ~1.6 % **low**, and the deficit is *understood*
-rather than tolerated. Truncating a power law throws away density that is still
-contributing; less density means less binding, because $F(\rho) = -\varepsilon c\sqrt{\rho}$
-decreases monotonically. So the error must have this sign, and it must shrink as the
-cutoff grows — which is exactly what happens:
+The cutoff sequence below shows increasing binding for this example. In the
+Sutton–Chen model, truncation removes both positive pair contributions and
+negative embedding contributions. Their balance, rather than the sign of
+one term alone, determines the net energy error. Study the actual cutoff
+sequence instead of assuming a universal monotonic trend.
 
 | Cutoff (Å) | $E_{\text{coh}}$ (eV) | Deficit |
 |---|---|---|
@@ -206,13 +261,13 @@ cutoff grows — which is exactly what happens:
 | 8 | 3.4651 | −2.1 % |
 | 10 | 3.4828 | −1.6 % |
 
-Converging upward toward 3.54, as the truncation argument requires. **When a number
-is off, find out whether its error has the sign the physics predicts.** If it does,
-you understand your model; if it does not, you have a bug.
+These retained values approach the quoted bulk reference as the cutoff
+increases. They motivate a convergence study, but three historical values
+do not establish the infinite-cutoff limit. If a trend differs, investigate
+the state, units, parameterization, truncation convention, and numerical
+implementation before assigning a unique cause.
 
----
-
-## 3. Stillinger–Weber: Making Angles Matter
+## Angular interactions
 
 EAM fixes metals, where bonding is non-directional and the environment enters through
 a scalar density. It does *not* fix silicon. A tetrahedral $sp^3$ network is held
@@ -310,7 +365,7 @@ the structure tetrahedral rather than close-packed.
 
 ### Results — silicon
 
-`regressions/md/sw_si`:
+`sw_si`:
 
 | Quantity | Atomiverse | Reference | Error |
 |---|---|---|---|
@@ -321,24 +376,24 @@ Four to five significant figures — and it *should* be that good, precisely bec
 is strictly cutoff-terminated. There is no truncated tail to hide an error in, so the
 agreement is a genuine check on all ten transcribed parameters.
 
-But the two fitted numbers are **not** the interesting test. Reproducing numbers a
-model was fitted to only proves you implemented the model. The test that proves the
-**three-body term is doing physics** is structural:
+Reproducing fitted quantities is a necessary consistency check, not a proof
+of the implementation. A complementary test compares structures that differ
+in their local coordination:
 
 | Structure (same number density) | $E$ (eV/atom) |
 |---|---|
 | **Diamond** (coordination 4) | **−4.3364** |
 | fcc (coordination 12) | −3.4520 |
 
-Diamond wins by 0.88 eV/atom. Compare at *equal density*, so the contest is about
-structure and not volume. **A pair potential cannot produce this row of the table** —
-it would put fcc lower, every time. Delete the three-body term, flip its sign, or break
-its angular derivative, and fcc wins and the regression fails. That is what makes it a
-test of three-bodyness rather than of bookkeeping.
+In this retained comparison, diamond is lower by about 0.88 eV per atom at
+the stated equal density. The result is evidence for this parameterized
+model under those conditions, not an impossibility result for all radial
+pair potentials. Separately testing the angular energy and its derivatives
+is still necessary: a wrong derivative can coexist with a correct energy
+ordering. Phase stability at equal pressure also requires volume relaxation
+and, at finite temperature, free-energy information.
 
----
-
-## 4. How the Force Is Computed
+## Forces and neighbor data
 
 ### Two passes for EAM
 
@@ -360,26 +415,30 @@ coefficient of each pair term depends on the environments of both endpoints.
 
 ### The full neighbor list
 
-$\rho_i$ is a sum over **all** neighbours of $i$. A **half** neighbor list — the default,
-and what a pair potential wants — stores each pair once, so atom $i$ only "sees" the
-half of its neighbours that happened to land in its own row. Summing over that gives
-you half a density and a wrong answer.
+The environment sum needs contributions from all neighbors. With a full
+neighbor list, each atom's row can provide that sum directly. With a half
+list, each stored pair must instead update the environments of both endpoints,
+with the required communication in a distributed calculation. A half-list
+algorithm is therefore possible; simply summing each incomplete row as if it
+were complete is not correct.
 
-Likewise, SW's angular term at vertex $i$ enumerates every unordered pair $(j,k)$ of
-$i$'s neighbours — impossible unless $i$'s row is complete.
+An angular term also requires complete neighbor information around its
+central atom so that neighbor pairs can be enumerated. This is a requirement
+on the available information, not a universal requirement that every
+many-body implementation use the same list representation.
 
-Both components therefore request a full list, in `build()`:
+The inherited implementation sketch requests a full list in `build()`:
 
 ```cpp
 ctx.runtime.md.full_list_requested = true;   // -> CellList::refresh_full
 ```
 
-If you write a new many-body style, this is the one line you must not forget. Symptom
-if you do: energies and forces that are wrong by roughly a factor related to
-coordination, and — because the error is smooth — an MD run that looks stable while
-being physically meaningless.
+When extending an implementation, check its neighbor and communication
+contracts rather than copying this internal field assignment in isolation.
+A stable-looking trajectory does not rule out a missing environment
+contribution. Compare both energies and forces at explicit test geometries.
 
-### Every force is finite-difference gated
+### Force verification
 
 Both potentials are checked against a central difference of the energy the component
 actually reports:
@@ -398,34 +457,35 @@ its GPW code once, and it survived seventeen commits. During the work in this ch
 the FD oracle caught a real error on its first run: the EAM force had been halved by
 false analogy with the (correctly halved) energy.
 
-The subtlety, worth internalizing because it will bite you in any many-body kernel over
-a full list:
+For the illustrated owner-atom accumulation scheme, the counting rules are:
 
-- The full list visits each **pair** twice. The **energy** and the **virial** are
-  therefore halved — both visits accumulate into one total.
+- The full list visits each **pair** twice. Pair energy and pair virial
+  contributions accumulated on both visits therefore carry a factor of one
+  half. Do not halve an embedding energy counted only once per central atom.
 - The **force** is *not* halved: each visit writes only atom $i$'s force, so the
   $i$-visit must deposit the whole force that the pair exerts on $i$.
 - A **triplet** is different again: it is enumerated once per **vertex**, so the
   three-body term is not halved at all. A triplet has a distinguished atom; a pair
   does not.
 
-For the three-body force, get the two leg forces $\mathbf{F}_j, \mathbf{F}_k$ by
-differentiation and then take the vertex force from translation invariance,
-$\mathbf{F}_i = -(\mathbf{F}_j + \mathbf{F}_k)$. Differentiating it independently just
-gives you a third chance to get a sign wrong.
+For a translation-invariant three-body term, differentiating the two leg
+coordinates gives $\mathbf F_j$ and $\mathbf F_k$. The central force obeys
+$\mathbf F_i=-(\mathbf F_j+\mathbf F_k)$. This relation can be used for
+accumulation and checked independently against coordinate finite differences.
 
 ---
 
-## 5. Why These Are Not `Pair` Components
+## Component responsibilities
 
 `cpu::Pair` — and the backend-agnostic `PairKernel` behind it — models exactly one
 thing: `fpair(r²)`, a scalar force magnitude as a function of a squared separation. It
 holds **no per-atom state** and knows nothing of triplets.
 
-A many-body potential is therefore not an *extension* of the pair abstraction; it is a
-**sibling** of it. Trying to widen `Pair` to accommodate EAM would have deformed the
-one abstraction that is currently clean and fast. Instead both styles follow the
-pattern `CoulLong` already established:
+The inherited design represents the environment-dependent computation with
+a separate component rather than placing its state inside the stateless pair
+kernel. This is an architectural choice, not a requirement on every possible
+implementation of the physical model. The following schematic fragment
+illustrates that separation:
 
 ```cpp
 class EAM : public cpu::Component, public cpu::NeighborConsumer { ... };
@@ -439,41 +499,23 @@ it is the API for anything that is not literally a pair style.
 
 ---
 
-## 6. Current Limitations
+## What the model establishes
 
-- **Single-rank only.** Both components **throw** under MPI. EAM's second pass needs
-  $F'(\rho_j)$ for a *ghost* $j$, and a ghost's density cannot be completed locally
-  unless the halo reaches twice the cutoff. The engine performs exactly one forward
-  halo exchange (before the neighbor build) and one reverse exchange (after the force
-  phase, carrying only forces) — there is no communication point *inside* the force
-  phase for a derived per-atom quantity. Rather than silently compute wrong forces at
-  rank boundaries, the components refuse to build. This is being fixed properly, in the
-  communication layer, rather than worked around here.
-- **Single element.** Alloy cross-terms (the `setfl` mixing rules) are not implemented.
-- **No CUDA mirror yet.**
-- **Tersoff, MEAM, ReaxFF** are not implemented. SW establishes the three-body pathway
-  they would build on.
-
----
-
-## 7. What to Take Away
-
-1. A pair potential cannot describe a metal or a covalent solid — not "less
-   accurately", but **qualitatively wrongly**. It predicts close packing for silicon,
-   $C_{12} = C_{44}$ for every cubic crystal, and a vacancy energy three times too
-   large.
-2. **EAM** makes bond strength depend on the local **electron density** through a
-   nonlinear embedding function $F(\rho)$. The nonlinearity *is* the many-body physics;
-   a linear $F$ collapses back to a pair potential.
-3. **Stillinger–Weber** makes energy depend on bond **angles**, which is the only way
-   to prefer an open tetrahedral network over close packing.
-4. Many-body styles need the **full** neighbor list, and their forces need
-   **finite-difference verification** — energy agreement alone can hide a wrong force
-   indefinitely.
-5. When your number is off, check whether the error has the sign the physics predicts.
-   A 1.6 % cohesive-energy deficit that shrinks monotonically with cutoff is a
-   truncated power-law tail. The same 1.6 % that does not move when you change the
-   cutoff is a bug.
+- A radial pair model has structural restrictions, but it is not universally
+  incapable of stabilizing an open crystal. Assess its intended physical
+  scope and the assumptions of any elasticity or defect argument.
+- A nonlinear embedding function makes the energy depend on local
+  environments. Both endpoints' environment derivatives contribute to the
+  force associated with a pair separation.
+- Angular terms provide an explicit way to favor tetrahedral geometry.
+  A parameterization validated for silicon is not thereby validated for
+  another tetrahedrally coordinated material.
+- The algorithm must account for all required neighbor contributions and
+  avoid double counting. Full- and half-list implementations may organize
+  that work differently.
+- Agreement with a fitted number, a plausible energy ordering, or a smooth
+  trajectory is useful but incomplete evidence. Combine independent force,
+  cutoff, size, structure, and defect checks appropriate to the question.
 
 ## References
 
@@ -485,5 +527,12 @@ it is the API for anything that is not literally a pair style.
   *Philos. Mag. Lett.* **61**, 139 (1990).
 - F. H. Stillinger and T. A. Weber, "Computer simulation of local order in condensed
   phases of silicon", *Phys. Rev. B* **31**, 5262 (1985).
+- M. C. Rechtsman, F. H. Stillinger, and S. Torquato,
+  ["Synthetic diamond and wurtzite structures self-assemble with isotropic pair interactions"](https://arxiv.org/abs/0709.3807),
+  *Phys. Rev. E* **75**, 031403 (2007), DOI: 10.1103/PhysRevE.75.031403.
 - C. Kittel, *Introduction to Solid State Physics*, 8th ed. — elastic constants
   (Table 3, Ch. 3) and cohesive energies (Ch. 3).
+
+## Questions for reflection
+
+Show how linear embedding reduces to pair interactions. What changes in the force on a pair when a third atom moves without changing that pair distance?

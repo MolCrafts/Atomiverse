@@ -1,18 +1,24 @@
 /// @file cuda/gpw/internal/gpw_forces.cuh
 /// @brief Device grid force product for CUDA GPW (Γ RKS first slice).
 ///
-/// Complements host AO Pulay (W·dS, P·dT, P·dVnl). Device owns the O(N_grid)
-/// Hellmann–Feynman / grid-Pulay terms that reuse SCF V_eff / V_es / ρ:
+/// Gamma RKS single-grid cold geometry provides compact AO Pulay coefficients;
+/// accepted device P and physical final-H W supply their device contraction.
+/// Device Hellmann–Feynman / grid-Pulay terms consume resident V_eff / V_es:
 ///   * grid V_eff term −2 Σ_μ∈A Σ_g w V_eff χ_{dμ} (Pχ)_μ
 ///   * ionic HF +∫ V_es ∂n_c^A/∂R
 ///   * local-PP HF +∫ ρ ∂V_loc^SR/∂R  (when local PP is on the grid)
+///   * Gaussian-core overlap pair forces, from immutable cold pair geometry
 ///
-/// Not a public API — composed under `cuda::gpw::gpw_forces_*`.
+/// Not a public API — composed by `cuda::gpw::GpwDft::forces(Frame&)`.
 #pragma once
 
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
+#include "atomiverse/electronic/gaussian_core.h"
 
+#include "atomiverse/cpu/gpw/internal/collocate.h"
 #include <cuda_runtime.h>
+#include <memory>
+#include <vector>
 
 namespace ATV {
 namespace cuda {
@@ -37,11 +43,11 @@ struct DeviceForceAtom {
 /// contiguous (function index, value) list. `g2a` maps full-grid index →
 /// cbg active index (−1 if inactive).
 struct DeviceCbgView {
-    const long* gidx = nullptr;    ///< active grid indices, length n_active.
+    const long* gidx = nullptr;       ///< active grid indices, length n_active.
     const std::size_t* off = nullptr; ///< CSR offsets, length n_active+1.
-    const int* fu = nullptr;       ///< function indices, length nnz.
-    const double* fv = nullptr;    ///< φ values, length nnz.
-    const int* g2a = nullptr;      ///< full-grid → cbg active (−1), length npts.
+    const int* fu = nullptr;          ///< function indices, length nnz.
+    const double* fv = nullptr;       ///< φ values, length nnz.
+    const int* g2a = nullptr; ///< full-grid → cbg active (−1), length npts.
     int n_active = 0;
     long npts = 0;
 };
@@ -56,18 +62,16 @@ struct DeviceCbgView {
 /// @param cbg     Undifferentiated χ CSR + g2a map.
 /// @param cbgd    Center-derivative CSR (flat fu = u*3+k).
 /// @param d_veff  Device V_eff, length npts [Hartree].
-/// @param d_P     Device dense P row-major, length nb*nb.
+/// @param d_P     Device symmetric dense P, column-major, length nb*nb.
+///                Symmetry makes the kernel's row indexing equivalent.
 /// @param nb      AO basis size.
 /// @param d_owner Device map AO index → atom index, length nb.
 /// @param d_forces Device forces 3*n_atoms [Hartree/Bohr], accumulated.
 /// @param stream  CUDA stream (null ⇒ default).
-void accumulate_grid_veff_forces_device(const CollocateGridDesc& grid,
-                                        const DeviceCbgView& cbg,
-                                        const DeviceCbgView& cbgd,
-                                        const double* d_veff, const double* d_P,
-                                        int nb, const int* d_owner,
-                                        double* d_forces,
-                                        cudaStream_t stream = nullptr);
+void accumulate_grid_veff_forces_device(
+    const CollocateGridDesc& grid, const DeviceCbgView& cbg,
+    const DeviceCbgView& cbgd, const double* d_veff, const double* d_P, int nb,
+    const int* d_owner, double* d_forces, cudaStream_t stream = nullptr);
 
 /// @brief Ionic core Hellmann–Feynman: F_A += w Σ_g V_es ∂n_c^A/∂R_A.
 ///
@@ -102,6 +106,45 @@ void accumulate_local_pp_hf_forces_device(const CollocateGridDesc& grid,
                                           int n_atoms, const double* d_rho,
                                           bool periodic, double* d_forces,
                                           cudaStream_t stream = nullptr);
+
+/// One exact-nonzero cold geometry contraction. Matrix index is column-major.
+/// No atom*basis*basis dense tensor is allocated; screened zeros are omitted.
+struct AoForceEntry {
+    int force_lane = 0;
+    int matrix_index = 0;
+    double overlap = 0;  ///< coefficient multiplying physical W
+    double one_body = 0; ///< coefficient multiplying accepted P
+};
+
+/// Cold geometry owns immutable sparse AO/grid tables and bounded force scratch.
+/// evaluate() has device-only scientific inputs and performs no allocations or
+/// host/device copies. Last-result/Frame retrieval is the method's outer boundary.
+class GpwForceWorkspace {
+  public:
+    GpwForceWorkspace();
+    ~GpwForceWorkspace();
+    GpwForceWorkspace(const GpwForceWorkspace&) = delete;
+    GpwForceWorkspace& operator=(const GpwForceWorkspace&) = delete;
+    void build(const CollocateGridDesc& grid,
+               const cpu::gpw::CompactBasisGrid& cbg,
+               const cpu::gpw::CompactBasisGrid& cbgd,
+               const std::vector<int>& owner,
+               const std::vector<DeviceForceAtom>& atoms,
+               const std::vector<AoForceEntry>& ao_entries,
+               const std::vector<gaussian_core::Pair>& core_pairs,
+               cudaStream_t stream);
+    void evaluate(const double* d_P, const double* d_W, const double* d_veff,
+                  const double* d_v_es, bool local_pp_on_grid);
+    const double* d_forces() const;
+    const double* d_rho() const;
+    std::size_t geometry_bytes() const;
+    std::size_t scratch_bytes() const;
+    std::size_t ao_entries() const;
+
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
 } // namespace internal
 } // namespace gpw

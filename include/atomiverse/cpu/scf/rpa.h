@@ -2,7 +2,8 @@
 /// @brief Direct RPA (dRPA) correlation energy (public, result-only header —
 ///        mp2.h / g0w0.h / mp3.h precedent).
 ///
-/// User path: `RHF::direct_rpa()` on a converged closed-shell RHF reference.
+/// User path: `DirectRPA<RHF>{mf}.run()` after `mf.run` (not a member of
+/// `RHF`).
 /// Correlation energy via the Furche plasmon formula on the full direct-RPA
 /// (Coulomb-only, α_hf = 0) Casida spectrum:
 /// \f[
@@ -44,6 +45,30 @@ struct DirectRPAResult {
     /// @brief \(\mathrm{Tr}\,A\) of the singlet dRPA \(A\) matrix [Hartree]
     ///        (diagnostic; enters the plasmon formula).
     double tr_A = 0.0;
+};
+
+/// @brief Direct RPA correlation energy of a converged closed-shell reference.
+///
+/// Not a method of `RHF` or `MeanFieldMethod`. Call `mf.run` first.
+/// Instantiated for `RHF`. Mirrors PySCF `gw.rpa.RPA` in the non-DF limit.
+/// @tparam Method Concrete mean-field type.
+template <typename Method>
+class DirectRPA {
+  public:
+    /// @brief Bind a mean-field reference. The reference must outlive `*this`.
+    /// @param mf Mean-field method that has already been run (not copied).
+    explicit DirectRPA(const Method& mf);
+
+    /// @brief Furche plasmon correlation energy on the Coulomb-only Casida
+    ///        spectrum (α_hf = 0).
+    /// @return Correlation and total energy [Hartree], plus Ω_s [Hartree].
+    /// @throws std::runtime_error when called before `mf.run`, on a
+    ///         non-restricted reference, or when dRPA is ill-conditioned.
+    /// @throws std::invalid_argument when n_occ = 0 or n_virt = 0.
+    DirectRPAResult run() const;
+
+  private:
+    const Method* mf_ = nullptr;
 };
 
 } // namespace scf

@@ -1,0 +1,123 @@
+/// @file regressions/scf/frozen-core-mp2-h2o/reg_frozen-core-mp2-h2o.cu
+/// @brief H2O frozen-core RMP2/6-31G* — e_corr and e_tot vs offline PySCF pins.
+///
+/// Out-of-library consumer: public headers + link atomiverse only.
+/// Geometry and pins: REFERENCE.md (PySCF 2.14.0, cart 6-31G*, frozen=1 O 1s).
+/// Never import/invoke PySCF from this binary.
+///
+/// Exit non-zero on failure. <= 60 s, single CPU.
+
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <type_traits>
+
+#include "atomiverse/core/units.h"
+#include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/scf/methods.h"
+#include "atomiverse/cuda/scf/mp2.cuh"
+#include "atomiverse/cuda/scf/rhf.cuh"
+#include "harness/registry.h"
+
+namespace atv_reg_scf_frozen_core_mp2_h2o {
+
+namespace {
+
+ATV::cpu::Frame h2o_frame() {
+    ATV::cpu::Frame frame(3);
+    frame.span(ATV::kAtom_atomic_number)[0] = 8;
+    frame.span(ATV::kAtom_x)[0] = 0.0;
+    frame.span(ATV::kAtom_y)[0] = 0.0;
+    frame.span(ATV::kAtom_z)[0] = 0.1173;
+    frame.span(ATV::kAtom_atomic_number)[1] = 1;
+    frame.span(ATV::kAtom_x)[1] = 0.0;
+    frame.span(ATV::kAtom_y)[1] = 0.7572;
+    frame.span(ATV::kAtom_z)[1] = -0.4692;
+    frame.span(ATV::kAtom_atomic_number)[2] = 1;
+    frame.span(ATV::kAtom_x)[2] = 0.0;
+    frame.span(ATV::kAtom_y)[2] = -0.7572;
+    frame.span(ATV::kAtom_z)[2] = -0.4692;
+    frame.box = ATV::cpu::Box::cubic(20.0);
+    return frame;
+}
+
+} // namespace
+
+template <typename MeanField, typename Correlation>
+int run_on() {
+    using namespace ATV;
+
+    auto frame = h2o_frame();
+
+    MeanField rhf{cpu::scf::BasisSet::Pople631Gs, 0, 1e-12, 200};
+    Correlation mp_corr{rhf};
+    mp_corr.frozen = 1; // freeze O 1s (lowest occupied spatial MO)
+
+    const cpu::scf::MP2Result mp2 = mp_corr.run(frame);
+
+    // PySCF 2.14.0 pins — see REFERENCE.md (never live-import PySCF here).
+    constexpr double want_e_hf = -76.010504988257;
+    constexpr double want_e_corr = -0.186119540118;
+    constexpr double want_e_tot = -76.196624528375;
+    constexpr double tol = 1e-6; // Ha, product gate for e_corr and e_tot
+
+    const double e_hf = rhf.energy();
+    std::printf("RHF  E = %.12f Ha (pin %.12f, dE = %.3e)\n", e_hf, want_e_hf,
+                e_hf - want_e_hf);
+    std::printf("RMP2-fc e_corr = %.12f Ha (pin %.12f, dE = %.3e)\n",
+                mp2.e_corr, want_e_corr, mp2.e_corr - want_e_corr);
+    std::printf("RMP2-fc e_tot  = %.12f Ha (pin %.12f, dE = %.3e)\n", mp2.e_tot,
+                want_e_tot, mp2.e_tot - want_e_tot);
+    std::printf("frozen = %d\n", mp2.frozen);
+
+    bool ok = rhf.converged();
+    if constexpr (std::is_same_v<MeanField, cuda::scf::RHF>)
+        ok = ok
+             && std::fabs(frame.meta.get(kEnergy) / units::kHartreeInEv
+                          - mp2.e_tot)
+                    < 1e-10;
+    // E_RHF is reference-only (see REFERENCE.md); product gates are e_corr/e_tot.
+    ok = ok && std::fabs(e_hf - want_e_hf) < 1e-7;
+    ok = ok && std::fabs(mp2.e_corr - want_e_corr) < tol;
+    ok = ok && std::fabs(mp2.e_tot - want_e_tot) < tol;
+    ok = ok && std::fabs(mp2.e_tot - (e_hf + mp2.e_corr)) < 1e-12;
+    ok = ok && !mp2.ri;
+    ok = ok && mp2.frozen == 1;
+    ok = ok && mp2.e_corr < 0.0;
+    // Frozen-core e_corr must be less negative than full MP2 (~ -0.1885 Ha).
+    ok = ok && mp2.e_corr > -0.1880;
+
+    std::printf("%s\n", ok ? "PASS" : "FAIL");
+    return ok ? 0 : 1;
+}
+
+int run(int argc, char** argv) {
+    std::string device = "both";
+    for (int i = 1; i < argc; ++i) {
+        if (std::strncmp(argv[i], "--device=", 9) == 0)
+            device = argv[i] + 9;
+        else if (std::strcmp(argv[i], "--device") == 0 && i + 1 < argc)
+            device = argv[++i];
+    }
+    if (device != "cpu" && device != "cuda" && device != "both") {
+        std::fprintf(stderr, "FAIL unknown --device=%s\n", device.c_str());
+        return 1;
+    }
+    int result = 0;
+    if (device != "cuda") {
+        std::printf("[cpu]\n");
+        result |= run_on<ATV::cpu::scf::RHF,
+                         ATV::cpu::scf::MP2<ATV::cpu::scf::RHF>>();
+    }
+    if (device != "cpu") {
+        std::printf("[cuda]\n");
+        result |= run_on<ATV::cuda::scf::RHF, ATV::cuda::scf::MP2>();
+    }
+    return result;
+}
+
+} // namespace atv_reg_scf_frozen_core_mp2_h2o
+
+ATV_REGRESSION("scf/mp2", "frozen-core-mp2-h2o",
+               atv_reg_scf_frozen_core_mp2_h2o::run);

@@ -2,7 +2,7 @@
 /// @brief GPW direct RPA (dRPA) correlation energy result (public value type).
 ///
 /// User path: `GpwDft::direct_rpa(atoms)` after a converged `run()` — the
-/// GPW analogue of molecular `RHF::direct_rpa()` (`cpu/scf/rpa.h`). Supports:
+/// GPW analogue of molecular `DirectRPA<RHF>::run()` (`cpu/scf/rpa.h`). Supports:
 /// - **Γ RKS** (real MOs; RI-GPW or Poisson)
 /// - **multi-k RKS** (complex Bloch + finite-\(q\) inter-\(k\) Casida;
 ///   RI-GPW product only)

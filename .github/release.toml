@@ -1,0 +1,4 @@
+[pypi]
+packages = ["atomiverse"]
+
+[github-release]

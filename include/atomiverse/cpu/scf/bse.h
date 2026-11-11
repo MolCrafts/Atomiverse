@@ -2,14 +2,14 @@
 /// @brief Bethe–Salpeter equation (BSE) excitation energies (public,
 ///        result-only header — tdhf.h / g0w0.h precedent).
 ///
-/// User path: `RHF::bse(n_states)` on a converged closed-shell RHF
-/// reference. Spectral G0W0 quasiparticle poles replace the mean-field
+/// User path: `BSE<RHF>{mf}.run(n_states, tda)` after `mf.run` (not a member
+/// of `RHF`). Spectral G0W0 quasiparticle poles replace the mean-field
 /// orbital energies in the ph/hp Casida matrices; the particle–hole
 /// attraction is the **static direct-RPA** screened Coulomb \(W\) (exact
 /// 4-centre form, no density fitting). Matches the PySCF
 /// `pyscf.gw.bse.BSE` working equations (Hillenbrand, Li & Zhu, JCP 162,
 /// 174117 (2025); J. Comput. Chem. 38, 383 (2017)) evaluated with
-/// frequency-exact G0W0 poles (`RHF::g0w0` / `gw.gw_exact.GWExact`) and
+/// frequency-exact G0W0 poles (`G0W0<RHF>::run` / `gw.gw_exact.GWExact`) and
 /// non-DF ERIs.
 ///
 /// Singlet channel (closed-shell spatial MOs):
@@ -45,6 +45,32 @@ struct BSEResult {
 
     /// @brief G0W0 quasiparticle data used for the poles and static W.
     G0W0Result gw;
+};
+
+/// @brief Singlet BSE@G0W0 on a converged closed-shell mean-field reference.
+///
+/// Not a method of `RHF` or `MeanFieldMethod`. Call `mf.run` first.
+/// Instantiated for `RHF`. Mirrors `pyscf.gw.bse.BSE`.
+/// @tparam Method Concrete mean-field type.
+template <typename Method>
+class BSE {
+  public:
+    /// @brief Bind a mean-field reference. The reference must outlive `*this`.
+    /// @param mf Mean-field method that has already been run (not copied).
+    explicit BSE(const Method& mf);
+
+    /// @brief Lowest singlet BSE roots.
+    /// @param n_states Number of roots in `[1, n_occ·n_virt]`.
+    /// @param tda If true, Tamm–Dancoff (B = 0); else full BSE.
+    /// @return Excitation energies [eV] plus the underlying G0W0 result.
+    /// @throws std::runtime_error when called before `mf.run`, on a
+    ///         non-restricted reference, or when G0W0 / BSE is ill-conditioned.
+    /// @throws std::invalid_argument when `n_states` is out of range or the
+    ///         system has no virtual orbitals.
+    BSEResult run(int n_states = 1, bool tda = false) const;
+
+  private:
+    const Method* mf_ = nullptr;
 };
 
 } // namespace scf

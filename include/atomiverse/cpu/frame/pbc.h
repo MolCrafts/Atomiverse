@@ -1,13 +1,12 @@
 /// @file cpu/frame/pbc.h
-/// @brief Orthorhombic periodic-boundary wrap for owned atoms.
+/// @brief Periodic-boundary wrap for owned atoms.
 ///
-/// Integrators (VelocityVerlet, NVELimit, ...) call `wrap_orthorhombic`
-/// after advancing positions so atoms stay in `[0, L_d)` per axis. Ghost
-/// rows are intentionally untouched -- the next `CommBrick`
-/// rebuild will overwrite them with freshly packed neighbor data.
+/// Runtime calls `wrap_owned` before neighbor/communication rebuilds
+/// so owned atoms lie in the primary fractional cell. Ghost rows are untouched;
+/// `CommBrick` rebuilds them with the selected periodic image shifts.
 #pragma once
 
-#include <cmath>
+#include <cstddef>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -16,38 +15,30 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-/// @brief Wrap owned-atom positions into the primary periodic image.
+/// @brief Wrap owned Cartesian positions into the primary periodic cell and
+///        count each lattice translation into the image flags.
 ///
-/// Orthorhombic only: uses the diagonal `box(d, d)` entries. Atoms at
-/// exactly `x == L` are wrapped to `0`. Ghost rows `[n_owned, n)` are
-/// left alone; they are owned by the halo exchange.
-///
-/// **Triclinic cells are a no-op**, and the guard lives here rather than at
-/// the call sites. Wrapping a tilted cell by its diagonal lengths does not
-/// fail — it silently shifts atoms across the tilt, corrupting positions
-/// with no diagnostic. Leaving them unwrapped is safe for the physics:
-/// `Box::min_image` has a correct triclinic branch, so forces and energies
-/// are unaffected; only the "atoms live in [0, L)" convenience is lost, and
-/// `Box::wrap_axis` documents triclinic wrap as a separate concern.
-/// `ParrinelloRahmanNPT` already guarded its own call site for this reason;
-/// five other integrators did not, which is what this centralizes.
-///
-/// @param frame Frame whose `atoms.x/y/z` are shifted in place.
-/// @param n_owned Number of owned atoms to wrap (typically `owned_count(ctx)`).
-inline void wrap_orthorhombic(cpu::Frame& frame, int n_owned) {
-    if (!frame.box.is_orthorhombic())
-        return;
-    const double lx = frame.box.length(0);
-    const double ly = frame.box.length(1);
-    const double lz = frame.box.length(2);
+/// LAMMPS `Domain::pbc`: a row moved by \(-H\mathbf n\) gains \(\mathbf n\)
+/// in `kAtom_image`, so the unwrapped position \(\mathbf r + H\,\mathrm{image}\)
+/// is unchanged by the wrap (unwrapped-coordinate consumers: `FixEfield`
+/// energy, transport). The bookkeeping is `Box::wrap_into`'s, exact for any
+/// cell shape. Ghost rows retain their halo-selected images. Runtime invokes
+/// this only at a communication/neighbor rebuild, never during ordinary
+/// integration.
+/// @param frame   Frame whose owned rows are wrapped.
+/// @param n_owned Owned row count.
+inline void wrap_owned(cpu::Frame& frame, int n_owned) {
     StorageReal* __restrict sp_x = frame.span(kAtom_x);
     StorageReal* __restrict sp_y = frame.span(kAtom_y);
     StorageReal* __restrict sp_z = frame.span(kAtom_z);
+    ImageInt* __restrict image = frame.span(kAtom_image).data();
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n_owned; ++i) {
-        sp_x[i] -= lx * std::floor(sp_x[i] / lx);
-        sp_y[i] -= ly * std::floor(sp_y[i] / ly);
-        sp_z[i] -= lz * std::floor(sp_z[i] / lz);
+        double x = sp_x[i], y = sp_y[i], z = sp_z[i];
+        frame.box.wrap_into(x, y, z, image + 3 * static_cast<std::size_t>(i));
+        sp_x[i] = x;
+        sp_y[i] = y;
+        sp_z[i] = z;
     }
 }
 

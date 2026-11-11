@@ -15,7 +15,7 @@ bit-identical algebra, so Q(voronoi bulk) == Q(fixed density) is itself a
 pinned invariant.  A second pin halves v_i (denser sites -> harder diagonal
 -> lower C) for the metallicity gate.
 
-Never launched from ctest.  See regressions/md/voronoi-volume-tf/REFERENCE.md.
+Never launched from ctest.  See regressions/md/thomas-fermi/REFERENCE.md.
 """
 from __future__ import annotations
 

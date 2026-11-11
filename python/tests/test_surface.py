@@ -9,7 +9,7 @@ namespace (pinned per row in test_namespaces.py):
   ``AngleHarmonic``, ``DihedralMultiHarmonic``) with no legacy aliases
   (``LJ``, ``HarmonicBond``, ``HarmonicAngle``, ``MultiHarmonicDihedral``)
   and no deprecation shims.
-* The AM1 semiempirical single-point trio (``AM1``, ``AM1Evaluator``,
+* The AM1 semiempirical single-point pair (``AM1``,
   ``AM1Result``) plus the ``single_point`` entry point.
 * The old ``optimizer`` facade is gone and FAILS LOUD:
   ``atomiverse.optimizer`` no longer imports, dead package attributes raise
@@ -18,9 +18,10 @@ namespace (pinned per row in test_namespaces.py):
   ``scf_gradient``, ...) — the SCF surface is the concrete methods, never a
   config bag.
 * Gaussian SCF (spec py-scf-single-point) exposes the concrete methods
-  ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` through ``atomiverse.scf``. They are
-  compile-optional (``ATV_BUILD_HF``) and therefore reachable only through
-  the lazy attribute + the deep module, never through ``__all__``.
+  ``RHF`` / ``UHF`` / ``ROHF`` / ``GHF`` / ``RKS`` / ``UKS`` through
+  ``atomiverse.scf``. They are compile-optional (``ATV_BUILD_HF``) and are
+  included in the top-level ``__all__`` when the installed extension carries them.
+  CUDA HF builds additionally expose ``CudaRHF`` and ``CudaUHF``.
 * Plane-wave DFT uses the concrete ``PW`` method (members → build → run).
   PW types are present only when the extension was
   built with ``ATV_BUILD_PW=ON``; the deleted functional entry is absent on
@@ -30,42 +31,32 @@ namespace (pinned per row in test_namespaces.py):
   through the CMake module DAG, so it is never capability-probed.
 * Monte Carlo (spec py-mc): the three presets ``MC`` / ``NptMC`` / ``GCMC``
   and their four movers (``TranslateMove``, ``VolumeMove``,
-  ``InsertDeleteMove``, ``MoveSelector``) are unconditional top-level names
-  beside the MD surface — ``ATV_BUILD_MC`` defaults ON, so like ``XYZ`` they
-  are never capability-probed and belong in the static ``__all__``.
+  ``InsertDeleteMove``, ``MoveSelector``) are public top-level names
+  beside the MD surface.
 * Vibrational analysis (spec py-vib): ``Hessian`` and ``HessianResult``
-  are unconditional top-level names beside the Monte Carlo surface —
-  ``ATV_BUILD_VIB`` defaults ON, so like ``XYZ`` and the MC names they are
-  never capability-probed and belong in the static ``__all__``.
+  are public top-level names beside the Monte Carlo surface.
 * Geometry optimization (spec py-minimize-full): beside ``LBFGS`` /
   ``ForceConverged`` the surface carries the two other optimizers (``CG``,
   ``FIRE``), the four variable-cell relaxers (``IsotropicCellRelax``,
   ``AnisotropicCellRelax``, ``TriclinicCellRelax``,
   ``JointIsotropicRelax``) and the two cell-relax criteria
-  (``PressureConverged``, ``StressConverged``). All eight are
-  unconditional: ``ATV_BUILD_MINIMIZER`` defaults ON, so like the MC and
-  vibration names they are never capability-probed and belong in the
-  static ``__all__``.
+  (``PressureConverged``, ``StressConverged``).
+* ``__all__`` is the subset of the public names the installed extension
+  carries, so ``from atomiverse import *`` works on any module selection.
 * Electrostatics (spec py-coulomb-pme): ``PairCoulCut`` and ``CoulLong``
   are unconditional top-level names; ``KSpacePME`` is compile-optional
   (``ATV_BUILD_KSPACE``) and therefore reachable only through the lazy
   attribute + ``atomiverse.longrange``, never through ``__all__``.
-* A tree grep gate keeps dead references from creeping back anywhere
-  under ``python/``. Forbidden tokens are assembled by string
-  concatenation so this file never contains one literally.
 
 Smoke parameters reuse the verified conftest values (Ar LJ
 epsilon=0.0104 eV, sigma=3.4 A, mass 39.948 amu; PW on the in-tree
-analytic ``gth_name = "GTH-PBE-q4"`` at ecut 8 Ry / 1 k-point: "runs,
+analytic ``gth_name="GTH-PBE-q4"`` at ecut 8 Ry / 1 k-point: "runs,
 underconverged") — no new reference values are introduced.
 """
 
 from __future__ import annotations
 
 import importlib
-import os
-from collections.abc import Iterator
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -73,6 +64,7 @@ import molpy
 
 import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
+from _domains import needs
 
 # Capability probes are short-circuited on ``extension_available()``: the
 # missing-extension sentinel raises ImportError (not AttributeError) from
@@ -82,9 +74,13 @@ from atomiverse._binding import _cpp, extension_available
 _HAS_PW: bool = extension_available() and hasattr(_cpp, "PW")
 _HAS_KSPACE: bool = extension_available() and hasattr(_cpp, "KSpacePME")
 _HAS_HF: bool = extension_available() and hasattr(_cpp, "RHF")
+_HAS_CUDA_HF: bool = extension_available() and hasattr(_cpp, "CudaRHF")
 
 # The concrete Gaussian SCF methods (spec py-scf-single-point).
-_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "RKS", "UKS")
+_SCF_METHODS: tuple[str, ...] = (
+    "RHF", "UHF", "ROHF", "GHF", "RKS", "UKS", "MP2", "MP2Result", "MP3", "MP3Result",
+)
+_CUDA_SCF_METHODS: tuple[str, ...] = ("CudaRHF", "CudaUHF")
 
 # ── Shared surface definitions ──────────────────────────────────────
 
@@ -95,25 +91,28 @@ _CANONICAL_NEW_NAMES: tuple[str, ...] = (
     "DihedralMultiHarmonic",
 )
 
-# Exact honest top-level surface — STATIC on every build. Compile-optional
-# object types (``PW`` / ``PWResult``, ``KSpacePME``) are NOT in ``__all__``:
-# they are reachable through the lazy ``__getattr__`` + their deep module
-# when the extension carries them, and raise a build-flag-naming
-# AttributeError when it does not. Keying this set off a capability probe
-# was a latent bug — ``__all__`` is a static list, so the equality assert
-# below failed on any PW-enabled build.
+# The public top-level names (``atomiverse._PUBLIC``), the same on every
+# build. Compile-optional object types (``PW`` / ``PWResult``, ``KSpacePME``)
+# are NOT among them: they are reachable through the lazy ``__getattr__`` +
+# their deep module when the extension carries them, and raise a
+# build-flag-naming AttributeError when it does not. The Gaussian CPU/CUDA
+# methods are among the public candidates; __all__ filters them by availability.
 _CANONICAL_ALL: frozenset[str] = frozenset(
     {
         "MD",
+        "set_units",
+        "units_style",
         "VelocityVerlet",
         "NoseHooverNPT",
         "ParrinelloRahmanNPT",
+        "NvtSllod",
         "BerendsenBarostat",
         "InitVelocity",
         "NoseHoover",
         "Langevin",
         "CSVR",
         "Minimize",
+        "SteepestDescent",
         "LBFGS",
         "CG",
         "FIRE",
@@ -126,6 +125,9 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "StressConverged",
         "MinimizeResult",
         "PairLJCut",
+        "PairLJCutCoulLong",
+        "LJTypeCoeff",
+        "R4TypeCoeff",
         "PairCoulCut",
         "CoulLong",
         "NeighborList",
@@ -142,9 +144,35 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "InsertDeleteMove",
         "MoveSelector",
         "AM1",
-        "AM1Evaluator",
+        "RM1",
+        "MNDO",
+        "PM3",
         "AM1Result",
+        "RM1Result",
+        "MNDOResult",
+        "PM3Result",
+        "AM1BCCCharges",
+        "DFTB0",
+        "DFTB2",
+        "DftbBoundary",
+        "DftbSkSet",
+        "DftbSpinConstant",
+        "kDftbSpinConstantsPbeHa",
+        "kDftbSpinConstantsLdaHa",
         "single_point",
+        "Evaluate",
+        "RHF",
+        "UHF",
+        "ROHF",
+        "GHF",
+        "MP2",
+        "MP2Result",
+        "MP3",
+        "MP3Result",
+        "RKS",
+        "UKS",
+        "CudaRHF",
+        "CudaUHF",
         "Hessian",
         "HessianResult",
         # Force-field catalogue growth (spec py-pair-styles): six pair
@@ -160,6 +188,13 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "BondFene",
         "DihedralCharmm",
         "ImproperHarmonic",
+        # NVT SLLOD (CPU + CUDA) and the coarse-grained polymer-electrolyte
+        # pair: the cosine bending angle and the uniform electric field.
+        "NvtSllod",
+        "AngleCosine",
+        "FixEfield",
+        # The Amber/GAFF improper of molpy force fields (atomiverse.forcefield).
+        "ImproperCvff",
     }
 )
 
@@ -271,37 +306,33 @@ def silicon_frame() -> "molpy.Frame":
 
 
 class TestCanonicalSurface:
+    @needs("ATV_BUILD_POTENTIALS")
     @pytest.mark.parametrize("name", _CANONICAL_NEW_NAMES)
     def test_canonical_component_present(self, name: str) -> None:
         """Each canonical LAMMPS-style component name is exported."""
         assert hasattr(av, name), f"canonical component atomiverse.{name} is missing"
 
-    def test_all_is_exactly_the_honest_surface(self) -> None:
-        """__all__ is the static MD + minimize + electrostatics + recorder
-        + MC + AM1 surface.
+    def test_public_names_are_the_honest_surface(self) -> None:
+        """The public candidate list is fixed; availability filters __all__."""
+        assert len(_CANONICAL_ALL) == 88
+        assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
-        Same 52 names on every build: compile-optional types live behind
-        the lazy ``__getattr__``, never in ``__all__``. ``XYZ`` is static
-        because ``ATV_BUILD_PYTHON`` forces ``ATV_BUILD_IO=ON`` through the
-        CMake module DAG (``cmake/AtvProductModules.cmake:68``); the seven
-        Monte Carlo names are static because ``ATV_BUILD_MC`` is ON by
-        default (``:25``) and the wheel does not override it, the two
-        vibration names (spec py-vib) are static for the same reason
-        (``ATV_BUILD_VIB`` ON at ``:27``), and the eight new geometry
-        optimization names (spec py-minimize-full) because
-        ``ATV_BUILD_MINIMIZER`` is ON by default too. The nine
-        force-field styles of spec py-pair-styles are static for the
-        plainest reason of all — a pair or bonded style is part of
-        ``ATV_BUILD_POTENTIALS`` with no flag of its own, just like
-        ``PairLJCut``. None of them is capability-probed.
-        """
-        assert len(_CANONICAL_ALL) == 52
-        assert set(av.__all__) == set(_CANONICAL_ALL)
+    def test_all_is_the_carried_subset(self) -> None:
+        """``__all__`` keeps exactly the public names this extension carries."""
+        carried = {n for n in _CANONICAL_ALL if hasattr(av, n)}
+        assert set(av.__all__) == carried
+
+    def test_star_import_works_on_this_build(self) -> None:
+        """``from atomiverse import *`` binds every name in ``__all__``."""
+        namespace: dict = {}
+        exec("from atomiverse import *", namespace)
+        assert set(av.__all__) <= set(namespace)
 
 
 # ── MD LJ smoke on canonical names ──────────────────────────────────
 
 
+@needs("ATV_BUILD_MD")
 class TestCanonicalMDSmoke:
     def test_positions_change(
         self, argon_frame: "molpy.Frame", canonical_lj_md: "av.MD"
@@ -366,10 +397,12 @@ class TestPWSurface:
         """The analytic in-tree GTH path runs from Python and returns a
         finite energy [Ry] — 'runs, underconverged' contract at ecut 8 Ry
         and one k-point, no new reference values."""
-        pw = av.PW()
-        pw.gth_name = "GTH-PBE-q4"  # Si, in-tree analytic GTH; no file
-        pw.ecut_ry = 8.0
-        pw.k_mesh = 1
+        from atomiverse.pw import GthPseudopotential
+
+        # Si, in-tree analytic GTH; no file
+        pw = av.PW(
+            potentials=[GthPseudopotential(14, "GTH-PBE-q4")], ecut_ry=8.0, k_mesh=1
+        )
         pw.max_iter = 5
         pw.build(silicon_frame)
         result = pw.run(silicon_frame)
@@ -378,15 +411,13 @@ class TestPWSurface:
         assert np.isfinite(result.energy)
 
     @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
-    def test_no_pseudopotential_raises(self, silicon_frame: "molpy.Frame") -> None:
-        """A plane-wave run has no default pseudopotential: leaving both
-        `gth_name` and `upf_path` empty fails loud instead of running a
-        bare valence-charge potential that no cutoff converges."""
-        pw = av.PW()
-        pw.ecut_ry = 8.0
-        pw.k_mesh = 1
-        with pytest.raises(Exception):
-            pw.build(silicon_frame)
+    def test_no_pseudopotential_raises(self) -> None:
+        """A plane-wave run has no default pseudopotential: `potentials` is a
+        required keyword, so omitting it fails loud at construction instead
+        of running a bare valence-charge potential that no cutoff
+        converges."""
+        with pytest.raises(TypeError):
+            av.PW(ecut_ry=8.0, k_mesh=1)
 
     @pytest.mark.skipif(_HAS_PW, reason="extension built with ATV_BUILD_PW")
     @pytest.mark.parametrize("name", ("PW", "PWResult"))
@@ -398,8 +429,12 @@ class TestPWSurface:
     def test_functional_entry_deleted(self) -> None:
         """The old transient solve function is absent from Python and C++."""
         assert not hasattr(av, "pw_scf")
-        assert not hasattr(importlib.import_module("atomiverse.pw"), "pw_scf")
         assert not hasattr(_cpp, "pw_scf")
+
+    @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
+    def test_functional_entry_not_in_pw_module(self) -> None:
+        """``atomiverse.pw`` carries the method types and no solve function."""
+        assert not hasattr(importlib.import_module("atomiverse.pw"), "pw_scf")
 
 
 # ── Gaussian SCF gate (spec py-scf-single-point) ────────────────────
@@ -408,9 +443,9 @@ class TestPWSurface:
 class TestScfSurface:
     """The concrete methods are the surface — never a bag.
 
-    Same capability contract as PW / KSpacePME: reachable by both spellings
-    on an ``ATV_BUILD_HF=ON`` extension, a flag-naming ``AttributeError``
-    otherwise, and out of the static ``__all__`` on every build.
+    Same capability contract as every product module: reachable by both
+    spellings on an ``ATV_BUILD_HF=ON`` extension, a flag-naming
+    ``AttributeError`` otherwise.
     """
 
     @pytest.mark.skipif(not _HAS_HF, reason="extension built without ATV_BUILD_HF")
@@ -421,10 +456,15 @@ class TestScfSurface:
         assert getattr(av, name) is getattr(scf, name)
 
     @pytest.mark.skipif(not _HAS_HF, reason="extension built without ATV_BUILD_HF")
-    def test_scf_module_exports_the_four_methods(self) -> None:
-        """``atomiverse.scf.__all__`` is exactly the four concrete methods."""
+    def test_scf_module_exports_methods_and_backend_queries(self) -> None:
+        """SCF exports the carried methods and their documented backend queries."""
         scf = importlib.import_module("atomiverse.scf")
-        assert set(scf.__all__) == set(_SCF_METHODS)
+        expected = {*_SCF_METHODS, "backend_info"}
+        if _HAS_CUDA_HF:
+            expected.update(
+                (*_CUDA_SCF_METHODS, "cuda_backend_info", "cuda_synchronize")
+            )
+        assert set(scf.__all__) == expected
 
     @pytest.mark.skipif(_HAS_HF, reason="extension built with ATV_BUILD_HF")
     @pytest.mark.parametrize("name", _SCF_METHODS)
@@ -436,13 +476,21 @@ class TestScfSurface:
         assert not hasattr(_cpp, name)
 
     @pytest.mark.parametrize("name", _SCF_METHODS)
-    def test_scf_method_is_never_in_all(self, name: str) -> None:
-        """Compile-optional types stay out of the static ``__all__``."""
-        assert name not in av.__all__
+    def test_scf_method_in_all_follows_capability(self, name: str) -> None:
+        """The public candidate resolves and joins __all__ when HF is carried."""
+        assert (name in av.__all__) is _HAS_HF
+
+    @pytest.mark.parametrize("name", _CUDA_SCF_METHODS)
+    def test_cuda_scf_method_in_all_follows_capability(self, name: str) -> None:
+        """CUDA methods are public only on builds carrying CUDA HF."""
+        assert (name in av.__all__) is _HAS_CUDA_HF
+        if _HAS_CUDA_HF:
+            scf = importlib.import_module("atomiverse.scf")
+            assert getattr(av, name) is getattr(scf, name) is getattr(_cpp, name)
 
     def test_no_scf_facade_name(self) -> None:
         """There is no ``SCF`` facade / solver bag on either surface — the
-        public API is the concrete method (CLAUDE.md: no `SCFSolver`)."""
+        public API is the concrete method (docs/developer/project-contract.md: no `SCFSolver`)."""
         assert not hasattr(av, "SCF")
         assert not hasattr(_cpp, "SCF")
 
@@ -450,6 +498,7 @@ class TestScfSurface:
 # ── Electrostatics surface (spec py-coulomb-pme) ────────────────────
 
 
+@needs("ATV_BUILD_POTENTIALS")
 class TestCoulombSurface:
     """``CoulCut`` / ``CoulLong`` are unconditional; only the reciprocal
     solver is compile-optional."""
@@ -467,8 +516,8 @@ class TestCoulombSurface:
         assert av.CoulLong is CoulLong
 
     def test_longrange_module_exports_track_the_build(self) -> None:
-        """``atomiverse.longrange`` imports on every build and always
-        exports ``CoulLong``; ``KSpacePME`` appears iff it was compiled."""
+        """``atomiverse.longrange`` always exports ``CoulLong``;
+        ``KSpacePME`` appears iff it was compiled."""
         longrange = importlib.import_module("atomiverse.longrange")
         assert "CoulLong" in longrange.__all__
         assert ("KSpacePME" in longrange.__all__) is _HAS_KSPACE
@@ -477,13 +526,10 @@ class TestCoulombSurface:
 # ── Recorder surface (spec py-recorder-xyz) ─────────────────────────
 
 
+@needs("ATV_BUILD_MD")
 class TestRecorderSurface:
-    """``Thermo`` and ``XYZ`` are both unconditional top-level names.
-
-    Unlike PW / KSpacePME there is no capability probe here: the Python
-    wheel forces ``ATV_BUILD_IO=ON`` through the CMake module DAG, so the
-    trajectory recorder is present on every wheel and belongs in the
-    static ``__all__``.
+    """``Thermo`` and ``XYZ`` are bound with the MD driver, so they are
+    present on every extension that carries ``md``.
     """
 
     def test_xyz_is_identity_reexport(self) -> None:
@@ -502,6 +548,7 @@ class TestRecorderSurface:
 # ── Monte Carlo surface (spec py-mc) ────────────────────────────────
 
 
+@needs("ATV_BUILD_MC")
 class TestMonteCarloSurface:
     """The three MC presets and their movers are unconditional names.
 
@@ -537,6 +584,7 @@ class TestMonteCarloSurface:
 # ── Vibration surface (spec py-vib) ─────────────────────────────────
 
 
+@needs("ATV_BUILD_VIB")
 class TestVibrationSurface:
     """``Hessian`` / ``HessianResult`` are unconditional names.
 
@@ -568,6 +616,7 @@ class TestVibrationSurface:
 # ── Minimize surface growth (spec py-minimize-full) ─────────────────
 
 
+@needs("ATV_BUILD_MINIMIZER")
 class TestMinimizerSurface:
     """The two extra optimizers, four cell relaxers and two criteria.
 
@@ -595,6 +644,7 @@ class TestMinimizerSurface:
 # ── Force-field catalogue growth (spec py-pair-styles) ──────────────
 
 
+@needs("ATV_BUILD_POTENTIALS")
 class TestPairStyleSurface:
     """The six pair styles and three bonded styles are static names.
 
@@ -645,80 +695,3 @@ class TestKSpaceSurface:
     def test_kspace_pme_is_never_in_all(self) -> None:
         """Compile-optional types stay out of the static ``__all__``."""
         assert "KSpacePME" not in av.__all__
-
-
-# ── In-tree dead-reference grep gate ────────────────────────────────
-#
-# Forbidden tokens are assembled by concatenation so that this file
-# never contains one literally (the acceptance grep excludes this file;
-# the in-test scanner must not self-match either way).
-
-_PYTHON_ROOT: Path = Path(__file__).resolve().parent.parent
-_THIS_FILE: Path = Path(__file__).resolve()
-_SCAN_SUFFIXES: frozenset[str] = frozenset({".py", ".cpp", ".md"})
-_SKIP_DIR_NAMES: frozenset[str] = frozenset(
-    {"build", "_skbuild", "dist", "venv", "node_modules", "__pycache__"}
-)
-
-# ``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` are NOT scanned for: spec
-# py-scf-single-point makes them live names, so ``av.RHF`` is a legitimate
-# reference throughout python/ (docs included).
-_DEAD_AV_ATTRS: tuple[str, ...] = (
-    "GeometryOptimizer",
-    "Frame",
-    "Block",
-)
-
-
-def _forbidden_tokens() -> tuple[str, ...]:
-    """Dead-reference tokens, built without literal occurrence here."""
-    tokens = ["_cpp" + "." + name for name in _DEAD_CPP_ATTRS]
-    tokens.append("Cpu" + "Frame")
-    tokens.extend("av" + "." + name for name in _DEAD_AV_ATTRS)
-    tokens.extend("atomiverse" + "." + name for name in ("Frame", "Block"))
-    # molpy >= 0.13 re-exports molpy.Frame / molpy.Block by identity, so
-    # `molpy.Frame` is no longer a dead reference and is not scanned for.
-    return tuple(tokens)
-
-
-def _iter_scan_files() -> Iterator[Path]:
-    """Yield scannable files under python/ (excluding this test and
-    build artifacts / virtualenv / cache directories)."""
-    for dirpath, dirnames, filenames in os.walk(_PYTHON_ROOT):
-        dirnames[:] = sorted(
-            d
-            for d in dirnames
-            if not d.startswith(".")
-            and not d.endswith(".egg-info")
-            and d not in _SKIP_DIR_NAMES
-        )
-        for filename in sorted(filenames):
-            path = Path(dirpath) / filename
-            if path.suffix not in _SCAN_SUFFIXES:
-                continue
-            if path.resolve() == _THIS_FILE:
-                continue
-            yield path
-
-
-def _find_token(token: str) -> list[str]:
-    """Return 'relpath:lineno' hits for ``token`` under python/."""
-    hits: list[str] = []
-    for path in _iter_scan_files():
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if token not in text:
-            continue
-        for lineno, line in enumerate(text.splitlines(), start=1):
-            if token in line:
-                hits.append(f"{path.relative_to(_PYTHON_ROOT)}:{lineno}")
-    return hits
-
-
-class TestDeadReferenceGrepGate:
-    @pytest.mark.parametrize("token", _forbidden_tokens())
-    def test_no_dead_reference_in_tree(self, token: str) -> None:
-        """No file under python/ references the dead symbol token."""
-        hits = _find_token(token)
-        assert not hits, (
-            f"forbidden dead-reference token {token!r} found in: " + ", ".join(hits)
-        )

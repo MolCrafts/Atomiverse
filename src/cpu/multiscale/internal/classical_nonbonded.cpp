@@ -51,7 +51,7 @@ ClassicalNonbonded::PairParam ClassicalNonbonded::lookup_(int ti,
 }
 
 double ClassicalNonbonded::launch(Frame& frame, const std::vector<int>& rows,
-                                  bool forces_requested,
+                                  bool forces_requested, double qqrd2e,
                                   double force_sign) const {
     const int n = static_cast<int>(frame.nlocal());
     if (n == 0)
@@ -83,7 +83,7 @@ double ClassicalNonbonded::launch(Frame& frame, const std::vector<int>& rows,
         fz = frame.span(kAtom_fz);
     }
 
-    const double ke = units::coulomb;
+    const double ke = qqrd2e;
     double e = 0.0;
     for (int a = 0; a < m; ++a) {
         const int i = atoms[static_cast<std::size_t>(a)];

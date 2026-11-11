@@ -1,6 +1,6 @@
 /// @file python/src/bindings/frame_guards.h
 /// @brief Shared pre-run predicates: what a driver handle's registrations
-///        demand of the molrs Frame handed to `run()`.
+///        demand of the molpy Frame handed to `run()`.
 ///
 /// Two questions every driver facade asks before it starts a run — "did the
 /// user register an electrostatic model?" and "does the frame carry the column
@@ -17,21 +17,23 @@
 #include <variant>
 
 #include "atomiverse/cpu/task/task_spec.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
-/// @brief Does `block` of a molrs Frame carry the column `key`?
+/// @brief Does `block` of a molpy Frame carry the column `key`?
 ///
-/// The molrs boundary is the only place where a column's *absence* is still
-/// visible: `cpu::from_molrs` allocates every optional per-atom column and
+/// The molpy boundary is the only place where a column's *absence* is still
+/// visible: `cpu::from_molpy` allocates every optional per-atom column and
 /// leaves an absent one zero-filled, so an evaluator downstream cannot tell
 /// "no charges were given" from "every charge is 0 e".
 ///
-/// @param frame Borrowed molrs Frame handle.
+/// @param frame Borrowed molpy Frame handle.
 /// @param block Block name, e.g. `"atoms"`.
 /// @param key   Column name, e.g. `"charge"`.
 /// @return True when that block carries that column.
-inline bool has_molrs_column(const molrs::FrameRef& frame, const char* block,
+inline bool has_molpy_column(const molrs::FrameRef& frame, const char* block,
                              std::string_view key) {
+    if (!molrs::frame_has_block(frame, block))
+        return false;
     for (const ::rust::String& raw : molrs::frame_block_columns(frame, block))
         if (std::string_view{raw.data(), raw.size()} == key)
             return true;
@@ -46,11 +48,15 @@ inline bool has_molrs_column(const molrs::FrameRef& frame, const char* block,
 /// build gate belongs here.
 ///
 /// @tparam P One `*Params` mirror type.
+/// `FixEfieldParams` belongs here too: the field force is q E, so a missing
+/// charge column would silently switch the field off.
 template <typename P>
 inline constexpr bool is_coulomb_params_v =
     std::is_same_v<P, ATV::cpu::task::PairCoulCutParams>
     || std::is_same_v<P, ATV::cpu::task::CoulLongParams>
-    || std::is_same_v<P, ATV::cpu::task::KSpacePmeParams>;
+    || std::is_same_v<P, ATV::cpu::task::PairLJCutCoulLongParams>
+    || std::is_same_v<P, ATV::cpu::task::KSpacePmeParams>
+    || std::is_same_v<P, ATV::cpu::task::FixEfieldParams>;
 
 /// @brief Is this mirror entry an electrostatic evaluator?
 ///

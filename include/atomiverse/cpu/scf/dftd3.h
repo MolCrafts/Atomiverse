@@ -12,7 +12,7 @@
 ///   auto f = d3.forces(frame);         // f[A] = −∂E_disp/∂R_A [Hartree/Bohr]
 ///
 ///   // Or fold into RKS total energy AND its analytic gradient:
-///   cpu::scf::RKS rks(cpu::scf::XCType::PBE);
+///   cpu::scf::RKS rks(cpu::xc::XCType::PBE);
 ///   rks.d3bj = true;
 ///   rks.run(frame);
 ///   double ed = rks.energy_disp();     // [Hartree]
@@ -44,7 +44,7 @@ class D3BJ {
 
     /// @brief Dispersion energy for the Frame geometry.
     ///
-    /// Reads `kAtom_type` (atomic number Z) and `kAtom_x/y/z` [Å]. Isolated
+    /// Reads `kAtom_atomic_number` (atomic number Z) and `kAtom_x/y/z` [Å]. Isolated
     /// (non-periodic) evaluation — the Frame box is ignored (gas-phase
     /// molecular path). Unsupported Z (outside the in-tree D3 table) throws.
     ///

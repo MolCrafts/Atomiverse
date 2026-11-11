@@ -7,13 +7,17 @@
 /// `setup`.
 ///
 /// Algorithm transplanted from LAMMPS `src/comm_brick.cpp` sendlist
-/// (checkout `970d4ba`). Copyright (2003) Sandia Corporation. GPL-2.0-only.
+/// (checkout `970d4ba`). Triclinic fractional slabs and periodic self copies
+/// follow src/comm_brick.cpp at a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+/// Copyright (2003) Sandia Corporation. GPL-2.0-only.
 
 #include "atomiverse/cpu/communication/halo.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -30,7 +34,7 @@ namespace comm {
 
 namespace {
 
-/// Sentinel for the open side of a slab band [Angstrom]: larger than any
+/// Sentinel for the open side of a fractional slab band: larger than any
 /// physical box by many orders of magnitude, so the comparison against it is
 /// always true without a branch on `sign`.
 constexpr double kBigSlab = 1.0e30;
@@ -59,8 +63,7 @@ struct ChainWalk {
 /// @param step `-1` toward decreasing coords, `+1` toward increasing.
 /// @param axis_length Box edge along the axis [Angstrom].
 /// @param shell Ghost shell width to cover [Angstrom].
-/// @param reach Partners available in this direction (the whole ring minus
-///        this rank).
+/// @param reach Maximum hops including complete periodic rings.
 /// @return Hops walked and whether the shell ended up covered.
 ChainWalk walk_chain(const std::vector<double>& cuts, int dims, int coords,
                      int step, double axis_length, double shell, int reach) {
@@ -78,42 +81,11 @@ ChainWalk walk_chain(const std::vector<double>& cuts, int dims, int coords,
     return walk;
 }
 
-/// @brief The minimum-image refusal shared by both derivation paths.
-///
-/// A periodic axis can grow its ghost shell over every slab *except* this
-/// rank's own; past that an atom would see its own periodic image.
-///
-/// @param d Axis index.
-/// @param dd Decomposition the refusal is reported against.
-/// @param axis_length Box edge along `d` [Angstrom].
-/// @param shell Requested ghost shell width [Angstrom].
-/// @param hops Hops the derivation asked for (`> dims[d] - 1`).
-/// @return Never; always throws.
-[[noreturn]] void refuse_minimum_image(int d,
-                                       const md::mpi::DomainDecomposition& dd,
-                                       double axis_length, double shell,
-                                       int hops) {
-    const double self_width = dd.subhi[d] - dd.sublo[d];
-    throw std::runtime_error(
-        "Halo: the requested ghost shell (" + std::to_string(shell)
-        + " A) violates the minimum-image convention on periodic axis "
-        + std::to_string(d) + ": covering it would take " + std::to_string(hops)
-        + " hops of the " + std::to_string(dd.dims[d] - 1)
-        + " available, i.e. the shell would wrap past every other slab and "
-          "reach this rank's own periodic image. The bound is shell <= L - "
-          "w_self = "
-        + std::to_string(axis_length) + " - " + std::to_string(self_width)
-        + " = " + std::to_string(axis_length - self_width)
-        + " A. Enlarge the box or shorten the cutoff. (The shell is "
-          "max(pair cutoff, bonded extension); a many-body style such as EAM "
-          "asks for a ghost-of-ghost shell of 2*cutoff.)");
-}
-
 /// @brief Reject a shell width that is not a usable length, for either
 /// `setup` entry point.
 /// @param halo_cutoff Ghost shell width [Angstrom] the caller passed.
 void check_shell_width(double halo_cutoff) {
-    if (!(halo_cutoff >= 0.0)) {
+    if (!(halo_cutoff >= 0.0) || !std::isfinite(halo_cutoff)) {
         throw std::runtime_error(
             "Halo::setup: halo cutoff must be a non-negative width in "
             "Angstrom, got "
@@ -144,7 +116,7 @@ Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
 Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
                                 const Box& box, double shell_width,
                                 const int (&coords)[3]) {
-    if (!(shell_width >= 0.0)) {
+    if (!(shell_width >= 0.0) || !std::isfinite(shell_width)) {
         throw std::runtime_error(
             "Halo::derive_hops: the ghost shell must be a non-negative "
             "width in Angstrom, got "
@@ -156,15 +128,7 @@ Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
 
     HopNeed hops;
     for (int d = 0; d < 3; ++d) {
-        // Undecomposed axis: the Cartesian partner is this rank itself, no
-        // ghost is ever produced, and periodicity is the pair kernel's
-        // min-image. Zero hops, and exempt from every width check — a shell
-        // wider than such an axis is legal (EAM-style 2*cutoff on a thin
-        // axis).
-        if (dd.dims[d] <= 1)
-            continue;
-
-        const double axis_length = box.length(d);
+        const double axis_length = box.face_height(d);
         if (!(axis_length > 0.0)) {
             throw std::runtime_error(
                 "Halo::derive_hops: box edge along axis " + std::to_string(d)
@@ -184,19 +148,37 @@ Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
                   "partition.");
         }
 
-        // Every axis is periodic: the brick wraps, and the chain can walk
-        // the whole ring minus this rank. There is no non-periodic
-        // decomposition path (see DomainDecomposition).
-        const int reach = dd.dims[d] - 1;
+        if (dd.dims[d] <= 0 || coords[d] < 0 || coords[d] >= dd.dims[d])
+            throw std::invalid_argument(
+                "Halo: invalid process grid coordinate");
+        if (!cuts.empty()) {
+            if (cuts.front() != 0.0 || cuts.back() != 1.0)
+                throw std::invalid_argument(
+                    "Halo: cuts must span fractional [0,1]");
+            for (std::size_t i = 1; i < cuts.size(); ++i)
+                if (!std::isfinite(cuts[i]) || !(cuts[i] > cuts[i - 1]))
+                    throw std::invalid_argument(
+                        "Halo: cuts must be finite and increasing");
+        }
+
+        // LAMMPS periodic brick can traverse an entire ring and reach its own
+        // images. A full ring covers one face height even for nonuniform cuts.
+        const double layers =
+            shell_width * static_cast<double>(dd.dims[d]) / axis_length;
+        const double periodic_reach =
+            (std::floor(shell_width / axis_length) + 1.0) * dd.dims[d];
+        if (!std::isfinite(layers) || !std::isfinite(periodic_reach)
+            || std::max(layers, periodic_reach)
+                   >= static_cast<double>(std::numeric_limits<int>::max() / 6))
+            throw std::length_error(
+                "Halo: periodic shell exceeds addressable swap count");
+        const int reach = static_cast<int>(periodic_reach);
 
         if (cuts.empty()) {
             // Uniform brick: every partner slab is L_d / dims_d wide, so the
-            // chain has a closed form and both directions agree. `ceil` keeps
-            // a shell exactly one slab wide at a single hop.
-            const int needed = static_cast<int>(std::ceil(
-                shell_width * static_cast<double>(dd.dims[d]) / axis_length));
-            if (needed > dd.dims[d] - 1)
-                refuse_minimum_image(d, dd, axis_length, shell_width, needed);
+            // chain has a closed form and both directions agree. Include the
+            // next slab at an exact boundary, as LAMMPS maxneed does.
+            const int needed = static_cast<int>(layers) + 1;
             hops.minus[d] = std::min(needed, reach);
             hops.plus[d] = std::min(needed, reach);
             continue;
@@ -209,12 +191,6 @@ Halo::HopNeed Halo::derive_hops(const md::mpi::DomainDecomposition& dd,
                                            axis_length, shell_width, reach);
         const ChainWalk plus = walk_chain(cuts, dd.dims[d], coords[d], +1,
                                           axis_length, shell_width, reach);
-        if (!minus.covered)
-            refuse_minimum_image(d, dd, axis_length, shell_width,
-                                 minus.hops + 1);
-        if (!plus.covered)
-            refuse_minimum_image(d, dd, axis_length, shell_width,
-                                 plus.hops + 1);
         hops.minus[d] = minus.hops;
         hops.plus[d] = plus.hops;
     }
@@ -229,8 +205,13 @@ Halo::derive_uniform_rounds(const md::mpi::DomainDecomposition& dd,
     // a DomainDecomposition carries the tag→local hash and the ghost-tag
     // log, so the old `scan = dd` deep-copied thousands of entries per
     // coordinate — measurable at every borders pass on bonded systems.
+    const HopNeed local = derive_hops(dd, box, shell_width);
     int coords[3] = {dd.coords[0], dd.coords[1], dd.coords[2]};
     for (int d = 0; d < 3; ++d) {
+        if (dd.cuts[d].empty()) {
+            rounds[d] = local.minus[d];
+            continue;
+        }
         int axis_max = 0;
         const int saved = coords[d];
         for (int c = 0; c < dd.dims[d]; ++c) {
@@ -259,33 +240,23 @@ void Halo::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
         // send directions.
         rounds[d] = std::max(hops.minus[d], hops.plus[d]);
     }
-    expand(dd, halo_cutoff, my_rank, rounds);
+    expand(dd, box, halo_cutoff, my_rank, rounds);
 }
 
 void Halo::setup(const md::mpi::DomainDecomposition& dd, const Box& box,
                  double halo_cutoff, int my_rank, const int rounds[3]) {
     check_shell_width(halo_cutoff);
 
-    // Re-derive locally anyway: the minimum-image bound and the cut-table
-    // validation are properties of this rank's geometry, and an imposed round
-    // count must not buy past them.
+    // Validate geometry and retain at least this rank's locally required reach.
     const HopNeed hops = derive_hops(dd, box, halo_cutoff);
 
     int reconciled[3];
     for (int d = 0; d < 3; ++d) {
-        if (dd.dims[d] <= 1) {
-            // Undecomposed: no partner, hence no round, whatever a peer asked
-            // for. Its periodicity is the pair kernel's minimum image.
-            reconciled[d] = 0;
-            continue;
-        }
         const int local = std::max(hops.minus[d], hops.plus[d]);
         const int imposed = (rounds[d] > 0) ? rounds[d] : 0;
-        // `dims - 1` is the last round that can reach a rank this one has not
-        // already covered; past it a round would wrap onto this rank itself.
-        reconciled[d] = std::min(std::max(local, imposed), dd.dims[d] - 1);
+        reconciled[d] = std::max(local, imposed);
     }
-    expand(dd, halo_cutoff, my_rank, reconciled);
+    expand(dd, box, halo_cutoff, my_rank, reconciled);
 }
 
 void Halo::setup_uniform(const md::mpi::DomainDecomposition& dd, const Box& box,
@@ -295,8 +266,8 @@ void Halo::setup_uniform(const md::mpi::DomainDecomposition& dd, const Box& box,
     setup(dd, box, halo_cutoff, my_rank, rounds.data());
 }
 
-void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
-                  int my_rank, const int rounds[3]) {
+void Halo::expand(const md::mpi::DomainDecomposition& dd, const Box& box,
+                  double halo_cutoff, int my_rank, const int rounds[3]) {
     int pairs[3];
     for (int d = 0; d < 3; ++d) {
         if (dd.dims[d] > 1) {
@@ -318,6 +289,14 @@ void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
         pairs[d] = std::max(rounds[d], 1);
     }
 
+    // Imposed round counts also enter here; validate before mutating an
+    // existing table or performing signed-int arithmetic on its size.
+    const std::int64_t nswap_wide =
+        2 * (static_cast<std::int64_t>(pairs[0]) + pairs[1] + pairs[2]);
+    if (nswap_wide > std::numeric_limits<int>::max())
+        throw std::length_error(
+            "Halo::setup: imposed rounds exceed addressable swap count");
+    const int nswap_total = static_cast<int>(nswap_wide);
     for (int d = 0; d < 3; ++d) {
         hops_[d] = rounds[d];
         maxneed_[d] = pairs[d];
@@ -327,11 +306,11 @@ void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
     // `nswap = 2 * sum_d maxneed_d`, the axis runs staying contiguous and in
     // round order. `resize` keeps the surviving swaps' send-list heap
     // capacity across the rebuild.
-    const int nswap_total = 2 * (maxneed_[0] + maxneed_[1] + maxneed_[2]);
     swaps_.resize(static_cast<std::size_t>(nswap_total));
 
     std::size_t iswap = 0;
     for (int d = 0; d < 3; ++d) {
+        const double slab_cutoff = halo_cutoff / box.face_height(d);
         for (int round = 1; round <= maxneed_[d]; ++round) {
             for (int face_side = 0; face_side < 2; ++face_side) { // lo, hi
                 Swap& swap = swaps_[iswap++];
@@ -357,12 +336,12 @@ void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
                 // no round-as-a-unit rule and no mirrored index.
                 swap.sendproc = send_nbr;
                 swap.recvproc = recv_nbr;
-                swap.sendself = (send_nbr == my_rank); // == (dims[d] <= 1)
+                swap.sendself = (send_nbr == my_rank);
 
                 swap.pbc[0] = 0;
                 swap.pbc[1] = 0;
                 swap.pbc[2] = 0;
-                if (!swap.sendself) {
+                {
                     // The image shift is a property of the *link*, not of the
                     // round: it applies exactly when this rank's message to
                     // that neighbour crosses the global periodic boundary,
@@ -400,18 +379,18 @@ void Halo::expand(const md::mpi::DomainDecomposition& dd, double halo_cutoff,
                     // bouncing straight back to where it came from.
                     const double mid = 0.5 * (dd.sublo[d] + dd.subhi[d]);
                     if (hi) {
-                        swap.slablo = dd.subhi[d] - halo_cutoff;
+                        swap.slablo = dd.subhi[d] - slab_cutoff;
                         swap.slabhi = mid;
                     } else {
                         swap.slablo = mid;
-                        swap.slabhi = dd.sublo[d] + halo_cutoff;
+                        swap.slabhi = dd.sublo[d] + slab_cutoff;
                     }
                 } else if (hi) {
-                    swap.slablo = dd.subhi[d] - halo_cutoff;
+                    swap.slablo = dd.subhi[d] - slab_cutoff;
                     swap.slabhi = +kBigSlab;
                 } else {
                     swap.slablo = -kBigSlab;
-                    swap.slabhi = dd.sublo[d] + halo_cutoff;
+                    swap.slabhi = dd.sublo[d] + slab_cutoff;
                 }
 
                 swap.sendlist.clear();
@@ -459,8 +438,14 @@ void Halo::rebuild_sendlist(int iswap, const Frame& frame, int first,
     const double lo = swap.slablo;
     const double hi = swap.slabhi;
     swap.sendlist.clear();
+    const bool ortho = frame.box.is_orthorhombic();
+    const StorageReal* x = frame.span(kAtom_x);
+    const StorageReal* y = frame.span(kAtom_y);
+    const StorageReal* z = frame.span(kAtom_z);
     for (int i = first; i < last; ++i) {
-        const double qi = static_cast<double>(q[i]);
+        const double qi =
+            ortho ? static_cast<double>(q[i]) / frame.box.length(swap.dim)
+                  : frame.box.to_fractional({x[i], y[i], z[i]})[swap.dim];
         if (lo <= qi && qi <= hi)
             swap.sendlist.push_back(i);
     }
@@ -480,22 +465,32 @@ int Halo::commit_recv(int iswap, int nrecv, int next_slot) {
             + "). Drive the prefix sum in swap order starting from n_local.");
     }
 
+    const std::int64_t end = static_cast<std::int64_t>(next_slot) + nrecv;
+    if (end > std::numeric_limits<int>::max())
+        throw std::overflow_error(
+            "Halo::commit_recv: ghost slot range exceeds INT_MAX");
     Swap& swap = swaps_[static_cast<std::size_t>(iswap)];
     swap.nrecv = nrecv;
     swap.firstrecv = next_slot;
-    return next_slot + nrecv;
+    return static_cast<int>(end);
 }
 
 int Halo::total_recv() const {
-    int total = 0;
+    std::int64_t total = 0;
     for (const Swap& swap : swaps_)
         total += swap.nrecv;
-    return total;
+    if (total > std::numeric_limits<int>::max())
+        throw std::overflow_error(
+            "Halo::total_recv: ghost count exceeds INT_MAX");
+    return static_cast<int>(total);
 }
 
 void Swap::pbc_shift(const Box& box, double out[3]) const {
+    const Vec3 shift = box.to_cartesian({static_cast<double>(pbc[0]),
+                                         static_cast<double>(pbc[1]),
+                                         static_cast<double>(pbc[2])});
     for (int d = 0; d < 3; ++d)
-        out[d] = static_cast<double>(pbc[d]) * box.length(d);
+        out[d] = shift[d];
 }
 
 int Halo::stage_end(int begin) const {

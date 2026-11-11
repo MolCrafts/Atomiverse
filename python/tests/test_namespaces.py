@@ -20,15 +20,17 @@ parameters (Ar, epsilon=0.0104 eV, sigma=3.4 A).
 
 from __future__ import annotations
 
+import json
+
 import importlib
-from pathlib import Path
 
 import numpy as np
 import pytest
 import molpy
 
 import atomiverse as av
-from atomiverse._binding import _cpp, extension_available
+from atomiverse._binding import MissingDomainError, _cpp, extension_available
+from _domains import built, needs
 
 # Short-circuited on ``extension_available()``: the missing-extension
 # sentinel raises ImportError from ``__getattr__``, so a bare
@@ -65,6 +67,9 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("StressConverged", "atomiverse.minimizer", "StressConverged"),
     ("NeighborList", "atomiverse.neighbor", "NeighborList"),
     ("PairLJCut", "atomiverse.potentials.pair", "LJCut"),
+    ("PairLJCutCoulLong", "atomiverse.potentials.pair", "LJCutCoulLong"),
+    ("LJTypeCoeff", "atomiverse.potentials.pair", "LJTypeCoeff"),
+    ("R4TypeCoeff", "atomiverse.potentials.pair", "R4TypeCoeff"),
     ("BondHarmonic", "atomiverse.potentials.bond", "Harmonic"),
     ("AngleHarmonic", "atomiverse.potentials.angle", "Harmonic"),
     ("DihedralMultiHarmonic", "atomiverse.potentials.dihedral", "MultiHarmonic"),
@@ -78,8 +83,14 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("InsertDeleteMove", "atomiverse.montecarlo", "InsertDeleteMove"),
     ("MoveSelector", "atomiverse.montecarlo", "MoveSelector"),
     ("AM1", "atomiverse.semiempirical", "AM1"),
-    ("AM1Evaluator", "atomiverse.semiempirical", "AM1Evaluator"),
     ("AM1Result", "atomiverse.semiempirical", "AM1Result"),
+    ("RM1", "atomiverse.semiempirical", "RM1"),
+    ("RM1Result", "atomiverse.semiempirical", "RM1Result"),
+    ("MNDO", "atomiverse.semiempirical", "MNDO"),
+    ("MNDOResult", "atomiverse.semiempirical", "MNDOResult"),
+    ("PM3", "atomiverse.semiempirical", "PM3"),
+    ("PM3Result", "atomiverse.semiempirical", "PM3Result"),
+    ("Evaluate", "atomiverse.driver", "Evaluate"),
     ("single_point", "atomiverse.driver", "single_point"),
     # Vibrational analysis (spec py-vib): unconditional, ATV_BUILD_VIB
     # defaults ON. `cpu/vibration/` is a backend-root directory, so the
@@ -101,6 +112,12 @@ _BASE_MAPPING: tuple[tuple[str, str, str], ...] = (
     ("BondFene", "atomiverse.potentials.bond", "Fene"),
     ("DihedralCharmm", "atomiverse.potentials.dihedral", "Charmm"),
     ("ImproperHarmonic", "atomiverse.potentials.improper", "Harmonic"),
+    # Coarse-grained polymer electrolytes: cosine bending angle and the
+    # uniform electric field (an MD-domain force source).
+    ("AngleCosine", "atomiverse.potentials.angle", "Cosine"),
+    ("FixEfield", "atomiverse.md", "FixEfield"),
+    # The Amber/GAFF improper of molpy force fields (atomiverse.forcefield).
+    ("ImproperCvff", "atomiverse.potentials.improper", "Cvff"),
 )
 
 _PW_MAPPING: tuple[tuple[str, str, str], ...] = (
@@ -126,6 +143,30 @@ _SCF_MAPPING: tuple[tuple[str, str, str], ...] = (
 )
 
 _MAPPING = _BASE_MAPPING + _PW_MAPPING + _SCF_MAPPING
+
+# The domain each deep module needs to import. driver spans hf and am1 and
+# imports on any build; it checks the evaluator's domain when called.
+_MODULE_FLAGS: dict[str, tuple[str, ...]] = {
+    "atomiverse.md": ("ATV_BUILD_MD",),
+    "atomiverse.md.integrator": ("ATV_BUILD_MD",),
+    "atomiverse.md.thermostat": ("ATV_BUILD_MD",),
+    "atomiverse.recorder": ("ATV_BUILD_MD",),
+    "atomiverse.minimizer": ("ATV_BUILD_MINIMIZER",),
+    "atomiverse.neighbor": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.potentials": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.potentials.pair": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.potentials.bond": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.potentials.angle": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.potentials.dihedral": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.potentials.improper": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.longrange": ("ATV_BUILD_POTENTIALS",),
+    "atomiverse.montecarlo": ("ATV_BUILD_MC",),
+    "atomiverse.driver": (),
+    "atomiverse.semiempirical": ("ATV_BUILD_SEMIEMPIRICAL",),
+    "atomiverse.pw": ("ATV_BUILD_PW",),
+    "atomiverse.scf": ("ATV_BUILD_HF",),
+    "atomiverse.vibration": ("ATV_BUILD_VIB",),
+}
 
 _DEEP_MODULES: tuple[str, ...] = (
     "atomiverse.md",
@@ -153,7 +194,10 @@ _DEEP_MODULES: tuple[str, ...] = (
 
 
 class TestDeepModulesImportable:
-    @pytest.mark.parametrize("module_name", _DEEP_MODULES)
+    @pytest.mark.parametrize(
+        "module_name",
+        [pytest.param(m, marks=needs(*_MODULE_FLAGS[m])) for m in _DEEP_MODULES],
+    )
     def test_deep_module_imports(self, module_name: str) -> None:
         """Each deep canonical module imports on its own."""
         importlib.import_module(module_name)
@@ -164,19 +208,26 @@ class TestDeepModulesImportable:
 
 class TestTopLevelIdentity:
     def test_mapping_table_matches_compiled_surface(self) -> None:
-        """The base has 44 entries (18 + the 7 unconditional Monte Carlo
-        rows of spec py-mc + the 2 unconditional vibration rows of spec
-        py-vib + the 8 unconditional geometry-optimization rows of spec
-        py-minimize-full + the 9 unconditional force-field rows of spec
-        py-pair-styles); a PW build contributes two types (PW, PWResult)
-        and an HF build the four concrete SCF methods."""
-        expected = 44 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
+        """The base has 56 entries: 14 core rows, 7 Monte Carlo, 8 NDDO
+        semiempirical (AM1/RM1/MNDO/PM3 + results), Evaluate and
+        single_point, 2 vibration, 8 geometry-optimization, 9 force-field
+        catalogue rows, the typed-LJ trio (PairLJCutCoulLong, LJTypeCoeff,
+        R4TypeCoeff), AngleCosine + FixEfield, and the Amber/GAFF
+        ImproperCvff of atomiverse.forcefield; a PW build contributes two
+        types (PW, PWResult) and an HF build the four concrete SCF methods."""
+        expected = 56 + (2 if _HAS_PW else 0) + (4 if _HAS_HF else 0)
         assert len(_MAPPING) == expected
 
     @pytest.mark.parametrize(
         "top_name,deep_module,deep_name",
-        _MAPPING,
-        ids=[row[0] for row in _MAPPING],
+        [
+            pytest.param(
+                *row,
+                id=row[0],
+                marks=needs(*_MODULE_FLAGS[row[1]]),
+            )
+            for row in _MAPPING
+        ],
     )
     def test_top_level_is_deep_object(
         self, top_name: str, deep_module: str, deep_name: str
@@ -189,42 +240,25 @@ class TestTopLevelIdentity:
         )
 
 
-# ── The flat md.py implementation file is gone ──────────────────────
-
-
-class TestFlatLayoutDeleted:
-    def test_md_is_a_package(self) -> None:
-        """atomiverse.md is a package (its __file__ is an __init__.py)."""
-        md_mod = importlib.import_module("atomiverse.md")
-        assert Path(md_mod.__file__).name == "__init__.py", (
-            "atomiverse.md must be a package, not the flat md.py module"
-        )
-
-    def test_flat_md_file_does_not_exist(self) -> None:
-        """python/src/atomiverse/md.py no longer exists as a file."""
-        pkg_root = Path(av.__file__).resolve().parent
-        assert not (pkg_root / "md.py").exists(), (
-            "the flat implementation file atomiverse/md.py must be deleted "
-            "(implementation moved into the md/ subpackage)"
-        )
-
-
 # ── device= parameter (constructor axis, v1 cpu-only) ───────────────
 
 
 class TestDeviceParameter:
+    @needs("ATV_BUILD_MD")
     def test_md_default_device_constructible(self) -> None:
         """MD(dt=...) with no device argument defaults to cpu."""
         from atomiverse.md import MD
 
         assert MD(dt=0.001) is not None
 
+    @needs("ATV_BUILD_MD")
     def test_md_explicit_cpu_constructible(self) -> None:
         """MD(dt=..., device="cpu") is accepted."""
         from atomiverse.md import MD
 
         assert MD(dt=0.001, device="cpu") is not None
 
+    @needs("ATV_BUILD_MD")
     def test_md_cpu_device_runs_lj_smoke(self, argon_frame: "molpy.Frame") -> None:
         """MD(device="cpu") runs the conftest LJ smoke to a finite energy."""
         from atomiverse.md import MD, InitVelocity
@@ -243,20 +277,45 @@ class TestDeviceParameter:
         energy = float(argon_frame.meta["energy"])
         assert np.isfinite(energy)
 
+    @needs("ATV_BUILD_MD")
     def test_md_cuda_device_raises_value_error(self) -> None:
         """MD(device="cuda") raises ValueError naming CUDA."""
         from atomiverse.md import MD
 
-        with pytest.raises(ValueError, match="(?i)cuda"):
-            MD(dt=0.001, device="cuda")
+        if hasattr(_cpp, "_CudaMD"):
+            assert MD(dt=0.001, device="cuda").device == "cuda"
+        else:
+            with pytest.raises(ValueError, match="(?i)cuda"):
+                MD(dt=0.001, device="cuda")
 
+    @needs("ATV_BUILD_MD")
+    def test_cuda_md_binding_does_not_need_semiempirical(self) -> None:
+        """A CUDA build with MD binds _CudaMD whatever else it builds: the
+        NDDO solvers are one client of the CUDA drivers, not their gate.
+        The configured flags come from the wheel's _build_info.json, not
+        from probing the binding under test."""
+        from atomiverse.cli.status import _installed_build_info_path
+
+        info = _installed_build_info_path()
+        if not info.is_file():
+            pytest.skip("no _build_info.json (not an installed native wheel)")
+        defines = json.loads(info.read_text(encoding="utf-8"))["defines"]
+        if defines.get("ATV_BUILD_CUDA") != "ON":
+            pytest.skip("needs ATV_BUILD_CUDA")
+        assert hasattr(_cpp, "_CudaMD")
+
+    @needs("ATV_BUILD_MINIMIZER")
     def test_minimize_cuda_device_raises_value_error(self) -> None:
         """Minimize(device="cuda") fails loud while GPU work is deferred."""
         from atomiverse.minimizer import Minimize
 
-        with pytest.raises(ValueError, match="(?i)gpu|cuda"):
-            Minimize(device="cuda")
+        if hasattr(_cpp, "_CudaMinimize"):
+            assert Minimize(device="cuda").device == "cuda"
+        else:
+            with pytest.raises(ValueError, match="(?i)gpu|cuda"):
+                Minimize(device="cuda")
 
+    @needs("ATV_BUILD_SEMIEMPIRICAL")
     def test_single_point_cuda_device_raises_before_compute(
         self, argon_frame: "molpy.Frame"
     ) -> None:
@@ -265,7 +324,70 @@ class TestDeviceParameter:
         with RuntimeError, so getting ValueError proves the device check
         precedes the calculation."""
         from atomiverse.driver import single_point
-        from atomiverse.semiempirical import AM1Evaluator
+        from atomiverse.semiempirical import AM1
 
         with pytest.raises(ValueError, match="(?i)cuda"):
-            single_point(argon_frame, AM1Evaluator(), device="cuda")
+            single_point(argon_frame, AM1(), device="cuda")
+
+
+# ── A module the extension was built without fails naming its flag ──
+
+#: One top-level name per product module.
+_DOMAIN_NAMES: dict[str, str] = {
+    "PairLJCut": "ATV_BUILD_POTENTIALS",
+    "MD": "ATV_BUILD_MD",
+    "Minimize": "ATV_BUILD_MINIMIZER",
+    "MC": "ATV_BUILD_MC",
+    "Hessian": "ATV_BUILD_VIB",
+    "AM1": "ATV_BUILD_SEMIEMPIRICAL",
+    "RHF": "ATV_BUILD_HF",
+    "PW": "ATV_BUILD_PW",
+    "KSpacePME": "ATV_BUILD_KSPACE",
+}
+
+
+def _absent(*flags: str) -> pytest.MarkDecorator:
+    """Run only on an extension that is present but lacks ``flags``."""
+    return pytest.mark.skipif(
+        not extension_available() or built(*flags),
+        reason="needs an extension built without " + " and ".join(flags),
+    )
+
+
+class TestMissingDomain:
+    @pytest.mark.parametrize(
+        "module_name",
+        [
+            pytest.param(m, marks=_absent(*_MODULE_FLAGS[m]))
+            for m in _DEEP_MODULES
+            if _MODULE_FLAGS[m]
+        ],
+    )
+    def test_deep_module_import_names_flag(self, module_name: str) -> None:
+        """Importing a deep module of an absent domain raises
+        MissingDomainError, an ImportError, naming the flag to turn on."""
+        (flag,) = _MODULE_FLAGS[module_name]
+        with pytest.raises(MissingDomainError, match=flag) as info:
+            importlib.import_module(module_name)
+        assert isinstance(info.value, ImportError)
+
+    @pytest.mark.parametrize(
+        "name",
+        [pytest.param(n, marks=_absent(f)) for n, f in _DOMAIN_NAMES.items()],
+    )
+    def test_top_level_name_names_flag(self, name: str) -> None:
+        """A top-level name of an absent domain is a missing attribute whose
+        message names the flag, so hasattr is False and star import skips it."""
+        with pytest.raises(AttributeError, match=_DOMAIN_NAMES[name]):
+            getattr(av, name)
+        assert not hasattr(av, name)
+        assert name not in av.__all__
+
+    @_absent("ATV_BUILD_SEMIEMPIRICAL")
+    def test_single_point_without_evaluate_names_flag(self) -> None:
+        """driver imports on any build; single_point of a component evaluator
+        on an extension without am1 raises TypeError naming its flag."""
+        from atomiverse.driver import single_point
+
+        with pytest.raises(TypeError, match="ATV_BUILD_SEMIEMPIRICAL"):
+            single_point(None, object())

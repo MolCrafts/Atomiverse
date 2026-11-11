@@ -1,9 +1,50 @@
-# Chapter 2. Restricted Hartree–Fock
+# Hartree–Fock Theory
 
-Closed-shell RHF energy of H₂ in STO-3G — the first end-to-end electronic
-structure result in this manual. Layout: **Theory → Practice → Results**
-([tutorial contract](index.md)). Textbook anchor: Szabo & Ostlund, *Modern
-Quantum Chemistry*, Table 3.7.
+Status tables: [Hartree–Fock roadmap](../roadmap/hartree-fock.md).
+
+Why do two hydrogen atoms bind? This small system contains the essential
+competition between electronic motion, nuclear attraction, and electron
+repulsion. Hartree–Fock gives a first organized approximation to that
+competition, not an exact description of a two-electron molecule.
+
+**Learning goals.** Interpret an electronic Hamiltonian, understand the
+single-determinant restriction, and explain why an orbital solve must iterate.
+
+**Before you begin.** Read [Basis Sets](ch04-basis-sets.md) and the variational
+principle in [Mathematical Tools](mathematical-tools.md).
+
+## The fixed-nuclei electronic problem
+
+In the Born–Oppenheimer picture we solve for electrons at fixed nuclear
+positions and use the resulting energy as a potential for slower nuclear
+motion. This neglects nonadiabatic coupling and needs special care when
+electronic states approach one another. In atomic units,
+
+$$\hat H_e=\sum_i\left[-\frac12\nabla_i^2-
+\sum_A\frac{Z_A}{|\mathbf r_i-\mathbf R_A|}\right]
++\sum_{i<j}\frac1{|\mathbf r_i-\mathbf r_j|}.$$
+
+The terms represent electronic kinetic energy, electron–nucleus attraction,
+and electron repulsion. Add nuclear repulsion
+$E_{\mathrm{nuc}}=\sum_{A<B}Z_AZ_B/R_{AB}$ to obtain a total fixed-geometry
+energy. An orbital energy sum is not this total energy.
+
+Electrons are fermions: exchanging two electron labels changes the sign of
+the wavefunction. A Slater determinant enforces this antisymmetry. HF
+minimizes within single determinants rather than within all many-electron
+states. Restricted HF additionally pairs alpha and beta electrons in common
+spatial orbitals. That is useful near many closed-shell equilibrium
+geometries, but can fail badly in bond dissociation.
+
+## Self-consistency and stationarity
+
+In a real AO basis, the closed-shell density is
+$P=2C_{\mathrm{occ}}C_{\mathrm{occ}}^{T}$ and $\operatorname{Tr}(PS)=N_e$.
+The Fock matrix depends on that density, while solving its generalized
+eigenproblem determines the next density. Self-consistency makes these two
+descriptions agree. A small density change should be considered together
+with energy and orbital residuals; a stalled iteration is not a proof of
+stationarity or of electronic stability.
 
 ## Theory
 
@@ -23,11 +64,10 @@ take the occupied columns of $C^{(k)}$, and rebuild the next density as
 
 $$ P^{(k+1)} = C_{\mathrm{occ}}^{(k)} \left(C_{\mathrm{occ}}^{(k)}\right)^T. $$
 
-Nothing in this loop is chemically realistic yet, and that is intentional — it
-makes the fixed-point structure obvious. The current density changes the next
-matrix, the next matrix changes the occupied subspace, and the occupied subspace
-changes the next density. The calculation stops only when the density hardly
-moves anymore:
+This algebraic model isolates the fixed-point structure before introducing
+molecular integrals. The current density changes the next matrix, the
+matrix changes the occupied subspace, and that subspace determines the next
+density. One convergence diagnostic asks whether the density changes little:
 
 $$ \left\|P^{(k+1)} - P^{(k)}\right\|_F < \mathrm{tol}. $$
 
@@ -35,14 +75,7 @@ If you keep only one picture from the first half of this chapter, keep this one:
 **SCF is an attempt to make the matrix used for the solve consistent with the
 orbitals that the solve itself produces.**
 
-### Warm-up: a density-free loop
-
-A density-free fixed-point demo makes the residual shrink until \(P\)
-reproduces itself. That structure carries into molecular RHF below.
-
-### Molecular RHF
-
-## What Changes When the Problem Becomes Molecular
+## Molecular orbital equations
 
 Now keep the loop and replace the introductory matrix with real physics: H₂ in
 the minimal STO-3G basis — tiny enough to inspect by eye, rich enough to
@@ -63,8 +96,8 @@ fixed quantities come entirely from the geometry and the basis set; once they
 are available, the SCF loop can begin.
 
 Closed-shell RHF assumes electrons come in pairs sharing the same spatial
-orbital. For H₂ that is exactly right: two electrons, one occupied spatial
-orbital, and a density matrix
+orbital. Near the equilibrium geometry of H₂ this is a useful approximation: two
+electrons share one occupied spatial orbital, giving the density matrix
 
 $$ P = 2\, C_{\mathrm{occ}} C_{\mathrm{occ}}^T. $$
 
@@ -81,7 +114,7 @@ form is more elaborate, but the logic is identical: the current density
 determines the next Fock matrix, which determines the next occupied orbitals,
 which determine the next density.
 
-## Why HF Becomes a Matrix Equation — and When the Basis Goes Bad
+## Overlap and conditioning
 
 **Concept.** The generalized eigenproblem $FC = SC\varepsilon$ exists because
 atomic-orbital basis functions overlap. Usually that overlap is benign. But
@@ -104,9 +137,10 @@ $$ X = \tilde U \tilde s^{-1/2} \in \mathbb{R}^{n \times m}, \qquad
 
 The molecular-orbital count shrinks to $n_\mathrm{mo} = m$: the coefficient
 matrix $C = XC'$ becomes $n \times m$, while the density
-$P = 2 C_\mathrm{occ} C_\mathrm{occ}^\mathrm{T}$ stays $n \times n$. Nothing
-physical is lost — the dropped directions carried no independent basis
-content in the first place.
+$P = 2 C_\mathrm{occ} C_\mathrm{occ}^\mathrm{T}$ stays $n \times n$. An exactly redundant direction contains no independent information. A
+direction with a small but nonzero overlap eigenvalue is only approximately
+redundant; removing it changes the trial space and requires a threshold
+convergence test.
 
 **Algorithm.** Atomiverse exposes the threshold as
 `RHF::lindep_threshold` (or the mean-field member) (default $\tau = 10^{-8}$ on the raw $S$
@@ -141,157 +175,7 @@ nuclear gradients through the filtered subspace are not yet validated.
      tests/cpu/linalg/test_canonical_orthogonalization.cpp
      (test_cpu_linalg_canonical_orth). Change one side only in lockstep. -->
 
-## Practice
-
-```cpp
-cpu::Frame frame(2);
-frame.span(kAtom_x)[0] = 0;    frame.span(kAtom_y)[0] = 0; frame.span(kAtom_z)[0] = 0;
-frame.span(kAtom_x)[1] = 0.74; frame.span(kAtom_y)[1] = 0; frame.span(kAtom_z)[1] = 0;
-frame.span(kAtom_type)[0] = 1;
-frame.span(kAtom_type)[1] = 1;
-frame.box = cpu::Box::cubic(100.0);
-
-cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10,
-                  /*max_iter=*/100};
-rhf.run(frame);                        // eV on frame.meta.get(kEnergy)
-double e_ha = rhf.energy();            // total energy [Hartree]
-```
-
-Two nuclei at the equilibrium bond length, each of charge \(+1\), give two
-electrons for one occupied spatial orbital under RHF. STO-3G here covers
-**H–O (Z = 1–8)**; heavier nuclei throw rather than invent a basis row.
-
-The electronic energy is the usual closed-shell trace form:
-
-$$ E_{\mathrm{RHF}} =
-\tfrac{1}{2}\mathrm{Tr}\!\left[P(H_{\mathrm{core}} + F)\right] + V_{\mathrm{nuc}}. $$
-
-## Results
-
-| Quantity | Atomiverse | Reference |
-|---|---:|---:|
-| \(E_\mathrm{total}\) (Ha) | **−1.1167593074** | −1.1168 (Szabo & Ostlund, Table 3.7) |
-| \(E_\mathrm{electronic}\) (Ha) | −1.8318636465 | — |
-| \(V_\mathrm{nuc}\) (Ha) | 0.7151043391 | — |
-| SCF iterations (\(\mathrm{tol}=10^{-10}\)) | 3 | — |
-| \(\varepsilon_0\) (occupied) (Ha) | −0.578554 | — |
-| \(\mathrm{Tr}(PS)\) | 2.000000 | 2 |
-
-The absolute error is \(\approx 4\times 10^{-5}\) Ha — well inside the
-textbook table's four-decimal rounding. SCF benchmarks pin Atomiverse RHF
-energies against PySCF to \(10^{-7}\) Ha (see
-[benchmark validation](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/README.md)).
-After convergence, \(\mathrm{Tr}(PS)=N_e\) must still hold: the density
-represents two electrons in a closed-shell state.
-
-### Density and HOMO
-
-Isosurfaces from the same H₂ / STO-3G RHF via `DensityCubeWriter` /
-`OrbitalCubeWriter`. On a 0.3 Bohr mesh the grid-integrated density is
-**1.99945** electrons (target 2.0).
-
-```cpp
-cpu::Evaluate eval;
-eval.on(evaluate::Phase::evaluate).add(std::move(rhf).with_gradient(false));
-eval.on(evaluate::Phase::finalize)
-    .add(cpu::recorder::DensityCubeWriter{handle, "h2_density.cube", 4.0, 0.30});
-eval.on(evaluate::Phase::finalize)
-    .add(cpu::recorder::OrbitalCubeWriter{
-        handle, "h2_homo.cube", /*mo=*/0, cpu::recorder::OrbitalSpin::Alpha,
-        4.0, 0.30});
-eval.build();
-eval.run(frame);
-```
-
-<figure class="molcrafts-web-component-card">
-  <figcaption>
-    <span class="molcrafts-web-component-card__package">MolVis</span>
-    <strong>Total density</strong>
-    <small>Isosurface from <code>h2_density.cube</code>, RHF/STO-3G.</small>
-  </figcaption>
-  <div class="molcrafts-web-component-preview">
-    <molvis-viewer
-      format="cube"
-      src="../../assets/structures/h2_density.cube"
-      controls="view"
-      height="320px"
-    ></molvis-viewer>
-  </div>
-</figure>
-
-<figure class="molcrafts-web-component-card">
-  <figcaption>
-    <span class="molcrafts-web-component-card__package">MolVis</span>
-    <strong>HOMO</strong>
-    <small>Bonding \(\sigma\) isosurface from <code>h2_homo.cube</code>.</small>
-  </figcaption>
-  <div class="molcrafts-web-component-preview">
-    <molvis-viewer
-      format="cube"
-      src="../../assets/structures/h2_homo.cube"
-      controls="view"
-      height="320px"
-    ></molvis-viewer>
-  </div>
-</figure>
-
-## Closed-Shell Validity
-
-**Concept.** RHF is not a general-purpose method with occasional failures — it
-is a method whose derivation *assumes* a specific electronic structure: every
-occupied spatial orbital holds exactly two electrons of opposite spin. That
-assumption has two immediate consequences. The electron count $N_e$ must be
-even, and the spin multiplicity must be $M = 1$ (a singlet). Feed RHF anything
-else and the failure is not numerical noise; the ansatz itself no longer
-describes the state you asked for.
-
-**Math.** The closed-shell density is built from $N_e/2$ doubly-occupied
-orbitals:
-
-$$ P_{\mu\nu} = 2 \sum_{i=1}^{N_e/2} C_{\mu i} C_{\nu i}. $$
-
-For odd $N_e$, integer division silently truncates: $\lfloor 9/2 \rfloor = 4$
-doubly-occupied orbitals describe $8$ electrons — one electron simply
-disappears from the calculation. The resulting energy is perfectly convergent
-and perfectly meaningless.
-
-**Algorithm.** Atomiverse guards against this at the single choke point every
-Gaussian-SCF path passes through: the occupation resolution inside
-`MeanFieldMethod<D>::run`, before any allocation or iteration. It checks that
-$n_\alpha \ge 0$, $n_\beta \ge 0$, $n_\alpha + n_\beta = N_e$, and
-$n_\alpha = n_\beta$ for a restricted spin treatment, and throws
-`std::invalid_argument` otherwise. The classic trap now fails loudly: the water
-cation ($\mathrm{H_2O^+}$, $N_e = 9$) run through `RHF` yields
-$n_\alpha = n_\beta = 4$, the sum $8 \ne 9$ trips the guard, and no SCF
-iteration ever runs.
-
-```cpp
-// H2O+, 9 electrons — integrals stay private inside the method.
-cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/1};
-rhf.run(frame);               // throws std::invalid_argument — not silence
-```
-
-Because the guard is read-only and runs before any work, valid closed-shell
-runs take exactly the same code path as the unguarded solver — the
-neutral-water energy in this chapter is pinned to the pre-guard baseline at
-$10^{-8}$ Ha by the regression test. (The bar is not zero: the same source
-reassociates its BLAS reductions differently on x86_64 and aarch64, which
-moves the last digits by ~$10^{-12}$ Ha.)
-
-**Limitations.** The guard validates bookkeeping, not physics. A biradical
-singlet passes every check and still breaks the RHF ansatz; that failure mode
-needs the unrestricted treatment of
-[Chapter 3](ch03-open-shell.md), where the companion section "Charge and
-Multiplicity Conventions" gives the full $(N_e, M) \to (n_\alpha, n_\beta)$
-resolution rules.
-
-<!-- Every number and thrown case in this section is regression-locked by
-     tests/cpu/scf/test_spin_resolution.cpp (test_cpu_scf_spin_resolution):
-     H2O+ via RHF throws (OddElectronRhfThrows); the neutral-H2O
-     baseline pin (1e-8 Ha) is NeutralH2ORhfEnergyMatchesBaseline. Change one
-     side only in lockstep with the other. -->
-
-## SCF Convergence Is a Numerical Problem
+## Convergence diagnostics
 
 **Concept.** The SCF fixed-point iteration has no built-in guarantee of
 convergence. When the HOMO–LUMO gap is small — stretched bonds, transition
@@ -360,7 +244,182 @@ always check the *de-shifted* orbital energies, never the shifted ones.
      tests/cpu/scf/test_accelerators.cpp. Change one side only in lockstep
      with the other. -->
 
-## Koopmans' Theorem: An Orbital Energy That Predicts an Experiment
+## Practice plan
+
+Use H₂ in STO-3G at an explicit separation. Check the two-electron count,
+one occupied spatial orbital, energy units, nuclear repulsion convention,
+and successful convergence. Compare a reference energy only at the same
+geometry and numerical problem.
+
+Then scan the bond length and compare consistently defined separated-atom
+limits. An RHF dissociation error is not repaired by more SCF iterations.
+Use [Open-Shell Systems](ch03-open-shell.md) and
+[Electron Correlation](ch07-correlation.md) to investigate which restriction
+is responsible. Small unexpected results are useful diagnostics, not a
+reason to abandon the calculation or simply loosen its acceptance criteria.
+
+## Practice
+
+```cpp
+cpu::Frame frame(2);
+frame.span(kAtom_x)[0] = 0;    frame.span(kAtom_y)[0] = 0; frame.span(kAtom_z)[0] = 0;
+frame.span(kAtom_x)[1] = 0.74; frame.span(kAtom_y)[1] = 0; frame.span(kAtom_z)[1] = 0;
+frame.span(kAtom_atomic_number)[0] = 1;
+frame.span(kAtom_atomic_number)[1] = 1;
+frame.box = cpu::Box::cubic(100.0);
+
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10,
+                  /*max_iter=*/100};
+rhf.run(frame);                        // eV on frame.meta.get(kEnergy)
+double e_ha = rhf.energy();            // total energy [Hartree]
+```
+
+Two nuclei at the equilibrium bond length, each of charge \(+1\), give two
+electrons for one occupied spatial orbital under RHF. STO-3G here covers
+**H–O (Z = 1–8)**; heavier nuclei throw rather than invent a basis row.
+
+The electronic energy is the usual closed-shell trace form:
+
+$$ E_{\mathrm{RHF}} =
+\tfrac{1}{2}\mathrm{Tr}\!\left[P(H_{\mathrm{core}} + F)\right] + V_{\mathrm{nuc}}. $$
+
+## Beside the mean field
+
+`MeanFieldMethod` keeps the SCF. `run` writes the energy onto the Frame.
+`forces` writes that energy and the nuclear forces. Correlation, continuum
+solvent, and the closed-shell CPHF Hessian and polarizability are other
+types. They take an `RHF`; they are not members of it.
+
+```cpp
+cpu::Frame frame(2);
+frame.span(kAtom_x)[0] = 0;
+frame.span(kAtom_y)[0] = 0;
+frame.span(kAtom_z)[0] = 0;
+frame.span(kAtom_x)[1] = 0.74;
+frame.span(kAtom_y)[1] = 0;
+frame.span(kAtom_z)[1] = 0;
+frame.span(kAtom_atomic_number)[0] = 1;
+frame.span(kAtom_atomic_number)[1] = 1;
+frame.box = cpu::Box::cubic(100.0);
+
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-10};
+rhf.run(frame);   // frame.meta.get(kEnergy) [eV]; rhf.energy() [Hartree]
+cpu::scf::GradientResult g = rhf.forces(frame); // kAtom_fx/fy/fz [eV/Å]
+
+cpu::scf::MP2Result mp2 = cpu::scf::MP2<cpu::scf::RHF>{rhf}.run(frame);
+cpu::vib::HessianResult H =
+    cpu::scf::Hessian<cpu::scf::RHF>{rhf}.run(frame); // [eV/Å²]
+```
+
+`Polarizability<RHF>::run()` does not take a Frame: call `rhf.run(frame)`
+first, then read the 3×3 tensor [a.u.]. Continuum solvent is
+`WithSolvent<RHF>{std::move(rhf), SolventModel::CPCM, eps}.run(frame)`.
+
+Orbital stability and CIS/TDA read that same converged determinant. They are
+not members of `RHF` (`pyscf.scf.stability.rhf_stability`,
+`pyscf.tdscf.rhf.TDA`). Singlet EOM-EE-CCSD is a method of the CC object
+(`pyscf.cc.ccsd.CCSD.eomee_ccsd_singlet`), not of `RHF`.
+
+```cpp
+cpu::scf::StabilityResult st = cpu::scf::Stability<cpu::scf::RHF>{rhf}.run();
+cpu::scf::ExcitedStatesResult ex = cpu::scf::TDA<cpu::scf::RHF>{rhf}.run(1);
+cpu::scf::EOMEECCSDResult eom =
+    cpu::scf::CCSD<cpu::scf::RHF>{rhf}.eom_ee_ccsd(frame, /*n_states=*/1);
+```
+
+## TDHF, CIS(D), and G0W0
+
+Full TDHF, CIS(D), and spectral G0W0 are not members of `RHF`.
+`TDHF<RHF>::run`, `CISD<RHF>::run`, and `G0W0<RHF>::run` read the
+determinant from a finished `run` and do not write the Frame. `run` writes
+the energy. `forces` writes the energy and the nuclear forces.
+`Hessian<RHF>::run` writes the energy and returns the nuclear Hessian.
+Open-shell Hessians use the same shape: `Hessian<UHF>::run(frame)` and
+`Hessian<ROHF>::run(frame)`.
+
+```cpp
+cpu::Frame frame(2);
+frame.span(kAtom_x)[0] = 0;
+frame.span(kAtom_y)[0] = 0;
+frame.span(kAtom_z)[0] = 0;
+frame.span(kAtom_x)[1] = 0;
+frame.span(kAtom_y)[1] = 0;
+frame.span(kAtom_z)[1] = 0.74;
+frame.span(kAtom_atomic_number)[0] = 1;
+frame.span(kAtom_atomic_number)[1] = 1;
+frame.box = cpu::Box::cubic(20.0);
+
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/0, /*tol=*/1e-12};
+rhf.run(frame); // frame.meta.get(kEnergy) [eV]
+cpu::scf::GradientResult g = rhf.forces(frame); // kAtom_fx/fy/fz [eV/Å]
+
+cpu::scf::ExcitedStatesResult tdhf =
+    cpu::scf::TDHF<cpu::scf::RHF>{rhf}.run(1); // pyscf.tdscf.rhf.TDHF
+cpu::scf::CISDResult cisd =
+    cpu::scf::CISD<cpu::scf::RHF>{rhf}.run(1); // not pyscf.ci.cisd.CISD
+cpu::scf::G0W0Result gw =
+    cpu::scf::G0W0<cpu::scf::RHF>{rhf}.run(); // pyscf.gw.gw_exact.GWExact
+cpu::vib::HessianResult H =
+    cpu::scf::Hessian<cpu::scf::RHF>{rhf}.run(frame); // [eV/Å²]
+```
+
+## Closed-shell limits
+
+**Concept.** RHF is not a general-purpose method with occasional failures — it
+is a method whose derivation *assumes* a specific electronic structure: every
+occupied spatial orbital holds exactly two electrons of opposite spin. That
+assumption has two immediate consequences. The electron count $N_e$ must be
+even, and the spin multiplicity must be $M = 1$ (a singlet). Feed RHF anything
+else and the failure is not numerical noise; the ansatz itself no longer
+describes the state you asked for.
+
+**Math.** The closed-shell density is built from $N_e/2$ doubly-occupied
+orbitals:
+
+$$ P_{\mu\nu} = 2 \sum_{i=1}^{N_e/2} C_{\mu i} C_{\nu i}. $$
+
+For odd $N_e$, integer division silently truncates: $\lfloor 9/2 \rfloor = 4$
+doubly-occupied orbitals describe $8$ electrons — one electron simply
+disappears from the calculation. The resulting energy is perfectly convergent
+and perfectly meaningless.
+
+**Algorithm.** Atomiverse guards against this at the single choke point every
+Gaussian-SCF path passes through: the occupation resolution inside
+`MeanFieldMethod<D>::run`, before any allocation or iteration. It checks that
+$n_\alpha \ge 0$, $n_\beta \ge 0$, $n_\alpha + n_\beta = N_e$, and
+$n_\alpha = n_\beta$ for a restricted spin treatment, and throws
+`std::invalid_argument` otherwise. The classic trap now fails loudly: the water
+cation ($\mathrm{H_2O^+}$, $N_e = 9$) run through `RHF` yields
+$n_\alpha = n_\beta = 4$, the sum $8 \ne 9$ trips the guard, and no SCF
+iteration ever runs.
+
+```cpp
+// H2O+, 9 electrons — integrals stay private inside the method.
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/1};
+rhf.run(frame);               // throws std::invalid_argument — not silence
+```
+
+Because the guard is read-only and runs before any work, valid closed-shell
+runs take exactly the same code path as the unguarded solver — the
+neutral-water energy in this chapter is pinned to the pre-guard baseline at
+$10^{-8}$ Ha by the regression test. (The bar is not zero: the same source
+reassociates its BLAS reductions differently on x86_64 and aarch64, which
+moves the last digits by ~$10^{-12}$ Ha.)
+
+**Limitations.** The guard validates bookkeeping, not physics. A biradical
+singlet passes every check and still breaks the RHF ansatz; that failure mode
+needs the unrestricted treatment of
+[Open-Shell Systems](ch03-open-shell.md), where the companion section "Charge and
+Multiplicity Conventions" gives the full $(N_e, M) \to (n_\alpha, n_\beta)$
+resolution rules.
+
+<!-- Every number and thrown case in this section is regression-locked by
+     tests/cpu/scf/test_spin_resolution.cpp (test_cpu_scf_spin_resolution):
+     H2O+ via RHF throws (OddElectronRhfThrows); the neutral-H2O
+     baseline pin (1e-8 Ha) is NeutralH2ORhfEnergyMatchesBaseline. Change one
+     side only in lockstep with the other. -->
+
+## Koopmans’ approximation
 
 **Concept.** So far the orbital energies $\varepsilon_i$ have been internal
 bookkeeping — the diagonal of the Fock matrix in the MO basis. Koopmans'
@@ -488,7 +547,7 @@ solutions** — the neutral and the cation — at the same (vertical) geometry:
 $$\mathrm{IP}_{\Delta\mathrm{SCF}} \;=\; E_{\mathrm{SCF}}(N-1) - E_{\mathrm{SCF}}(N).$$
 
 No new machinery is needed: the cation is configured entirely through the
-members that already exist — `charge` on any method, and the explicit
+constructor arguments that already exist — `charge` on any method, and the explicit
 `n_alpha` / `n_beta` electron counts on `UHF` (removing one electron leaves
 an open shell, so the cation is a UHF run):
 
@@ -505,16 +564,14 @@ double ip_koopmans =
     * 27.211386245988;                                   // [eV]
 
 // Cation N2+: one α electron removed — members only, no new API.
-cpu::scf::UHF uhf{/*n_alpha=*/7, /*n_beta=*/6};   // 13 electrons: doublet
-uhf.basis = cpu::scf::BasisSet::Pople631Gs;      // no basis ctor slot on UHF yet
-uhf.charge = 1;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::Pople631Gs, /*n_alpha=*/7, /*n_beta=*/6, /*charge=*/1};   // 13 electrons: doublet
 uhf.tol = 1e-12;
 uhf.run(frame);
 double ip_delta = (uhf.energy() - e_n2) * 27.211386245988;   // [eV]
 ```
 
 The N₂ numbers (RHF//UHF 6-31G*, cart, PySCF 2.14.0 cross-checked to
-≤1e-3 eV — `regressions/scf/n2_ionization`):
+≤1e-3 eV — `n2_ionization`):
 
 | quantity | value (eV) | comment |
 |---|---|---|
@@ -545,7 +602,84 @@ recipes, so do not expect 0.1 eV routinely.
 `SlaterDeterminant::with_occupation` — and come with their own collapse
 problems (MOM); they are out of scope for this chapter.
 
-## What to Take Into Chapter 3
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
+
+## Results
+
+| Quantity | Atomiverse | Reference |
+|---|---:|---:|
+| \(E_\mathrm{total}\) (Ha) | **−1.1167593074** | −1.1168 (Szabo & Ostlund, Table 3.7) |
+| \(E_\mathrm{electronic}\) (Ha) | −1.8318636465 | — |
+| \(V_\mathrm{nuc}\) (Ha) | 0.7151043391 | — |
+| SCF iterations (\(\mathrm{tol}=10^{-10}\)) | 3 | — |
+| \(\varepsilon_0\) (occupied) (Ha) | −0.578554 | — |
+| \(\mathrm{Tr}(PS)\) | 2.000000 | 2 |
+
+The absolute error is \(\approx 4\times 10^{-5}\) Ha — well inside the
+textbook table's four-decimal rounding. SCF benchmarks pin Atomiverse RHF
+energies against PySCF to \(10^{-7}\) Ha (see
+[benchmark validation](https://github.com/MolCrafts/Atomiverse/blob/master/benchmarks/README.md)).
+After convergence, \(\mathrm{Tr}(PS)=N_e\) must still hold: the density
+represents two electrons in a closed-shell state.
+
+### Density and HOMO
+
+Isosurfaces from the same H₂ / STO-3G RHF via `DensityCubeWriter` /
+`OrbitalCubeWriter`. On a 0.3 Bohr mesh the grid-integrated density is
+**1.99945** electrons (target 2.0).
+
+```cpp
+cpu::Evaluate eval;
+eval.on(evaluate::Phase::evaluate).add(std::move(rhf).with_gradient(false));
+eval.on(evaluate::Phase::finalize)
+    .add(cpu::recorder::DensityCubeWriter{handle, "h2_density.cube", 4.0, 0.30});
+eval.on(evaluate::Phase::finalize)
+    .add(cpu::recorder::OrbitalCubeWriter{
+        handle, "h2_homo.cube", /*mo=*/0, cpu::recorder::OrbitalSpin::Alpha,
+        4.0, 0.30});
+eval.build();
+eval.run(frame);
+```
+
+<div class="molcrafts-figure-grid" markdown>
+
+<figure class="molcrafts-figure" id="fig-h2-density">
+  <div class="molcrafts-figure__body">
+    <molvis-viewer
+      format="cube"
+      src="../../assets/structures/h2_density.cube"
+      controls="view"
+      height="320px"
+    ></molvis-viewer>
+  </div>
+  <figcaption>
+    <span class="molcrafts-figure__label">Figure.</span>
+    <strong>Total density</strong>
+    — isosurface from <code>h2_density.cube</code>, RHF/STO-3G.
+  </figcaption>
+</figure>
+
+<figure class="molcrafts-figure" id="fig-h2-homo">
+  <div class="molcrafts-figure__body">
+    <molvis-viewer
+      format="cube"
+      src="../../assets/structures/h2_homo.cube"
+      controls="view"
+      height="320px"
+    ></molvis-viewer>
+  </div>
+  <figcaption>
+    <span class="molcrafts-figure__label">Figure.</span>
+    <strong>HOMO</strong>
+    — bonding \(\sigma\) isosurface from <code>h2_homo.cube</code>.
+  </figcaption>
+</figure>
+
+</div>
+
+## Beyond closed shells
 
 The mental shift is now complete. The iteration still has the same shape it had
 in the bare loop, but every object in it has become physical: the density is an
@@ -553,4 +687,8 @@ electronic density matrix, the effective matrix is a Fock matrix, and the final
 scalar is a real molecular energy. The next chapter keeps this machinery but
 drops the closed-shell restriction — where RHF stops being enough and
 unrestricted Hartree-Fock begins:
-[Chapter 3](ch03-open-shell.md).
+[Open-Shell Systems](ch03-open-shell.md).
+
+## Questions for reflection
+
+Why is the density spin-summed with a factor of two? Why does a converged RHF energy not prove that the exact electronic ground state was found?

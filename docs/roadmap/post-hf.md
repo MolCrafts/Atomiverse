@@ -1,221 +1,59 @@
 # Post-Hartree–Fock Correlation
 
-Legend and caveats: [Roadmap index](index.md).
+Tutorial: [Electron correlation](../tutorial/ch07-correlation.md).
 
-Correlated methods built on a converged [Hartree–Fock](hartree-fock.md)
-reference. MP2 / MP3 / MP4 / CC2 / CCSD / CCSD(T) / CASCI / FCI ship as
-post-SCF members on the concrete method (`RHF::mp2` / `UHF::mp2` /
-`ROHF::mp2` / `RHF::mp3` / `RHF::mp4` / `RHF::cc2` / `RHF::ccsd` /
-`RHF::ccsd_t` / `RHF::casci` / `RHF::fci`) consuming the converged
-`SlaterDeterminant` plus the method's privately materialized ERI tensor
-(they are not Drivers or Components, and register in no Plan; they throw
-`std::invalid_argument` on a non-converged reference):
+Correlation on a converged HF reference. Each method is its own type
+(`MP2{mf}`, `MP3`, `MP4`, `CC2`, `CCSD` with `ccsd_t`, `CASCI`, `CASSCF`,
+`FCI`, `NEVPT2`), not a member of `MeanFieldMethod`. CCSD and CC2 amplitude
+iterations are `Driver<cc::Phase>`; CASSCF's orbital macro-iteration is
+`Driver<mc::Phase>`; the others are single-shot and throw on a
+non-converged reference. Legend: [Roadmap index](index.md).
 
-- **RMP2** — closed-shell canonical MP2, the production correlation method.
-- **UMP2** — unrestricted spin-orbital MP2 on a UHF reference (`UHF::mp2`).
-- **ROMP2** — UMP2 on a spin-pure ROHF reference (`ROHF::mp2`).
-- **RMP3** — closed-shell third-order MP (`RHF::mp3`; `reg_mp3-h2-sto3g`).
-- **RMP4(SDTQ)** — closed-shell fourth-order MP (`RHF::mp4`;
-  `reg_mp4-h2-sto3g`).
-- **CC2** — approximate CC doubles foothold (`RHF::cc2`; `reg_cc2-h2-sto3g`).
-- **CCSD** — closed-shell coupled-cluster singles and doubles (`RHF::ccsd`;
-  `reg_ccsd-h2-sto3g`).
-- **CCSD(T)** — non-iterative triples on closed-shell CCSD (`RHF::ccsd_t`;
-  `reg_ccsd-t-h2o-sto3g`).
-- **CASCI** — complete-active-space CI on the FCI kernel (`RHF::casci`;
-  `reg_casci-h2-sto3g`).
-- **CASSCF** — orbital-optimized CAS on the same FCI active-space kernel
-  (`RHF::casscf`; `reg_casscf-h2-sto3g`).
-- **FCI** — a determinant-basis exactness oracle for tiny systems, not a
-  production method.
+## 1. Møller–Plesset
 
-**SC-NEVPT2** ships (`RHF::nevpt2`); PC/QD-NEVPT2, CASPT2, and full
-density-based CC analytic gradients remain open. CCSD nuclear forces ship
-as FD of the CCSD energy (`RHF::ccsd_forces`).
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| RMP2 | ✓ | ✓ | Canonical O(N⁵). Public CPU Python entry `scf.MP2(rhf).run(frame)` runs RHF and correlation. The [scientific benchmark](../../benchmarks/scf/bench_rmp2.py) compares energy components against live PySCF. `cuda::scf::MP2{cuda_rhf}.run(Frame&)` consumes device RHF orbitals/ERIs for energy; occupied tiling, cuBLAS contractions and CUB spin-channel reduction. Dense reference limit 215 AOs; timed by `benchmarks/perf/scf/bench_mp2_cpu_vs_cuda.cu` |
+| UMP2 | ✓ | ○ | `MP2` on `UHF` |
+| ROMP2 | ✓ | ○ | UMP2 on ROHF reference |
+| Frozen-core MP2 | ✓ | ✓ | `MP2::frozen = N`; CUDA canonical RHF energy, pinned by frozen-core water / 6-31G*. CPU RI-MP2 combination reachable |
+| RI-MP2 | ◐ | ○ | `ri = RI::{J,JK}` + aux; RHF only. No external pin; self-pinned case removed |
+| SCS-MP2 / SOS-MP2 | ✓ | ✓ | `MP2::os_scale` / `ss_scale`; CUDA canonical RHF energy, SCS water external pins and spin-channel kernel checks |
+| RMP2 / UMP2 analytic gradient | ✓ | ○ | Lagrangian + Z-vector |
+| ROMP2 gradient | ○ | ○ | |
+| MP2 Hessian | ○ | ○ | |
+| RMP3 | ✓ | ○ | Closed-shell. The [scientific benchmark](../../benchmarks/scf/bench_rmp3.py) compares the public CPU entry `scf.MP3(rhf).run(frame)` against PySCF RHF and NumPy spatial MP3 diagrams on single and eight-water STO-3G systems. |
+| RMP4(SDTQ) | ✓ | ○ | Closed-shell |
+| Local / DLPNO / F12 MP2 | ○ | ○ | |
 
-## 1. Møller–Plesset Perturbation Theory
+## 2. Configuration interaction
 
-| Method                             | CPU | CUDA | Kokkos |
-| ---------------------------------- | :-: | :--: | :---: |
-| Restricted MP2, RMP2               |  ✓  |   ○  |   ○  |
-| Unrestricted MP2, UMP2             |  ✓  |   ○  |   ○  |
-| Restricted open-shell MP2, ROMP2   |  ✓  |   ○  |   ○  |
-| Frozen-core MP2                    |  ✓  |   ○  |   ○  |
-| Density-fitted MP2                 |  ✓  |   ○  |   ○  |
-| RI-MP2                             |  ✓  |   ○  |   ○  |
-| Laplace-transformed MP2            |  ○  |   ○  |   ○  |
-| Spin-component-scaled MP2, SCS-MP2 |  ✓  |   ○  |   ○  |
-| Scaled-opposite-spin MP2, SOS-MP2  |  ✓  |   ○  |   ○  |
-| SCS-MI-MP2                         |  ○  |   ○  |   ○  |
-| Orbital-optimized MP2, OOMP2       |  ○  |   ○  |   ○  |
-| κ-OOMP2                            |  ○  |   ○  |   ○  |
-| σ²-OOMP2                           |  ○  |   ○  |   ○  |
-| Local MP2                          |  ○  |   ○  |   ○  |
-| Pair-natural-orbital MP2           |  ○  |   ○  |   ○  |
-| DLPNO-MP2                          |  ○  |   ○  |   ○  |
-| MP2-F12                            |  ○  |   ○  |   ○  |
-| MP2 analytic gradient              |  ✓  |   ○  |   ○  |
-| MP2 analytic Hessian               |  ○  |   ○  |   ○  |
-| MP2.5                              |  ○  |   ○  |   ○  |
-| MP3                                |  ✓  |   ○  |   ○  |
-| SCS-MP3                            |  ○  |   ○  |   ○  |
-| Orbital-optimized MP3              |  ○  |   ○  |   ○  |
-| MP4(SDTQ)                          |  ✓  |   ○  |   ○  |
-| Full MP4                           |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| FCI (determinant-driven) | ✓ | ○ | Dense matrix; cap `n_mo > 14` or `N_det > 2000` — oracle tool, not production |
+| Selected / heat-bath CI | ○ | ○ | |
 
-RMP2 runs four sequential O(N⁵) quarter transforms to the `(ia|jb)` ovov block,
-then the canonical energy expression. **UMP2** (`UHF::mp2`) uses independent
-α/β MOs with same-spin (¼ antisymmetrized) and opposite-spin channels
-(`reg_ump2-o2-sto3g` vs PySCF `mp.UMP2`). **RI-MP2** is the closed-shell entry
-with `rhf.ri = RI::{J,JK}` and an aux basis (`MP2Result::ri = true`,
-`reg_h2o_ri_mp2`) — Coulomb-metric density fitting for `(ia|jb)`. **Frozen-core**
-is the member `rhf.frozen = N` (lowest N occupied spatial MOs excluded from the
-doubles sum; PySCF `mp.MP2(mf, frozen=N)` convention) on closed-shell RMP2 and
-RI-MP2 (`reg_frozen-core-mp2-h2o`, `MP2Result::frozen`). **SCS-MP2** is the same
-RMP2 path with Grimme scales on the opposite-/same-spin channels via members
-`mp2_os_scale` / `mp2_ss_scale` (defaults 1.0; SCS: 1.2 / ⅓;
-`reg_scs-mp2-h2o-sto3g`; SOS: 1.3 / 0, Jung et al. JCP 121, 9793 (2004),
-`reg_sos-mp2-h2o-sto3g`). **RMP2 analytic nuclear gradient** ships
-(`RHF::mp2_forces`; Lagrangian 1-RDM + non-separable 2-RDM + Z-vector;
-`reg_mp2-grad-h2o-sto3g` vs PySCF `mp.MP2.nuc_grad_method`). **UMP2 analytic
-nuclear gradient** ships on UHF (`UHF::mp2_forces`; spin-resolved Lagrangian
-1-RDM + non-separable 2-RDM + unrestricted Z-vector;
-`reg_ump2-grad-o2-sto3g` vs PySCF `mp.UMP2.nuc_grad_method`). **ROMP2**
-(`ROHF::mp2`) is UMP2 on the spin-pure ROHF reference with semi-canonical
-spin-Fock denominators (PySCF `mp.UMP2(ROHF)` convention;
-`reg_romp2-o2-sto3g`). **RMP3** (`RHF::mp3`) adds the third-order doubles
-diagrams on the same closed-shell MO ERIs (`reg_mp3-h2-sto3g`; offline pin on
-PySCF RHF orbitals — PySCF 2.x has no `mp.MP3`). **RMP4(SDTQ)** (`RHF::mp4`)
-adds fourth-order RSPT through singles/doubles/triples/quadruples on the same
-closed-shell path (`reg_mp4-h2-sto3g`; offline det-space RSPT-4 twin — PySCF
-2.x has no `mp.MP4`). No ROMP2 gradients, no frozen-core UMP2, no RI-UMP2.
-Canonical mode still materializes the full in-memory ERI tensor in the
-method's private workspace.
+CIS excitation energies live under
+[Excited States](excited-states.md) (`TDA<RHF>::run`), not here.
 
-## 2. Configuration Interaction
+## 3. Coupled cluster
 
-| Method                                 | CPU | CUDA | Kokkos |
-| -------------------------------------- | :-: | :--: | :---: |
-| Configuration interaction singles, CIS |  ○  |   ○  |   ○  |
-| Full configuration interaction, FCI    |  ✓  |   ○  |   ○  |
-| Direct CI                              |  ○  |   ○  |   ○  |
-| Determinant-driven CI                  |  ✓  |   ○  |   ○  |
-| Integral-driven CI                     |  ○  |   ○  |   ○  |
-| Selected CI                            |  ○  |   ○  |   ○  |
-| CIPSI                                  |  ○  |   ○  |   ○  |
-| Heat-bath CI                           |  ○  |   ○  |   ○  |
-| Semistochastic heat-bath CI            |  ○  |   ○  |   ○  |
-| Adaptive sampling CI                   |  ○  |   ○  |   ○  |
-| CIS analytic gradient                  |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| CC2 | ✓ | ○ | `cpu::scf::CC2<Method>` : `cpu::Driver<cc::Phase>` (not `MeanFieldMethod`, no `HF` tag). Stages `update → mix → energy → check`, mounted with `on(phase).add` in the constructor. Doubles residual is PySCF `rccsd.update_amps` when `cc.cc2` (full singles, T₂ at most linear in T₂). max\|Δt\| is published on `ConvergenceMetrics::residual`; `AmplitudeConverged` decides; the method does not assign convergence. `CC2{mf, diis = true, tol = 1e-10, max_iter = 100}` — const after construction. The reference is not owned. `run(Frame&)` drives the reference SCF, overwrites `kEnergy` with the correlated total [eV], and returns `CC2Result` [Hartree]. `run(const Frame&)` writes nothing. There is no `forces(Frame&)`. `provides_energy()` and `requires_full_frame()` are true; `provides_force()` is false. Nested `on(phase).add` accumulates `kEnergy` and refuses a force request. Closed-shell RHF only. No CUDA path. `eom_cc2` stays a method of this object. Pinned in `scf/coupled-cluster`: H₂/STO-3G (T₁ = 0, CC2 = MP2) and H₂O/STO-3G (T₁ nonzero, distinct from MP2). Tutorial: [H₂](../tutorial/methods/scf-coupled-cluster.md#cc2-h2-sto3g), [H₂O](../tutorial/methods/scf-coupled-cluster.md#cc2-h2o-sto3g) |
+| CCSD | ✓ | ○ | `cpu::scf::CCSD<Method>` : `cpu::Driver<cc::Phase>` (not `MeanFieldMethod`, no `HF` tag). Stages `update → mix → energy → check`, mounted with `on(phase).add` in the constructor. max\|Δt\| is published on `ConvergenceMetrics::residual`; `AmplitudeConverged` decides; the method does not assign convergence. `CCSD{mf, diis = true, frozen = 0, tol = 1e-10, max_iter = 100}` — const after construction. The reference is not owned. `run(Frame&)` drives the reference SCF, overwrites `kEnergy` with the correlated total [eV], and returns `CCSDResult` [Hartree]. `run(const Frame&)` writes nothing. `forces(Frame&)` overwrites `kAtom_f*` [eV/Å] and `kEnergy` [eV] and returns `GradientResult`. `ccsd_t(Frame&)` returns `CCSDTResult` [Hartree]. `provides_energy()`, `provides_force()`, and `requires_full_frame()` are true. Nested `on(phase).add` accumulates `kEnergy`, and `kAtom_f*` when the parent requests forces. Closed-shell RHF only. `frozen != 0` throws on `forces`. No CUDA path. Tutorial: [coupled cluster](../tutorial/methods/scf-coupled-cluster.md#call) |
+| CCSD(T) | ✓ | ○ | Non-iterative triples |
+| CCSD nuclear gradient | ✓ | ○ | FD of CCSD energy (not Lagrangian/Z-vector yet) |
+| CCSD(T) gradient / CCSD Hessian | ○ | ○ | |
+| Open-shell / DF / F12 / local CC | ○ | ○ | |
 
-FCI is determinant-driven (Slater–Condon assembly, Jordan–Wigner phases) with a
-**dense** CI matrix and `eigh` diagonalization — so it is explicitly *not* a
-direct CI. It throws past a hard cap (`n_mo > 14` or `N_det > 2000`). Its purpose
-is to pin the exact answer for H₂/STO-3G-scale systems in validation, not to
-correlate real ones.
+## 4. Multireference
 
-## 3. Coupled Cluster
-
-| Method                       | CPU | CUDA | Kokkos |
-| ---------------------------- | :-: | :--: | :---: |
-| Coupled-cluster doubles, CCD |  ○  |   ○  |   ○  |
-| Brueckner doubles, BD        |  ○  |   ○  |   ○  |
-| CC2                          |  ✓  |   ○  |   ○  |
-| CCSD                         |  ✓  |   ○  |   ○  |
-| CCSD(T)                      |  ✓  |   ○  |   ○  |
-| CCSDT-1a                     |  ○  |   ○  |   ○  |
-| CCSDT-1b                     |  ○  |   ○  |   ○  |
-| CCSDT-2                      |  ○  |   ○  |   ○  |
-| CCSDT-3                      |  ○  |   ○  |   ○  |
-| CCSDT                        |  ○  |   ○  |   ○  |
-| CCSDT(Q)                     |  ○  |   ○  |   ○  |
-| CCSDTQ                       |  ○  |   ○  |   ○  |
-| CEPA/0                       |  ○  |   ○  |   ○  |
-| ACPF                         |  ○  |   ○  |   ○  |
-| AQCC                         |  ○  |   ○  |   ○  |
-| Orbital-optimized CCD        |  ○  |   ○  |   ○  |
-| Density-fitted CCSD          |  ○  |   ○  |   ○  |
-| Cholesky-decomposed CCSD     |  ○  |   ○  |   ○  |
-| CCSD-F12a                    |  ○  |   ○  |   ○  |
-| CCSD-F12b                    |  ○  |   ○  |   ○  |
-| CCSD(T)-F12                  |  ○  |   ○  |   ○  |
-| CCSD analytic gradient       |  ✓  |   ○  |   ○  |
-| CCSD analytic Hessian        |  ○  |   ○  |   ○  |
-| CCSD(T) analytic gradient    |  ○  |   ○  |   ○  |
-
-**CC2** (`RHF::cc2`) is the approximate CC doubles model (full singles residual;
-doubles residual linear in \(T_2\)) on a closed-shell RHF reference
-(`reg_cc2-h2-sto3g` vs PySCF `cc.RCCSD` with `cc2=True`).
-**CCSD** (`RHF::ccsd`) is closed-shell spin-orbital Gauss–Stanton on a
-converged RHF reference (`reg_ccsd-h2-sto3g` vs PySCF `cc.CCSD`).
-**CCSD(T)** (`RHF::ccsd_t`) adds the non-iterative (T) triples correction on
-the same path (`reg_ccsd-t-h2o-sto3g` vs PySCF `cc.CCSD(...).ccsd_t()`).
-**CCSD nuclear gradient** (`RHF::ccsd_forces`; `reg_ccsd-grad-h2o-sto3g`) is a
-product foothold: central FD of the analytic CCSD total energy, gated against
-PySCF analytic `cc.CCSD.nuc_grad_method` pins. A density-based Lagrangian /
-Z-vector analytic path (matching `pyscf.grad.ccsd`) is a follow-up. No
-open-shell CC, no density-fitted CC, no CCSD Hessian / CCSD(T) forces yet.
-
-### Local-correlation coupled cluster
-
-| Method                         | CPU | CUDA | Kokkos |
-| ------------------------------ | :-: | :--: | :---: |
-| Local CCSD                     |  ○  |   ○  |   ○  |
-| Pair-natural-orbital CCSD      |  ○  |   ○  |   ○  |
-| DLPNO-CCSD                     |  ○  |   ○  |   ○  |
-| DLPNO-CCSD(T0)                 |  ○  |   ○  |   ○  |
-| DLPNO-CCSD(T)                  |  ○  |   ○  |   ○  |
-| LNO-CCSD                       |  ○  |   ○  |   ○  |
-| LNO-CCSD(T)                    |  ○  |   ○  |   ○  |
-| Frozen-natural-orbital CCSD    |  ○  |   ○  |   ○  |
-| Frozen-natural-orbital CCSD(T) |  ○  |   ○  |   ○  |
-
-## 4. Multireference Methods
-
-### 4.1 Active-space methods
-
-| Method                               | CPU | CUDA | Kokkos |
-| ------------------------------------ | :-: | :--: | :---: |
-| Complete-active-space CI, CASCI      |  ✓  |   ○  |   ○  |
-| Complete-active-space SCF, CASSCF    |  ✓  |   ○  |   ○  |
-| State-specific CASSCF                |  ○  |   ○  |   ○  |
-| State-averaged CASSCF                |  ○  |   ○  |   ○  |
-| Restricted-active-space CI, RASCI    |  ○  |   ○  |   ○  |
-| Restricted-active-space SCF, RASSCF  |  ○  |   ○  |   ○  |
-| Generalized-active-space CI, GASCI   |  ○  |   ○  |   ○  |
-| Generalized-active-space SCF, GASSCF |  ○  |   ○  |   ○  |
-| DMRG-CI                              |  ○  |   ○  |   ○  |
-| DMRG-SCF                             |  ○  |   ○  |   ○  |
-| Selected-CI active-space solver      |  ○  |   ○  |   ○  |
-| FCIQMC active-space solver           |  ○  |   ○  |   ○  |
-| CASCI analytic gradient              |  ○  |   ○  |   ○  |
-| CASSCF analytic gradient             |  ○  |   ○  |   ○  |
-| CASSCF analytic Hessian              |  ○  |   ○  |   ○  |
-
-**CASCI** (`RHF::casci(frame, ncas, nelecas)`) freezes the inactive core and
-runs the dense FCI kernel in the active space (`reg_casci-h2-sto3g` vs PySCF
-`mcscf.CASCI`). **CASSCF** (`RHF::casscf(frame, ncas, nelecas)`) adds
-two-step orbital optimization on the same active-space FCI kernel
-(`reg_casscf-h2-sto3g` vs PySCF `mcscf.CASSCF`). **SC-NEVPT2**
-(`RHF::nevpt2(frame, ncas, nelecas)`; `reg_nevpt2-h2-sto3g` vs PySCF
-`mrpt.NEVPT`) is the in-tree multireference PT foothold on a closed-shell
-CASSCF reference. No RAS/GAS, no state-averaged CASSCF product path, no
-CASSCF gradient, no PC-NEVPT2 / QD-NEVPT2 / CASPT2.
-
-### 4.2 Multireference correlation
-
-| Method                                            | CPU | CUDA | Kokkos |
-| ------------------------------------------------- | :-: | :--: | :---: |
-| Multireference CISD, MRCISD                       |  ○  |   ○  |   ○  |
-| Internally contracted MRCI                        |  ○  |   ○  |   ○  |
-| Uncontracted MRCI                                 |  ○  |   ○  |   ○  |
-| MRCI+Q                                            |  ○  |   ○  |   ○  |
-| CASPT2                                            |  ○  |   ○  |   ○  |
-| Multistate CASPT2                                 |  ○  |   ○  |   ○  |
-| Extended multistate CASPT2                        |  ○  |   ○  |   ○  |
-| Strongly contracted NEVPT2                        |  ✓  |   ○  |   ○  |
-| Partially contracted NEVPT2                       |  ○  |   ○  |   ○  |
-| Quasidegenerate NEVPT2                            |  ○  |   ○  |   ○  |
-| MRMP2                                             |  ○  |   ○  |   ○  |
-| Multiconfiguration pair-density functional theory |  ○  |   ○  |   ○  |
-| Multireference analytic gradient                  |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| CASCI | ✓ | ○ | Dense FCI in active space |
+| CASSCF | ✓ | ○ | `cpu::scf::CASSCF<Method>` : `cpu::Driver<mc::Phase>` (not `MeanFieldMethod`, no `HF` tag). Stages `rotate → casci → gradient → check`, mounted with `on(phase).add` in the constructor. max \|g\| is published on `ConvergenceMetrics::residual`; `OrbitalGradientConverged` decides; the method does not assign convergence. `CASSCF{mf, ncas, nelecas}` — `orb_tol` defaults to `max(mf.tol, 1e-8)` [Hartree], `max_macro = 50`. Explicit overload `CASSCF{mf, ncas, nelecas, orb_tol, max_macro}`. `ncas`, `nelecas`, `orb_tol`, and `max_macro` are const after construction. The reference is not owned. `run(Frame&)` drives the reference SCF, overwrites `kEnergy` with the correlated total [eV], and returns `CASSCFResult` [Hartree] (`e_casscf`, `e_corr`, `ncas`, `nelecas`, `ncore`, `iterations`, `converged`). `run(const Frame&)` writes nothing. There is no `forces(Frame&)`. `provides_energy()` and `requires_full_frame()` are true; `provides_force()` is false. Nested `on(phase).add` accumulates `kEnergy` and refuses a force request. Closed-shell RHF only. No CUDA path. Pinned in `scf/multireference`: H₂/STO-3G CAS(2,2) (ncore = nvirt = 0, one CI pass) and H₂O/STO-3G CAS(2,2) (ncore = 4, nvirt = 1, orbital step). Tutorial: [multireference](../tutorial/methods/scf-multireference.md#call) |
+| SC-NEVPT2 | ✓ | ○ | On closed-shell CASSCF |
+| State-averaged CAS / RAS / GAS / DMRG | ○ | ○ | |
+| CASPT2 / PC-NEVPT2 / QD-NEVPT2 | ○ | ○ | |
+| CASSCF analytic gradient | ○ | ○ | |

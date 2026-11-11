@@ -5,20 +5,25 @@
 /// optional Armijo backtracking line search, hot-swappable inside
 /// `cuda::minimizer::Minimize` next to `CG` / `SteepestDescent`.
 ///
-/// Execution model: the heavy vector work (history update, two-loop
-/// recursion, step application) is GPU-pure — every intermediate dot
-/// product lands in a device scalar that the next kernel reads by
-/// pointer, the same device-scalar chaining as
-/// `cuda::md::NoseHoover`. Two host touch points per iteration remain,
-/// both **host-dependent compute** by necessity:
-///   - `search_direction` reads back the 8-byte curvature product
-///     `y·s` — the accept/reject decision gates the host-side circular
-///     history bookkeeping that determines how many two-loop kernels
-///     are launched.
+/// Execution model: the search-direction iteration (history update,
+/// two-loop recursion, step application) is device-resident and replayed
+/// as one captured graph. The curvature test and the pair ring live on the
+/// device: a candidate pair is staged in a spare buffer and swapped in only
+/// when y·s > 1e-10, so a rejected pair never overwrites the oldest stored
+/// one. The recursion launches a fixed `2 memory + 1` vector passes (each
+/// update fused with the next inner product, y·y cached per pair; passes
+/// beyond the stored count exit at once), so the launch sequence does not
+/// depend on device state. Host touch points per iteration:
 ///   - `convergence_check` runs the shared `ConvCheck` bridge (the
 ///     metrics must reach the host, where the driver polls its
-///     handlers). Line-search scalars (applied α, g·d) ride this sync as
-///     batched pinned D2H copies — no extra synchronize.
+///     handlers).
+///   - The optional Armijo line search decides on the device: the
+///     direction graph opens it (origin slope and energy), and each bounded
+///     trial — one force evaluation, then the device verdict and the next
+///     trial's move, replayed as a graph — ends in one stream sync after
+///     which the host reads the verdict from a mapped host word (the CUDA
+///     RHF convergence-flag pattern). No scalar is copied back; all
+///     geometry and force arrays stay on device.
 ///
 /// **Tolerances are not here.** They belong to the termination policy —
 /// `cuda::ForceConverged`, which `cuda::minimizer::Minimize` attaches by default and
@@ -40,6 +45,7 @@
 #pragma once
 
 #include "atomiverse/cuda/component/optimizer.cuh"
+#include "atomiverse/cuda/device/graph_ring.cuh"
 
 #include <string>
 #include <vector>
@@ -65,15 +71,14 @@ class LBFGS : public cuda::Optimizer {
 
     /// @brief Enable the backtracking line search (Armijo condition).
     ///
-    /// Same contract as `cpu::minimizer::LBFGS::line_search`: a driver
-    /// step whose trial fails `E_{k+1} − E_k <= c1 · α_k · g_k·d_k` is
+    /// A driver step whose trial fails `E_{k+1} − E_k <= c1 · α_k · g_k·d_k` is
     /// rolled back to `x_k`, α is scaled by @p contract, and the trial
     /// is re-taken along the same direction; history is only updated on
     /// accepted trials. Must be called before `opt.build()`.
     /// @param c1         Armijo constant in (0, 1) (default 1e-4).
     /// @param contract   Backtracking contraction factor (default 0.5).
-    /// @param min_alpha  Minimum α before accepting the trial even on
-    ///                   Armijo failure (default 1e-6).
+    /// @param min_alpha  Smallest trial alpha; failure at the floor or budget
+    ///                   restores the origin and throws (default 1e-6).
     /// @return Reference to self for chaining.
     LBFGS& line_search(double c1 = 1e-4, double contract = 0.5,
                        double min_alpha = 1e-6) {
@@ -93,16 +98,17 @@ class LBFGS : public cuda::Optimizer {
     /// @return ComponentRole::Optimizer.
     /* role via Optimizer base */
 
-    /// @brief Default bindings: search_direction + convergence_check.
+    /// @brief Default bindings: direction, bounded line search, measurement.
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),
+                ATV::make_binding(ATV::minimizer::Phase::line_search, 0),
                 ATV::make_binding(ATV::minimizer::Phase::convergence_check, 0)};
     }
 
     /// @brief Allocate + zero history and scratch device buffers.
     void build(const BuildContext& ctx) override;
 
-    /// @brief Dispatch the bound phase (search_direction / convergence_check).
+    /// @brief Dispatch direction, finite Armijo search, or convergence measurement.
     void launch(const LaunchContext& ctx) override;
 
     /// @brief Release all device + pinned buffers.
@@ -112,7 +118,9 @@ class LBFGS : public cuda::Optimizer {
     double max_force() const { return conv_.max_force(); }
 
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     int memory_;    ///< Correction-pair capacity.
@@ -122,44 +130,52 @@ class LBFGS : public cuda::Optimizer {
     int n_ = 0;  ///< Atom count.
     int n3_ = 0; ///< 3 * n_.
 
-    // Planar [x:0..n, y:n..2n, z:2n..3n] device buffers, work_t precision
+    // Planar [x:0..n, y:n..2n, z:2n..3n] device buffers, mixed_t precision
     // (s = x − x_prev and y = g − g_prev are differences of nearly-equal
-    // values; real_t storage would destroy the curvature information).
-    work_t* d_x_ = nullptr;     ///< Current packed positions (3N).
-    work_t* d_g_ = nullptr;     ///< Current packed gradient −F (3N).
-    work_t* d_xprev_ = nullptr; ///< Positions at the last accepted step (3N).
-    work_t* d_gprev_ = nullptr; ///< Gradient at the last accepted step (3N).
-    work_t* d_s_ = nullptr;     ///< Position-difference ring (memory × 3N).
-    work_t* d_y_ = nullptr;     ///< Gradient-difference ring (memory × 3N).
-    work_t* d_q_ = nullptr;     ///< Two-loop scratch q → r (3N).
-    work_t* d_dir_ = nullptr; ///< Search direction (3N, persists for rollback).
-    work_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
-    work_t* d_dot_ = nullptr;   ///< Device {dot, dir_max} scratch scalars.
-    work_t* d_ys_ = nullptr;    ///< Device curvature product y·s.
-    work_t* d_ls_ = nullptr; ///< Device {applied α, g·d} line-search scalars.
-    work_t* h_ys_ = nullptr; ///< Pinned mirror of d_ys_.
-    work_t* h_ls_ = nullptr; ///< Pinned mirror of d_ls_.
+    // values; force_t storage would destroy the curvature information).
+    // Positions are the reconstructed (primary + correction) coordinates, so
+    // a rollback from x_prev restores both stored columns exactly. Every
+    // reduction target (dot products, max, y·s, g·d) is acc_t.
+    mixed_t* d_x_ = nullptr;     ///< Current packed positions (3N).
+    mixed_t* d_g_ = nullptr;     ///< Current packed gradient −F (3N).
+    mixed_t* d_xprev_ = nullptr; ///< Positions at the last accepted step (3N).
+    mixed_t* d_gprev_ = nullptr; ///< Gradient at the last accepted step (3N).
+    mixed_t* d_s_ = nullptr;     ///< Position-difference ring (memory × 3N).
+    mixed_t* d_y_ = nullptr;     ///< Gradient-difference ring (memory × 3N).
+    mixed_t* d_q_ = nullptr;     ///< Two-loop scratch q → r (3N).
+    mixed_t* d_dir_ =
+        nullptr; ///< Search direction (3N, persists for rollback).
+    mixed_t* d_alpha_ = nullptr; ///< Two-loop a_k scalars (memory).
+    ImageInt* d_image_prev_ = nullptr;
+    acc_t* d_dot_ = nullptr; ///< Per-iteration reductions (y·s, y·y, max|d|,
+                             ///< one inner product per two-loop pass).
+    int n_dots_ = 0;
+    /// Device pair ring: {n_stored, oldest, spare} then slot[memory]. The
+    /// curvature test and the ring bookkeeping run on the device.
+    int* d_ring_state_ = nullptr;
+    acc_t* d_rho_ = nullptr; ///< 1/(y·s) then y·y per pair buffer.
+    acc_t* d_ls_ =
+        nullptr; ///< Device {trial α, g·d, origin energy} line-search scalars.
+    void* d_line_state_ = nullptr; ///< Device line-search state.
+    int* h_verdict_ = nullptr;     ///< Mapped host word: the device verdict.
+    int* d_verdict_ = nullptr;     ///< Device alias of `h_verdict_`.
+    /// The search-direction iteration, captured once without and once with
+    /// a candidate pair.
+    GraphRing graphs_[2];
+    /// One line-search verdict (judge + next trial's move).
+    GraphRing trial_graph_;
 
-    // Host-side circular-buffer bookkeeping (gates kernel-launch counts).
-    std::vector<double> rho_; ///< 1 / (y·s) per stored pair.
-    int n_stored_ = 0;
-    int oldest_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 
-    // Line search (optional; off by default, as on the CPU).
+    // Optional finite Armijo search; disabled by default.
     bool ls_enabled_ = false;
     double ls_c1_ = 1e-4;
     double ls_contract_ = 0.5;
     double ls_min_alpha_ = 1e-6;
-    double ls_alpha_ = 0;         ///< α of the most recent trial (host copy).
-    double ls_gd_ = 0;            ///< g·d at the trial origin (host copy).
-    double ls_origin_energy_ = 0; ///< Energy at the trial origin [eV].
-    bool ls_had_trial_ = false;
-    bool ls_fetch_pending_ = false; ///< D2H of {α, g·d} queued for next check.
 
     ConvCheck conv_;
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

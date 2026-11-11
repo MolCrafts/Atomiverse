@@ -32,25 +32,12 @@ namespace md {
 /// lines 794–802, 661). With the default `T_stop < 0` sentinel the
 /// ramp folds to `T_start` (constant-T thermostat).
 ///
-/// ## RNG design — `(seed, step, global atom tag)` splitmix Box-Muller
-///
-/// The kernel uses no persistent device RNG state (no `curand_init` /
-/// `curandState*`). Each per-atom call generates 6 fresh `u01` samples
-/// from a counter-based splitmix64 stream keyed by the 64-bit triple
-/// `hash(seed, step, frame.atoms.tag[i])`, then Box-Muller transforms
-/// the 6 uniforms into 3 standard normals `rx, ry, rz`. This makes
-/// the random force reproducible across rank counts (the seed depends
-/// on the global `tag`, not on the atom's index in any rank-local
-/// SoA) and saves the per-atom state buffer that `curandState*` would
-/// require.
-///
-/// Per ensemble-average contract (see `msu-pe-align-03` block-average
-/// rule): individual stochastic trajectories may differ from the CPU
-/// sibling at a given seed because the splitmix here and the CPU
-/// `splitmix` use the same algorithm but the per-atom dispatch order
-/// is different (per-thread vs per-OMP-stride). Ensemble averages
-/// ⟨T⟩, ⟨P⟩, ⟨ρ⟩ converge to the LAMMPS / CPU values within the
-/// block-average tolerance.
+/// RNG uses NVIDIA cuRAND Philox, with the user seed, global atom tag as
+/// subsequence, and eight 32-bit outputs per MD step in its own 2^62-output
+/// counter window (separate from initialization and Brownian). State is thread-local;
+/// no per-atom state buffer needs migration. Sorting and rank assignment do
+/// not change a tagged atom's noise. Individual trajectories differ from
+/// CPU RNG streams; ensemble averages retain the same physical contract.
 ///
 /// Bound at `post_force @ +500` — after all physical-force evaluators
 /// have accumulated, before any user-defined post-force corrections.
@@ -80,10 +67,11 @@ class FixLangevin : public cuda::Thermostat {
     FixLangevin& set_run_span(std::int64_t nfirst, std::int64_t nlast) {
         nfirst_ = nfirst;
         nlast_ = nlast;
+        ++epoch_;
         return *this;
     }
 
-    /// @return Live thermostat setpoint [K], updated each `launch()`.
+    /// @return Live thermostat setpoint [K], updated before each launch.
     double T_target() const noexcept { return T_live_; }
 
     std::string name() const override { return "fix_langevin"; }
@@ -102,7 +90,17 @@ class FixLangevin : public cuda::Thermostat {
         return {ATV::make_binding(ATV::md::Phase::post_force, +500)};
     }
 
+    /// @brief The ramp and the noise counter read the device step; the run
+    ///        span is a kernel argument (part of the graph epoch).
+    bool graph_capturable() const override { return true; }
+    std::uint64_t graph_epoch() const override { return epoch_; }
+
+    void before_launch(const LaunchContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override {
+        before_launch(ctx);
+        launch(ctx);
+    }
 
   private:
     double T_start_;
@@ -113,6 +111,7 @@ class FixLangevin : public cuda::Thermostat {
     std::int64_t nfirst_ = 0;
     std::int64_t nlast_ = 0;
     double T_live_;
+    std::uint64_t epoch_ = 0;
 };
 
 } // namespace md

@@ -5,68 +5,70 @@
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
-
-using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
-
 namespace cuda {
 namespace md {
 
 namespace {
 
+// Integration runs in mixed_t: coordinates are reconstructed from the stored
+// primary + correction pair, advanced, wrapped against the FP64 cell and
+// split again. Forces are decoded from fixed point; a faulted force is never
+// consumed (the first refusing launch stamps step and tag).
 __global__ void initial_integrate(
-    real_t* __restrict__ x, real_t* __restrict__ y, real_t* __restrict__ z,
-    real_t* __restrict__ vx, real_t* __restrict__ vy, real_t* __restrict__ vz,
-    const real_t* __restrict__ fx, const real_t* __restrict__ fy,
-    const real_t* __restrict__ fz, const real_t* __restrict__ mass,
-    cuda::Box box, work_t dt, int n) {
+    pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+    pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
+    mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+    mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
+    const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
+    const mixed_t* __restrict__ mass, ImageInt* __restrict__ image,
+    ForceFault* fault, const std::int64_t* __restrict__ tag,
+    const long long* step_ptr, long long step, cuda::Box box, mixed_t dt,
+    mixed_t ftm2v, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
+        return;
+    box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    work_t inv_m = work_t(1) / static_cast<work_t>(mass[i]);
-    work_t hdt = work_t(0.5) * dt;
-    work_t ax = static_cast<work_t>(fx[i]) * inv_m * ATV::units::force_to_accel;
-    work_t ay = static_cast<work_t>(fy[i]) * inv_m * ATV::units::force_to_accel;
-    work_t az = static_cast<work_t>(fz[i]) * inv_m * ATV::units::force_to_accel;
-    vx[i] += hdt * ax;
-    vy[i] += hdt * ay;
-    vz[i] += hdt * az;
-    x[i] += dt * vx[i];
-    y[i] += dt * vy[i];
-    z[i] += dt * vz[i];
-    // PBC wrap via cached inv_l on the by-value Box — no per-thread
-    // 1/Lx FP64 division, no widely-spaced box[0]/box[4]/box[8] loads
-    // (cuda-md-review-cleanup-04-box-by-value-pbc).
-    work_t Lx = work_t(box.cell[0]), Ly = work_t(box.cell[4]),
-           Lz = work_t(box.cell[8]);
-    work_t inv_Lx = work_t(box.inv_l[0]), inv_Ly = work_t(box.inv_l[1]),
-           inv_Lz = work_t(box.inv_l[2]);
-    x[i] -= Lx * floor(x[i] * inv_Lx);
-    y[i] -= Ly * floor(y[i] * inv_Ly);
-    z[i] -= Lz * floor(z[i] * inv_Lz);
+    const mixed_t scale = mixed_t(0.5) * dt * ftm2v / mass[i];
+    const mixed_t ux = vx[i] + scale * decode_force<mixed_t>(fx[i]);
+    const mixed_t uy = vy[i] + scale * decode_force<mixed_t>(fy[i]);
+    const mixed_t uz = vz[i] + scale * decode_force<mixed_t>(fz[i]);
+    vx[i] = ux;
+    vy[i] = uy;
+    vz[i] = uz;
+    mixed_t px = load_position(x, xc, i) + dt * ux;
+    mixed_t py = load_position(y, yc, i) + dt * uy;
+    mixed_t pz = load_position(z, zc, i) + dt * uz;
+    // PBC wrap by whole lattice vectors (cached inverse cell, no division);
+    // the translation is counted into the image flags (LAMMPS Domain::pbc).
+    box.wrap_position(px, py, pz, image ? image + 3 * i : nullptr);
+    store_position(x, xc, i, px);
+    store_position(y, yc, i, py);
+    store_position(z, zc, i, pz);
 }
 
 __global__ void
-final_integrate(real_t* __restrict__ vx, real_t* __restrict__ vy,
-                real_t* __restrict__ vz, const real_t* __restrict__ fx,
-                const real_t* __restrict__ fy, const real_t* __restrict__ fz,
-                const real_t* __restrict__ mass, work_t dt, int n) {
+final_integrate(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+                mixed_t* __restrict__ vz, const fixed_t* __restrict__ fx,
+                const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
+                const mixed_t* __restrict__ mass, ForceFault* fault,
+                const std::int64_t* __restrict__ tag, const long long* step_ptr,
+                long long step, mixed_t dt, mixed_t ftm2v, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
+        return;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    work_t inv_m = work_t(1) / static_cast<work_t>(mass[i]);
-    work_t hdt = work_t(0.5) * dt;
-    vx[i] +=
-        hdt * static_cast<work_t>(fx[i]) * inv_m * ATV::units::force_to_accel;
-    vy[i] +=
-        hdt * static_cast<work_t>(fy[i]) * inv_m * ATV::units::force_to_accel;
-    vz[i] +=
-        hdt * static_cast<work_t>(fz[i]) * inv_m * ATV::units::force_to_accel;
+    const mixed_t scale = mixed_t(0.5) * dt * ftm2v / mass[i];
+    vx[i] += scale * decode_force<mixed_t>(fx[i]);
+    vy[i] += scale * decode_force<mixed_t>(fy[i]);
+    vz[i] += scale * decode_force<mixed_t>(fz[i]);
 }
 
 } // anonymous namespace
@@ -77,15 +79,18 @@ void VelocityVerlet::launch(const LaunchContext& ctx) {
     int n = ctx.frame.n_atoms();
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
+    const auto& a = frame.atoms;
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
         initial_integrate<<<grid, block, 0, stream>>>(
-            frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.vx,
-            frame.atoms.vy, frame.atoms.vz, frame.atoms.fx, frame.atoms.fy,
-            frame.atoms.fz, frame.atoms.mass, ctx.runtime.host_box, dt_, n);
+            a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
+            a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag,
+            ctx.runtime.device_step, ctx.step, ctx.runtime.host_box,
+            mixed_t(dt_), mixed_t(ctx.runtime.units.ftm2v), n);
     } else {
         final_integrate<<<grid, block, 0, stream>>>(
-            frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.fx,
-            frame.atoms.fy, frame.atoms.fz, frame.atoms.mass, dt_, n);
+            a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, frame.force_fault,
+            a.tag, ctx.runtime.device_step, ctx.step, mixed_t(dt_),
+            mixed_t(ctx.runtime.units.ftm2v), n);
     }
 }
 

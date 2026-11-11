@@ -1,12 +1,128 @@
-# Chapter 1. Systems and Units
+# Systems and Units
 
-Units are eV, Å, fs, amu, eV/Å, K. Precision is tiered
-(`StorageReal` / `WorkReal` / always-double `AccReal`). Frame is
-`blocks` + `meta` + `box` only.
+Before choosing a solver, we need to decide what the calculation represents.
+Two argon atoms in empty space, a water molecule in solution, and a repeating
+crystal are different physical systems even when their inputs all begin with
+a list of coordinates. Making those choices explicit is the first step
+toward a result that another person can understand and reproduce.
 
-Every later chapter reuses this model. Finite-difference gradient checks are the
-universal validation: analytic forces from any evaluator must match energy
-differences within a documented tolerance before they feed MD or Minimize.
+**Learning goals.** Describe a state, identify boundary conditions, convert
+energies and forces consistently, and separate model error from numerical error.
+
+**Before you begin.** Coordinates and elementary algebra are enough. Return
+to [Mathematical Tools](mathematical-tools.md) when derivatives first appear.
+
+## Energy, force, and state
+
+A configuration contains nuclear positions
+$\mathbf R=(\mathbf R_1,\ldots,\mathbf R_N)$. A classical dynamical state also
+contains velocities and masses. A potential assigns an energy $U(\mathbf R)$
+to each configuration; the force on atom $A$ is
+
+$$\mathbf F_A=-\nabla_A U.$$
+
+The gradient collects the slopes along three coordinate directions. The
+minus sign means that an unconstrained force points downhill in energy.
+Finding a force and integrating motion are separate tasks: an energy model
+does not, by itself, specify how a trajectory is advanced.
+
+A periodic cell repeats its contents by lattice translations. An isolated
+boundary condition does not. A large box may reduce image interactions, but
+does not change the mathematical boundary condition of a periodic solver.
+Record both the coordinates and the boundary treatment.
+
+## Dimensional reasoning
+
+Classical MD works in a LAMMPS `units` style chosen per run
+(`MD(units="real")`, `Driver::set_units`, default `lj` as in LAMMPS): every
+parameter, the timestep, temperatures, pressures and the frame are in that
+style, exactly as a LAMMPS input deck would state them, and nothing is
+converted. `metal` is eV, Å, ps, g/mol, K and bar; `real` is kcal/mol, Å, fs,
+g/mol, K and atm. Electronic method objects may additionally expose Hartree
+energies and bohr lengths. An energy conversion alone is insufficient for a
+force: both its numerator and its length denominator must be converted.
+
+For orientation, $1\,E_h\simeq27.211386$ eV and $1\,a_0\simeq0.529177$ Å,
+so $1\,E_h/a_0\simeq51.4221$ eV/Å. Use the project's unit registry for
+implementation, rather than repeatedly entering rounded constants. The
+real, metal and electron styles carry conversion factors in Newton's
+equation (LAMMPS `ftm2v`, `mvv2e`), which the engine takes from the selected
+style.
+
+More precision cannot repair a missing physical interaction. Distinguish
+error in the model, error in solving that model, and uncertainty from finite
+sampling. Each calls for a different convergence or validation experiment.
+
+## Specifying the physical problem
+
+A coordinate file is only part of a model. Before calculating, record:
+
+- **Particles and interactions.** Identify the elements or force-field types,
+  masses, interaction model, and parameter source. A classical type label is
+  not automatically an atomic number.
+- **Electronic state, when needed.** Specify total charge and spin convention,
+  as well as the basis or pseudopotential. Geometry alone does not determine
+  the electronic problem supplied to a solver.
+- **Boundaries.** State which directions are periodic and how long-range
+  interactions are treated. For an isolated calculation, identify the actual
+  isolated-boundary implementation rather than relying on a large cell alone.
+- **Initial motion.** For dynamics, give velocities or their initialization
+  distribution, any removed center-of-mass motion, and the random seed.
+- **Requested result.** An energy at fixed geometry, a stationary structure,
+  and a time average require different calculations and stopping criteria.
+
+Keep this description alongside the input, not only in a lab notebook that
+another reader cannot access. It provides a practical starting point for
+reproducing a result or explaining why two calculations differ.
+
+## Three kinds of uncertainty
+
+**Model error** concerns the physics omitted or approximated: for example,
+a pair model may miss a material's environmental response. **Numerical error**
+concerns the solution of that model: a time step, basis cutoff, convergence
+tolerance, or rounding choice may be inadequate. **Sampling uncertainty**
+concerns estimating an average from a finite, often correlated trajectory.
+
+Choose a check that addresses the relevant question. Finite differences test
+whether a force is consistent with an energy. Time-step refinement tests
+integration. Independent equilibrated runs test reproducibility of a
+statistical estimate. Comparison with experiment also tests the model and
+the correspondence between simulated and experimental conditions.
+
+Two implementations can agree because they share the same approximation,
+input mistake, or data source. Conversely, an apparent disagreement can be
+a difference in units or boundaries rather than an algorithmic failure.
+The [external-reference appendix](appendix-pyscf-oracle.md) explains how to
+separate these possibilities without treating a reference program as infallible.
+
+## Practice plan
+
+Begin with two argon atoms on one axis. Write their positions as
+$(0,0,0)$ and $(r,0,0)$, with positive separation $r$, and specify masses,
+pair parameters, and boundaries. The pair model is developed in
+[Molecular Dynamics](ch10-classical-md.md); here the aim is to learn which
+inputs and checks must accompany even this small calculation.
+
+1. Record the units of each input and each requested output. Convert one
+   force between energy-per-length conventions by converting both factors.
+2. Translate both atoms by the same vector, keeping the boundary treatment
+   consistent, and exchange their labels. An isolated, field-free model of
+   identical atoms should give the same energy. This tests symmetry, not
+   agreement with experiment.
+3. Check one force component against central energy differences at several
+   displacements. Use a separation away from a cutoff or singularity.
+4. Save the model description, measured difference, tolerance, and software
+   revision. A failed check identifies something to investigate; it is not
+   a reason to hide the result or immediately make the calculation larger.
+
+The frame and water fragments below introduce data storage and an electronic
+force check. They are not substitutes for a complete two-argon setup, and
+allocation alone does not initialize a physical state.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
 
 ```cpp
 cpu::Frame f(n);
@@ -16,75 +132,17 @@ f.box = cpu::Box::cubic(L);     // (Å)
 double E = f.meta.get(kEnergy);    // (eV) for classical/AM1; SCF writes eV too
 ```
 
-Cross-check the textbook energy in the RHF results table of Chapter 2 —
-an end-to-end proof that units, Frame, and SCF agree.
-
-Before any method — Hartree-Fock, DFT, molecular dynamics — there is a
-system: a set of atoms in a box, described in a fixed set of units, stored
-at a chosen numerical precision, and only trusted once it has been
-*validated* against an independent oracle. This chapter is about those four
-foundations. It runs almost no physics; instead it establishes the
-vocabulary and the discipline every later chapter takes for granted.
-
-The six questions this book asks of every topic apply here too:
-
-1. **The concept.** What is a "system" in computational chemistry, and why
-   do units and precision deserve a chapter of their own?
-2. **The Atomiverse representation.** How does a `cpu::Frame` hold a system,
-   which units are canonical, and what the tiered precision model buys you.
-3. **The C++ API.** `cpu::Frame`, `cpu::Box` / `Mat3`, `core/units.h`,
-   `core/precision.h`, and the finite-difference gradient checker.
-4. **The expected result.** What "correct" looks like — and its numerical
-   class.
-5. **The validation.** How a finite-difference gradient certifies an
-   analytic one.
-6. **The recurring pattern.** Why the same "one canonical value, one
-   independent check" discipline reappears in every method chapter.
-
-If the architecture (Driver / Component / Frame) is new to you, read
-[Chapter 0](ch00-architecture.md) first. This
-chapter assumes you know that a `cpu::Frame` is the shared state object and
-picks up from there.
-
-## The Concept: A System Is Coordinates Plus Conventions
-
-A molecular or condensed-phase system is, at bottom, a list of nuclei with
-positions and charges, optionally a periodic cell, and — for dynamics — a
-velocity per atom. That much is obvious. What is less obvious to newcomers
-is that the *conventions* wrapped around those numbers are as much a part of
-the system as the numbers themselves:
-
-- **Units.** A bond length of `0.74` is meaningless until you say Ångström.
-  A force of `0.01` is meaningless until you say eV/Å (or Hartree/Bohr).
-  Quantum chemistry and molecular dynamics grew up in different unit systems
-  — Hartree/Bohr on one side, eV/Å/fs/amu on the other — and mixing them
-  silently is the single most common source of "my energy is off by 27×"
-  bugs.
-- **Precision.** Every number is a finite-width float. Where you spend 64
-  bits and where you can afford 32 is a deliberate engineering choice, not
-  an accident of the compiler.
-- **Validation.** A gradient that *looks* right is worthless; a gradient
-  that agrees with a finite-difference probe of its own energy to
-  1e-5 Ha/Bohr is trustworthy.
-
-Atomiverse fixes each of these as an explicit, documented policy so that a
-number read out of a `cpu::Frame` always means exactly one thing.
-
-## The Representation: One Frame, One Unit System
+## Frame initialization
 
 ### The frame holds the system
 
-There is no separate "System" or "Molecule" class. The
-[`cpu::Frame`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/frame.h) *is* the system.
-You size it once with the atom count, fill the per-atom arrays, set the box,
-and hand it to a driver:
-
-```cpp
+In these CPU examples,
+[`cpu::Frame`cpp
 using namespace ATV;
 
 cpu::Frame frame(3);                       // three atoms: an H2O
 
-auto type = frame.span(kAtom_type);
+auto type = frame.span(kAtom_atomic_number);
 auto x = frame.span(kAtom_x);
 auto y = frame.span(kAtom_y);
 auto z = frame.span(kAtom_z);
@@ -111,7 +169,7 @@ const double y[] = {0.0, 0.7555, -0.7555};
 const double z[] = {0.1178, -0.4712, -0.4712};
 const double mass[] = {15.999, 1.008, 1.008};
 for (int i = 0; i < frame.nlocal(); ++i) {
-    frame.span(kAtom_type)[i] = type[i];
+    frame.span(kAtom_atomic_number)[i] = type[i];
     frame.span(kAtom_x)[i] = x[i];
     frame.span(kAtom_y)[i] = y[i];
     frame.span(kAtom_z)[i] = z[i];
@@ -121,15 +179,16 @@ frame.box = cpu::Box::cubic(100.0);
 ```
 
 Two conventions here are load-bearing and reused in every quantum chapter:
-`frame.span(kAtom_type)[i]` stores the **atomic number Z** (not a force-field type
-index), and positions are in **Ångström**. Results land back on the same
+`frame.span(kAtom_atomic_number)[i]` stores the **atomic number Z** — the
+species column. The force-field type index is a separate column,
+`kAtom_type`, read only by per-type force-field tables; a quantum method
+never reads it. Positions are in **Ångström**. Results land back on the same
 object: `frame.meta.get(kEnergy)` (potential energy, eV) and the
 `kAtom_fx/fy/fz` columns (eV/Å) after a driver runs.
 
 ### The box is `cpu::Box`
 
-The simulation cell is [`cpu::Box`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/box.h),
-constructed most often with `cpu::Box::cubic(L)` and assigned to
+The simulation cell is [`cpu::Boxcpu::Box::cubic(L)` and assigned to
 `frame.box`. It owns the 3×3 cell matrix plus a per-step-immutable cache and
 exposes the queries force kernels need:
 
@@ -140,26 +199,24 @@ double vol = box.volume();                 // [Å^3]
 bool  cube = box.is_orthorhombic();        // true here
 ```
 
-For an isolated molecule the box only has to be large enough that periodic
-images do not interact; `Mat3::cubic(100.0)` is the idiom used across the
-SCF tests. For condensed-phase MD the box is the physical cell and its
-minimum-image helper (`min_image`) is on the hot path — see
-[Chapter 10](ch10-classical-md.md).
+A cell object and a periodic Hamiltonian are not the same thing. A Gaussian
+molecular solver may store a cell without summing over periodic images;
+a periodic electrostatic solver may still couple images in a large cell.
+Check the evaluator's boundary convention and, where relevant, converge
+the vacuum spacing. For condensed-phase MD, the cell and periodic-image
+rules are part of the physical model.
 
-### Units are eV / Å / fs / amu — with one explicit bridge to Hartree/Bohr
+### Converting units
 
-The MD-internal ("metal") unit system is the canonical one:
-**energy in eV, length in Å, time in fs, mass in amu, temperature in K,
-force in eV/Å.** Electronic-structure solvers work *internally* in
-Hartree/Bohr/Rydberg but convert into `frame.meta.get(kEnergy)` in eV before
-returning, so the frame you read is always in metal units.
+Classical MD frames are in the run's LAMMPS `units` style, with the factor
+table of LAMMPS `Update::set_units` (`core/unit_system.h`). Electronic-
+structure solvers work *internally* in Hartree/Bohr/Rydberg and report
+energies in eV and forces in eV/Å, the `metal` energy and length; run a
+Born-Oppenheimer MD with them in `units metal` (time in ps).
 
 When you do need to cross the bridge — say to compare a force against a
 PySCF gradient reported in Hartree/Bohr — do it explicitly through
-[`core/units.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/units.h), never with a
-hand-typed magic number:
-
-```cpp
+[`core/units.h`cpp
 using namespace ATV::units;
 
 double r_bohr  = convert(0.74, Length::Angstrom, Length::Bohr);   // 1.3984
@@ -168,23 +225,20 @@ double f_au    = convert(f_ev_A, Force::eVPerAngstrom, Force::HartreePerBohr);
 ```
 
 The conversion factors (`BOHR = 0.52917721092 Å`,
-`HARTREE2EV = 27.211386245988`) are pinned to PySCF's `nist.py` so integrals
-match the ground-truth path bit-for-bit. Named constants like
+`HARTREE2EV = 27.211386245988`) are the values quoted by the inherited reference material. Using the same
+conversion constants removes one source of discrepancy; it does not imply
+bitwise agreement of integrals or other calculations. Named constants like
 `ATV::units::kB_ev_per_k` (Boltzmann, eV/K) and `ATV::units::kHartreeInEv` are
 available for the common conversions.
 
-## The Precision Model: Spend Bits Where They Matter
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
 
-A naïve engine picks one floating type — usually `double` — and uses it
-everywhere. Atomiverse instead follows LAMMPS and *tiers* precision by
-**role**, in [`core/precision.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/precision.h).
-The principle: the wide, safe type is the default; a narrower type is spent
-only at a deliberately chosen role, never at an accumulator where it would
-corrupt results.
+## Numerical precision
 
-### Floating-point tiers
-
-| tier | role | default | may lower to `float`? |
+Floating-point formats trade memory and speed against rounding error.
+The reference implementation distinguishes precision by **role**, in [`core/precision.hfloat`? |
 |---|---|---|---|
 | `ATV::StorageReal` | per-atom persistent state (x, v, f as stored) | `double` | yes |
 | `ATV::WorkReal` | transient per-kernel compute scalars | `double` | yes |
@@ -194,10 +248,18 @@ corrupt results.
 time with `-DATV_REAL_STORAGE=float` and `-DATV_REAL_WORK=float` — the
 LAMMPS "mixed mode" recipe, where pairwise math runs in single precision but
 *accumulates* into double. `AccReal` is `double` by construction and has no
-override: it is the one place precision is never economized, because an
-energy sum or a Fock-matrix element in `float` would swamp the physics with
-round-off. The CUDA backend mirrors these exactly as `real_t` / `work_t` /
-`prec_t` (`cuda/frame/types.cuh`).
+override: it is the one place precision is never economized, to reduce accumulation error in energies and electronic matrices. This
+policy is a safeguard, not a proof that a computed result is accurate.
+
+The CUDA backend has its own single knob, `-DATV_CUDA_PREC_MODE=double|mixed|single`,
+and assigns one type per physical role (`cuda/frame/types.cuh`). The
+default `double` is FP64 throughout. `mixed` follows OpenMM: force math,
+splines and FFTs in FP32; coordinates stored as an FP32 value plus an FP32
+correction and reconstructed in FP64 for integration; velocities, masses,
+thermostat/barostat state, energies and virials in FP64; forces accumulated
+in 64-bit fixed point (OpenMM's resolution and range, about ±2.2·10⁶ eV/Å).
+A force outside that range stops integration and is reported with the atom
+tag and step when the run returns.
 
 ### Integer tiers
 
@@ -205,34 +267,41 @@ The same "size by role" idea applies to integers (a port of LAMMPS
 `lmptype.h`), so 64-bit width is paid only where a count can actually
 overflow 32 bits:
 
-| tier | role | SMALLBIG (default) | BIGBIG |
+| tier | role | SMALLBIG | BIGBIG (default) |
 |---|---|---|---|
 | `ATV::LocalInt` | on-rank counts / indices | int32 | int32 |
-| `ATV::ImageInt` | periodic image flags | int32 | int64 |
+| `ATV::ImageInt` | one periodic image flag (per component) | int32 | int32 |
 | `ATV::TagInt` | global atom / molecule IDs | int32 | int64 |
 | `ATV::BigInt` | global totals (natoms, ntimestep) | int64 | int64 |
 
-`-DATV_ID_SIZE=bigbig` widens `TagInt` and `ImageInt` to 64-bit for
-billion-atom runs; `BigInt` is always 64-bit so a global count never wraps.
+The default `-DATV_ID_SIZE=bigbig` keeps `TagInt` 64-bit for billion-atom
+runs; `smallbig` narrows it to 32-bit.
+`ImageInt` stays int32 in both builds: Atomiverse stores the three image
+counters unpacked, so each reaches ±2³¹ box crossings (LAMMPS packs three
+into one `imageint`, ±2²⁰ each under BIGBIG). `BigInt` is always 64-bit to
+increase the representable range of global counts; any finite-width integer
+still has a maximum value.
 There is no catch-all floating-point or integer type: every declaration names
 the tier matching its physical role.
 
-You rarely construct these types by hand — the frame's arrays already carry
-the right tier. What matters is understanding *why* an energy read from
-`frame.meta.get(kEnergy)` is trustworthy even in a mixed-precision build: the
-storage may be `float`, but everything that *sums* is `double`.
+A wider accumulator cannot recover information already lost when a position
+or an intermediate force was rounded. Test mixed precision against a
+well-converged calculation of the same model, using the property that will
+support the physical conclusion. Bitwise agreement is a different requirement
+from agreement within a justified numerical tolerance.
 
-## The Validation Discipline: Finite Differences Certify a Gradient
+## Finite-difference checks
 
-Here is the concrete, runnable pay-off of this chapter — and the template
-for how every later result is checked.
+The following water fragment illustrates the structure of an electronic
+force check. It contains a geometry placeholder and is not a standalone
+program; use a complete example matching the selected source revision.
 
 An analytic nuclear gradient is fast but easy to get subtly wrong (a missing
 Pulay term, a sign error, a grid-response omission). The independent oracle
 is the *definition* of a derivative: displace each coordinate by ±h, run the
-energy at both points, and take the central difference. If the analytic
-gradient and the finite-difference gradient agree, both are almost certainly
-correct.
+energy at both points, and take the central difference. Agreement over a stable displacement range supports consistency of the
+energy and gradient at the tested geometries. It does not establish that
+the Hamiltonian is physically adequate or that the two paths share no error.
 
 Atomiverse ships this oracle as a public function so you can validate any
 geometry yourself, using the same
@@ -256,16 +325,16 @@ auto analytic = rhf.forces(frame);
 Two details are worth internalizing because they recur:
 
 - **The SCF must be gradient-stationary.** Finite differences probe the
-  *true* energy surface, so if the SCF is only loosely converged the ±h
+  chosen model's numerically evaluated energy surface, so if the SCF is only loosely converged the ±h
   energies carry convergence noise and the FD gradient is dominated by it.
   For a tight check, pass a tight tolerance to the constructor
   (`RHF{basis, 0, /*tol=*/1e-12}`) and set `rhf.conv_tol_grad = 1e-9`.
   (This is exactly what the vibration tests do — see
-  [Chapter 14](ch14-vibrations.md).)
-- **The step size `h` trades truncation against round-off.** The default
-  `5e-5 Å` sits in the sweet spot for double-precision energies; far smaller
-  and catastrophic cancellation dominates, far larger and the
-  central-difference truncation error `O(h^2)` shows.
+  [Molecular Vibrations](ch14-vibrations.md).)
+- **The step size `h` trades truncation against round-off.** The inherited fragment quotes
+  `5e-5 Å` as a starting value, not a universally optimal displacement.
+  Seek a stable interval for the chosen geometry, energy accuracy, and
+  target tolerance, as explained in [Mathematical Tools](mathematical-tools.md).
 
 ### The result and its class
 
@@ -275,49 +344,30 @@ applies*. Following the validation policy:
 | class | meaning | check |
 |---|---|---|
 | exact | bit-reproducible | golden file / `static_assert` (integer counts, phase order) |
-| numerical tolerance | float round-off only | abs/rel compare (analytic ∇ vs FD **1e-5 Ha/Bohr**) |
+| numerical tolerance | controlled discretization, iteration, and rounding errors | abs/rel compare (analytic ∇ vs FD **1e-5 Ha/Bohr**) |
 | physical approximation | method/basis error | compare to a converged reference |
 | stochastic variation | RNG-seeded dynamics | seed control + ensemble means |
 
-The analytic-vs-FD gradient agreement is a **numerical-tolerance** claim: the
-two computations are of the *same* quantity, so any disagreement beyond
-round-off is a bug. Contrast that with an RHF energy vs experiment, which is
-a *physical-approximation* claim — the gap is the method, not the code.
-Never report a number without saying which class it belongs to.
+The analytic-versus-finite-difference comparison concerns two estimates of
+the same model derivative. Differences can reflect displacement truncation,
+incomplete electronic convergence, rounding, or an implementation error.
+Vary the numerical controls before diagnosing a bug. An RHF comparison with
+experiment introduces further differences in the physical model and in
+experimental conditions; it should not be interpreted as a code-only test.
 
-## The Recurring Pattern: One Canonical Value, One Independent Check
-
-The discipline you just saw — compute a quantity one way, then confirm it a
-completely different way that shares no code — is the spine of the whole
-manual:
-
-- **Gradients** (this chapter, [Chapter 6](ch06-hybrid-dft.md)): analytic
-  vs finite difference.
-- **Frequencies** ([Chapter 14](ch14-vibrations.md)): the finite-difference
-  Hessian *is* the independent check on the analytic gradient, then compared
-  against PySCF's analytic Hessian.
-- **XC functionals** ([Chapter 5](ch05-kohn-sham-dft.md)): the native implementation vs
-  libxc to 1e-12.
-- **Energy conservation** ([Chapter 10](ch10-classical-md.md)): an NVE
-  trajectory that keeps total energy flat is the integrator's own
-  self-check.
-- **Backends**: CPU is the reference; CUDA is *compared*, not assumed
-  identical, because it runs mixed precision.
-
-CPU is always the reference backend, and every physical quantity has a CPU
-golden value. That is why this foundations chapter lives here: units,
-precision, and the finite-difference habit are what make a "golden value"
-mean something.
-
-## Validation Reference
+## Reference provenance
 
 Analytic gradients are checked end-to-end against PySCF in
-[`regressions/scf/h2o_rhf_sto3g_grad`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_sto3g_grad)
+`h2o_rhf_sto3g_grad`
 and, on a larger basis, in
-[`regressions/scf/h2o_rhf_def2svp_grad`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_def2svp_grad).
+`h2o_rhf_def2svp_grad`.
 The gradient-result plumbing itself has a unit test in
-[`tests/cpu/scf/test_gradient_result.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_gradient_result.cpp). The tiered-precision types are
+[`tests/cpu/scf/test_gradient_result.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/scf/test_gradient_result.cpp). The tiered-precision types are
 defined and documented in
-[`include/atomiverse/core/precision.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/precision.h);
+`precision.h`;
 the unit registry in
-[`include/atomiverse/core/units.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/units.h).
+`units.h`.
+
+## Questions for reflection
+
+Why does converting Hartree to eV not finish a force conversion? Which error would remain if a calculation used exact arithmetic but an unsuitable potential?

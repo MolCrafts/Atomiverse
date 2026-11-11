@@ -79,37 +79,74 @@ Start with these CPU headers:
 - [`scf_guess.h` — SCFInitialGuess](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/scf_guess.h)
 - [`gradient_result.h` — GradientResult (the `forces()` return)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h)
 - [`XCType`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
-- [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) + [`cpu::pw::PWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_evaluator.h) — plane-wave DFT
-- [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) + [`cpu::gpw::GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) — GPW DFT (bind the *evaluator*: it is the Frame-shaped entry point)
+- [`cpu::pw::PW`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) — plane-wave DFT
+- [`cpu::gpw::GpwDft`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_solver.h) — GPW DFT: a `Driver<gpw::Phase>` node with Frame `run` / `forces` / `stress`; mount the method directly for Born–Oppenheimer work. [`GPWEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/gpw/gpw_evaluator.h) remains for electronic propagators and unmigrated callers.
 - [`cpu::semiempirical::AM1` / `RM1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/am1_solver.h) — NDDO
 - [`cpu::semiempirical::DFTB2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/dftb2.h) (also `DFTB0`, `DFTB3`) — SCC-DFTB on in-tree Slater-Koster tables
 - [`cpu::semiempirical::GFN1`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/semiempirical/gfn1.h) (also `GFN0`, `GFN2`, `IPEA`) — extended tight binding, energy + analytic forces (H/C/N/O)
 
+Gaussian `run(frame)` requests energy and preserves unrequested forces;
+`forces(frame)` explicitly requests the analytic nuclear forces.
+
+### Extend molecular CPU exchange–correlation
+
+Implement [`electronic::XcFunctional`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/electronic/xc_functional.h)
+and pass a `shared_ptr<const XcFunctional>` to RKS or UKS. The callback evaluates
+one batch of physical density samples; the existing SCF Driver owns iteration,
+grids and analytic nuclear forces. The checked `evaluate` entry validates
+shapes and complete finite outputs; providers override `evaluate_batch`.
+Energy output is per volume (Ha/Bohr³), with spin-resolved first derivatives.
+
+The [independent consumer example](https://github.com/MolCrafts/Atomiverse/tree/dev/examples/extensions/xc)
+uses only installed headers and `find_package(Atomiverse CONFIG REQUIRED
+COMPONENTS HF EVALUATE)`. Rho/sigma are supported for CPU molecular KS;
+tau/Laplacian, custom hybrid operators, second-order response kernels and CUDA
+callbacks require further implementation. No new Driver or per-plugin enum
+member is needed.
+
 ### Run SCF workflows on the CUDA backend
 
 CUDA SCF presents the same public shape as CPU —
-`cuda::scf::RHF{basis}.run(frame)` / `.forces(frame)`, `Frame` in and out — but
-**not the same coverage**: restricted HF only (no UHF/KS), device-native
-integrals and analytic forces over STO-3G s/p shells (l ≤ 1, H…O), and
-`forces()` throws outside that envelope rather than falling back. See
+`cuda::scf::RHF{basis}.run(frame)` / `.forces(frame)` and
+`cuda::scf::UHF{basis, n_alpha, n_beta, charge}.run(frame)` / `.forces(frame)`,
+`Frame` in and out. The iteration is `cuda::Driver<scf::Phase>` (`fock`,
+`mix`, `diagonalize`, `density`, `check`). `set_evaluator` mounts that
+driver in one Plan slot. Coverage is narrower than the CPU: no KS, ROHF, or
+GHF. Device-native RHF integrals cover Cartesian shells with l ≤ 3
+(`launch_*_sp` for STO-3G s/p, `launch_*_lgt1` for Cartesian l ≤ 3,
+including a device CartToSph sandwich for spherical def2 / cc). Analytic
+forces stay on STO-3G s/p; other bases throw `launch_rhf_forces_lgt1`.
+l ≥ 4 throws `launch_eri_g`. There
+is no host ERI fill. `cuda::scf::UHF` throws outside STO-3G l ≤ 1
+(`launch_eri_sp`, `launch_uhf_forces_sp`). See
 [Switching backends](../user-guide/backend-switching.md). Start with these
 headers:
 
 - [`cuda::scf::RHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/rhf.cuh)
+- [`cuda::scf::UHF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/uhf.cuh)
+- [`cuda::scf::MP2`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/mp2.cuh)
 - [`cuda::scf::SCFEvaluator`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/scf/scf_evaluator.cuh)
 - [`cuda::Evaluate`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/evaluate.cuh)
 - [`cuda::single_point`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cuda/evaluate/single_point.cuh)
+
+`cuda::scf::MP2{cuda_rhf}.run(frame)` performs canonical closed-shell
+correlation on the live device RHF workspace. Frozen core and OS/SS scaling
+are supported; MP2 forces are unavailable. Mutable calls publish the
+correlated total in the Frame [eV] and return spin channels and energies
+[Hartree]. The extra correlation scratch budget defaults to 512 MiB,
+excluding HF and library contexts. See the [CUDA MP2 example](../tutorial/methods/scf-mp2.md#cuda-closed-shell-mp2)
+and the `benchmarks/perf/scf/bench_mp2_cpu_vs_cuda.cu` harness.
 
 ### Record output and analyze results
 
 Start with these types:
 
 - [`cpu::Thermo`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/thermo.h)
-- [`cpu::write_frame_xyz` / `cpu::write_frame_zarr` (molrs-backed single-frame writers; the latter writes a `*.mrec` checkpoint)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
-- [`cpu::MrecRecorder` (streaming `*.mrec` MD trajectory Recorder — `set_record`, step stride, `time` axis from the integrator; needs the molrs TrajectoryWriter bridge)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec_recorder.h)
+- [`cpu::write_xyz_frame` / `cpu::write_mrec_frame` (molpy-backed single-frame writers; the latter writes a `*.mrec` checkpoint)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/io/frame_writer.h)
+- [`cpu::MrecRecorder` (streaming `*.mrec` MD trajectory Recorder — `set_record`, step stride, `time` axis from the integrator; needs molpy's `MrecWriter` bridge)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec_recorder.h)
 - [`cpu::MrecWriter` (bare streaming writer beneath the Recorder)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/mrec.h)
 - [`ATV::RDF`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/rdf.h)
-- [trajectory analysis (`cpu::compute::*` batch computes + streaming accumulators)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/trajectory_metrics.h)
+- [trajectory analysis (`cpu::compute::*` streaming accumulators — push frame by frame, no batch form)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/trajectory_metrics.h)
 - [`cpu::XyzRecorder` (MD trajectory Recorder — `set_record`, step stride)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz_recorder.h)
 - [`cpu::XYZ` (bare XYZ writer beneath the Recorder)](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/record/xyz.h)
 - [`mulliken_charge` and related helpers](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/observe/mulliken.h)

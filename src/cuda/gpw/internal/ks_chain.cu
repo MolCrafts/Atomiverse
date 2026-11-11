@@ -2,18 +2,19 @@
 /// @brief Composed device KS stage: collocate → Poisson → XC → V_eff → integrate.
 ///
 /// All scientific loops are device kernels. Host only owns the plan/workspace
-/// object and D2H of energy scalars at the end of `run`. Closed-shell PBE-GGA
-/// reuses `cuda::pw::internal::xc_pbe_grid` and `SpectralFftDevice` (CPU
+/// object and D2H of energy scalars at the end of `run`. Restricted/collinear GGA
+/// reuses shared `cuda::xc` point laws and `SpectralFftDevice` (CPU
 /// `gradient` / `divergence` conventions). Multigrid path reuses
 /// `MultigridTransferDevice` (CPU `prolong_fft` / `restrict_fft`).
 
 #include "atomiverse/cuda/gpw/internal/ks_chain.cuh"
 
 #if defined(ATV_HAS_PW)
-#include "atomiverse/cuda/planewave/internal/xc_pbe.cuh"
+#include "atomiverse/cuda/xc/xc_pbe.cuh"
 #endif
 
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <string>
 
@@ -28,17 +29,32 @@ constexpr int kBlock = 256;
 
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
-        throw std::runtime_error(std::string("cuda::gpw KsChainDevice: ")
-                                 + what + " failed ("
-                                 + cudaGetErrorString(e) + ")");
+        throw std::runtime_error(std::string("cuda::gpw KsChainDevice: ") + what
+                                 + " failed (" + cudaGetErrorString(e) + ")");
+}
+
+// Publish a complete buffer set only after every allocation succeeds. Retrying
+// a first UKS/GGA launch after allocation failure must not see partial state.
+template <std::size_t N>
+std::array<double*, N> allocate_fields(std::size_t bytes) {
+    std::array<double*, N> fields{};
+    try {
+        for (auto& field : fields)
+            check_cuda(cudaMalloc(&field, bytes), "allocate spin fields");
+    } catch (...) {
+        for (auto* field : fields)
+            cudaFree(field);
+        throw;
+    }
+    return fields;
 }
 
 /// @brief n[i] = rho[i] − n_ion[i]  (n_ion null ⇒ n = rho).
 __global__ void n_tot_kernel(const double* __restrict__ rho,
-                             const double* __restrict__ n_ion, double* __restrict__ n,
-                             long nr) {
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+                             const double* __restrict__ n_ion,
+                             double* __restrict__ n, long nr) {
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     if (i >= nr)
         return;
     const double ion = (n_ion != nullptr) ? n_ion[i] : 0.0;
@@ -46,15 +62,15 @@ __global__ void n_tot_kernel(const double* __restrict__ rho,
 }
 
 /// @brief veff = v_es + vxc [+ v_loc]; optional local e_loc = Σ ρ V_loc (unscaled).
-__global__ void
-assemble_veff_kernel(const double* __restrict__ v_es,
-                     const double* __restrict__ vxc,
-                     const double* __restrict__ v_loc,
-                     const double* __restrict__ rho, double* __restrict__ veff,
-                     double* __restrict__ e_loc_acc, long nr) {
+__global__ void assemble_veff_kernel(const double* __restrict__ v_es,
+                                     const double* __restrict__ vxc,
+                                     const double* __restrict__ v_loc,
+                                     const double* __restrict__ rho,
+                                     double* __restrict__ veff,
+                                     double* __restrict__ e_loc_acc, long nr) {
     __shared__ double s[kBlock];
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     double loc = 0.0;
     if (i < nr) {
         const double vloc = (v_loc != nullptr) ? v_loc[i] : 0.0;
@@ -83,8 +99,8 @@ __global__ void assemble_veff_uks_kernel(
     double* __restrict__ veff_a, double* __restrict__ veff_b,
     double* __restrict__ e_loc_acc, long nr) {
     __shared__ double s[kBlock];
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     double loc = 0.0;
     if (i < nr) {
         const double vloc = (v_loc != nullptr) ? v_loc[i] : 0.0;
@@ -111,8 +127,8 @@ __global__ void assemble_veff_uks_kernel(
 __global__ void add_fields_kernel(const double* __restrict__ a,
                                   const double* __restrict__ b,
                                   double* __restrict__ out, long nr) {
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     if (i < nr)
         out[i] = a[i] + b[i];
 }
@@ -120,8 +136,8 @@ __global__ void add_fields_kernel(const double* __restrict__ a,
 /// @brief vxc[i] -= div[i]  (GGA: local v_ρ minus spectral ∇·flux).
 __global__ void vxc_sub_div_kernel(double* __restrict__ vxc,
                                    const double* __restrict__ div, long nr) {
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     if (i < nr)
         vxc[i] -= div[i];
 }
@@ -140,13 +156,9 @@ GpwGridDesc to_poisson_grid(const CollocateGridDesc& c) {
 } // namespace
 
 KsChainDevice::KsChainDevice(const CollocateGridDesc& coll, cudaStream_t stream)
-    : coll_grid_(coll)
-    , poisson_grid_(to_poisson_grid(coll))
-    , ntot_(coll.npts())
-    , weight_(coll.weight())
-    , stream_(stream)
-    , poisson_(poisson_grid_, stream)
-    , spectral_(poisson_grid_, stream) {
+    : coll_grid_(coll), poisson_grid_(to_poisson_grid(coll)),
+      ntot_(coll.npts()), weight_(coll.weight()), stream_(stream),
+      poisson_(poisson_grid_, stream), spectral_(poisson_grid_, stream) {
     if (ntot_ <= 0)
         throw std::runtime_error("cuda::gpw KsChainDevice: empty grid");
     const size_t bytes = static_cast<size_t>(ntot_) * sizeof(double);
@@ -181,24 +193,35 @@ KsChainDevice::~KsChainDevice() {
     cudaFree(d_rho_b_);
     cudaFree(d_vxc_b_);
     cudaFree(d_veff_b_);
+    cudaFree(d_gbx_);
+    cudaFree(d_gby_);
+    cudaFree(d_gbz_);
 }
 
 void KsChainDevice::ensure_uks_buffers_() {
-    if (d_rho_a_ != nullptr)
+    if (d_rho_a_)
         return;
-    const size_t bytes = static_cast<size_t>(ntot_) * sizeof(double);
-    check_cuda(cudaMalloc(&d_rho_a_, bytes), "malloc rho_a");
-    check_cuda(cudaMalloc(&d_rho_b_, bytes), "malloc rho_b");
-    check_cuda(cudaMalloc(&d_vxc_b_, bytes), "malloc vxc_b");
-    check_cuda(cudaMalloc(&d_veff_b_, bytes), "malloc veff_b");
+    const auto fields =
+        allocate_fields<4>(static_cast<std::size_t>(ntot_) * sizeof(double));
+    d_rho_a_ = fields[0];
+    d_rho_b_ = fields[1];
+    d_vxc_b_ = fields[2];
+    d_veff_b_ = fields[3];
+}
+void KsChainDevice::ensure_uks_gga_buffers_() {
+    if (d_gbx_)
+        return;
+    const auto fields =
+        allocate_fields<3>(static_cast<std::size_t>(ntot_) * sizeof(double));
+    d_gbx_ = fields[0];
+    d_gby_ = fields[1];
+    d_gbz_ = fields[2];
 }
 
-KsChainEnergies KsChainDevice::run_from_rho(const double* d_rho_in,
-                                            const double* d_n_ion,
-                                            const double* d_v_loc,
-                                            const DeviceProduct* d_prods,
-                                            int nprod, double* d_acc,
-                                            KsXcKind xc) {
+KsChainEnergies
+KsChainDevice::run_from_rho(const double* d_rho_in, const double* d_n_ion,
+                            const double* d_v_loc, const DeviceProduct* d_prods,
+                            int nprod, double* d_acc, cpu::xc::XCType xc) {
     if (d_rho_in == nullptr)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run_from_rho: null density");
@@ -217,27 +240,29 @@ KsChainEnergies KsChainDevice::run_from_rho(const double* d_rho_in,
 
     // 4. XC → V_xc, ε_xc; E_xc
     const int nr = static_cast<int>(ntot_);
-    if (xc == KsXcKind::PADE) {
-        xc_lda_grid(d_rho_, d_vxc_, d_exc_, nr, stream_);
-        xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_, stream_);
-    } else if (xc == KsXcKind::PBE) {
+    if (xc == cpu::xc::XCType::PADE) {
+        ::ATV::cuda::xc::xc_lda_grid(d_rho_, d_vxc_, d_exc_, nr, stream_);
+        ::ATV::cuda::xc::xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_,
+                                   stream_);
+    } else if (cpu::xc::is_pbe_family(xc)) {
 #if defined(ATV_HAS_PW)
         spectral_.gradient(d_rho_, d_gx_, d_gy_, d_gz_);
-        ::ATV::cuda::pw::internal::xc_pbe_grid(d_rho_, d_gx_, d_gy_, d_gz_,
-                                               d_vxc_, d_exc_, nr, stream_);
-        xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_, stream_);
+        ::ATV::cuda::xc::xc_pbe_grid(xc, d_rho_, d_gx_, d_gy_, d_gz_, d_vxc_,
+                                     d_exc_, nr, stream_);
+        ::ATV::cuda::xc::xc_energy(d_rho_, d_exc_, nr, weight_, d_e_xc_,
+                                   stream_);
         spectral_.divergence(d_gx_, d_gy_, d_gz_, d_div_);
         vxc_sub_div_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_vxc_, d_div_,
                                                              ntot_);
         check_cuda(cudaGetLastError(), "vxc_sub_div_kernel");
 #else
-        throw std::runtime_error(
-            "cuda::gpw KsChainDevice::run_from_rho: KsXcKind::PBE requires "
-            "ATV_BUILD_PW (shared cuda::pw::internal::xc_pbe_grid)");
+        throw std::runtime_error("cuda::gpw KsChainDevice::run_from_rho: "
+                                 "PBE-family XC requires "
+                                 "ATV_BUILD_PW (shared cuda::xc::xc_pbe_grid)");
 #endif
     } else {
-        throw std::invalid_argument(
-            "cuda::gpw KsChainDevice::run_from_rho: unsupported KsXcKind");
+        throw std::invalid_argument("cuda::gpw KsChainDevice::run_from_rho: "
+                                    "unsupported cpu::xc::XCType");
     }
 
     // 5. Assemble V_eff; optional ∫ρ V_loc
@@ -278,7 +303,7 @@ KsChainEnergies KsChainDevice::run_from_rho(const double* d_rho_in,
 
 KsChainEnergies KsChainDevice::run(const DeviceProduct* d_prods, int nprod,
                                    const double* d_n_ion, const double* d_v_loc,
-                                   double* d_acc, KsXcKind xc) {
+                                   double* d_acc, cpu::xc::XCType xc) {
     if (d_prods == nullptr || nprod <= 0)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run: need ≥1 product");
@@ -301,7 +326,7 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
                                        const DeviceProduct* d_prods_b,
                                        int nprod_b, const double* d_n_ion,
                                        const double* d_v_loc, double* d_acc_a,
-                                       double* d_acc_b, KsXcKind xc) {
+                                       double* d_acc_b, cpu::xc::XCType xc) {
     if (nprod_a < 0 || nprod_b < 0)
         throw std::invalid_argument(
             "cuda::gpw KsChainDevice::run_uks: nprod_a/b must be >= 0");
@@ -314,24 +339,64 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     if (nprod_a == 0 && nprod_b == 0)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run_uks: need ≥1 product in α or β");
-    if (xc != KsXcKind::PADE)
-        throw std::invalid_argument(
-            "cuda::gpw KsChainDevice::run_uks: first UKS cut is Padé LSD only "
-            "(KsXcKind::PADE). PBE-UKS is a deeper product slug.");
+    if (d_acc_a != nullptr && nprod_a == 0)
+        throw std::runtime_error(
+            "cuda::gpw KsChainDevice::run_uks: d_acc_a needs α products");
+    if (d_acc_b != nullptr && nprod_b == 0)
+        throw std::runtime_error(
+            "cuda::gpw KsChainDevice::run_uks: d_acc_b needs β products");
 
     ensure_uks_buffers_();
     const size_t bytes_rho = static_cast<size_t>(ntot_) * sizeof(double);
-    const int grid_dim =
-        static_cast<int>((ntot_ + kBlock - 1) / static_cast<long>(kBlock));
-    const int nr = static_cast<int>(ntot_);
-
-    // 1. Collocate dual spin densities (or zero).
     check_cuda(cudaMemsetAsync(d_rho_a_, 0, bytes_rho, stream_), "zero rho_a");
     check_cuda(cudaMemsetAsync(d_rho_b_, 0, bytes_rho, stream_), "zero rho_b");
     if (nprod_a > 0)
         collocate_products(coll_grid_, d_prods_a, nprod_a, d_rho_a_, stream_);
     if (nprod_b > 0)
         collocate_products(coll_grid_, d_prods_b, nprod_b, d_rho_b_, stream_);
+
+    build_uks_fields_(d_n_ion, d_v_loc, xc);
+    if (d_acc_a != nullptr)
+        integrate_products(coll_grid_, d_prods_a, nprod_a, d_veff_, d_acc_a,
+                           stream_);
+    if (d_acc_b != nullptr)
+        integrate_products(coll_grid_, d_prods_b, nprod_b, d_veff_b_, d_acc_b,
+                           stream_);
+    return read_uks_energies_(d_v_loc != nullptr);
+}
+
+KsChainEnergies KsChainDevice::run_uks_from_rho(const double* d_rho_a,
+                                                const double* d_rho_b,
+                                                const double* d_n_ion,
+                                                const double* d_v_loc,
+                                                cpu::xc::XCType xc) {
+    if (d_rho_a == nullptr || d_rho_b == nullptr)
+        throw std::invalid_argument(
+            "cuda::gpw KsChainDevice::run_uks_from_rho: need both spin "
+            "densities");
+    ensure_uks_buffers_();
+    device_copy_field(d_rho_a, d_rho_a_, ntot_, stream_);
+    device_copy_field(d_rho_b, d_rho_b_, ntot_, stream_);
+    build_uks_fields_(d_n_ion, d_v_loc, xc);
+    return read_uks_energies_(d_v_loc != nullptr);
+}
+
+void KsChainDevice::build_uks_fields_(const double* d_n_ion,
+                                      const double* d_v_loc,
+                                      cpu::xc::XCType xc) {
+    if (xc != cpu::xc::XCType::PADE && !cpu::xc::is_pbe_family(xc))
+        throw std::invalid_argument(
+            "cuda::gpw KsChainDevice::run_uks_from_rho: unsupported XC type");
+#if !defined(ATV_HAS_PW)
+    if (cpu::xc::is_pbe_family(xc))
+        throw std::runtime_error("cuda::gpw KsChainDevice: PBE-family spin XC "
+                                 "requires ATV_BUILD_PW");
+#endif
+    if (cpu::xc::is_pbe_family(xc))
+        ensure_uks_gga_buffers_();
+    const int grid_dim =
+        static_cast<int>((ntot_ + kBlock - 1) / static_cast<long>(kBlock));
+    const int nr = static_cast<int>(ntot_);
 
     // 2. ρ = ρ_α + ρ_β; n = ρ − n_ion
     add_fields_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_rho_a_, d_rho_b_,
@@ -342,9 +407,33 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     // 3. Poisson(n) → V_es
     poisson_.solve(d_n_tot_, d_v_es_);
 
-    // 4. Padé LSD → V_xc^α/β, E_xc
-    xc_lda_grid_lsd(d_rho_a_, d_rho_b_, d_vxc_, d_vxc_b_, d_exc_, nr, stream_);
-    xc_energy_lsd(d_rho_a_, d_rho_b_, d_exc_, nr, weight_, d_e_xc_, stream_);
+    // 4. Spin XC -> both complete functional potentials before integration.
+    if (xc == cpu::xc::XCType::PADE) {
+        ::ATV::cuda::xc::xc_lda_grid_lsd(d_rho_a_, d_rho_b_, d_vxc_, d_vxc_b_,
+                                         d_exc_, nr, stream_);
+    } else {
+#if defined(ATV_HAS_PW)
+        spectral_.gradient(d_rho_a_, d_gx_, d_gy_, d_gz_);
+        spectral_.gradient(d_rho_b_, d_gbx_, d_gby_, d_gbz_);
+        ::ATV::cuda::xc::xc_pbe_spin_grid(
+            xc, d_rho_a_, d_rho_b_, d_gx_, d_gy_, d_gz_, d_gbx_, d_gby_, d_gbz_,
+            d_vxc_, d_vxc_b_, d_exc_, nr, stream_,
+            ::ATV::cuda::xc::SpinDensityPolicy::RawFunctional);
+        check_cuda(cudaGetLastError(), "spin GGA point functional");
+        spectral_.divergence(d_gx_, d_gy_, d_gz_, d_div_);
+        vxc_sub_div_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_vxc_, d_div_,
+                                                             ntot_);
+        check_cuda(cudaGetLastError(), "alpha spin GGA divergence subtraction");
+        spectral_.divergence(d_gbx_, d_gby_, d_gbz_, d_div_);
+        vxc_sub_div_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_vxc_b_, d_div_,
+                                                             ntot_);
+        check_cuda(cudaGetLastError(), "beta spin GGA divergence subtraction");
+#endif
+    }
+    // RawFunctional matches GPW's raw-density energy convention. Keep the
+    // unmodified densities; do not use PW's positive-part energy preparation.
+    ::ATV::cuda::xc::xc_energy_lsd(d_rho_a_, d_rho_b_, d_exc_, nr, weight_,
+                                   d_e_xc_, stream_);
 
     // 5. Dual V_eff; optional ∫ρ V_loc on total ρ
     if (d_v_loc != nullptr)
@@ -356,24 +445,9 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     if (d_v_loc != nullptr)
         scale_scalar_kernel<<<1, 1, 0, stream_>>>(d_e_loc_, weight_);
     check_cuda(cudaGetLastError(), "assemble_veff_uks");
+}
 
-    // 6. Optional dual integrate (shape-only; products may differ only by
-    // weight — product list geometry is shared on the product path).
-    if (d_acc_a != nullptr) {
-        if (d_prods_a == nullptr || nprod_a <= 0)
-            throw std::runtime_error(
-                "cuda::gpw KsChainDevice::run_uks: d_acc_a needs α products");
-        integrate_products(coll_grid_, d_prods_a, nprod_a, d_veff_, d_acc_a,
-                           stream_);
-    }
-    if (d_acc_b != nullptr) {
-        if (d_prods_b == nullptr || nprod_b <= 0)
-            throw std::runtime_error(
-                "cuda::gpw KsChainDevice::run_uks: d_acc_b needs β products");
-        integrate_products(coll_grid_, d_prods_b, nprod_b, d_veff_b_, d_acc_b,
-                           stream_);
-    }
-
+KsChainEnergies KsChainDevice::read_uks_energies_(bool has_local_pp) {
     KsChainEnergies out;
     check_cuda(cudaMemcpyAsync(&out.e_hartree, poisson_.last_e_hartree_device(),
                                sizeof(double), cudaMemcpyDeviceToHost, stream_),
@@ -381,7 +455,7 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     check_cuda(cudaMemcpyAsync(&out.e_xc, d_e_xc_, sizeof(double),
                                cudaMemcpyDeviceToHost, stream_),
                "D2H e_xc");
-    if (d_v_loc != nullptr) {
+    if (has_local_pp) {
         check_cuda(cudaMemcpyAsync(&out.e_locgrid, d_e_loc_, sizeof(double),
                                    cudaMemcpyDeviceToHost, stream_),
                    "D2H e_loc");
@@ -411,9 +485,9 @@ KsMultiGridChainDevice::KsMultiGridChainDevice(const MultigridDesc& mg,
                 throw std::runtime_error(
                     "cuda::gpw KsMultiGridChainDevice: empty level grid");
             const size_t bytes = static_cast<size_t>(nl) * sizeof(double);
-            check_cuda(cudaMalloc(&d_rho_level_[static_cast<std::size_t>(l)],
-                                  bytes),
-                       "malloc rho_level");
+            check_cuda(
+                cudaMalloc(&d_rho_level_[static_cast<std::size_t>(l)], bytes),
+                "malloc rho_level");
             if (l > 0)
                 check_cuda(
                     cudaMalloc(&d_v_level_[static_cast<std::size_t>(l)], bytes),
@@ -428,8 +502,8 @@ KsMultiGridChainDevice::KsMultiGridChainDevice(const MultigridDesc& mg,
         xfer_.resize(static_cast<std::size_t>(std::max(0, nlev_ - 1)));
         for (int l = 1; l < nlev_; ++l) {
             xfer_[static_cast<std::size_t>(l - 1)] =
-                std::make_unique<MultigridTransferDevice>(mg.level(l), mg.fine(),
-                                                          stream);
+                std::make_unique<MultigridTransferDevice>(mg.level(l),
+                                                          mg.fine(), stream);
         }
     } catch (...) {
         for (double* p : d_rho_level_)
@@ -451,10 +525,11 @@ KsMultiGridChainDevice::~KsMultiGridChainDevice() {
     cudaFree(d_prolong_scratch_);
 }
 
-KsChainEnergies KsMultiGridChainDevice::run(
-    const DeviceProduct* const* d_prods_by_level, const int* nprod_by_level,
-    const double* d_n_ion, const double* d_v_loc, double* const* d_acc_by_level,
-    KsXcKind xc) {
+KsChainEnergies
+KsMultiGridChainDevice::run(const DeviceProduct* const* d_prods_by_level,
+                            const int* nprod_by_level, const double* d_n_ion,
+                            const double* d_v_loc,
+                            double* const* d_acc_by_level, cpu::xc::XCType xc) {
     if (d_prods_by_level == nullptr || nprod_by_level == nullptr)
         throw std::runtime_error(
             "cuda::gpw KsMultiGridChainDevice::run: null product tables");
@@ -500,9 +575,8 @@ KsChainEnergies KsMultiGridChainDevice::run(
     }
 
     // 3–5. Fine-grid KS (no fine integrate — done per-level below).
-    KsChainEnergies out =
-        fine_->run_from_rho(d_rho_fine_, d_n_ion, d_v_loc, nullptr, 0, nullptr,
-                            xc);
+    KsChainEnergies out = fine_->run_from_rho(d_rho_fine_, d_n_ion, d_v_loc,
+                                              nullptr, 0, nullptr, xc);
 
     // 6. Restrict V_eff + integrate per level.
     if (d_acc_by_level != nullptr) {
@@ -514,8 +588,8 @@ KsChainEnergies KsMultiGridChainDevice::run(
                 d_V = fine_->d_veff();
             } else {
                 double* d_vl = d_v_level_[static_cast<std::size_t>(l)];
-                xfer_[static_cast<std::size_t>(l - 1)]->restrict(fine_->d_veff(),
-                                                                 d_vl);
+                xfer_[static_cast<std::size_t>(l - 1)]->restrict(
+                    fine_->d_veff(), d_vl);
                 d_V = d_vl;
             }
             integrate_products(mg_.level(l), d_prods_by_level[l],

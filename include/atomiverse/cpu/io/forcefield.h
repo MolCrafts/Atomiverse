@@ -1,7 +1,7 @@
 /// @file cpu/io/forcefield.h
-/// @brief ForceField — classical style tables (molrs/molpy-aligned API).
+/// @brief ForceField — classical style tables (molpy-aligned API).
 ///
-/// **Data only.** Not a Driver, not a Component. Mirrors molrs
+/// **Data only.** Not a Driver, not a Component. Mirrors molpy
 /// `ForceField::def_pairstyle` / `def_bondstyle` / … + `def_type` /
 /// `set_special_bonds`. Does not install into a Plan.
 ///
@@ -21,7 +21,7 @@
 namespace ATV {
 namespace cpu {
 
-/// @brief Key/value parameter bag for one style or type (molrs Params-shaped).
+/// @brief Key/value parameter bag for one style or type (molpy Params-shaped).
 struct StyleParams {
     std::map<std::string, double> num;
     std::map<std::string, std::string> str;
@@ -53,14 +53,14 @@ struct Style {
     std::map<std::string, StyleParams> types;
 };
 
-/// @brief Classical force-field data (molrs-aligned).
+/// @brief Classical force-field data (molpy-aligned).
 class ForceField {
   public:
     explicit ForceField(std::string name = "ff") : name_(std::move(name)) {}
 
     const std::string& name() const noexcept { return name_; }
 
-    // ── def_*style (molrs ForceField) ─────────────────────────────────
+    // ── def_*style (molpy ForceField) ─────────────────────────────────
 
     /// @brief Register or retrieve pair style (e.g. `"lj/cut"`, `"coul/cut"`).
     Style& def_pairstyle(std::string name, StyleParams params = {}) {
@@ -84,7 +84,7 @@ class ForceField {
         return def_style_("kspace", std::move(name), std::move(params));
     }
 
-    /// @brief Add a type under an existing style (molrs `def_type` / style.def_*type).
+    /// @brief Add a type under an existing style (molpy `def_type` / style.def_*type).
     /// @param category `"pair"` / `"bond"` / `"angle"` / …
     /// @param style    style name already registered
     /// @param type_name dash-form type id (e.g. `"O"`, `"O-H"`, `"H-O-H"`)

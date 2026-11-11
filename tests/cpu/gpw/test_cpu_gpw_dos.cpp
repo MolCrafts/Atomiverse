@@ -1,6 +1,6 @@
 /// @file test_cpu_gpw_dos.cpp
 /// @brief Unit tests for GPW multi-k DOS free math and parameter guards.
-///        No full SCF e2e (that lives in regressions/gpw/gpw-dos-si).
+///        No full SCF e2e (that lives in regressions/gpw/bands-dos).
 
 #include <cmath>
 #include <stdexcept>
@@ -68,17 +68,16 @@ TEST(GpwIntegrateDosTo, PartialCutoffHalfPeak) {
 }
 
 TEST(GpwDosGuards, RejectsGammaOnlyMesh) {
-    GpwDft method;
-    method.cell[0] = method.cell[1] = method.cell[2] = 10.0;
+    GpwDft method{std::vector<Kind>{}, /*cutoff_ry=*/50.0,
+                  ATV::cpu::xc::XCType::PADE};
     method.n_occ = 1;
-    method.cutoff_ry = 50.0;
     // No atoms needed for the multi-k gate — compute throws before run when
     // mesh is Γ-only. Still need a non-empty atom list for API contract if it
     // got past the gate; the gate fires first.
     Dos dos;
     dos.k_mesh = 1; // forces Γ after clear of explicit list
     dos.sigma_ha = 0.025;
-    std::vector<GpwAtom> atoms; // empty ok — gate is before run
+    ATV::cpu::Frame atoms(0); // empty ok — gate is before run
     EXPECT_THROW(dos.compute(method, atoms), std::invalid_argument);
 }
 
@@ -86,8 +85,9 @@ TEST(GpwDosGuards, RejectsNonPositiveSigma) {
     Dos dos;
     dos.k_mesh = 2;
     dos.sigma_ha = 0.0;
-    GpwDft method;
-    std::vector<GpwAtom> atoms;
+    GpwDft method{std::vector<Kind>{}, /*cutoff_ry=*/300.0,
+                  ATV::cpu::xc::XCType::PADE};
+    ATV::cpu::Frame atoms(0);
     EXPECT_THROW(dos.compute(method, atoms), std::invalid_argument);
 }
 

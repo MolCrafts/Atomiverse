@@ -26,15 +26,15 @@ local minimum instead of getting stuck in it.
 An *ensemble* is the set of macroscopic quantities held fixed. Three
 presets over one shared trial loop, plus the four movers they compose:
 
-=========================  =================================================
-``MC(T, seed)``            canonical NVT — fixed N, V, T
-``NptMC(T, P, seed)``      isothermal-isobaric — fixed N, P, T; V sampled
-``GCMC(T, mu, m, seed)``   grand-canonical muVT — fixed mu, V, T; N sampled
-``TranslateMove(delta)``   displace one random atom in [-delta, delta]^3
-``VolumeMove(dv_max)``     isotropic volume change (NPT)
-``InsertDeleteMove(z, m)`` insert / delete one atom of species z (muVT)
-``MoveSelector()``         weighted mix — fires exactly ONE child per trial
-=========================  =================================================
+===========================  =================================================
+``MC(T, seed)``              canonical NVT — fixed N, V, T
+``NptMC(T, P, seed)``        isothermal-isobaric — fixed N, P, T; V sampled
+``GCMC(T, mu, m, seed)``     grand-canonical muVT — fixed mu, V, T; N sampled
+``TranslateMove(delta)``     displace one random atom in [-delta, delta]^3
+``VolumeMove(dv_max)``       isotropic volume change (NPT)
+``InsertDeleteMove(t,z,m)``  insert / delete one atom: type t, species z
+``MoveSelector()``           weighted mix — fires exactly ONE child per trial
+===========================  =================================================
 
 **NVT** holds the particle number N, the cell volume V and the temperature
 T fixed — the plain canonical ensemble. **NPT** holds N, the external
@@ -46,15 +46,11 @@ infinite particle reservoir at that mu — the ensemble for adsorption and
 vapour problems, where the average population is the answer.
 
 Canonical deep paths are ``atomiverse.montecarlo.<Name>``; the top-level
-``atomiverse.<Name>`` are the same objects. All seven resolve on an
-extension built with ``ATV_BUILD_MC=ON``, which is the CMake default and
-what the shipped wheel uses, so they stay in the top-level ``__all__``.
-The exception is a staged CLI install, which selects modules explicitly:
-include ``mc`` there (``python -m atomiverse config md mc ...``) or the
-extension is built without these names. On such a build this module still
-imports and exports nothing (the same capability probe the compile-optional
-``KSpacePME`` / ``PW`` use), and ``atomiverse.MC`` raises ``AttributeError``
-naming ``ATV_BUILD_MC`` instead of failing bare.
+``atomiverse.<Name>`` are the same objects. They exist on an extension built
+with the ``mc`` module (``ATV_BUILD_MC=ON``). On one built without it,
+importing this module raises ``MissingDomainError`` (an ``ImportError``)
+naming the flag, and ``atomiverse.MC`` raises ``AttributeError`` with the
+same message.
 
 Monte Carlo is CPU-only: there is no ``device=`` argument on these
 constructors.
@@ -84,9 +80,9 @@ and no explicit ``build()``; the first ``run()`` compiles the plan::
     print(sim.acceptance_ratio(), sim.current_energy())
 
 ``set_neighbor`` takes the ordinary ``NeighborList(cutoff, skin)``, but
-builds it in the MC-correct form (``every=1, delay=0, check=yes``): an
-accepted trial move can cross the skin at any trial, so the rebuild check
-is never deferred the way MD's ``delay=10`` default defers it.
+builds it in the MC-correct form (``every=1, delay=0, check=yes``, the
+LAMMPS defaults MD uses too): an accepted trial move can cross the skin at
+any trial, so the rebuild check must never be deferred.
 
 Two sizing rules are the caller's, not the engine's: the neighbor cutoff
 must be at least the pair potential's cutoff, and ``cutoff + skin`` must
@@ -133,11 +129,12 @@ of a free particle of mass m [amu] at temperature T [K]; it is what
 carries the "per unit volume" in z. For an ideal gas z *is* the number
 density, so ``mu = k_B T ln(z Lambda**3)`` converts a target density into
 the argument to pass. This is the convention of Frenkel & Smit eq. (5.6.9)
-and of ``regressions/mc/gcmc_lj/REFERENCE.md``, which pins <N>(z) against
+and of ``regressions/mc/metropolis/REFERENCE.md``, which pins <N>(z) against
 the Mayer activity expansion using exactly this relation.
 
 Because ``GCMC(T, mu, m, seed)`` builds ``Lambda`` from its ``m``, the
-``InsertDeleteMove(z, m)`` that actually stamps atoms into the cell must
+``InsertDeleteMove(type, atomic_number, m)`` that actually stamps atoms into
+the cell must
 carry the **same** mass. Two different masses mean the sampled chemical
 potential is not the requested one — a silent error, since nothing
 compares them.
@@ -182,11 +179,13 @@ energies and never assembles a gradient, ``fx``/``fy``/``fz`` come back
 
 Variable particle number
 ------------------------
-muVT changes N, and ``to_molrs`` cannot write a changed row count into an
+muVT changes N, and ``to_molpy`` cannot write a changed row count into an
 existing block. After a ``GCMC.run()`` that inserted or deleted atoms, the
 frame's ``atoms`` block is therefore *rebuilt* at the new N — every column
-comes back, including ``mass`` and ``atomic_number``, which the fixed-N
-path treats as immutable inputs and does not write. Accumulate ``n_atoms()``
+comes back, including ``mass`` and whichever identity columns the frame
+carried (``atomic_number`` for the species, ``type_id`` for the force-field
+type), which the fixed-N path treats as immutable inputs and does not
+write. An identity column the input frame lacked is not invented. Accumulate ``n_atoms()``
 along the chain for <N>.
 
 Single rank
@@ -203,45 +202,42 @@ the Mayer activity expansion.
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, require_domain
 
-# The whole surface is gated on ATV_HAS_MC in bind_mc.cpp, so one probe on the
-# preset the extension always carries when MC is on covers all seven names.
-if hasattr(_cpp, "MC"):
-    #: Canonical NVT Metropolis — ``cpu::mc::MC(temperature [K], seed)``.
-    MC = _cpp.MC
+require_domain(__name__, "mc")
 
-    #: Isothermal-isobaric MC —
-    #: ``cpu::mc::NptMc(temperature [K], pressure [eV/A^3], seed)``.
-    NptMC = _cpp.NptMC
+#: Canonical NVT Metropolis — ``cpu::mc::MC(temperature [K], seed)``.
+MC = _cpp.MC
 
-    #: Grand-canonical muVT MC —
-    #: ``cpu::mc::Gcmc(temperature [K], mu [eV], mass [amu], seed)``.
-    GCMC = _cpp.GCMC
+#: Isothermal-isobaric MC —
+#: ``cpu::mc::NptMc(temperature [K], pressure [eV/A^3], seed)``.
+NptMC = _cpp.NptMC
 
-    #: Single-particle displacement Mover —
-    #: ``cpu::mc::TranslateMove(delta [A])``.
-    TranslateMove = _cpp.TranslateMove
+#: Grand-canonical muVT MC —
+#: ``cpu::mc::Gcmc(temperature [K], mu [eV], mass [amu], seed)``.
+GCMC = _cpp.GCMC
 
-    #: Isotropic volume-change Mover — ``cpu::mc::VolumeMove(dv_max [A^3])``.
-    VolumeMove = _cpp.VolumeMove
+#: Single-particle displacement Mover —
+#: ``cpu::mc::TranslateMove(delta [A])``.
+TranslateMove = _cpp.TranslateMove
 
-    #: Grand-canonical insertion/deletion Mover —
-    #: ``cpu::mc::InsertDeleteMove(z = atomic number, mass [amu])``.
-    InsertDeleteMove = _cpp.InsertDeleteMove
+#: Isotropic volume-change Mover — ``cpu::mc::VolumeMove(dv_max [A^3])``.
+VolumeMove = _cpp.VolumeMove
 
-    #: Weighted mix of Movers, one child per trial —
-    #: ``cpu::mc::MoveSelector()``.
-    MoveSelector = _cpp.MoveSelector
+#: Grand-canonical insertion/deletion Mover —
+#: ``cpu::mc::InsertDeleteMove(z = atomic number, mass [amu])``.
+InsertDeleteMove = _cpp.InsertDeleteMove
 
-    __all__ = [
-        "MC",
-        "NptMC",
-        "GCMC",
-        "TranslateMove",
-        "VolumeMove",
-        "InsertDeleteMove",
-        "MoveSelector",
-    ]
-else:
-    __all__: list[str] = []
+#: Weighted mix of Movers, one child per trial —
+#: ``cpu::mc::MoveSelector()``.
+MoveSelector = _cpp.MoveSelector
+
+__all__ = [
+    "MC",
+    "NptMC",
+    "GCMC",
+    "TranslateMove",
+    "VolumeMove",
+    "InsertDeleteMove",
+    "MoveSelector",
+]

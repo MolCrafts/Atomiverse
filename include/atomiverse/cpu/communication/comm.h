@@ -8,6 +8,9 @@
 /// bag. `forward_comm(Packer&)` replays the Halo sendlists through a
 /// `ForwardPacker` (`component/comm.h`).
 ///
+/// Extra-field reverse protocol follows LAMMPS `src/comm.h`, checkout
+/// `a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b`.
+///
 /// Copyright (2003) Sandia Corporation.  Under the terms of Contract
 /// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
 /// certain rights in this software.  This software is distributed under
@@ -27,6 +30,7 @@ struct LaunchContext;
 
 /// @brief Extra-field packer. Complete type lives in `component/comm.h`.
 class ForwardPacker;
+class ReversePacker;
 using Packer = ForwardPacker;
 
 /// @brief Abstract spatial communicator: borders / forward / reverse /
@@ -71,6 +75,10 @@ class Comm {
     ///        Single-rank and empty tables are no-ops; posts no MPI then.
     /// @param packer Plugin packer (`pack_forward_comm` / `unpack_forward_comm`).
     virtual void forward_comm(Packer& packer) = 0;
+
+    /// @brief Extra-field reduction: replay Halo swaps in reverse order.
+    /// @param packer Contiguous ghost pack / sendlist accumulate protocol.
+    virtual void reverse_comm(ReversePacker& packer) = 0;
 
     /// @brief Ghost-shell width used by `setup` / `borders`.
     /// @param cutoff Pair-interaction cutoff [Angstrom].

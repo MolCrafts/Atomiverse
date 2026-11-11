@@ -1,19 +1,33 @@
-"""Native build pipeline aligned with CMake: config → compile → install.
+"""Native build pipeline: config → compile → install, owned by pip.
 
-Streams **raw** cmake output to the calling terminal (no capture).
+``config`` resolves product modules into CMake defines and records them.
+``compile`` runs ``pip wheel`` on the checkout's ``python/`` project with
+``wheel.cmake=true`` — scikit-build-core drives CMake in a persistent build
+tree, so a repeat compile is incremental — and on the checkout's
+``<ATV_MOLPY_PATH>/molpy``, leaving two wheels in ``<build_dir>/dist``.
+``install`` hands both to ``pip install``, so the extension is a
+RECORD-tracked file of the distribution: ``pip uninstall`` removes it and an
+upgrade replaces it.
 
-Build tree defaults to ``<source_root>/build`` (normal cmake layout).
-Full state lives in ``<build_dir>/atomiverse_cli_state.json``.
-A tiny pointer file next to the installed package records which build_dir
-is active for subsequent ``compile`` / ``install`` / ``status`` calls.
-There is **no** home-directory cache.
+molpy and the native bridge are built from the same local molpy checkout.
+ATV_MOLPY_PATH selects that repository; its default is the sibling ../molpy.
+A Frame capsule from a separately built molpy fails the capsule-name check.
+
+Raw pip / cmake output streams to the terminal (no capture). State lives in
+``<build_dir>/atomiverse_cli_state.json``; the active build dir is recorded
+per environment in ``<sys.prefix>/share/atomiverse/active_build.json``,
+never inside the installed package and never in the home directory.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
+import sysconfig
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence
@@ -25,17 +39,21 @@ from atomiverse.cli.config import (
     enabled_modules_from_defines,
     resolve_defines,
 )
-from atomiverse.cli.source import SourceSpec
+from atomiverse.cli.source import SourceSpec, molpy_source_root
 
-# Filename for full state inside the cmake binary dir.
 _STATE_NAME = "atomiverse_cli_state.json"
-# Pointer in the installed pure package: {"build_dir": "…"}.
-_ACTIVE_POINTER_NAME = "_active_build.json"
+
+# Build-time packages `pip wheel --no-build-isolation` needs in this env.
+_NATIVE_REQUIRES = {
+    "scikit_build_core": "scikit-build-core>=0.10",
+    "nanobind": "nanobind>=2.4",
+    "maturin": "maturin>=1.0,<2.0",
+}
 
 
 def default_build_dir(source_root: Path) -> Path:
-    """Default cmake ``-B`` directory: ``<src>/build``."""
-    return source_root.resolve() / "build"
+    """Default build directory: ``<src>/build-python``."""
+    return source_root.resolve() / "build-python"
 
 
 def state_file_in_build(build_dir: Path) -> Path:
@@ -44,25 +62,12 @@ def state_file_in_build(build_dir: Path) -> Path:
 
 
 def active_build_pointer_path() -> Path:
-    """Small pointer file beside the installed ``atomiverse`` package."""
-    import atomiverse
-
-    return Path(atomiverse.__file__).resolve().parent / _ACTIVE_POINTER_NAME
-
-
-def write_active_build_pointer(build_dir: Path) -> Path:
-    """Record which build tree subsequent compile/install should use."""
-    path = active_build_pointer_path()
-    path.write_text(
-        json.dumps({"build_dir": str(Path(build_dir).resolve())}, indent=2)
-        + "\n",
-        encoding="utf-8",
-    )
-    return path
+    """Per-environment pointer to the active build directory."""
+    return Path(sys.prefix) / "share" / "atomiverse" / "active_build.json"
 
 
 def read_active_build_dir() -> Path:
-    """Resolve the active build dir from the package pointer."""
+    """Resolve the active build dir from the environment pointer."""
     path = active_build_pointer_path()
     if not path.is_file():
         raise ConfigError(
@@ -76,55 +81,35 @@ def read_active_build_dir() -> Path:
     return bdir.resolve()
 
 
-def state_path() -> Path:
-    """Path of the active full build state (inside the build tree)."""
-    return state_file_in_build(read_active_build_dir())
-
-
-# Back-compat alias
-def install_state_path() -> Path:
-    return state_path()
-
-
 @dataclass
 class BuildState:
     """Persisted between ``config`` / ``compile`` / ``install``."""
 
     version: str
     source_root: str  # Atomiverse repo root (contains CMakeLists.txt)
-    python_dir: str  # python/ package dir
+    python_dir: str  # python/ project pip builds
     build_dir: str
     defines: Dict[str, str] = field(default_factory=dict)
     modules: List[str] = field(default_factory=list)
     fingerprint: str = ""
-    configured: bool = False
-    compiled: bool = False
+    wheel: str = ""  # native wheel produced by compile
+    molpy_wheel: str = ""  # molpy wheel built from the local molpy checkout by compile
     installed: bool = False
 
     def save(self, path: Optional[Path] = None) -> Path:
-        bdir = Path(self.build_dir)
-        p = path if path is not None else state_file_in_build(bdir)
+        p = path if path is not None else state_file_in_build(Path(self.build_dir))
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(
             json.dumps(asdict(self), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        # Keep package pointer so compile/install find this tree.
-        try:
-            write_active_build_pointer(bdir)
-        except OSError as exc:
-            print(
-                f"warning: could not write active-build pointer: {exc}",
-                file=sys.stderr,
-            )
         return p
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "BuildState":
-        if path is not None:
-            p = Path(path)
-        else:
-            p = state_file_in_build(read_active_build_dir())
+        p = Path(path) if path is not None else state_file_in_build(
+            read_active_build_dir()
+        )
         if not p.is_file():
             raise ConfigError(
                 "no build state — run `python -m atomiverse config …` first "
@@ -137,113 +122,133 @@ class BuildState:
         return cls(**{k: data[k] for k in cls.__dataclass_fields__ if k in data})
 
 
-def repo_root_from_source(source: SourceSpec) -> Path:
-    """Locate Atomiverse CMake root from a resolved :class:`SourceSpec`.
-
-    *source.location* is the ``python/`` package directory for local trees.
-    """
-    loc = Path(source.location).resolve()
-    if not source.is_url:
-        # python/ → parent is repo root
-        if (loc / "CMakeLists.txt").is_file():
-            return loc
-        if (loc.parent / "CMakeLists.txt").is_file():
-            return loc.parent
-        if loc.name == "python" and (loc.parent / "CMakeLists.txt").is_file():
-            return loc.parent
-        raise ConfigError(
-            f"cannot find CMakeLists.txt for source {loc} "
-            "(pass --src to an Atomiverse checkout)"
-        )
-    raise ConfigError(
-        "remote --url source is not yet supported for the staged cmake "
-        "pipeline; use --src /path/to/Atomiverse for config/compile/install"
-    )
-
-
-def build_cmake_configure_command(
-    source_root: Path,
+def build_wheel_command(
+    python_dir: Path,
     build_dir: Path,
     defines: Mapping[str, str],
     *,
     python: Optional[str] = None,
 ) -> List[str]:
-    """Assemble ``cmake -S … -B … -D…`` (no execution)."""
-    if defines.get("ATV_BUILD_PYTHON", "").upper() not in ("ON", "TRUE", "1"):
-        raise ConfigError("config requires ATV_BUILD_PYTHON=ON")
+    """Assemble the ``pip wheel`` command for the native wheel (no execution).
 
-    exe = python or sys.executable
+    Every define is passed as ``-C cmake.define.KEY=VALUE``, overriding the
+    pyproject defaults, so the wheel holds exactly the requested modules.
+    """
+    if defines.get("ATV_BUILD_PYTHON", "").upper() not in ("ON", "TRUE", "1"):
+        raise ConfigError("native wheel requires ATV_BUILD_PYTHON=ON")
     cmd: List[str] = [
-        "cmake",
-        "-S",
-        str(source_root),
-        "-B",
-        str(build_dir),
-        f"-DPython_EXECUTABLE={exe}",
-        "-DCMAKE_BUILD_TYPE=Release",
+        python or sys.executable,
+        "-m",
+        "pip",
+        "wheel",
+        str(python_dir),
+        "--verbose",  # stream the backend's CMake output instead of a spinner
+        "--no-deps",
+        "--no-build-isolation",
+        "--wheel-dir",
+        str(build_dir / "dist"),
+        "-C",
+        "wheel.cmake=true",
+        "-C",
+        f"build-dir={build_dir / 'cmake'}",
+        "-C",
+        "cmake.build-type=Release",
     ]
     for key in sorted(defines):
-        cmd.append(f"-D{key}={defines[key]}")
+        cmd.extend(["-C", f"cmake.define.{key}={defines[key]}"])
     return cmd
 
 
-def build_cmake_compile_command(
-    build_dir: Path,
-    *,
-    jobs: Optional[int] = None,
-    target: str = "_atomiverse",
+def build_molpy_wheel_command(
+    source_root: Path, build_dir: Path, *, python: Optional[str] = None, molpy_root: Optional[Path] = None
 ) -> List[str]:
-    cmd: List[str] = ["cmake", "--build", str(build_dir), "--target", target]
-    if jobs is not None and jobs > 0:
-        cmd.extend(["-j", str(jobs)])
-    else:
-        cmd.append("-j")
-    return cmd
+    """Assemble the ``pip wheel`` command for molpy from the local molpy checkout.
 
-
-def build_cmake_install_command(
-    build_dir: Path,
-    prefix: Path,
-) -> List[str]:
-    """``cmake --install`` into *prefix* (typically a site-packages dir)."""
+    Run with ``CARGO_TARGET_DIR=<build_dir>/molpy-target`` (see
+    ``molpy_target_dir``) so a repeat compile reuses the cargo build.
+    """
     return [
-        "cmake",
-        "--install",
-        str(build_dir),
-        "--prefix",
-        str(prefix),
+        python or sys.executable,
+        "-m",
+        "pip",
+        "wheel",
+        str((molpy_root if molpy_root is not None else molpy_source_root(source_root)) / "molpy"),
+        "--verbose",
+        "--no-deps",
+        "--no-build-isolation",
+        "--wheel-dir",
+        str(build_dir / "dist"),
     ]
 
 
-def site_packages_prefix() -> Path:
-    """Directory that should receive ``atomiverse/_atomiverse*.so``.
+def molpy_target_dir(build_dir: Path) -> Path:
+    """Persistent cargo target directory of the molpy wheel build."""
+    return build_dir / "molpy-target"
 
-    CMake installs to ``${PREFIX}/atomiverse/``, so PREFIX is site-packages.
+
+def build_install_command(
+    wheels: Sequence[Path], *, python: Optional[str] = None
+) -> List[str]:
+    """``pip install`` of the native and molpy wheels.
+
+    ``--force-reinstall`` because the pure and native wheels share a
+    version, and the local molpy wheel may share the installed one's;
+    ``--no-deps`` because the pure install already resolved them.
     """
-    import site
-
-    # Prefer the purelib for the running interpreter.
-    try:
-        from sysconfig import get_paths
-
-        pure = get_paths().get("purelib")
-        if pure:
-            return Path(pure)
-    except Exception:
-        pass
-    paths = site.getsitepackages()
-    if not paths:
-        raise ConfigError("cannot determine site-packages for cmake --install")
-    return Path(paths[0])
+    return [
+        python or sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-deps",
+        "--force-reinstall",
+        *(str(w) for w in wheels),
+    ]
 
 
-def _run_streaming(cmd: Sequence[str], *, dry_run: bool = False) -> int:
-    """Run *cmd* with inherited stdio (raw cmake/pip output)."""
+def _require_native_build_deps() -> None:
+    missing = [
+        req
+        for mod, req in _NATIVE_REQUIRES.items()
+        if importlib.util.find_spec(mod) is None
+    ]
+    if missing:
+        raise ConfigError(
+            "native build needs "
+            + ", ".join(missing)
+            + " in this environment — run `pip install 'atomiverse[native]'`"
+        )
+
+
+def build_env(jobs: Optional[int] = None) -> Dict[str, str]:
+    """Environment of the two ``pip wheel`` builds.
+
+    maturin's PEP 517 hook execs the ``maturin`` executable from PATH, and an
+    environment's scripts directory is on PATH only when it is activated —
+    ``.venv/bin/python -m atomiverse compile`` is not. Putting this
+    interpreter's scripts directory first makes the build use the tools the
+    native extra installed beside it.
+    """
+    env = dict(os.environ)
+    scripts = sysconfig.get_path("scripts")
+    env["PATH"] = os.pathsep.join(p for p in (scripts, env.get("PATH", "")) if p)
+    if jobs is not None and jobs > 0:
+        env["CMAKE_BUILD_PARALLEL_LEVEL"] = str(jobs)
+    return env
+
+
+def _run_streaming(
+    cmd: Sequence[str],
+    *,
+    dry_run: bool = False,
+    env: Optional[Mapping[str, str]] = None,
+) -> int:
+    """Run *cmd* with inherited stdio (raw pip/cmake output)."""
     print("+", " ".join(cmd), flush=True)
     if dry_run:
         print("(dry-run: not executed)", flush=True)
         return 0
-    proc = subprocess.run(list(cmd), check=False)
+    proc = subprocess.run(list(cmd), check=False, env=env)
     return int(proc.returncode)
 
 
@@ -253,29 +258,21 @@ def run_config(
     *,
     build_dir: Optional[Path] = None,
     dry_run: bool = False,
-    python: Optional[str] = None,
 ) -> int:
-    """CMake configure stage (``cmake -S -B -D…``)."""
+    """Resolve defines and record the build (no compilation)."""
     defines = resolve_defines(cfg)
-    defines["ATV_BUILD_PYTHON"] = "ON"
+    defines["ATV_MOLPY_PATH"] = str(molpy_source_root(source.root))
     fp = define_fingerprint(defines)
     modules = enabled_modules_from_defines(defines)
-
-    source_root = repo_root_from_source(source)
-    python_dir = Path(source.location).resolve()
     bdir = (
         build_dir.expanduser().resolve()
         if build_dir is not None
-        else default_build_dir(source_root)
-    )
-
-    cmd = build_cmake_configure_command(
-        source_root, bdir, defines, python=python
+        else default_build_dir(source.root)
     )
 
     print("atomiverse config", flush=True)
     print(f"  version:     {source.version}", flush=True)
-    print(f"  source_root: {source_root}", flush=True)
+    print(f"  source_root: {source.root}", flush=True)
     print(f"  build_dir:   {bdir}", flush=True)
     print(f"  modules:     {', '.join(modules)}", flush=True)
     print(f"  fingerprint: {fp}", flush=True)
@@ -283,31 +280,33 @@ def run_config(
     for k in sorted(defines):
         print(f"    {k}={defines[k]}", flush=True)
 
-    if not dry_run:
-        bdir.mkdir(parents=True, exist_ok=True)
-
-    code = _run_streaming(cmd, dry_run=dry_run)
-    if code != 0:
-        print(f"cmake configure failed with exit code {code}", file=sys.stderr)
-        return code
+    if dry_run:
+        print("compile will run:", flush=True)
+        print(
+            "+ " + " ".join(build_wheel_command(source.python_dir, bdir, defines)),
+            flush=True,
+        )
+        print("+ " + " ".join(build_molpy_wheel_command(source.root, bdir)), flush=True)
+        print("config dry-run complete", flush=True)
+        return 0
 
     state = BuildState(
         version=source.version,
-        source_root=str(source_root),
-        python_dir=str(python_dir),
+        source_root=str(source.root),
+        python_dir=str(source.python_dir),
         build_dir=str(bdir),
         defines=dict(sorted(defines.items())),
         modules=modules,
         fingerprint=fp,
-        configured=not dry_run,
-        compiled=False,
-        installed=False,
     )
-    if not dry_run:
-        state_file = state.save()
-        print(f"  state: {state_file}", flush=True)
-        print(f"  active: {active_build_pointer_path()}", flush=True)
-    print("config complete" if not dry_run else "config dry-run complete", flush=True)
+    print(f"  state:  {state.save()}", flush=True)
+    pointer = active_build_pointer_path()
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    pointer.write_text(
+        json.dumps({"build_dir": str(bdir)}, indent=2) + "\n", encoding="utf-8"
+    )
+    print(f"  active: {pointer}", flush=True)
+    print("config complete", flush=True)
     return 0
 
 
@@ -317,118 +316,87 @@ def run_compile(
     dry_run: bool = False,
     state_file: Optional[Path] = None,
 ) -> int:
-    """CMake build stage (``cmake --build``)."""
+    """Build the native wheel (``pip wheel`` → scikit-build-core → CMake)."""
     state = BuildState.load(state_file)
-    if not state.configured and not dry_run:
-        # Allow compile if build dir already has cache from a prior config
-        cache = Path(state.build_dir) / "CMakeCache.txt"
-        if not cache.is_file():
-            raise ConfigError(
-                "build tree is not configured — run `atomiverse config …` first"
-            )
+    bdir = Path(state.build_dir)
+    if "ATV_MOLPY_PATH" not in state.defines:
+        raise ConfigError("build state has no molpy source; run atomiverse config again")
+    cmd = build_wheel_command(Path(state.python_dir), bdir, state.defines)
+    env = build_env(jobs)
 
-    cmd = build_cmake_compile_command(Path(state.build_dir), jobs=jobs)
     print("atomiverse compile", flush=True)
-    print(f"  build_dir: {state.build_dir}", flush=True)
+    print(f"  build_dir: {bdir}", flush=True)
     print(f"  modules:   {', '.join(state.modules)}", flush=True)
+    if not dry_run:
+        _require_native_build_deps()
+        # One wheel in dist/ at a time, so install never picks a stale one.
+        shutil.rmtree(bdir / "dist", ignore_errors=True)
 
-    code = _run_streaming(cmd, dry_run=dry_run)
+    code = _run_streaming(cmd, dry_run=dry_run, env=env)
     if code != 0:
-        print(f"cmake --build failed with exit code {code}", file=sys.stderr)
+        print(f"pip wheel failed with exit code {code}", file=sys.stderr)
         return code
 
-    if not dry_run:
-        state.compiled = True
-        state.save(state_file)
-    print(
-        "compile complete" if not dry_run else "compile dry-run complete",
-        flush=True,
+    molpy_env = dict(env)
+    molpy_env["CARGO_TARGET_DIR"] = str(molpy_target_dir(bdir))
+    if jobs is not None and jobs > 0:
+        molpy_env["CARGO_BUILD_JOBS"] = str(jobs)
+    molpy_cmd = build_molpy_wheel_command(
+        Path(state.source_root), bdir, molpy_root=Path(state.defines["ATV_MOLPY_PATH"])
     )
+    code = _run_streaming(molpy_cmd, dry_run=dry_run, env=molpy_env)
+    if code != 0:
+        print(f"pip wheel of molpy failed with exit code {code}", file=sys.stderr)
+        return code
+    if dry_run:
+        print("compile dry-run complete", flush=True)
+        return 0
+
+    state.wheel = str(_one_wheel(bdir / "dist", "atomiverse-*.whl"))
+    state.molpy_wheel = str(_one_wheel(bdir / "dist", "molcrafts_molpy-*.whl"))
+    state.installed = False
+    state.save(state_file)
+    print(f"  wheel:     {state.wheel}", flush=True)
+    print(f"  molpy:     {state.molpy_wheel}", flush=True)
+    print("compile complete", flush=True)
     return 0
+
+
+def _one_wheel(dist: Path, pattern: str) -> Path:
+    wheels = sorted(dist.glob(pattern))
+    if len(wheels) != 1:
+        raise ConfigError(f"expected one {pattern} in {dist}, found {len(wheels)}")
+    return wheels[0]
 
 
 def run_install_stage(
     *,
     dry_run: bool = False,
     state_file: Optional[Path] = None,
-    prefix: Optional[Path] = None,
 ) -> int:
-    """CMake install stage (``cmake --install`` into site-packages)."""
+    """Install the native and molpy wheels into this environment with pip."""
     state = BuildState.load(state_file)
-    if not state.compiled and not dry_run:
-        # Soft check: require build dir
-        if not Path(state.build_dir).is_dir():
-            raise ConfigError(
-                "nothing to install — run `atomiverse compile` first"
-            )
-
-    pref = prefix if prefix is not None else site_packages_prefix()
-    cmd = build_cmake_install_command(Path(state.build_dir), pref)
+    wheels = [state.wheel, state.molpy_wheel]
+    if not all(w and Path(w).is_file() for w in wheels):
+        if not dry_run:
+            raise ConfigError("no compiled wheels — run `atomiverse compile` first")
+    cmd = build_install_command(
+        [Path(state.wheel or "<wheel>"), Path(state.molpy_wheel or "<molpy-wheel>")]
+    )
 
     print("atomiverse install", flush=True)
-    print(f"  build_dir: {state.build_dir}", flush=True)
-    print(f"  prefix:    {pref}", flush=True)
-    print(f"  modules:   {', '.join(state.modules)}", flush=True)
+    print(f"  wheel:   {state.wheel or '(not compiled yet)'}", flush=True)
+    print(f"  molpy:   {state.molpy_wheel or '(not compiled yet)'}", flush=True)
+    print(f"  modules: {', '.join(state.modules)}", flush=True)
 
     code = _run_streaming(cmd, dry_run=dry_run)
     if code != 0:
-        print(f"cmake --install failed with exit code {code}", file=sys.stderr)
+        print(f"pip install failed with exit code {code}", file=sys.stderr)
         return code
-
-    if not dry_run:
-        state.installed = True
-        state.save(state_file)
-        # Also write a compact status view next to the package when possible
-        try:
-            _write_status_sidecar(state)
-        except OSError as exc:
-            print(f"warning: could not write status sidecar: {exc}", file=sys.stderr)
-
-    print(
-        "install complete" if not dry_run else "install dry-run complete",
-        flush=True,
-    )
+    if dry_run:
+        print("install dry-run complete", flush=True)
+        return 0
+    state.installed = True
+    state.save(state_file)
+    print("install complete", flush=True)
     return 0
-
-
-def _write_status_sidecar(state: BuildState) -> None:
-    """Write status-friendly JSON used by ``atomiverse status``."""
-    import atomiverse
-
-    path = Path(atomiverse.__file__).resolve().parent / "_install_state.json"
-    payload = {
-        "modules": state.modules,
-        "defines": state.defines,
-        "fingerprint": state.fingerprint,
-        "build_dir": state.build_dir,
-        "source_root": state.source_root,
-    }
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-
-
-def dry_run_defines(cfg: InstallConfig) -> Dict[str, str]:
-    """Resolve defines for unit tests without invoking cmake."""
-    defines = resolve_defines(cfg)
-    defines["ATV_BUILD_PYTHON"] = "ON"
-    return defines
-
-
-# ── legacy names kept for test imports during migration ─────────────────────
-
-
-def write_install_state(defines: Mapping[str, str]) -> Path:
-    """Write status sidecar only (tests / status)."""
-    import atomiverse
-
-    path = Path(atomiverse.__file__).resolve().parent / "_install_state.json"
-    payload = {
-        "modules": enabled_modules_from_defines(defines),
-        "defines": dict(sorted(defines.items())),
-        "fingerprint": define_fingerprint(defines),
-    }
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    return path

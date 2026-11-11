@@ -1,7 +1,7 @@
 /// @file cpu/component/component.h
 /// @brief cpu::Component — OOP base for CPU simulation components.
 ///
-/// Lifecycle: build() → launch() × N → destroy().
+/// Lifecycle: build() → optional initial force evaluation → launch() × N → destroy().
 /// Role is a RoleFlag set (see facade/component_role.h).
 ///
 /// Intermediate kinds (Potential, HF, Integrator, …) live in their own
@@ -9,12 +9,16 @@
 /// inherit at most one kind: Concrete → Kind → Component.
 #pragma once
 
+#include "atomiverse/core/input_change.h"
+
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/ghost_contract.h"
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/types.h"
@@ -24,6 +28,8 @@
 namespace ATV {
 namespace cpu {
 
+class DriverNode;
+class Runtime;
 class ConstraintProvider;
 class NeighborConsumer;
 class NeighborProvider;
@@ -40,10 +46,12 @@ struct LaunchContext {
     cpu::Context& runtime;
     cpu::Frame& frame;
     int stage;
-    int step;
-    /// @brief When true, force-writing components should skip force writes
+    BigInt step;
+    /// @brief When false, force-writing components should skip force writes
     ///        (MC energy-only trials).
     bool forces_requested = true;
+    /// @brief When false, skip stress/virial writes independently of forces.
+    bool stress_requested = true;
 
     template <typename PhaseEnum>
     bool at(PhaseEnum phase) const {
@@ -64,7 +72,33 @@ struct DestroyContext {
 /// `ChargePacker::forward`) — so nothing in the engine scans for a packer
 /// and no probe accessor is needed. Inheriting it here put three empty
 /// virtuals in every component's vtable for the benefit of three classes.
+/// @brief Liveness flag of one Component object.
+///
+/// A borrowed component (`add_ref`, `set_*_ref`) may be destroyed before the
+/// driver that borrows it; the driver's teardown must then not call into it.
+/// The Runtime records this flag when it builds the component and checks it
+/// before `destroy()`. Copies and moves get a fresh flag: they are different
+/// objects with their own lifetime.
+class ComponentLifetime {
+  public:
+    ComponentLifetime() = default;
+    ComponentLifetime(const ComponentLifetime&) {}
+    ComponentLifetime(ComponentLifetime&&) noexcept {}
+    ComponentLifetime& operator=(const ComponentLifetime&) { return *this; }
+    ComponentLifetime& operator=(ComponentLifetime&&) noexcept { return *this; }
+    ~ComponentLifetime() { *alive_ = false; }
+
+    /// @brief Shared view of the flag; false once the object is destroyed.
+    /// @return Flag that outlives the object.
+    std::shared_ptr<const bool> token() const noexcept { return alive_; }
+
+  private:
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
+};
+
 class Component {
+    friend class Runtime; // reads lifetime_ when it takes the object in
+
   public:
     virtual ~Component() = default;
 
@@ -73,6 +107,9 @@ class Component {
     /// @brief Behavioural RoleFlag set (may combine several flags).
     /// Default 0: main-loop required, may mutate the frame.
     virtual Role role() const { return 0; }
+
+    /// Nested loop boundary for lifecycle refresh and active-plan contracts.
+    virtual DriverNode* nested_node() const { return nullptr; }
 
     virtual const NeighborConsumer* as_neighbor_consumer() const {
         return nullptr;
@@ -119,6 +156,10 @@ class Component {
     /// `ChargePacker::forward(ctx)` so ghost rows see the new charges
     /// [e] before the force stages read them.
     virtual bool updates_owned_charges() const { return false; }
+    /// Requires all atoms on each executing rank (serial or full replica).
+    /// Spatial decomposition must reject this component before partitioning.
+    virtual bool requires_full_frame() const { return false; }
+
     /// @brief Resolves global tags through the Frame tag index at run time.
     ///
     /// `DomainRuntime` frees the Frame tag index (and the DD mirror, ~50 B per
@@ -135,8 +176,29 @@ class Component {
     /// `as_*` protocol object — same shape as `requires_system_stress()`.
     virtual bool requires_tag_index() const { return false; }
 
+    /// @brief A trial evaluation of this component is as good as a committed one.
+    ///
+    /// True when `launch()` is a pure function of the Frame it is handed: no
+    /// history, cache or side effect that depends on `exec.trial_evaluation` /
+    /// `exec.initializing_forces` (no SCF guess staging, no bias deposition, no
+    /// RNG stream). When every component of a minimizer's force phase says so,
+    /// an optimizer may keep the forces and energy of the line-search trial it
+    /// accepts instead of replaying the force phase at the same geometry
+    /// (`OptimizeServices::trial_forces_reusable`). Opt-in: the default is
+    /// false, so an unknown component always gets its committed evaluation.
+    virtual bool trial_invariant() const { return false; }
+
     virtual Scheduling scheduling() const { return Scheduling::blocking; }
     virtual int frequency() const { return 0; }
+    /// @brief Cadence phase: with `frequency() = N > 0` the Runtime launches
+    ///        this component when `step % N == frequency_phase()`, `step`
+    ///        being the zero-based index of the step in progress.
+    ///
+    /// Default 0 (steps 0, N, 2N, …). End-of-step output keyed on the
+    /// completed-step count (LAMMPS `update->ntimestep`, incremented at the
+    /// top of `Verlet::run`) returns `N - 1`, so it fires after steps
+    /// N, 2N, ….
+    virtual int frequency_phase() const { return 0; }
     virtual std::size_t memory_bytes() const { return 0; }
     virtual std::vector<DefaultBinding> default_bindings() const { return {}; }
 
@@ -171,9 +233,48 @@ class Component {
     ///         components only touch rows they already own.
     virtual std::span<const GhostField> declare_ghosts() const { return {}; }
 
+    /// Numeric inputs are read at launch. Population/schema changes require
+    /// explicit support so an unknown row-indexed cache is never reused.
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    /// Called after whole-plan preflight, before force/neighbor preparation.
+    /// Update only owned caches; never replay initialization or reset a clock/RNG.
+    virtual void invalidate_inputs(InputChange, const BuildContext&) {}
+
     virtual void build(const BuildContext& ctx) { (void)ctx; }
     virtual void launch(const LaunchContext& ctx) = 0;
+    /// Initialization hook for pre/post-force and scalar-finalization bindings.
+    /// Default excludes observers and time propagation; force-slot evaluators
+    /// use launch() with runtime.exec.initializing_forces set.
+    /// Opt in only to establish forces at the current configuration.
+    virtual void initialize_forces(const LaunchContext& ctx) { (void)ctx; }
+    /// @brief Output of the current state at the start of a run (LAMMPS
+    ///        `Output::setup`, src/output.cpp).
+    ///
+    /// The MD and minimizer drivers call it once per `run()` — fresh or
+    /// continued — after the setup force evaluation and before the first
+    /// step (LAMMPS `Min::setup` ends with `output->setup` too), on every
+    /// rank in lockstep, with `ctx.step` = the steps / iterations completed
+    /// so far (LAMMPS `update->ntimestep`; 0 on a fresh run). Default: nothing. Recorders
+    /// override it to write the initial state; their in-loop end_of_step
+    /// writes are labelled with the completed-step count `ctx.step + 1`, so
+    /// a frame labelled `s` is always the state after `s` steps.
+    virtual void setup_output(const LaunchContext& ctx) { (void)ctx; }
+    /// @brief Forced output of the final state when a minimization stops
+    ///        before its iteration budget (LAMMPS `Min::run`, src/min.cpp:
+    ///        on any stop condition but MAXITER, `output->write` runs at the
+    ///        final `update->ntimestep` with every dump and thermo due).
+    ///
+    /// `cpu::minimizer::Minimize` calls it once after its loop, on every
+    /// rank in lockstep, with `ctx.step` = iterations completed. Recorders
+    /// write the current state unless that step was already written
+    /// (LAMMPS `last_dump` / `last_thermo`). Default: nothing.
+    virtual void final_output(const LaunchContext& ctx) { (void)ctx; }
     virtual void destroy(const DestroyContext& ctx) { (void)ctx; }
+
+  private:
+    ComponentLifetime lifetime_;
 };
 
 } // namespace cpu

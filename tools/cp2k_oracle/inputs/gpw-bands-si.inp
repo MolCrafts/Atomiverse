@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-bands-si — GTH-GPW RKS band structure on
+! CP2K twin for regressions/gpw/bands-dos — GTH-GPW RKS band structure on
 ! diamond Si (bct 4-atom cell, DZVP-MOLOPT-GTH + GTH-PBE-q4, PBE).
 ! SCF: MONKHORST-PACK 2 2 2. NSCF path: Γ–X–W–L–Γ–K (NPOINTS 4 per segment).
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.

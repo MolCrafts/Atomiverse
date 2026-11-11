@@ -1,22 +1,45 @@
 /// @file cpu/observe/msd.cpp
-/// @brief CPU async MSD observer — streams each snapshot into the molrs
-/// MSD accumulator (bounded memory; all analysis math in molrs).
+/// @brief CPU async MSD observer — streams each snapshot into the molpy
+/// MSD accumulator (bounded memory; all analysis math in molpy).
 
 #include "atomiverse/cpu/observe/msd.h"
 
 #include <cstddef>
+#include <exception>
 #include <fstream>
+#include <limits>
+#include <stdexcept>
 #include <utility>
 
 #include "atomiverse/core/log.h"
 
 namespace ATV {
 
+namespace {
+/// Spatial dimensionality of the Einstein relation D = slope / (2·dims).
+constexpr int kDims = 3;
+/// Einstein fit window, fractions of the last lag: skips the ballistic
+/// short-time head and the poorly averaged long-lag tail.
+constexpr double kFitStart = 0.2;
+constexpr double kFitEnd = 0.8;
+
+double require_positive_dt(double dt) {
+    if (!(dt > 0.0))
+        throw std::invalid_argument(
+            "MSD: dt (time between captured frames, fs) must be > 0");
+    return dt;
+}
+} // namespace
+
 MSD::MSD(double dt, int freq, std::string output_file, int window)
-    : dt_(dt), freq_(freq), output_file_(std::move(output_file)),
-      window_(window), acc_(window) {}
+    : dt_(require_positive_dt(dt)), freq_(freq),
+      output_file_(std::move(output_file)), window_(window),
+      acc_(cpu::compute::MSD{window}.accumulator()),
+      d_(std::numeric_limits<double>::quiet_NaN()) {}
 
 void MSD::on_snapshot(const cpu::FrameSnapshot& snap) {
+    if (invalid_input_)
+        return;
     const int n = snap.n_owned;
     if (n <= 0)
         return;
@@ -24,33 +47,64 @@ void MSD::on_snapshot(const cpu::FrameSnapshot& snap) {
         return;
 
     // Snapshot position fields are double (widened from StorageReal at capture).
-    cpu::pack_blocked(scratch_, snap.x, snap.y, snap.z, n);
-    if (acc_.accumulate(scratch_))
+
+    // Worker thread: a molpy refusal (wrapped step, bad frame) is tallied for
+    // finalize(), not a reason to stop the run.
+    try {
+        input_.pack(scratch_, snap.tag, snap.x, snap.y, snap.z, n, snap.step,
+                    freq_ > 0 ? freq_ : 1);
+        acc_.push(scratch_, dt_, cpu::cell_matrix(snap.box));
         ++n_frames_;
+    } catch (const std::exception& e) {
+        rejected_.record(e);
+        invalid_input_ = true;
+    }
 }
 
 void MSD::finalize() {
-    if (gate_.dropped() > 0)
-        ATV_WARN("[msd] dropped {} snapshot(s) with changed atom count "
-                 "(constant count required)",
-                 gate_.dropped());
-    if (n_frames_ < 2)
+    if (invalid_input_) {
+        ATV_WARN("[msd] invalid trajectory input: {}; result not written",
+                 rejected_.first_reason());
         return;
+    }
+    if (gate_.rejected() > 0)
+        ATV_WARN("[msd] rejected {} snapshot(s) with a changed atom count "
+                 "(constant count required)",
+                 gate_.rejected());
+    if (rejected_.count() > 0)
+        ATV_WARN("[msd] molpy refused {} snapshot(s); first: {}",
+                 rejected_.count(), rejected_.first_reason());
+    if (n_frames_ <= window_) {
+        ATV_WARN("[msd] {} frame(s) accumulated; lags 0..{} need at least {} "
+                 "— lower `window` or capture more frames. {} not written",
+                 n_frames_, window_, window_ + 1, output_file_);
+        return;
+    }
 
-    msd_curve_ = acc_.direct_curve(); // molrs, Direct mode (frame-0 reference)
-    // Einstein D from the windowed-MSD slope over the 20-80% window of the max
-    // resolved lag (<= window_; avoids the ballistic short-time and noisy
-    // long-time tails). molrs owns the math.
-    d_ = acc_.diffusion(dt_, /*dims=*/3, /*fit_lo=*/0.2, /*fit_hi=*/0.8);
+    // finalize() runs from the Runtime's shutdown (a destructor path), so a
+    // molpy error is reported, not thrown.
+    try {
+        const cpu::compute::TimeCorrelation curve = acc_.finish();
+        // Einstein D: molpy fits the curve; the relation D = slope / (2·dims)
+        // is the composition molpy' Msd documents for the caller.
+        const cpu::compute::LinearFitResult fit =
+            cpu::compute::LinearFit{kFitStart, kFitEnd}.compute(curve);
+        msd_curve_ = curve.values();
+        d_ = fit.slope / (2.0 * kDims);
 
-    std::ofstream os(output_file_);
-    os << "# MSD via molrs MsdAccumulator (Direct mode, frame-0 reference)\n";
-    os << "# Einstein D (molrs, 20-80% fit of <=" << window_
-       << "-frame lag window) = " << d_
-       << " Angstrom^2/fs   (frames=" << n_frames_ << ")\n";
-    os << "# t[fs]  MSD[Angstrom^2]\n";
-    for (std::size_t i = 0; i < msd_curve_.size(); ++i)
-        os << (dt_ * static_cast<double>(i)) << "  " << msd_curve_[i] << '\n';
+        const std::vector<double> lag_times = curve.lag_times(); // [fs]
+        std::ofstream os(output_file_);
+        os << "# MSD via molpy Msd (all time origins, lags 0.." << window_
+           << ")\n";
+        os << "# Einstein D (molpy LinearFit over lags " << fit.fit_start
+           << ".." << fit.fit_end << ") = " << d_
+           << " Angstrom^2/fs   (frames=" << n_frames_ << ")\n";
+        os << "# t[fs]  MSD[Angstrom^2]\n";
+        for (std::size_t i = 0; i < msd_curve_.size(); ++i)
+            os << lag_times[i] << "  " << msd_curve_[i] << '\n';
+    } catch (const std::exception& e) {
+        ATV_WARN("[msd] {} not written: {}", output_file_, e.what());
+    }
 }
 
 } // namespace ATV

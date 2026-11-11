@@ -23,15 +23,16 @@
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
+using ATV::cpu::gpw::make_multigrid;
 using ATV::cpu::gpw::MultiGrid;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::make_multigrid;
+using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
 using ATV::cpu::gpw::internal::CplxMatrix;
+using ATV::cpu::gpw::internal::diagonalize_k;
 using ATV::cpu::gpw::internal::KOrth;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
-using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
-using ATV::cpu::gpw::internal::diagonalize_k;
+using ATV::cuda::gpw::internal::KpointBasisDevice;
 using ATV::cuda::gpw::internal::KpointDiisEigenDevice;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
@@ -43,17 +44,17 @@ void check_cuda(cudaError_t e, const char* what) {
     ASSERT_EQ(e, cudaSuccess) << what << ": " << cudaGetErrorString(e);
 }
 
-std::vector<ATV::cpu::gpw::GpwAtom> h2_atoms() {
+std::vector<ATV::cpu::gpw::internal::GpwAtom> h2_atoms() {
     const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
     const double rA[3] = {5.5, 6.0, 6.0};
     const double rB[3] = {6.5, 6.0, 6.0};
-    return {ATV::cpu::gpw::GpwAtom(rA, basis, pot, 1),
-            ATV::cpu::gpw::GpwAtom(rB, basis, pot, 1)};
+    return {ATV::cpu::gpw::internal::GpwAtom(rA, basis, pot, 1),
+            ATV::cpu::gpw::internal::GpwAtom(rB, basis, pot, 1)};
 }
 
-std::vector<GridBasisFunction>
-flatten_basis_local(const std::vector<ATV::cpu::gpw::GpwAtom>& atoms) {
+std::vector<GridBasisFunction> flatten_basis_local(
+    const std::vector<ATV::cpu::gpw::internal::GpwAtom>& atoms) {
     std::vector<GridBasisFunction> basis;
     for (const auto& a : atoms)
         for (const auto& bf : a.basis)
@@ -140,8 +141,7 @@ TEST(CudaGpwKpointHResidency, IngestResidualMatchesHostDownload) {
             }
         }
         orth.emplace_back(S[static_cast<std::size_t>(ik)], 1e-10);
-        max_m = std::max(max_m,
-                         static_cast<int>(orth.back().X.shape(1)));
+        max_m = std::max(max_m, static_cast<int>(orth.back().X.shape(1)));
         auto [eps0, C0] =
             diagonalize_k(H0[static_cast<std::size_t>(ik)], orth.back());
         (void)eps0;
@@ -158,10 +158,10 @@ TEST(CudaGpwKpointHResidency, IngestResidualMatchesHostDownload) {
                                cudaMemcpyHostToDevice, stream),
                "H2D V");
 
+    const KpointBasisDevice device_basis(stream, kbg);
     KpointIntegrateDevice kint;
-    kint.build(stream, nb, npts, nk);
+    kint.build(device_basis);
     for (int ik = 0; ik < nk; ++ik) {
-        kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
         kint.upload_H0(ik, H0[static_cast<std::size_t>(ik)].data());
     }
 

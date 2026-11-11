@@ -24,6 +24,8 @@
 #include "atomiverse/cpu/gpw/gth_potential.h"
 
 using namespace ATV::cpu::gpw;
+using ATV::cpu::gpw::internal::GpwAtom;
+using ATV::cpu::gpw::internal::GpwDftAccess;
 using ATV::cpu::linalg::CplxMatrix;
 using ATV::cpu::linalg::RealMatrix;
 
@@ -41,15 +43,14 @@ std::vector<GpwAtom> h2_atoms() {
 // Gaussian tail radius at eps 1e-8 exceeds L/2, so basis functions reach
 // the grid through more than one lattice image.
 GpwDft fixed_density_cfg() {
-    GpwDft m;
-    m.cell[0] = m.cell[1] = m.cell[2] = 12.0;
-    m.cutoff_ry = 100.0;
+    GpwDft m{std::vector<Kind>{}, /*cutoff_ry=*/100.0,
+             ATV::cpu::xc::XCType::PADE};
+    GpwDftAccess::set_cell(m, {12.0, 12.0, 12.0});
     m.n_alpha = 2;
     m.n_beta = 0;
     m.max_iter = 0; // fixed-density: one collocate→Poisson→XC→integrate
     m.nonperiodic = false;
     m.local_pp_on_grid = true;
-    m.xc = XcKind::PADE;
     m.eps_default = 1e-8;
     return m;
 }
@@ -61,8 +62,7 @@ RealMatrix trial_P(std::size_t nb, double scale) {
     for (std::size_t i = 0; i < nb; ++i) {
         P(i, i) = scale;
         for (std::size_t j = i + 1; j < nb; ++j)
-            P(i, j) = P(j, i) =
-                scale * 0.1 / static_cast<double>(1 + i + j);
+            P(i, j) = P(j, i) = scale * 0.1 / static_cast<double>(1 + i + j);
     }
     return P;
 }
@@ -102,17 +102,17 @@ TEST(GpwGammaKIdentity, FixedDensityOperatorsMatch) {
     const RealMatrix Pb = trial_P(nb, 0.2);
 
     GpwDft fg = fixed_density_cfg();
-    fg.build(atoms);
-    const GpwResult& eg = fg.run(atoms, nullptr, &Pa, &Pb);
+    GpwDftAccess::build(fg, atoms);
+    const GpwResult& eg = GpwDftAccess::run(fg, atoms, nullptr, &Pa, &Pb);
 
     GpwDft fk = fixed_density_cfg();
     fk.k_points = {{0.0, 0.0, 0.0}};
     fk.k_point_weights = {1.0};
-    fk.build(atoms);
+    GpwDftAccess::build(fk, atoms);
     std::vector<CplxMatrix> Pk_a = {to_cplx(Pa)};
     std::vector<CplxMatrix> Pk_b = {to_cplx(Pb)};
     const GpwResult& ek =
-        fk.run(atoms, nullptr, nullptr, nullptr, &Pk_a, &Pk_b);
+        GpwDftAccess::run(fk, atoms, nullptr, nullptr, nullptr, &Pk_a, &Pk_b);
 
     // Same functional: every energy term identical.
     EXPECT_NEAR(eg.e_total, ek.e_total, 1e-12);

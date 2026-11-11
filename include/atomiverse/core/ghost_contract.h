@@ -274,8 +274,8 @@ class GhostContract {
             return "TagInt";
         case ColDType::Int:
             return "int";
-        case ColDType::Int8:
-            return "int8";
+        case ColDType::Image:
+            return "ImageInt";
         }
         return "?";
     }
@@ -331,16 +331,17 @@ namespace base_fields {
 /// @brief The engine's own ghost declaration.
 ///
 /// Positions are read fresh every step — producing current ghost positions is
-/// what the halo is for. Tag (bonded resolution) and type (every pair style
-/// indexes by it) do not change while a ghost lives. Forces are what the
-/// reverse pass folds back. Folded before any component declares, so the
+/// what the halo is for. Tag (bonded resolution) does not change while a
+/// ghost lives. Forces are what the reverse pass folds back. The force-field
+/// `type` is NOT an engine field: a Frame need not carry one (a QM geometry
+/// has species only), so every style that indexes a per-type table on a
+/// neighbour row declares `read_stable(kAtom_type, ...)` itself. Folded before any component declares, so the
 /// halo's own product keeps the leading wire positions whatever is mounted.
 inline constexpr GhostField kEngine[] = {
     GhostField::read_each_step("x", ColDType::Storage, 1, "halo"),
     GhostField::read_each_step("y", ColDType::Storage, 1, "halo"),
     GhostField::read_each_step("z", ColDType::Storage, 1, "halo"),
     GhostField::read_stable("tag", ColDType::Tag, 1, "halo"),
-    GhostField::read_stable("type", ColDType::Int, 1, "halo"),
     GhostField::reduce_to_owner("fx", ColDType::Acc, 1, "halo"),
     GhostField::reduce_to_owner("fy", ColDType::Acc, 1, "halo"),
     GhostField::reduce_to_owner("fz", ColDType::Acc, 1, "halo"),

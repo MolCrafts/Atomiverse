@@ -37,7 +37,7 @@
 
 #ifdef ATV_HAS_VIB
 
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include "result_array.h"
 
 #include <nanobind/ndarray.h>
@@ -50,7 +50,7 @@
 #include <utility>
 
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/vibration/hessian.h"
 #include "atomiverse/cpu/vibration/hessian_result.h"
 
@@ -61,8 +61,9 @@
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
 #endif
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
 using namespace ATV;
@@ -79,7 +80,7 @@ std::span<const double> tensor_span(const xt::xtensor<double, Rank>& tensor) {
 }
 
 /// @brief One bound Hessian driver: the preset, its working frame, and the
-///        molrs write-back.
+///        molpy write-back.
 ///
 /// Declaration order matters. `work_` comes BEFORE `driver`: members are
 /// destroyed in reverse declaration order, and the driver's teardown path
@@ -119,28 +120,23 @@ struct VibHandle {
     /// @param p Lennard-Jones parameters, as the shared task mirror.
     void set_evaluator_lj(const cpu::task::PairLJCutParams& p) {
         require_configurable_("set_evaluator");
-        driver.set_evaluator(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+        driver.set_evaluator(cpu::task::internal::make_pair_lj_cut(p));
     }
 #endif
 
 #ifdef ATV_HAS_SEMIEMPIRICAL
     /// @brief Append the AM1 semiempirical method as the force source.
     ///
-    /// Handed a LIVE component rather than a params mirror, exactly as
-    /// `MdHandle::set_evaluator_am1` is: `AM1Evaluator` is already bound for
-    /// its own `single_point` / `forces` surface, so Python has the real
-    /// thing. The five SCF settings are read back off the owned method and a
-    /// FRESH gradient-enabled copy is registered — the Hessian differences
-    /// forces, so gradients are not optional here.
+    /// Handed the method itself; a fresh copy of its five SCF settings is
+    /// mounted as the nested force source (the Hessian's force phase
+    /// requests gradients).
     ///
-    /// @param evaluator The evaluator whose settings are copied in.
-    void set_evaluator_am1(const cpu::semiempirical::AM1Evaluator& evaluator) {
+    /// @param method The method whose settings are copied in.
+    void set_evaluator_am1(const cpu::semiempirical::AM1& method) {
         require_configurable_("set_evaluator");
-        const cpu::semiempirical::AM1& method = evaluator.method();
-        driver.set_evaluator(cpu::semiempirical::AM1Evaluator{
+        driver.set_evaluator(cpu::semiempirical::AM1{
             method.charge, method.multiplicity, method.max_iter,
-            method.density_tol, method.energy_tol}
-                                 .with_gradient(true));
+            method.density_tol, method.energy_tol});
     }
 #endif
 
@@ -148,11 +144,11 @@ struct VibHandle {
     /// @brief Install the neighbor list in its finite-difference form.
     ///
     /// `every=1, delay=0, check=yes` — the shape the phonon regressions build
-    /// (`regressions/pw/fd-phonon-supercell`,
-    /// `regressions/response/phonon-dispersion-si`). The MD params default of
-    /// `delay=10` is wrong here for the same reason it is wrong for Monte
-    /// Carlo: the displacement loop is not a trajectory, so "ten steps since
-    /// the last rebuild" bounds nothing. With the check ON the half-skin test
+    /// (`regressions/response/phonons`,
+    /// `regressions/response/phonons`), spelled out because a deferred check
+    /// is wrong here for the same reason it is wrong for Monte Carlo: the
+    /// displacement loop is not a trajectory, so "N steps since the last
+    /// rebuild" bounds nothing. With the check ON the half-skin test
     /// still decides, so a +/-1e-3 A displacement pattern pays for exactly one
     /// build rather than 6N of them.
     ///
@@ -178,8 +174,8 @@ struct VibHandle {
     /// @throws std::invalid_argument when an atom carries an atomic number the
     ///         IUPAC-2013 mass table does not cover (Z outside 1..18).
     cpu::vib::HessianResult run(nb::object frame_obj) {
-        auto fref = borrow_molrs_frame(frame_obj);
-        work_ = cpu::from_molrs(*fref);
+        auto fref = borrow_molpy_frame(frame_obj);
+        work_ = cpu::from_molpy(*fref);
         cpu::vib::HessianResult result;
         {
             nb::gil_scoped_release release;
@@ -189,7 +185,7 @@ struct VibHandle {
             }
             result = driver.run(work_);
         }
-        cpu::to_molrs(work_, *fref);
+        cpu::to_molpy(work_, *fref);
         ran_ = true;
         return result;
     }

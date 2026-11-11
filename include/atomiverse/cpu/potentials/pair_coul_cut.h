@@ -14,6 +14,7 @@
 #include "atomiverse/core/role.h"
 #include "atomiverse/cpu/component/pair_evaluator.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
@@ -45,6 +46,8 @@ class PairCoulCut : public cpu::PairPotential {
     }
 
     std::string name() const override { return "coul/cut"; }
+    /// A pure function of the geometry (no trial-dependent state).
+    bool trial_invariant() const override { return true; }
 
     /// @brief Enable LAMMPS-style special-bonds scales for Coulomb.
     /// @param s12 Weight for 1-2 pairs (0 = exclude; (0,1] multiplies E,F).
@@ -52,6 +55,16 @@ class PairCoulCut : public cpu::PairPotential {
     /// @param s14 Weight for 1-4 pairs (Amber/GAFF: 0.5).
     PairCoulCut& set_special_bonds(double s12, double s13, double s14) &;
     PairCoulCut set_special_bonds(double s12, double s13, double s14) &&;
+
+    /// @brief Coulomb constant k in E = k q_i q_j / r [energy·length/charge²].
+    ///
+    /// Default: the run's `qqrd2e` (LAMMPS `force->qqrd2e` of the selected
+    /// `units` style). A force field that states its own constant in the
+    /// run's units (Amber 332.0522173, MMFF 332.0716 kcal·Å/(mol·e²) under
+    /// `units real`), or a dielectric folded in as k/ε, sets it here.
+    /// @throws std::invalid_argument if `k` is not finite and positive.
+    PairCoulCut& set_coulomb_constant(double k) &;
+    PairCoulCut set_coulomb_constant(double k) &&;
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
@@ -63,6 +76,8 @@ class PairCoulCut : public cpu::PairPotential {
     void rebuild_filtered_list(const Frame& frame, const md::PairList& pairs);
 
     double cutoff_sq_;
+    double coulomb_ = 0.0; ///< Explicit constant; 0 = the run's qqrd2e.
+    double qqr2e_ = 1.0;   ///< Constant in use, resolved at build().
     double s12_ = 1.0, s13_ = 1.0, s14_ = 1.0;
     bool any_special_ = false;
     md::SpecialScaleTable special_;
@@ -71,15 +86,12 @@ class PairCoulCut : public cpu::PairPotential {
     std::vector<int> filtered_numneigh_;
     std::vector<int> filtered_firstneigh_;
     std::vector<double> filtered_scale_;
-    std::vector<double> filtered_shift_x_;
-    std::vector<double> filtered_shift_y_;
-    std::vector<double> filtered_shift_z_;
-    bool filtered_has_shifts_ = false;
     int filtered_inum_ = 0;
+    // Null source denotes an unbuilt cache; version zero is a valid list.
+    const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
 
-    int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

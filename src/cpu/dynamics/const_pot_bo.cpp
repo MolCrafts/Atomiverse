@@ -189,6 +189,7 @@ void ConstPotBO::record_aspc_() {
 }
 
 void ConstPotBO::build(const BuildContext& ctx) {
+    qqrd2e_ = ctx.runtime.units.qqrd2e();
     if (groups_.empty())
         throw std::runtime_error(
             "ConstPotBO: add at least one electrode via add_electrode(type, "
@@ -219,22 +220,27 @@ void ConstPotBO::launch(const LaunchContext& ctx) {
         build_matrix_(ctx.frame);
         matrix_ready_ = true;
     }
+    sites_.refresh(ctx, elec_atoms_, "ConstPotBO");
     ensure_aspc_();
     build_rhs_(ctx.frame);
-    solve_();
+    solve_(!(ctx.runtime.exec.initializing_forces
+             || ctx.runtime.exec.trial_evaluation));
     write_charges_(ctx.frame);
     ChargePacker::forward(ctx);
     if (write_electrode_forces)
         write_electrode_forces_(ctx.frame);
-    record_aspc_();
+    if (!(ctx.runtime.exec.initializing_forces
+          || ctx.runtime.exec.trial_evaluation))
+        record_aspc_();
 }
 
 void ConstPotBO::destroy(const DestroyContext&) {
+    // Release the dense workspace only. The last solution (sites, charges,
+    // potentials) stays readable through the accessors after the driver
+    // that ran this component is gone; build() re-collects it.
     matrix_ready_ = false;
-    elec_atoms_.clear();
     A_.clear();
-    Q_.clear();
-    solved_psi_.clear();
+    A_.shrink_to_fit();
     if (aspc_)
         aspc_->reset();
     last_iters_ = 0;
@@ -267,7 +273,8 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
     eta_vec_.clear();
     const int n = frame.nlocal();
     auto type = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i) {
+    // Tag order: the site order must survive atom sorting (ElectrodeRows).
+    for (int i : ElectrodeRows::owned_by_tag(frame)) {
         for (std::size_t g = 0; g < groups_.size(); ++g) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
@@ -280,6 +287,7 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
             }
         }
     }
+    sites_.bind(frame, elec_atoms_);
     const int m = static_cast<int>(elec_atoms_.size());
     Q_.assign(static_cast<std::size_t>(m), 0.0);
     b_.assign(static_cast<std::size_t>(m), 0.0);
@@ -289,17 +297,17 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
 double ConstPotBO::pair_A_(double r, double eta_i, double eta_j) const {
     if (r < 1e-14) {
         // Should not be called for i==j self; self uses eta * sqrt(2/π).
-        return units::coulomb * eta_i * kSqrt2OverPi;
+        return qqrd2e_ * eta_i * kSqrt2OverPi;
     }
     const double etaij =
         eta_i * eta_j / std::sqrt(eta_i * eta_i + eta_j * eta_j);
-    return units::coulomb * std::erf(etaij * r) / r;
+    return qqrd2e_ * std::erf(etaij * r) / r;
 }
 
 double ConstPotBO::pair_b_(double r, double q, double eta_i) const {
     if (r < 1e-14)
         return 0.0;
-    return units::coulomb * q * std::erf(eta_i * r) / r;
+    return qqrd2e_ * q * std::erf(eta_i * r) / r;
 }
 
 void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
@@ -320,7 +328,7 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
         const double eta_a = eta_vec_[static_cast<std::size_t>(a)];
         // Self: k * η_a * sqrt(2/π)
         A_[static_cast<std::size_t>(a) * m + a] =
-            units::coulomb * eta_a * kSqrt2OverPi;
+            qqrd2e_ * eta_a * kSqrt2OverPi;
 
         for (int b = a + 1; b < m; ++b) {
             const int ib = elec_atoms_[static_cast<std::size_t>(b)];
@@ -364,8 +372,7 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
                     const double r = std::sqrt((nx * Lx) * (nx * Lx)
                                                + (ny * Ly) * (ny * Ly));
                     // Same-site images use η_a/√2 (plate_cap / Gaussian product)
-                    self_img +=
-                        units::coulomb * std::erf((eta_a / kSqrt2) * r) / r;
+                    self_img += qqrd2e_ * std::erf((eta_a / kSqrt2) * r) / r;
                 }
             }
             A_[static_cast<std::size_t>(a) * m + a] += self_img;
@@ -374,12 +381,12 @@ void ConstPotBO::build_matrix_(const cpu::Frame& frame) {
 
     // Thomas–Fermi metallicity (Scalfi et al. JCP 153, 174704 (2020)):
     // U_TF^(2) = Σ_i (l_TF² / (2 ε0 v_i)) Q_i²  ⇒  A_ii += l_TF² / (ε0 v_i)
-    // with 1/ε0 = 4π k_e and k_e = units::coulomb [eV·Å/e²]. The fixed-
+    // with 1/ε0 = 4π k_e and k_e = qqrd2e_ [eV·Å/e²]. The fixed-
     // density foothold uses v_i = 1/site_density for every site; the
     // MetalWalls `voronoi_volume` companion supplies per-site v_i.
     if (l_tf > 0.0) {
         constexpr double kPi = 3.14159265358979323846;
-        const double pref = 4.0 * kPi * units::coulomb * l_tf * l_tf;
+        const double pref = 4.0 * kPi * qqrd2e_ * l_tf * l_tf;
         if (!site_volume.empty()) {
             if (site_volume.size() != static_cast<std::size_t>(frame.nlocal()))
                 throw std::invalid_argument(
@@ -662,7 +669,7 @@ void ConstPotBO::solve_dense_() {
     last_used_predictor_ = false;
 }
 
-void ConstPotBO::solve_cg_() {
+void ConstPotBO::solve_cg_(bool use_history) {
     const int m = static_cast<int>(elec_atoms_.size());
     std::vector<double> rhs(static_cast<std::size_t>(m));
     for (int i = 0; i < m; ++i)
@@ -672,7 +679,7 @@ void ConstPotBO::solve_cg_() {
     // Warm-start unconstrained CG from ASPC (or zero).
     std::vector<double> Q0(static_cast<std::size_t>(m), 0.0);
     last_used_predictor_ = false;
-    if (aspc_) {
+    if (use_history && aspc_) {
         std::vector<double> Qpred;
         if (aspc_->predict(Qpred) && static_cast<int>(Qpred.size()) == m) {
             Q0 = Qpred;
@@ -714,7 +721,7 @@ void ConstPotBO::solve_cg_() {
     last_iters_ = iters_main;
 }
 
-void ConstPotBO::solve_() {
+void ConstPotBO::solve_(bool use_history) {
     const int m = static_cast<int>(elec_atoms_.size());
     if (m == 0)
         return;
@@ -728,7 +735,7 @@ void ConstPotBO::solve_() {
     // neutrality_target_ set in build_rhs_ (0 or −Q_elyt).
 
     if (use_cg)
-        solve_cg_();
+        solve_cg_(use_history);
     else
         solve_dense_();
 
@@ -831,7 +838,7 @@ void ConstPotBO::write_electrode_forces_(cpu::Frame& frame) const {
             const double erf_ar = std::erf(ar);
             // dΦ/dr with Φ = k q erf(αr)/r
             const double dPhi_dr =
-                units::coulomb * qj
+                qqrd2e_ * qj
                 * (2.0 * alpha / kSqrtPi * std::exp(-ar * ar) / r
                    - erf_ar / (r * r));
             // E = −∇Φ = −(dΦ/dr)(r_hat); force on electrode F = Q E

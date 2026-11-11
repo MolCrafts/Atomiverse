@@ -25,9 +25,9 @@ cpu::Frame make_water() {
     f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_z)[1] = -0.5860;
     f.span(kAtom_z)[2] = -0.5860;
-    f.span(kAtom_type)[0] = 8;
-    f.span(kAtom_type)[1] = 1;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
@@ -55,17 +55,14 @@ TEST(SpinResolution, RejectsParityMismatch) {
 }
 
 TEST(UHF, OccupationMismatchThrows) {
-    auto frame = make_water(); // 10 e-
-    cpu::scf::UHF uhf(5, 4);   // sum 9
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    auto frame = make_water();                          // 10 e-
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, 5, 4}; // sum 9
     EXPECT_THROW(uhf.run(frame), std::invalid_argument);
 }
 
 TEST(RHF, OddElectronThrows) {
     auto frame = make_water();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
-    rhf.charge = 1; // 9 electrons
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G, /*charge=*/1}; // 9 electrons
     EXPECT_THROW(rhf.run(frame), std::invalid_argument);
 }
 

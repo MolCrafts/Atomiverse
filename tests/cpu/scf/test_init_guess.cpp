@@ -2,8 +2,7 @@
 /// @brief Unit tests for the extended-Hückel and SAP initial-guess Fock
 ///        builders (`internal::HueckelGuess`, `internal::SapGuess`).
 ///
-/// Single-call matrix math only — no SCF loop runs here (the guess-quality
-/// iteration-count contrast lives in regressions/scf/h2o_scf_convergence).
+/// Check the guess matrices and the first Fock/density update for UHF.
 
 #ifdef ATV_HAS_HF
 
@@ -20,6 +19,7 @@
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/internal/sap_data.h"
 #include "atomiverse/cpu/scf/internal/sap_guess.h"
+#include "atomiverse/cpu/scf/uhf.h"
 
 using namespace ATV;
 using namespace ATV::cpu::scf;
@@ -32,15 +32,15 @@ namespace {
 /// @brief H2O frame (experimental-ish geometry, Å).
 cpu::Frame make_h2o() {
     cpu::Frame frame(3);
-    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_atomic_number)[0] = 8;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.1173;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.7572;
     frame.span(kAtom_z)[1] = -0.4692;
-    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_atomic_number)[2] = 1;
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
@@ -51,7 +51,7 @@ cpu::Frame make_h2o() {
 /// @brief Single H atom at the origin.
 cpu::Frame make_h_atom() {
     cpu::Frame frame(1);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
@@ -103,7 +103,8 @@ TEST(HueckelGuess, OffDiagonalWolfsbergHelmholzElementWise) {
 
 TEST(HueckelGuess, SphericalBasisWorkingDimension) {
     cpu::Frame frame = make_h2o();
-    internal::IntegralWorkspace ints{frame, BasisSet::Def2SVP}; // spherical convention
+    internal::IntegralWorkspace ints{frame,
+                                     BasisSet::Def2SVP}; // spherical convention
     ASSERT_TRUE(ints.spherical());
     HueckelGuess hg(ints.shells, ints.S, ints.atoms);
     ASSERT_EQ(static_cast<int>(hg.F.shape()[0]), ints.n_basis);
@@ -243,6 +244,38 @@ TEST(SapGuess, PotentialValueLimitsAndAsymptotics) {
     // Everywhere in between: attractive (negative).
     for (double r = 0.1; r < 10.0; r += 0.3)
         EXPECT_LT(pot.value(r), 0.0) << "r=" << r;
+}
+
+TEST(HcoreGuess, SpinPolarizedUhfMatchesExplicitAufbau) {
+    auto frame = make_h2o();
+    constexpr auto basis = BasisSet::STO3G;
+    constexpr int charge = 1, n_alpha = 5, n_beta = 4;
+    const internal::IntegralWorkspace ints{frame, basis, charge, false};
+    const auto orbitals = internal::EigenSolver{}.step(ints.Hcore, ints.S);
+    const internal::DensityBuilder density;
+    SCFInitialGuess guess;
+    guess.P_alpha = density.step(orbitals.second, n_alpha, ints.n_basis);
+    guess.P_beta = density.step(orbitals.second, n_beta, ints.n_basis);
+    guess.has_alpha = guess.has_beta = true;
+
+    UHF explicit_aufbau{basis, n_alpha, n_beta, charge};
+    UHF automatic{basis, n_alpha, n_beta, charge};
+    for (auto* method : {&explicit_aufbau, &automatic}) {
+        method->init_guess = InitGuess::Hcore;
+        method->max_iter = 1;
+        method->set_threads(1);
+    }
+    explicit_aufbau.run(frame, &guess);
+    automatic.run(frame);
+
+    EXPECT_NEAR(automatic.energy(), explicit_aufbau.energy(), 1e-11);
+    for (auto spin :
+         {SlaterDeterminant::Spin::alpha, SlaterDeterminant::Spin::beta}) {
+        EXPECT_LT(
+            xt::amax(xt::abs(automatic.determinant().density(spin)
+                             - explicit_aufbau.determinant().density(spin)))(),
+            1e-11);
+    }
 }
 
 #endif // ATV_HAS_HF

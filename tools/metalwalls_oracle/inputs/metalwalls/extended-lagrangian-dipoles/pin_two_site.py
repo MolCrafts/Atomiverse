@@ -2,7 +2,7 @@
 """Closed-form two-site Thole/Applequist pin for extended-lagrangian-dipoles.
 
 Independent (no Atomiverse code) derivation of the stationary fixed-point pin
-shared with regressions/md/pim-induced-dipole-bulk: q = +1 e (alpha = 1.0 A^3)
+shared with regressions/md/polarizable: q = +1 e (alpha = 1.0 A^3)
 at the origin, q = -1 e (alpha = 1.5 A^3) at (3, 0, 0) A, thole a = 0.39,
 free space (L = 50 A min-image). The XL (iEL/SCF) fixed point at a stationary
 geometry is exactly this SCF solution, so the same numbers pin the XL

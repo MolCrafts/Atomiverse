@@ -2,13 +2,15 @@
 /// @brief QM engine protocols for multiscale couplings + embedding site types.
 ///
 /// Two protocols, one header (the neighbor_protocol.h precedent). Neither is a
-/// Component: implementors are Drivers (`MeanFieldMethod<D>`), plain method
-/// classes (`AM1`), or Components (`DFTB2`).
+/// Component: implementors are Drivers (`MeanFieldMethod<D>`, `AM1`, `RM1`, `DFTB2`)
+/// or Components (GFN methods).
 ///
 /// Contract on the frame handed to prepare/evaluate: it is the coupling's
 /// **private** QM frame (QM atoms + link caps only), pre-zeroed on energy and
 /// forces — an engine may overwrite or accumulate, both are correct. The
-/// engine MUST NOT consult `ctx.runtime.pair_list` or halo state.
+/// engine MUST NOT consult the parent neighbor list or halo state. Runtime
+/// services are borrowed for this call; prepare must not permanently attach a
+/// driver plan. Initialization/trial evaluations must preserve accepted history.
 #pragma once
 
 #include <string>

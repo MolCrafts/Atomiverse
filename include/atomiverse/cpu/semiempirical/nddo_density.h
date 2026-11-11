@@ -20,12 +20,23 @@ struct NDDODensityInput {
 
 /// @brief Builds packed lower-triangle density matrices using NDDO reference densit.F90.
 ///
-/// Coefficients are row-major C(i, j) values. The indexing and branch structure
-/// mirror AM1 reference's `src/matrix/densit.F90`.
+/// Coefficients are row-major C(i, j) values. The occupation branches mirror
+/// AM1 reference's `src/matrix/densit.F90`; each orbital-range sum
+/// Σₖ C(i,k) C(j,k) is one BLAS `dsyrk` into a retained dense scratch.
 class NDDODensityBuilder {
   public:
-    std::vector<double> build_packed(const std::vector<double>& coefficients,
-                                     const NDDODensityInput& input) const;
+    /// @brief Overwrite the packed density, reusing caller-owned capacity.
+    /// @param coefficients Row-major orbitals; must not alias packed_density.
+    /// @param input Dimensions and occupations.
+    /// @param packed_density Packed lower-triangle output; resized as necessary.
+    /// Invalid dimensions, occupations, storage or aliasing leave output unchanged.
+    /// The norbs² dense scratch is kept by this builder across calls.
+    void build_packed(const std::vector<double>& coefficients,
+                      const NDDODensityInput& input,
+                      std::vector<double>& packed_density);
+
+  private:
+    std::vector<double> dense_;
 };
 
 } // namespace semiempirical

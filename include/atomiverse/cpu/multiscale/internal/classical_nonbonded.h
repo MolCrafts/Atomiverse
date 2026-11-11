@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 namespace ATV {
 namespace cpu {
@@ -28,8 +28,10 @@ class ClassicalNonbonded {
     /// @brief Energy [eV]; optional force accumulation scaled by `force_sign`
     ///        (+1 real, −1 model subtraction).
     /// @param rows If non-empty, only pairs with both atoms in `rows`.
+    /// @param qqrd2e The run's Coulomb constant (LAMMPS `force->qqrd2e`).
     double launch(Frame& frame, const std::vector<int>& rows,
-                  bool forces_requested, double force_sign = 1.0) const;
+                  bool forces_requested, double qqrd2e,
+                  double force_sign = 1.0) const;
 
     double cutoff() const { return cutoff_; }
 

@@ -76,11 +76,9 @@ class DomainRuntime {
     /// @brief Release the owned DD for reuse; clears `ctx.md.dd`.
     std::unique_ptr<md::mpi::DomainDecomposition> release(Context& ctx);
 
-    /// @brief Run serially on a full replica even under multi-rank MPI.
-    void set_serial_on_replica() noexcept { serial_on_replica_ = true; }
-
-    /// @brief Release the MPI communicator held by the DD (shutdown).
-    void release_comm();
+    /// @brief End the transport session and clear its context publication.
+    /// Retains topology and frame identity for continuation of owned rows.
+    void release_comm(Context& ctx);
 
     /// @brief Non-owning DD accessor (may be null before allocate()).
     md::mpi::DomainDecomposition* dd() const { return dd_.get(); }
@@ -94,7 +92,7 @@ class DomainRuntime {
   private:
     std::unique_ptr<md::mpi::DomainDecomposition> dd_;
     std::unique_ptr<comm::CommBrick> comm_;
-    bool serial_on_replica_ = false;
+    const Frame* bound_frame_ = nullptr;
 };
 
 } // namespace communication

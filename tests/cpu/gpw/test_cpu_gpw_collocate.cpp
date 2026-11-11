@@ -135,3 +135,39 @@ TEST(GpwCollocate, CenterDerivativeReachesFartherThanTheFunction) {
         }
     }
 }
+
+TEST(GpwCollocate, StreamedDerivativesPreservePeriodizedValues) {
+    using ATV::cpu::gpw::build_compact_basis_grid;
+    // The derivative windows exceed the box and centers are unwrapped.
+    // Grouping functions in batches must preserve every image sum and the
+    // eps screening used in the full derivative CBG.
+    const double cell[3] = {4.0, 4.0, 4.0};
+    const auto grid = make_uniform_grid(cell, 24.0);
+    std::vector<GridBasisFunction> derivatives;
+    for (double center : {-0.3, 4.7})
+        for (int axis = 0; axis < 3; ++axis) {
+            GridPrimitive p{0.3, {center, 1.1, 2.2}, {0, 0, 0}, 0.6};
+            p.l[axis] = 1; // center derivative of exp(-0.3 |r-R|^2)
+            derivatives.push_back({p});
+        }
+    constexpr double eps = 1e-10;
+    const auto full = build_compact_basis_grid(grid, derivatives, true, eps);
+    std::vector<double> values(derivatives.size() * grid.npts(), 0.0);
+    for (std::size_t a = 0; a < full.gidx.size(); ++a)
+        for (std::size_t i = full.off[a]; i < full.off[a + 1]; ++i)
+            values[full.fu[i] * grid.npts() + full.gidx[a]] = full.fv[i];
+    for (int u = 0; u < 2; ++u) {
+        const std::vector<GridBasisFunction> batch{
+            derivatives[3 * u], derivatives[3 * u + 1], derivatives[3 * u + 2]};
+        const auto streamed = build_compact_basis_grid(grid, batch, true, eps);
+        std::vector<double> actual(3 * grid.npts(), 0.0);
+        for (std::size_t a = 0; a < streamed.gidx.size(); ++a)
+            for (std::size_t i = streamed.off[a]; i < streamed.off[a + 1]; ++i)
+                actual[streamed.fu[i] * grid.npts() + streamed.gidx[a]] =
+                    streamed.fv[i];
+        for (int axis = 0; axis < 3; ++axis)
+            for (long g = 0; g < grid.npts(); ++g)
+                EXPECT_DOUBLE_EQ(actual[axis * grid.npts() + g],
+                                 values[(3 * u + axis) * grid.npts() + g]);
+    }
+}

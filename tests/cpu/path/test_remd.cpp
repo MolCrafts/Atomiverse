@@ -89,21 +89,25 @@ TEST(Remd, RejectsNonPositiveThermostatTau) {
 /// it away and stays at its setpoint; a constant-energy one keeps it and runs
 /// nearly three times hot. Measured: 270 K with the thermostat, 862 K without.
 TEST(Remd, ReplicasAreThermostattedAtTheirSlotTemperature) {
-    const double t0 = 300.0;
+    // lj units (boltz = mvv2e = 1) on eV, Å, amu: the temperature is
+    // k_B·300 K in eV and the time unit is sqrt(amu·Å²/eV) ≈ 10.18 fs, so
+    // these are the 300 K / 1 fs / 20 fs of the metal-unit version.
+    const double t0 = units::kB_ev_per_k * 300.0;
+    const double fs = 1.0 / std::sqrt(units::mass_v2_to_energy);
     cpu::Frame f = lj_block(4, 3.0); // 64 atoms, 189 DOF, compressed
-    cpu::path::Remd remd({t0, 2.0 * t0}, /*dt=*/1.0,
+    cpu::path::Remd remd({t0, 2.0 * t0}, /*dt=*/1.0 * fs,
                          /*steps_per_exchange=*/1000, /*seed=*/5);
-    remd.thermostat_tau = 20.0; // 20 dt — well converged over the run
+    remd.thermostat_tau = 20.0 * fs; // 20 dt — well converged over the run
     remd.set_program_builder(&build_lj, nullptr);
     remd.run(f, /*n_exchanges=*/1);
 
-    const double ke = f.meta.get(ATV::kKinetic); // [eV], slot 0
+    const double ke = f.meta.get(ATV::kKinetic); // slot 0
     const double ndof = 3.0 * f.nlocal() - 3.0;
-    const double t_meas = 2.0 * ke / (ndof * units::kB_ev_per_k);
+    const double t_meas = 2.0 * ke / (ndof * units::UnitSystem::lj().boltz);
 
     // sqrt(2/Ndof) = 10% instantaneous spread at 189 DOF; 25% is a couple of
     // those and nowhere near the factor 2.9 a constant-energy replica shows.
     EXPECT_NEAR(t_meas, t0, 0.25 * t0)
-        << "collapsed slot 0 came back at " << t_meas
-        << " K for a 300 K setpoint";
+        << "collapsed slot 0 came back at " << t_meas << " for a " << t0
+        << " setpoint";
 }

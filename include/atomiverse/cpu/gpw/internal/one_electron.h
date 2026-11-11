@@ -9,14 +9,42 @@
 /// `GridPrimitive` type so the GPW basis (`GridBasisFunction`) is used directly.
 #pragma once
 
+#include <complex>
+
 #include "atomiverse/cpu/gpw/internal/collocate.h" // GridPrimitive, GridBasisFunction
 
 namespace ATV {
 namespace cpu {
 namespace gpw {
 
+namespace internal {
+
+inline constexpr double kGammaPairScreen = 1e-12;
+
+/// Maximum Gaussian-product prefactor among the primitive pairs. Use the
+/// nearest image for periodic axes before deciding whether to skip an AO pair.
+double pair_overlap_bound(const GridBasisFunction& a,
+                          const GridBasisFunction& b, const double cell[3],
+                          bool periodic);
+
+} // namespace internal
+
 /// @brief Overlap integral ⟨a|b⟩ of two primitive Cartesian Gaussians.
 double prim_overlap(const GridPrimitive& a, const GridPrimitive& b);
+
+/// @brief Exact Fourier overlap ∫ a(r) b(r) exp(−i q·r) d³r.
+///
+/// Reuses the overlap's McMurchie–Davidson Hermite coefficients. Each
+/// product-center derivative transforms to a factor (−i q_d), retaining
+/// all angular terms, including odd products whose ordinary overlap is zero.
+/// Includes primitive coefficients; Cartesian centers are in Bohr.
+/// @param q Cartesian wavevector [Bohr⁻¹].
+/// @return Complex overlap; q=0 recovers prim_overlap(a,b).
+/// @throws std::invalid_argument for non-positive/non-finite exponents or
+///         Cartesian angular powers outside the Hermite table's [0,8] range.
+std::complex<double> prim_overlap_fourier(const GridPrimitive& a,
+                                          const GridPrimitive& b,
+                                          const double q[3]);
 
 /// @brief Kinetic-energy integral ⟨a|-½∇²|b⟩ of two primitive Gaussians.
 double prim_kinetic(const GridPrimitive& a, const GridPrimitive& b);
@@ -29,9 +57,8 @@ void prim_ST(const GridPrimitive& a, const GridPrimitive& b, double& s_out,
 ///        Hermite tables reused across monoms that share (α, center). Hot path
 ///        for multi-k STVnl setup (one call per lattice image of an AO pair).
 /// @param T Lattice translation applied to every ket primitive center [Bohr].
-void contracted_ST_shift(const GridBasisFunction& a,
-                         const GridBasisFunction& b, const double T[3],
-                         double& s_out, double& t_out);
+void contracted_ST_shift(const GridBasisFunction& a, const GridBasisFunction& b,
+                         const double T[3], double& s_out, double& t_out);
 
 /// @brief Overlap of two contracted basis functions (sum over primitive pairs).
 double overlap(const GridBasisFunction& a, const GridBasisFunction& b);

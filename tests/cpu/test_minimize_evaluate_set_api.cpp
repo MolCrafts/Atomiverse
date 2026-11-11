@@ -93,3 +93,33 @@ TEST(EvaluateSetApi, EnergyOnlyEvaluatorBuildsWithoutPair) {
 }
 
 } // namespace
+
+TEST(MinimizeSetApi, NegativeBudgetRejectedBeforeSetup) {
+    ATV::cpu::minimizer::Minimize opt;
+    ATV::cpu::Frame frame;
+    EXPECT_THROW(opt.run(frame, -1), std::invalid_argument);
+}
+
+TEST(MinimizeSetApi, UnfixOptimizerAllowsReplacement) {
+    ATV::cpu::minimizer::Minimize opt;
+    opt.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    opt.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
+    opt.set_optimizer(ATV::cpu::minimizer::LBFGS{});
+    opt.build();
+    // Removing the only optimizer reports an incomplete plan, but removes it.
+    EXPECT_THROW(opt.unfix("lbfgs"), std::runtime_error);
+    EXPECT_NO_THROW(opt.set_optimizer(ATV::cpu::minimizer::CG{}));
+    EXPECT_NO_THROW(opt.build());
+}
+
+TEST(MinimizeSetApi, WideBudgetDoesNotNarrowBeforeConvergence) {
+    auto frame = atv_test::make_trivial_frame();
+    ATV::cpu::minimizer::Minimize opt;
+    atv_test::StubOptimizer optimizer;
+    atv_test::StubForceEvaluator force;
+    opt.on(ATV::minimizer::Phase::search_direction).add_ref(optimizer);
+    opt.on(ATV::minimizer::Phase::force).add_ref(force);
+    opt.build();
+    EXPECT_EQ(opt.run(frame, ATV::BigInt{1} << 40), 1);
+    EXPECT_EQ(optimizer.step_count, 1);
+}

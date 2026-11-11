@@ -14,6 +14,8 @@
 #include "atomiverse/cpu/scf/rys_eri.h"
 
 #include <cmath>
+#include <stdexcept>
+#include <string>
 #include <xsimd/xsimd.hpp>
 
 namespace ATV {
@@ -706,14 +708,17 @@ double kinetic_prim_3d(const int a_ang[3], const int b_ang[3], double alpha_a,
 
 /// Per-center i/j upper bound after a +1 derivative raise.
 inline constexpr int kDerivL = kMaxLOrbital + 1;
-/// t-index dim in E^{i,j}_t (t ∈ [0, ai+bj]; +1 slack lets the recurrence
-/// read E[t+1] without a bounds branch when t hits the real max). The
-/// second-derivative path (hf-capability-gaps-13-cphf) raises AT MOST +2
-/// in total across the two centers of one integral, so t stays ≤
-/// kMaxLOrbital + (kMaxLOrbital + 2) = 2·kDerivL — within this dim.
-inline constexpr int kMDEDim = 2 * kDerivL + 1; // 9 for f-shells
-/// i-index dim in the E_buf[i][t] intermediate. Sized for the
-/// second-derivative +2 raise on ONE center (ai ≤ kMaxLOrbital + 2).
+/// t-index dim in E^{i,j}_t (t ∈ [0, ai+bj]).
+///
+/// The pVp nuclear gradient (sfx2c1e_grad's int1e_ippnucp path) starts
+/// from ⟨∂χ|1/r|∂χ⟩, which has already raised each center by +1, then
+/// raises one center once more. One component therefore reaches
+/// kMaxLOrbital+2 and t reaches (kMaxLOrbital+2)+(kMaxLOrbital+1) = 9
+/// for an f shell. The second-derivative path raises at most +2 in total
+/// and stays inside the same dim.
+inline constexpr int kMDEDim = 2 * kMaxLOrbital + 4; // 10; t = 0..9
+/// i-index dim in the E_buf[i][t] intermediate. Sized for one center at
+/// kMaxLOrbital+2 (pVp identity +1 and nuclear derivative +1).
 inline constexpr int kMDEIDim = kMaxLOrbital + 3; // 6 for f-shells
 
 /// @brief McMurchie-Davidson E coefficients E^{ai,bj}_t.
@@ -722,6 +727,12 @@ inline constexpr int kMDEIDim = kMaxLOrbital + 3; // 6 for f-shells
 ///   populated for t = 0..ai+bj; entries past that are zero.
 static void md_e_coeffs(int ai, int bj, double PA, double PB, double inv2g,
                         double E[kMDEDim]) {
+    if (ai < 0 || bj < 0 || ai >= kMDEIDim || bj >= kMDEIDim
+        || ai + bj >= kMDEDim)
+        throw std::runtime_error(
+            "md_e_coeffs: angular momentum ai=" + std::to_string(ai)
+            + " bj=" + std::to_string(bj)
+            + " exceeds the Hermite E buffer (pVp nuclear gradient)");
     for (int t = 0; t < kMDEDim; ++t)
         E[t] = 0.0;
 
@@ -782,7 +793,15 @@ double nuclear_prim(const int a_ang[3], const int b_ang[3], double gamma,
     const int Lz = a_ang[2] + b_ang[2];
     const int Ltot = Lx + Ly + Lz;
 
-    constexpr int kRDim = 2 * kDerivL + 1; // 7 for d-shells; m and per-axis dim
+    // Indices 0..Ltot and 0..max(Lx,Ly,Lz). pVp's nuclear gradient reaches
+    // Ltot = (l+2)+(l+1) = 2*l+3 (9 for an f shell).
+    constexpr int kRDim = 2 * kMaxLOrbital + 4; // 10
+
+    if (Ltot >= kRDim || Lx >= kRDim || Ly >= kRDim || Lz >= kRDim)
+        throw std::runtime_error(
+            "nuclear_prim: angular momentum Ltot=" + std::to_string(Ltot)
+            + " exceeds the Hermite buffer (kRDim=" + std::to_string(kRDim)
+            + ")");
 
     // Boys functions F_m for m = 0..Ltot
     double Fm[kRDim];
@@ -1286,20 +1305,9 @@ void nuclear_block(const ShellBlock& A, const ShellBlock& B, const Atom* atoms,
 }
 
 /// @brief Compute Boys functions F_0 .. F_{n_max} in one call.
-/// Uses upward recurrence from F_0 (one erf + one exp total).
+/// Uses the shared stable downward/upward sequence law on both backends.
 static inline void boys_fn_vec(double T, int n_max, double Fm[]) {
-    Fm[0] = boys_f0(T);
-    if (n_max == 0)
-        return;
-    if (T < 1e-12) {
-        for (int m = 1; m <= n_max; ++m)
-            Fm[m] = 1.0 / (2 * m + 1);
-    } else {
-        const double ex = std::exp(-T);
-        const double inv2T = 0.5 / T;
-        for (int m = 1; m <= n_max; ++m)
-            Fm[m] = ((2 * m - 1) * Fm[m - 1] - ex) * inv2T;
-    }
+    ATV::boys_sequence(n_max, T, Fm);
 }
 
 // 2 * π^2.5 — precomputed constant shared by all eri_blk_* functions.

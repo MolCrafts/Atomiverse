@@ -1,4 +1,4 @@
-! Offline CP2K twin note for regressions/pw/periodic-wannier-uks
+! Offline CP2K twin note for regressions/pw/wannier
 ! (NOT run by ctest — human/agent pin host only).
 !
 ! Diamond Si 2-atom cell, collinear LSD (UKS framework, multiplicity 1 /

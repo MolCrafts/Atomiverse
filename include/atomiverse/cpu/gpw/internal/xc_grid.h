@@ -46,7 +46,7 @@ XcOnGrid xc_grid_pade(const UniformGrid& grid,
 /// @brief Spin-resolved PADE LSD on the grid (UKS).
 ///
 /// E_xc = Σ_g w (ρ_α+ρ_β) ε_xc(ρ_α,ρ_β); potentials are vrho_a / vrho_b from
-/// `cpu::xc::pade_lsd`.
+/// `evaluate_xc(XCType::PADE)`.
 ///
 /// @param grid  Uniform grid.
 /// @param rho_a Alpha density on the grid.

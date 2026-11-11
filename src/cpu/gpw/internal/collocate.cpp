@@ -173,14 +173,13 @@ build_compact_basis_grid(const UniformGrid& grid,
                 grid.origin[0] + grid.L[0] * static_cast<double>(i) / n0;
             for (long j = lo[1]; j <= hi[1]; ++j) {
                 const long jj = ((j % n1) + n1) % n1;
-                const double r1 = grid.origin[1]
-                                  + grid.L[1] * static_cast<double>(j) / n1;
+                const double r1 =
+                    grid.origin[1] + grid.L[1] * static_cast<double>(j) / n1;
                 const long base = (ii * n1 + jj) * n2;
                 for (long k = lo[2]; k <= hi[2]; ++k) {
                     const long kk = ((k % n2) + n2) % n2;
-                    const double r2 =
-                        grid.origin[2]
-                        + grid.L[2] * static_cast<double>(k) / n2;
+                    const double r2 = grid.origin[2]
+                                      + grid.L[2] * static_cast<double>(k) / n2;
                     const long g = base + kk;
                     // Raw displacement to the UNWRAPPED window position (the
                     // image offset is in r, so no min-image here).
@@ -284,8 +283,8 @@ struct IntegratePartPool {
         const std::size_t need = static_cast<std::size_t>(nc) * nn;
         if (data.size() < need)
             data.resize(need);
-        std::fill(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(need),
-                  0.0);
+        std::fill(data.begin(),
+                  data.begin() + static_cast<std::ptrdiff_t>(need), 0.0);
         return data.data();
     }
 };
@@ -411,10 +410,8 @@ void collocate_density_spin(const CompactBasisGrid& cbg, int nbasis,
             for (std::size_t ia = 0; ia < k; ++ia) {
                 const int u = t_fu[ia];
                 const double va = t_fv[ia];
-                const double* Pua =
-                    &P_a[static_cast<std::size_t>(u) * nbasis];
-                const double* Pub =
-                    &P_b[static_cast<std::size_t>(u) * nbasis];
+                const double* Pua = &P_a[static_cast<std::size_t>(u) * nbasis];
+                const double* Pub = &P_b[static_cast<std::size_t>(u) * nbasis];
                 acc_a += va * va * Pua[u];
                 acc_b += va * va * Pub[u];
                 double s2a = 0.0;
@@ -526,12 +523,10 @@ void integrate_potential_spin(const CompactBasisGrid& cbg, int nbasis,
         const double* Vb = &part_b[static_cast<std::size_t>(c) * nn];
         std::size_t kk = 0;
         for (; kk + B <= nn; kk += B) {
-            const batch_t sa =
-                batch_t::load_unaligned(out_a.data() + kk)
-                + batch_t::load_unaligned(Va + kk);
-            const batch_t sb =
-                batch_t::load_unaligned(out_b.data() + kk)
-                + batch_t::load_unaligned(Vb + kk);
+            const batch_t sa = batch_t::load_unaligned(out_a.data() + kk)
+                               + batch_t::load_unaligned(Va + kk);
+            const batch_t sb = batch_t::load_unaligned(out_b.data() + kk)
+                               + batch_t::load_unaligned(Vb + kk);
             sa.store_unaligned(out_a.data() + kk);
             sb.store_unaligned(out_b.data() + kk);
         }

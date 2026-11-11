@@ -1,7 +1,7 @@
 # Offline twin note — pw-uks-fe-smearing
 
 Atomiverse pin: collinear UKS plane-wave NC-UPF BCC Fe with Fermi–Dirac
-metallic smearing (`regressions/pw/pw-uks-fe-smearing/REFERENCE.md`).
+metallic smearing (`regressions/pw/smearing/REFERENCE.md`).
 
 Absolute energy is **not** compared to CP2K (GTH-GPW ≠ NC-UPF PW) — same
 class of limitation as `pw-smearing-al` and `pw-uks-kmesh-fe`.

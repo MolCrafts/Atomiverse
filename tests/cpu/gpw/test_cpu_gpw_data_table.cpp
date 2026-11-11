@@ -6,8 +6,8 @@
 /// The values asserted below are spot-checks against the published sources
 /// (Krack, TCA 114, 145 (2005) for GTH-PBE; VandeVondele & Hutter, JCP 127,
 /// 114105 (2007) for MOLOPT), pinned so a bad transcription cannot pass. The
-/// deeper check that the tables are *physically* right is the finite-difference
-/// force oracle in benchmarks/qc/gpw/validation (ac-005).
+/// deeper check that the tables are *physically* right is the GPW force
+/// regressions under regressions/gpw.
 ///
 /// Unit-scale: table lookups only, no SCF, no parsing anywhere.
 
@@ -15,6 +15,7 @@
 
 #include <stdexcept>
 #include <type_traits>
+#include <vector>
 
 #include "atomiverse/cpu/gpw/basis_data/gpw_tables.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
@@ -166,13 +167,14 @@ TEST(GpwDataTable, D3CoversSupportedElementsOnly) {
 }
 
 // Metallic free-energy force payload: result fields + public smear members
-// (no SCF — full FD identity lives in regressions/gpw/gpw-metallic-forces).
+// (no SCF — full FD identity lives in regressions/gpw/rks).
 TEST(GpwDataTable, MetallicForcePayloadMembersExist) {
-    GpwDft m;
-    m.smearing = Smearing::fermi_dirac;
+    GpwDft m{std::vector<Kind>{}, /*cutoff_ry=*/300.0,
+             ATV::cpu::xc::XCType::PADE};
+    m.smearing = ATV::electronic::Smearing::fermi_dirac;
     m.degauss = 0.02;
     m.extra_bands = 4;
-    EXPECT_EQ(m.smearing, Smearing::fermi_dirac);
+    EXPECT_EQ(m.smearing, ATV::electronic::Smearing::fermi_dirac);
     GpwResult r;
     EXPECT_TRUE(r.f_k.empty());
     EXPECT_TRUE(r.f_k_beta.empty());

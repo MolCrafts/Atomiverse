@@ -49,6 +49,9 @@ namespace vib {
 /// public members — no `PhononConfig` bag.
 class Phonon : public Driver<ATV::vib::Phase> {
   public:
+    /// @brief Finite displacements require the complete supercell on each rank.
+    bool requires_full_frame() const override { return true; }
+
     /// @brief Supercell repeats along lattice vector a (≥1).
     int na = 1;
     /// @brief Supercell repeats along lattice vector b (≥1).
@@ -98,6 +101,15 @@ class Phonon : public Driver<ATV::vib::Phase> {
             s, "Phonon",
             "Add `phonon.set_neighbor(cpu::md::NeighborList<>{cutoff, "
             "skin})`.");
+        // The workspace (R0, Hessian rows/columns, normal modes) is indexed
+        // by the row order the caller handed in, and DisplaceStep restores R0
+        // by row. `atom_modify sort` at the setup rebuild or a later one
+        // would scramble that map silently. Drop sorting for the provider's
+        // life, as Minimize and MC do for their row-indexed state.
+        this->for_each_pending_mut([](cpu::Component& c) {
+            if (cpu::NeighborProvider* np = c.neighbor_provider())
+                np->forbid_row_reordering();
+        });
     }
 
     void validate_components() const override {

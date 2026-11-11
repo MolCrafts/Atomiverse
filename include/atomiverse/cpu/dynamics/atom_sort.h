@@ -9,19 +9,13 @@
 /// | **Spatial sort within a rank** | **this module**, triggered at **reneighbor** |
 /// | **Neighbor CSR construction** | `NeighborList` / `CellList` |
 ///
-/// LAMMPS (`atom_vec.cpp` / `neighbor.cpp`): reordering is *not* domain
-/// decomposition. `Atom::sort()` bins owned atoms and permutes the per-proc
-/// atom arrays so that atoms in the same spatial bin are adjacent; the call
-/// is made from `Neighbor` at the first reneighbor after `Nfreq` steps
-/// (`atom_modify sort Nfreq binsize`). That keeps force + neighbor walks
-/// cache-friendly without changing ownership.
-///
-/// Atomiverse mirrors that: `NeighborList` calls #sort_owned_atoms immediately
-/// before rebuilding the cell list / CSR. After a reorder it must
-/// (1) rebuild `DomainDecomposition::tag_to_local` for owners and
-/// (2) bump `neighbor_generation` so `BondedTupleCache` rebuilds local-index
-/// tuples (slots moved). Ghost rows are never sorted (they live in
-/// `[n_local, n_local+n_ghost)` and are rewritten by halo).
+/// LAMMPS `src/verlet.cpp` invokes `Atom::sort()` between exchange and borders
+/// at the first reneighbor after Nfreq steps (`atom_modify sort Nfreq binsize`).
+/// Runtime follows this ordering for serial and MPI. Reordering owned rows
+/// rebuilds tag maps and invalidates local-index caches before ghost creation.
+/// Port reference: a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+/// Copyright (2003) Sandia Corporation. Under Contract DE-AC04-94AL85000,
+/// the U.S. Government retains certain rights. GPL-2.0-only.
 #pragma once
 
 #include "atomiverse/cpu/communication/domain.h"
@@ -38,9 +32,8 @@ using DomainDecomposition = mpi::DomainDecomposition;
 /// @brief Runtime state for LAMMPS `atom_modify sort Nfreq binsize`.
 ///
 /// Owned by `NeighborList`, published non-owning as `ctx.md.atom_sort`.
-/// Multi-rank: `CommBrick` applies it **before** borders (LAMMPS:
-/// exchange → sort → borders). Serial: `NeighborList` applies it at
-/// reneighbor. The clock is the Driver's `LaunchContext::step`, not a
+/// Runtime applies it between exchange and borders for every topology.
+/// The clock is the Driver's `LaunchContext::step`, not a
 /// counter incremented on every communication opportunity — Minimize
 /// line-search re-evaluates forces at a frozen step and must not walk
 /// the cadence.
@@ -53,11 +46,9 @@ struct AtomSortState {
     /// @brief Master enable (LAMMPS `atom_modify sort` vs no-sort).
     bool enabled = true;
     /// @brief The loop's current step, stamped from `LaunchContext::step`.
-    int step = 0;
-    /// @brief Next `step` at which sort may fire. Default = default nfreq so
-    ///        the first sort is after `nfreq` steps (LAMMPS `nextsort` init),
-    ///        not on step 0.
-    int next_sort = 1000;
+    BigInt step = 0;
+    /// @brief Next sort step; zero requests sorting during initial setup.
+    BigInt next_sort = 0;
 
     /// @brief Resolve binsize (Å) from `binsize` + neighbor cutoff.
     double resolved_binsize(double neighbor_cutoff) const {
@@ -76,7 +67,7 @@ struct AtomSortState {
 
     void mark_sorted() { next_sort = step + (nfreq > 0 ? nfreq : 1); }
 
-    /// @brief Apply cadence and schedule first sort at `nfreq_` (not step 0).
+    /// @brief Apply cadence and request sorting during initial setup.
     /// @param nfreq_ Sort at the first reneighbor after this many steps.
     /// @param binsize_ Bin edge [Å]; `≤ 0` → auto from neighbor cutoff.
     /// @param enabled_ Master enable.
@@ -84,7 +75,7 @@ struct AtomSortState {
         nfreq = nfreq_;
         binsize = binsize_;
         enabled = enabled_;
-        next_sort = (nfreq > 0) ? nfreq : 1;
+        next_sort = 0;
     }
 };
 
@@ -115,17 +106,14 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize);
 /// in-tree pipeline reaches here with a null `dd` today; that is exactly why
 /// it would not have been noticed.)
 ///
-/// The swap-table parameter is **mandatory**, without a default, so that
-/// every call site has to state which halo table a reorder just invalidated
-/// rather than silently forgetting one: the halo path passes its own table,
-/// the serial `NeighborList` path passes `nullptr` because no swap table
-/// exists there. Non-const: `Halo::invalidate()` is a mutation of the
-/// owner's table, and no `const_cast` is permitted anywhere for it.
+/// Runtime invokes this after exchange and sorting, immediately before borders
+/// reconstructs the communicator's send lists. A direct caller can supply its
+/// Halo to invalidate stored row indices immediately.
 ///
 /// @param dd Domain decomposition (may be null — the DD half is then skipped).
 /// @param f  Frame after sort.
 /// @param swaps Halo swap table whose stored row indices the reorder just
-///        invalidated, or null when this path has no halo (serial).
+///        invalidated, or null when borders immediately rebuilds it.
 /// @param clear_ghosts If true, drop ghost bookkeeping (pre-borders path).
 inline void notify_sorted(DomainDecomposition* dd, Frame& f, comm::Halo* swaps,
                           bool clear_ghosts = true) {
@@ -140,11 +128,10 @@ inline void notify_sorted(DomainDecomposition* dd, Frame& f, comm::Halo* swaps,
         dd->tag_to_local.clear();
         if (clear_ghosts) {
             dd->ghost_tags.clear();
-            dd->n_ghost = 0;
             f.set_nghost(0);
             ++dd->halo_generation; // ghost slots invalid
         }
-        const int n = dd->n_local > 0 ? dd->n_local : f.nlocal();
+        const int n = f.nlocal();
         // Always rebuild owner tag map after reorder (bonded + gather).
         dd->tag_to_local.reserve(static_cast<std::size_t>(n));
         const TagInt* tag = f.span(kAtom_tag);
@@ -155,8 +142,7 @@ inline void notify_sorted(DomainDecomposition* dd, Frame& f, comm::Halo* swaps,
     } else if (clear_ghosts) {
         f.set_nghost(0);
     }
-    const int n_owned =
-        f.nlocal() > 0 ? f.nlocal() : (dd ? dd->n_local : f.nlocal());
+    const int n_owned = f.nlocal();
     f.clear_tag_index();
     f.rebuild_tag_index(0, n_owned);
 }

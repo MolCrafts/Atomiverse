@@ -1,0 +1,9 @@
+{
+  "initial_job": 4476891,
+  "initial_script_exit": 1,
+  "engine_runs_exit_zero": true,
+  "reason": "Initial verbose force parser included component contributions and rejected atom count. Fixed parser reparsed SHA-identical original output; initial record retained.",
+  "matrix_job": 4477041,
+  "mp_probe_job": 4477087,
+  "reference_source_files": "Exact original matrix/mp-probe JSON retained with original capture script hashes; exported six-case pins preserve raw input/output hashes."
+}

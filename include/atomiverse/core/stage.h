@@ -137,10 +137,9 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 /// is a staged loop with a termination criterion — exactly a Driver — so the
 /// gaussian-basis SCF iteration becomes a `cpu::Driver<scf::Phase>`, and the
 /// concrete methods (`RHF`/`UHF`/`RKS`/`UKS`) supply the components that fill its
-/// stages. CUDA SCF free-loop bag folded under RHF (RhfScfCycle); full
-/// `cuda::Driver` nesting residual. GPW uses `gpw::Phase` below; plane-wave
-/// `cpu::pw::PW` uses `pw::Phase` (restricted fixed-occ path). This enum is
-/// CPU-only.
+/// stages. `cuda::scf::RHF` is `cuda::Driver<scf::Phase>` on the same enum
+/// (device stages; nested under Evaluate/MD). GPW uses `gpw::Phase` below;
+/// plane-wave `cpu::pw::PW` uses `pw::Phase` (restricted fixed-occ path).
 ///
 /// The phase order reflects what runs within one self-consistent iteration:
 /// build the Fock/Hamiltonian matrix (`fock`), extrapolate it in **Fock space**
@@ -180,6 +179,81 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 }
 
 } // namespace scf
+
+/// @brief NDDO (AM1 / RM1) self-consistency phases.
+///
+/// `cpu::semiempirical::AM1` and `RM1` are `cpu::Driver<nddo::Phase>`.
+/// The iteration order is `diagonalize → density → fock → check`: the
+/// energy is the NDDO functional of the density and the Fock rebuilt from
+/// that density, so the Fock rebuild sits after the density update. The
+/// guess Fock is built once before the first iteration. There is no DIIS
+/// mix. `kind_of` returns `PhaseKind::SCF`.
+namespace nddo {
+
+/// @brief Phase order for one NDDO self-consistency iteration.
+enum class Phase {
+    diagonalize, ///< Diagonalize the current packed Fock matrix.
+    density,     ///< Build the new closed-shell density.
+    fock,        ///< Rebuild the Fock matrix from that density.
+    check,       ///< Energy and density residual.
+    COUNT        ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the NDDO phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"diagonalize", "density", "fock", "check"};
+}
+
+/// @brief Workflow discriminant for `nddo::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace nddo
+
+/// @brief SCC charge self-consistency phases (DFTB2/DFTB3, GFN1/GFN2, IPEA).
+///
+/// One iteration is `shift → diagonalize → charges → mix → check`. The
+/// potential shift is built from the input charges, the eigenproblem and
+/// density update follow, Mulliken charges publish the residual, and the mix
+/// stage either accepts that density's charges or Anderson-mixes them. The
+/// Criterion is polled after the iteration, so the accept-versus-mix branch
+/// lives in the mix stage. `kind_of` returns `PhaseKind::SCF`.
+namespace scc {
+
+/// @brief Phase order for one SCC iteration.
+enum class Phase {
+    shift,       ///< Build the charge potential and the shifted Hamiltonian.
+    diagonalize, ///< Solve the eigenproblem and build the density.
+    charges,     ///< Mulliken populations and the charge residual.
+    mix,   ///< Accept the new charges, or mix them for the next iteration.
+    check, ///< End of the iteration. The Criterion is polled after it.
+    COUNT  ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the SCC phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"shift", "diagonalize", "charges", "mix", "check"};
+}
+
+/// @brief Workflow discriminant for `scc::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace scc
 
 /// @brief Gaussian-and-plane-waves (GPW) KS self-consistency phases.
 ///
@@ -406,6 +480,81 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 
 } // namespace path
 
+/// @brief Closed-shell coupled-cluster amplitude iterations.
+///
+/// `cpu::scf::CCSD` and `cpu::scf::CC2` are `cpu::Driver<cc::Phase>`. One
+/// iteration is PySCF `pyscf/cc/ccsd.py` `kernel`: `update_amps` →
+/// `run_diis` → `energy`, then the residual is published for a Criterion.
+/// CC2's doubles residual is `pyscf/cc/rccsd.py` `update_amps` with
+/// `cc.cc2`. `kind_of` returns `PhaseKind::SCF` (a self-consistency loop,
+/// same discriminant as NDDO).
+namespace cc {
+
+/// @brief Phase order for one CCSD amplitude iteration.
+enum class Phase {
+    update, ///< Residual → new amplitudes (`rccsd.update_amps`).
+    mix,    ///< Amplitude DIIS, or the Jacobi amplitudes when DIIS is off.
+    energy, ///< Correlation energy (`rccsd.energy`) [Hartree, internal].
+    check,  ///< Publish max|Δt| on `ConvergenceMetrics::residual`.
+    COUNT   ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the coupled-cluster phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"update", "mix", "energy", "check"};
+}
+
+/// @brief Workflow discriminant for `cc::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace cc
+
+/// @brief Closed-shell CASSCF orbital macro-iterations.
+///
+/// `cpu::scf::CASSCF` is `cpu::Driver<mc::Phase>`. One iteration is the
+/// macro cycle of PySCF `pyscf/mcscf/mc1step.py` `kernel`: apply the
+/// pending orbital rotation (`rotate_mo`; identity on the first pass),
+/// solve the active-space CI (`casci`), build the orbital gradient
+/// (`gen_g_hop`'s antisymmetric generalized Fock), then publish max |g|
+/// for a Criterion. `kind_of` returns `PhaseKind::SCF`.
+namespace mc {
+
+/// @brief Phase order for one CASSCF macro iteration.
+enum class Phase {
+    rotate,   ///< Apply the stored orbital step (`rotate_mo`). No-op until
+              ///< a gradient has been built.
+    casci,    ///< Active-space CI (`CASSCF.casci` / dense FCI).
+    gradient, ///< Orbital gradient from the generalized Fock (`gen_g_hop`).
+    check,    ///< Publish max |g| on `ConvergenceMetrics::residual`.
+    COUNT     ///< Sentinel — total number of phases.
+};
+
+/// @brief Human-readable names for the CASSCF phases.
+/// @param phase_tag Tag value used only for overload selection.
+/// @return Phase names in enum order, excluding `COUNT`.
+inline std::vector<std::string> phase_names(Phase phase_tag) {
+    (void)phase_tag;
+    return {"rotate", "casci", "gradient", "check"};
+}
+
+/// @brief Workflow discriminant for `mc::Phase` (ADL tag dispatch).
+/// @param phase_tag Tag value used only for overload selection.
+/// @return `PhaseKind::SCF`.
+constexpr PhaseKind kind_of(Phase phase_tag) {
+    (void)phase_tag;
+    return PhaseKind::SCF;
+}
+
+} // namespace mc
+
 /// @brief Phase enum → Plan slot index. **The one conversion in the codebase.**
 ///
 /// A Plan is a dense array of slots, so somewhere the typed phase has to become an
@@ -413,9 +562,9 @@ constexpr PhaseKind kind_of(Phase phase_tag) {
 /// asking "is this my stage?", a driver replaying a phase, a binding being declared —
 /// goes through a typed entry point that calls this. The rule is enforceable by grep,
 /// which is the point: `static_cast<int>` applied to a Phase enum anywhere else is a
-/// bug, because the seven Phase enums all start at 0 and an `int` cannot tell them apart.
+/// bug, because the Phase enums all start at 0 and an `int` cannot tell them apart.
 ///
-/// @tparam PhaseEnum One of the seven workflow Phase enums in this header.
+/// @tparam PhaseEnum One of the workflow Phase enums in this header.
 /// @param p Typed phase value.
 /// @return Its dense slot index within that workflow's Plan.
 template <typename PhaseEnum>
@@ -424,7 +573,7 @@ constexpr int slot_of(PhaseEnum p) {
 }
 
 /// @brief Number of Plan slots a workflow's Phase enum declares (its COUNT sentinel).
-/// @tparam PhaseEnum One of the seven workflow Phase enums in this header.
+/// @tparam PhaseEnum One of the workflow Phase enums in this header.
 /// @return `PhaseEnum::COUNT` as a slot count.
 template <typename PhaseEnum>
 constexpr int slot_count() {
@@ -444,7 +593,7 @@ constexpr int slot_count() {
 /// concrete type for every workflow. The `PhaseKind` travelling beside it is what
 /// makes the int safe, and `make_binding` is the only way to make the pair.
 ///
-/// @tparam PhaseEnum One of the seven workflow Phase enums in this header.
+/// @tparam PhaseEnum One of the workflow Phase enums in this header.
 /// @param p Typed phase value the component wants to run in.
 /// @param order Ordering within the phase (lower runs earlier; negative =
 ///        infrastructure, 0 = the op, positive = consumers).

@@ -21,29 +21,28 @@ namespace comm {
 /// Every rank completes both reductions before any rank can throw. A true
 /// schema mismatch therefore fails collectively before point-to-point or
 /// bulk-payload communication begins.
-inline void require_collective_fingerprint(std::uint32_t version,
-                                           std::uint64_t fingerprint,
+inline void require_collective_fingerprint(std::uint64_t fingerprint,
                                            MPI_Comm communicator,
                                            std::string_view operation) {
-    const std::uint64_t local[2] = {version, fingerprint};
-    std::uint64_t minimum[2] = {};
-    std::uint64_t maximum[2] = {};
-    MPI_Allreduce(local, minimum, 2, MPI_UINT64_T, MPI_MIN, communicator);
-    MPI_Allreduce(local, maximum, 2, MPI_UINT64_T, MPI_MAX, communicator);
-    if (minimum[0] == maximum[0] && minimum[1] == maximum[1])
+    std::uint64_t minimum = 0;
+    std::uint64_t maximum = 0;
+    MPI_Allreduce(&fingerprint, &minimum, 1, MPI_UINT64_T, MPI_MIN,
+                  communicator);
+    MPI_Allreduce(&fingerprint, &maximum, 1, MPI_UINT64_T, MPI_MAX,
+                  communicator);
+    if (minimum == maximum)
         return;
-    throw std::runtime_error(
-        std::string(operation)
-        + ": collective Frame schema mismatch (version/fingerprint range "
-        + std::to_string(minimum[0]) + "/" + std::to_string(minimum[1]) + " .. "
-        + std::to_string(maximum[0]) + "/" + std::to_string(maximum[1]) + ")");
+    throw std::runtime_error(std::string(operation)
+                             + ": collective Frame schema mismatch "
+                               "(fingerprint range "
+                             + std::to_string(minimum) + " .. "
+                             + std::to_string(maximum) + ")");
 }
 
 inline void require_collective_schema(const PackPlan& plan,
                                       MPI_Comm communicator,
                                       std::string_view operation) {
-    require_collective_fingerprint(plan.version, plan.fingerprint, communicator,
-                                   operation);
+    require_collective_fingerprint(plan.fingerprint, communicator, operation);
 }
 
 /// @brief Collective agreement on a wire plan's schema, with a
@@ -55,8 +54,7 @@ inline void require_collective_schema(const PackPlan& plan,
 inline void require_collective_plan(const PackPlan& plan, MPI_Comm communicator,
                                     std::string_view operation,
                                     std::uint64_t discriminator = 0) {
-    require_collective_fingerprint(plan.version,
-                                   plan.wire_fingerprint(discriminator),
+    require_collective_fingerprint(plan.wire_fingerprint(discriminator),
                                    communicator, operation);
 }
 

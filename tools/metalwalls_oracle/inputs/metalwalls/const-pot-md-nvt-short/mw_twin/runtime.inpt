@@ -1,4 +1,4 @@
-# MetalWalls twin of ATV regressions/md/const-pot-md-nvt-short
+# MetalWalls twin of ATV regressions/md/constant-potential
 # ============================================================
 # Toy parallel-plate NaCl capacitor, IDENTICAL geometry to the ATV
 # regression (14 x 14 x 20 A cell, 2x2 wall sites at z = 2 / 18 A,

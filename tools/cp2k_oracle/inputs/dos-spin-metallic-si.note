@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Character / wall twin for `regressions/pw/dos-spin-metallic-si`. **Not** an
+Character / wall twin for `regressions/pw/bands-dos`. **Not** an
 absolute DOS pin: CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses
 ONCV UPF. Record CP2K version, wall, and occupied-state integral character when
 a binary is available. Never launch CP2K from ctest.
@@ -87,7 +87,7 @@ a binary is available. Never launch CP2K from ctest.
 ## Pin policy
 
 Record CP2K version, wall, and qualitative \(E_F\) / electron count / \(M\) in
-`regressions/pw/dos-spin-metallic-si/REFERENCE.md` when a binary is available.
+`regressions/pw/bands-dos/REFERENCE.md` when a binary is available.
 Never launch CP2K from ctest.
 
 | Item | Value |

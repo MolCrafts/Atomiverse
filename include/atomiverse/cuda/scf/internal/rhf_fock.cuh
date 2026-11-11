@@ -73,6 +73,20 @@ class RHFFockDevice {
                   const double* coeff_mol, const int* L_mol,
                   const int* atom_of_mol, int n_occ, double level_shift = 0.0);
 
+    /// @brief Ragged Cartesian shells, every l ≤ 3.
+    ///
+    /// `alpha` / `coeff` are the raw basis-table contraction (not
+    /// physically normalized). `nprim[s]` / `prim_off[s]` index that
+    /// flat list. Device `launch_*_lgt1` builds S, T, V, and the ERI.
+    /// When `spherical` is true the SCF dimension is the 2l+1 basis and
+    /// the Cartesian tensors are sandwiched with CartToSph on device.
+    /// @param n_prim_total Length of `alpha` and `coeff`.
+    /// @param spherical Spherical-convention basis (def2 / cc) with l ≥ 2.
+    RHFFockDevice(int n_shells, int n_ao, const double* alpha,
+                  const double* coeff, int n_prim_total, const int* nprim,
+                  const int* prim_off, const int* L_mol, const int* atom_of_mol,
+                  int n_occ, double level_shift = 0.0, bool spherical = false);
+
     /// @brief Multi-shell pure-s convenience (Wave 3): one element type, all L=0.
     /// @param n_shells_per_atom s shells per atom (table order).
     /// @param n_prim Primitives per shell.
@@ -86,10 +100,11 @@ class RHFFockDevice {
                   double level_shift = 0.0);
 
     /// @brief Legacy single-shell pure-s (one s shell / atom).
-    RHFFockDevice(int n_prim, const double* exponents, const double* coefficients,
-                  int n_occ, int natm, double level_shift = 0.0)
-        : RHFFockDevice(/*n_shells_per_atom=*/1, n_prim, exponents, coefficients,
-                        n_occ, natm, level_shift) {}
+    RHFFockDevice(int n_prim, const double* exponents,
+                  const double* coefficients, int n_occ, int natm,
+                  double level_shift = 0.0)
+        : RHFFockDevice(/*n_shells_per_atom=*/1, n_prim, exponents,
+                        coefficients, n_occ, natm, level_shift) {}
 
     /// @brief Legacy Wave-3 signature without natm — natm taken at build().
     RHFFockDevice(int n_shells_per_atom, int n_prim, const double* alpha_atom,
@@ -114,6 +129,12 @@ class RHFFockDevice {
     std::vector<double> coeff_mol_;
     std::vector<int> L_mol_;
     std::vector<int> atom_of_mol_;
+    /// Ragged primitive counts / offsets. Empty on the uniform STO-3G path.
+    std::vector<int> nprim_;
+    std::vector<int> prim_off_;
+    bool ragged_ = false;
+    /// Spherical AO basis: Cartesian integrals, then device c2s.
+    bool spherical_ = false;
 
     void* cublas_handle_ = nullptr;
     void* cusolver_handle_ = nullptr;

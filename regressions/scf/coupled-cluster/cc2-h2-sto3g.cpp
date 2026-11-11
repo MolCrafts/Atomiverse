@@ -1,0 +1,97 @@
+/// @file regressions/scf/cc2-h2-sto3g/reg_cc2-h2-sto3g.cpp
+/// @brief H₂ CC2/STO-3G correlation + total energy vs offline PySCF pin
+///        (REFERENCE.md).
+///
+/// Out-of-library consumer: public headers only
+/// (`cpu/scf/methods.h`, `cpu/frame/frame.h`). Product gate: e_corr and
+/// e_tot to 1e-6 Ha.
+
+#include <cmath>
+#include <cstdio>
+
+#include "atomiverse/core/units.h"
+#include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/scf/methods.h"
+#include "harness/registry.h"
+
+namespace atv_reg_scf_cc2_h2_sto3g {
+
+namespace {
+
+bool check(const char* what, double got, double want, double tol) {
+    if (!std::isfinite(got) || std::abs(got - want) > tol) {
+        std::fprintf(stderr, "FAIL: %s got=%.15f want=%.15f tol=%.1e\n", what,
+                     got, want, tol);
+        return false;
+    }
+    std::printf("  %-28s %18.12f (want %18.12f +/- %.1e)\n", what, got, want,
+                tol);
+    return true;
+}
+
+} // namespace
+
+int run() {
+    using namespace ATV;
+
+    // Geometry (Å) — pin_scf `h2` preset (H–H = 0.74 Å along z).
+    cpu::Frame frame(2);
+    frame.span(kAtom_x)[0] = 0.0;
+    frame.span(kAtom_y)[0] = 0.0;
+    frame.span(kAtom_z)[0] = 0.0;
+    frame.span(kAtom_x)[1] = 0.0;
+    frame.span(kAtom_y)[1] = 0.0;
+    frame.span(kAtom_z)[1] = 0.74;
+    frame.span(kAtom_atomic_number)[0] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
+    frame.box = cpu::Box::cubic(20.0);
+
+    // Pins — REFERENCE.md (PySCF 2.14.0 rccsd.RCCSD cc2=True / RHF STO-3G).
+    constexpr double kEHf = -1.116759307396426;   // Ha
+    constexpr double kECorr = -0.013138073589533; // Ha
+    constexpr double kETot = -1.129897380985958;  // Ha
+    constexpr double kTol = 1e-6;                 // Ha
+
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
+    rhf.tol = 1e-12;
+    rhf.max_iter = 100;
+
+    const cpu::scf::CC2Result cc2 =
+        ATV::cpu::scf::CC2<decltype(rhf)>{rhf}.run(frame);
+    if (!rhf.converged()) {
+        std::fprintf(stderr, "FAIL: RHF/STO-3G (H2) did not converge\n");
+        return 1;
+    }
+    if (!cc2.converged) {
+        std::fprintf(stderr, "FAIL: CC2 amplitudes did not converge\n");
+        return 1;
+    }
+
+    std::printf("H2 CC2/STO-3G (RHF reference):\n");
+    if (!check("E_RHF [Ha]", rhf.energy(), kEHf, kTol))
+        return 1;
+    if (!check("E_corr CC2 [Ha]", cc2.e_corr, kECorr, kTol))
+        return 1;
+    if (!check("E_tot CC2 [Ha]", cc2.e_tot, kETot, kTol))
+        return 1;
+    if (!check("E_tot = E_HF+E_corr", cc2.e_tot, rhf.energy() + cc2.e_corr,
+               1e-12))
+        return 1;
+    if (!frame.meta.contains(kEnergy.key)) {
+        std::fprintf(stderr,
+                     "FAIL: CC2::run(Frame&) did not publish kEnergy\n");
+        return 1;
+    }
+    if (!check("kEnergy [eV]", frame.meta.get(kEnergy),
+               cc2.e_tot * units::kHartreeInEv, 1e-8))
+        return 1;
+
+    std::printf("  iterations                 %d\n", cc2.iterations);
+    std::printf("\nPASS: cc2-h2-sto3g\n");
+    return 0;
+}
+
+} // namespace atv_reg_scf_cc2_h2_sto3g
+
+ATV_REGRESSION("scf/coupled-cluster", "cc2-h2-sto3g",
+               atv_reg_scf_cc2_h2_sto3g::run);

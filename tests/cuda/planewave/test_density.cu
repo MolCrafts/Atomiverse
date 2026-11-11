@@ -6,7 +6,7 @@
 /// drives ONE device method (or a fixed 5-call mixing sequence with synthetic
 /// input) and compares it to the actual CPU stage object on the same
 /// `PWWorkspace`. The end-to-end CPU/CUDA PW parity solve lives in
-/// regressions/pw/pw-cuda-lda-si, never under ctest.
+/// regressions/pw/rks, never under ctest.
 ///
 /// TOLERANCES ARE NOT ZERO BY DESIGN. cuFFT and FFTW use different butterfly
 /// orders, the device reductions are fixed-geometry trees while the CPU sums
@@ -19,7 +19,8 @@
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/internal/device_density.cuh"
 #include "atomiverse/cuda/planewave/internal/device_solver.cuh"
 
@@ -31,7 +32,7 @@
 #include <vector>
 
 using ATV::AccReal;
-using ATV::cpu::scf::XCType;
+using ATV::cpu::xc::XCType;
 using ATV::cuda::pw::internal::DeviceBandSolver;
 using ATV::cuda::pw::internal::DeviceDensity;
 using ATV::cuda::pw::internal::GField;
@@ -47,7 +48,8 @@ constexpr int kDepth = 3;
 /// ecut = 6 Ry / k_mesh = 1 runs in milliseconds.
 ATV::cpu::Frame make_si_fcc() {
     ATV::cpu::Frame f(2);
-    f.span(ATV::kAtom_type)[0] = f.span(ATV::kAtom_type)[1] = 14;
+    f.span(ATV::kAtom_atomic_number)[0] = f.span(ATV::kAtom_atomic_number)[1] =
+        14;
     f.span(ATV::kAtom_mass)[0] = f.span(ATV::kAtom_mass)[1] = 28.0855;
     f.span(ATV::kAtom_x)[0] = 0;
     f.span(ATV::kAtom_y)[0] = 0;
@@ -69,13 +71,16 @@ ATV::cpu::Frame make_si_fcc() {
     return f;
 }
 
-void build_problem(cpupw::PWProblem& prob) {
+void build_problem(cpupw::PWSetup& prob, cpupw::PWWorkspace& ws) {
     ATV::cpu::Frame f = make_si_fcc();
     // Analytic GTH: a real published potential with no file dependency. The
     // density side under test does not touch the pseudopotential beyond
     // V_loc(G), but it must be a physical V_loc(G).
-    cpupw::setup_pw_problem(f, "", "GTH-PBE-q4", /*ecut_ry=*/6.0,
-                            /*k_mesh=*/1, prob);
+    const std::shared_ptr<const ATV::electronic::NormConservingPotential>
+        potential = std::make_shared<ATV::cpu::pw::GthPseudopotential>(
+            molrs::Element::Si, "GTH-PBE-q4");
+    cpupw::setup_pw_problem(f, std::span{&potential, 1}, /*ecut_ry=*/6.0,
+                            /*k_mesh=*/1, prob, ws);
 }
 
 /// Synthetic real-space density accumulator for pseudo-iteration `t`.
@@ -86,8 +91,9 @@ std::vector<double> synth_accumulation(int nr, int t) {
     for (int i = 0; i < nr; ++i)
         v[static_cast<size_t>(i)] =
             0.030 + 0.004 * t
-            + 0.020 * std::sin(0.011 * static_cast<double>(i)
-                               + 0.7 * static_cast<double>(t))
+            + 0.020
+                  * std::sin(0.011 * static_cast<double>(i)
+                             + 0.7 * static_cast<double>(t))
             + 0.006 * std::cos(0.003 * static_cast<double>(i * (t + 1)));
     return v;
 }
@@ -106,17 +112,36 @@ double max_abs(const std::vector<std::complex<double>>& v) {
 // tolerances are the LDA-parity bounds; the PBE run reuses them unchanged —
 // its extra FFT depth (3 gradient c2r + 3 flux r2c + 1 divergence c2r on
 // BOTH backends) stays well inside the same envelope.
-static void expect_stage_parity(XCType xc) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    auto& ws = prob.ws;
+static void expect_stage_parity(XCType xc, bool high_frequency = false) {
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
     ASSERT_GT(ng, 0);
     ASSERT_GT(nr, 0);
 
+    if (high_frequency) {
+        // A positive density with a near-cutoff Fourier mode. The smooth
+        // atomic seed alone cannot reveal aliasing of non-polynomial XC.
+        int mode = 1;
+        for (int i = 1; i < ng; ++i)
+            if (prob.gv0.g[i].norm_squared() > prob.gv0.g[mode].norm_squared())
+                mode = i;
+        int mirror = -1;
+        for (int i = 0; i < ng; ++i)
+            if (prob.gv0.h[i] == -prob.gv0.h[mode]
+                && prob.gv0.k[i] == -prob.gv0.k[mode]
+                && prob.gv0.l[i] == -prob.gv0.l[mode])
+                mirror = i;
+        ASSERT_GE(mirror, 0);
+        ws.rho_G.fill(std::complex<AccReal>(0, 0));
+        ws.rho_G[0] = 0.05;
+        ws.rho_G[mode] = ws.rho_G[mirror] = 0.024;
+    }
+
     // Device stages on the atomic seed density uploaded by the constructor.
-    DeviceDensity den(prob, kMixBeta, kDepth, xc);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth, xc);
     den.hartree();
     den.exchange_correlation();
     den.assemble_veff();
@@ -180,8 +205,8 @@ static void expect_stage_parity(XCType xc) {
     den.fetch_veff_r(veff_r.data());
     double veff_max = 0;
     for (int i = 0; i < nr; ++i)
-        veff_max = std::max(veff_max, std::abs(static_cast<double>(
-                                          ws.V_eff_r[i])));
+        veff_max =
+            std::max(veff_max, std::abs(static_cast<double>(ws.V_eff_r[i])));
     ASSERT_GT(veff_max, 0.0);
     for (int i = 0; i < nr; ++i)
         EXPECT_NEAR(veff_r[static_cast<size_t>(i)],
@@ -189,7 +214,7 @@ static void expect_stage_parity(XCType xc) {
             << "V_eff(r) mismatch at ir=" << i;
 
     // E_xc from the same fused reduction the SCF loop reads.
-    const auto s = den.reduce(static_cast<double>(prob.vol_bohr));
+    const auto s = den.reduce(static_cast<double>(prob.ions.vol_bohr));
     EXPECT_NEAR(s.e_xc, static_cast<double>(ws.E_xc),
                 1e-12 * std::max(1.0, std::abs(static_cast<double>(ws.E_xc))));
 }
@@ -202,19 +227,24 @@ TEST(CudaPWDensity, HartreeXcVeffMatchCpu) {
 // kernel, and the v_xc −= ∇·flux divergence pass against
 // XCBuilder::step(ws, PBE) — the CPU twin runs its true-GGA branch on the
 // same atomic seed density.
-TEST(CudaPWDensity, HartreeXcVeffMatchCpuPbe) {
-    expect_stage_parity(XCType::PBE);
+TEST(CudaPWDensity, HartreeXcVeffMatchCpuPbeFamily) {
+    for (const auto xc :
+         {XCType::PBE, XCType::PBEsol, XCType::RevPBE, XCType::RPBE}) {
+        SCOPED_TRACE(static_cast<int>(xc));
+        expect_stage_parity(xc);
+    }
 }
 
 // ── Pulay mixing parity, including the ring wrap ─────────────────────────
 TEST(CudaPWDensity, MixingMatchesCpuPulay) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    auto& ws = prob.ws;
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
 
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
 
     // The CPU builder keeps no ctor snapshot: finish() honours the LIVE
     // workspace mixing parameters, so pin them to match DeviceDensity.
@@ -264,13 +294,14 @@ TEST(CudaPWDensity, MixingMatchesCpuPulay) {
 
 // ── Fused reductions vs iteration_energy / ConvergenceCheck ──────────────
 TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    auto& ws = prob.ws;
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
     const int ng = prob.gv0.count();
     const int nr = ws.nr;
 
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
 
     // One pseudo-iteration, host and device in lockstep.
     den.hartree();
@@ -281,7 +312,7 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
     po.step(ws);
     cpupw::XCBuilder xcb;
     xcb.prepare(ws);
-    xcb.step(ws, ATV::cpu::scf::XCType::LSDA);
+    xcb.step(ws, ATV::cpu::xc::XCType::LSDA);
     cpupw::VeffBuilder vb;
     vb.prepare(ws);
     vb.step(ws);
@@ -306,12 +337,12 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
     den.collect();
     den.mix(0);
 
-    const double vol = static_cast<double>(prob.vol_bohr);
+    const double vol = static_cast<double>(prob.ions.vol_bohr);
     const auto s = den.reduce(vol);
 
     const AccReal e_band_synth = AccReal(-1.234); // arbitrary; host-only term
-    const auto ref = cpupw::iteration_energy(ws, e_band_synth, prob.ew_total,
-                                             prob.vol_bohr);
+    const auto ref = cpupw::iteration_energy(
+        ws, e_band_synth, prob.ions.ew_total, prob.ions.vol_bohr);
 
     auto rel = [](double ref_v) {
         return 1e-10 * std::max(1.0, std::abs(ref_v));
@@ -336,11 +367,13 @@ TEST(CudaPWDensity, ReductionsMatchIterationEnergy) {
 
 // ── Reductions are reproducible run to run (fixed launch geometry) ───────
 TEST(CudaPWDensity, ReductionsAreBitwiseReproducible) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
 
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
-    const double vol = static_cast<double>(prob.vol_bohr);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
+    const double vol = static_cast<double>(prob.ions.vol_bohr);
 
     // Re-run the WHOLE XC pass each time so the E_xc reduction is exercised
     // too — that is the one that used to be an atomicAdd.
@@ -363,18 +396,309 @@ TEST(CudaPWDensity, ReductionsAreBitwiseReproducible) {
 // Density owns a non-default stream; the band solver can borrow it so both
 // SCF halves share one serial chain. Physics-free: only the handle identity.
 TEST(CudaPWDensity, NonDefaultStreamOwnedAndShareable) {
-    cpupw::PWProblem prob;
-    build_problem(prob);
-    DeviceDensity den(prob, kMixBeta, kDepth, XCType::LSDA);
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA);
     ASSERT_NE(den.stream(), static_cast<cudaStream_t>(nullptr));
 
-    DeviceBandSolver solver(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz,
-                            prob.n_bands, den.stream());
+    DeviceBandSolver solver(ws.fft_nx, ws.fft_ny, ws.fft_nz, prob.n_bands,
+                            den.stream());
     EXPECT_EQ(solver.stream(), den.stream());
 
     // Stand-alone solver (diagnostics) still refuses the default stream.
-    DeviceBandSolver own(prob.ws.fft_nx, prob.ws.fft_ny, prob.ws.fft_nz,
-                         prob.n_bands);
+    DeviceBandSolver own(ws.fft_nx, ws.fft_ny, ws.fft_nz, prob.n_bands);
     ASSERT_NE(own.stream(), static_cast<cudaStream_t>(nullptr));
     EXPECT_NE(own.stream(), den.stream());
+}
+
+TEST(CudaPWDensity, BorrowedStreamSurvivesDensityDestruction) {
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
+    cudaStream_t parent = nullptr;
+    ASSERT_EQ(cudaStreamCreate(&parent), cudaSuccess);
+    struct Release {
+        cudaStream_t stream;
+        ~Release() { cudaStreamDestroy(stream); }
+    } release{parent};
+    // Run one actual density stage on the borrowed stream, then destroy all
+    // density buffers and plans. The parent must retain a usable stream.
+    {
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                          XCType::LSDA, false, 0, 0, 0, parent);
+        ASSERT_EQ(den.stream(), parent);
+        den.hartree();
+    }
+    cudaEvent_t event = nullptr;
+    ASSERT_EQ(cudaEventCreate(&event), cudaSuccess);
+    struct EventRelease {
+        cudaEvent_t event;
+        ~EventRelease() { cudaEventDestroy(event); }
+    } event_release{event};
+    ASSERT_EQ(cudaEventRecord(event, parent), cudaSuccess);
+    EXPECT_EQ(cudaEventSynchronize(event), cudaSuccess);
+    // A second independent density stage can acquire that same execution
+    // stream after the first owner of scientific scratch has gone away.
+    {
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                          XCType::LSDA, false, 0, 0, 0, parent);
+        den.hartree();
+    }
+    ASSERT_EQ(cudaEventRecord(event, parent), cudaSuccess);
+    EXPECT_EQ(cudaEventSynchronize(event), cudaSuccess);
+}
+
+// Each spin channel must use the same padded quadrature and adjoint
+// projection as the restricted path. One XC stage, no SCF solve.
+TEST(CudaPWDensity, PaddedSpinXcMatchesCpu) {
+    for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
+                          XCType::RevPBE, XCType::RPBE}) {
+        cpupw::PWSetup prob;
+        cpupw::PWWorkspace ws;
+        build_problem(prob, ws);
+        const int ng = prob.gv0.count();
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth, xc,
+                          true, 5, 3, 8);
+        den.hartree();
+        den.exchange_correlation_spin();
+        ws.nspin = 2;
+        ws.rho_spin_G.resize(2);
+        ws.V_xc_spin_G.resize(2);
+        for (int spin = 0; spin < 2; ++spin) {
+            ws.rho_spin_G[spin] =
+                ws.rho_G * (spin == 0 ? 5.0 / 8.0 : 3.0 / 8.0);
+            ws.V_xc_spin_G[spin].resize({static_cast<std::size_t>(ng)});
+        }
+        cpupw::XCBuilder xc_builder;
+        xc_builder.prepare(ws);
+        xc_builder.step_spin(ws, xc);
+        std::vector<std::complex<double>> got(static_cast<std::size_t>(ng));
+        for (int spin = 0; spin < 2; ++spin) {
+            den.assemble_veff_spin(spin);
+            den.fetch_g(GField::v_xc, got.data());
+            for (int i = 0; i < ng; ++i)
+                EXPECT_NEAR(std::abs(got[static_cast<std::size_t>(i)]
+                                     - ws.V_xc_spin_G[spin][i]),
+                            0.0, 1e-10)
+                    << "xc=" << static_cast<int>(xc) << " spin=" << spin
+                    << " ig=" << i;
+        }
+        const auto scalars =
+            den.reduce_spin(static_cast<double>(prob.ions.vol_bohr));
+        EXPECT_NEAR(scalars.e_xc, static_cast<double>(ws.E_xc), 1e-10);
+        EXPECT_NEAR(scalars.e_xc_int, static_cast<double>(ws.e_xc_int_spin),
+                    1e-10);
+    }
+}
+
+// The atomic seed stays positive. A near-cutoff cosine that rings below zero
+// is what makes the clamp chain rule and the raw-density double counting
+// observable: a potential that ignores max(ρ, 0) diverges from XCBuilder.
+TEST(CudaPWDensity, NegativeSpinRingingMatchesCpuClamp) {
+    for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
+                          XCType::RevPBE, XCType::RPBE}) {
+        cpupw::PWSetup prob;
+        cpupw::PWWorkspace ws;
+        build_problem(prob, ws);
+        const int ng = prob.gv0.count();
+        int mode = 1;
+        for (int i = 1; i < ng; ++i)
+            if (prob.gv0.g[i].norm_squared() > prob.gv0.g[mode].norm_squared())
+                mode = i;
+        int mirror = -1;
+        for (int i = 0; i < ng; ++i)
+            if (prob.gv0.h[i] == -prob.gv0.h[mode]
+                && prob.gv0.k[i] == -prob.gv0.k[mode]
+                && prob.gv0.l[i] == -prob.gv0.l[mode])
+                mirror = i;
+        ASSERT_GE(mirror, 0);
+        ASSERT_NE(mirror, mode);
+        ws.rho_G.fill(std::complex<AccReal>(0, 0));
+        ws.rho_G[0] = 0.01;
+        ws.rho_G[mode] = ws.rho_G[mirror] = 0.04;
+
+        DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth, xc,
+                          true, 5, 3, 8);
+        std::vector<double> channel(static_cast<std::size_t>(ws.nr));
+        den.fetch_rho_spin_r(0, channel.data());
+        double lo = channel[0];
+        double hi = channel[0];
+        for (double value : channel) {
+            lo = std::min(lo, value);
+            hi = std::max(hi, value);
+        }
+        ASSERT_LT(lo, 0.0) << "xc=" << static_cast<int>(xc);
+        ASSERT_GT(hi, 0.0) << "xc=" << static_cast<int>(xc);
+
+        den.exchange_correlation_spin();
+        ws.nspin = 2;
+        ws.rho_spin_G.resize(2);
+        ws.V_xc_spin_G.resize(2);
+        for (int spin = 0; spin < 2; ++spin) {
+            ws.rho_spin_G[spin] =
+                ws.rho_G * (spin == 0 ? 5.0 / 8.0 : 3.0 / 8.0);
+            ws.V_xc_spin_G[spin].resize({static_cast<std::size_t>(ng)});
+        }
+        cpupw::XCBuilder xc_builder;
+        xc_builder.prepare(ws);
+        xc_builder.step_spin(ws, xc);
+
+        std::vector<std::complex<double>> got(static_cast<std::size_t>(ng));
+        for (int spin = 0; spin < 2; ++spin) {
+            den.assemble_veff_spin(spin);
+            den.fetch_g(GField::v_xc, got.data());
+            for (int i = 0; i < ng; ++i)
+                EXPECT_NEAR(std::abs(got[static_cast<std::size_t>(i)]
+                                     - ws.V_xc_spin_G[spin][i]),
+                            0.0, 1e-8)
+                    << "xc=" << static_cast<int>(xc) << " spin=" << spin
+                    << " ig=" << i;
+        }
+        const auto scalars =
+            den.reduce_spin(static_cast<double>(prob.ions.vol_bohr));
+        EXPECT_NEAR(scalars.e_xc, static_cast<double>(ws.E_xc), 1e-8);
+        EXPECT_NEAR(scalars.e_xc_int, static_cast<double>(ws.e_xc_int_spin),
+                    1e-8);
+    }
+}
+
+TEST(CudaPWDensity, PaddedXcResolvesHighFrequencyDensity) {
+    for (const auto xc : {XCType::LSDA, XCType::PBE, XCType::PBEsol,
+                          XCType::RevPBE, XCType::RPBE}) {
+        SCOPED_TRACE(static_cast<int>(xc));
+        expect_stage_parity(xc, true);
+    }
+}
+
+// A pure magnetization rearrangement has zero total-charge residual. It must
+// still prevent convergence, and its norm must not depend on the mixing beta.
+TEST(CudaPWDensity, OppositeSpinUpdatesHaveJointUnmixedResidual) {
+    for (const double beta : {0.2, 0.7}) {
+        cpupw::PWSetup prob;
+        cpupw::PWWorkspace ws;
+        build_problem(prob, ws);
+        const int nr = ws.nr, ng = prob.gv0.count();
+        DeviceDensity den(prob.grid(), ws.density().total, beta, kDepth,
+                          XCType::LSDA, true, 4, 4, 8);
+        den.hartree();
+        den.exchange_correlation_spin();
+        constexpr double delta = 0.001;
+        std::vector<double> channel(static_cast<std::size_t>(nr));
+        for (int spin = 0; spin < 2; ++spin) {
+            den.fetch_rho_spin_r(spin, channel.data());
+            for (auto& value : channel)
+                value += spin == 0 ? delta : -delta;
+            ASSERT_EQ(cudaMemcpy(den.density_accumulator(), channel.data(),
+                                 channel.size() * sizeof(double),
+                                 cudaMemcpyHostToDevice),
+                      cudaSuccess);
+            den.collect_spin_out(spin);
+        }
+        den.mix_spin(0);
+        const auto values =
+            den.reduce_spin(static_cast<double>(prob.ions.vol_bohr));
+        // A constant real-space update changes only G=0, so the independent
+        // analytic joint norm is sqrt(delta²+(-delta)²), before mixing.
+        EXPECT_NEAR(values.resid, std::sqrt(2.0) * delta, 1e-12)
+            << "mixing beta=" << beta;
+        std::vector<std::complex<double>> total(static_cast<std::size_t>(ng));
+        den.fetch_g(GField::rho, total.data());
+        for (int ig = 0; ig < ng; ++ig)
+            EXPECT_NEAR(
+                std::abs(total[static_cast<std::size_t>(ig)] - ws.rho_G[ig]),
+                0.0, 1e-12);
+    }
+}
+
+TEST(CudaPWDensity, FrozenSpinDensityRetainsEveryModeAndVolumeScale) {
+    cpupw::PWSetup prob;
+    cpupw::PWWorkspace ws;
+    build_problem(prob, ws);
+    DeviceDensity den(prob.grid(), ws.density().total, kMixBeta, kDepth,
+                      XCType::LSDA, true, 5, 3, 8);
+    std::vector<double> alpha(static_cast<std::size_t>(ws.nr)),
+        beta(alpha.size());
+    den.fetch_rho_spin_r(0, alpha.data());
+    den.fetch_rho_spin_r(1, beta.data());
+    constexpr double scale = 0.83;
+    den.load_rho_spin_r_scaled(alpha.data(), beta.data(), ws.nr, scale);
+    std::vector<std::complex<double>> total(
+        static_cast<std::size_t>(prob.gv0.count()));
+    den.fetch_g(GField::rho, total.data());
+    for (int ig = 0; ig < prob.gv0.count(); ++ig)
+        EXPECT_NEAR(std::abs(total[static_cast<std::size_t>(ig)]
+                             - scale * ws.rho_G[ig]),
+                    0.0, 1e-12);
+    EXPECT_THROW(
+        den.load_rho_spin_r_scaled(alpha.data(), beta.data(), ws.nr - 1, scale),
+        std::invalid_argument);
+    EXPECT_THROW(den.load_rho_r_scaled(alpha.data(), ws.nr - 1, scale),
+                 std::invalid_argument);
+}
+
+// Joint history must retain both channels, including wrap and depth-one fallback.
+TEST(CudaPWDensity, JointSpinPulayMatchesCpuThroughHistoryWrap) {
+    for (const int depth : {1, 3})
+        for (const double beta : {0.2, 0.7}) {
+            SCOPED_TRACE(depth);
+            SCOPED_TRACE(beta);
+            cpupw::PWSetup prob;
+            cpupw::PWWorkspace ws;
+            build_problem(prob, ws);
+            const int ng = prob.gv0.count(), nr = ws.nr;
+            DeviceDensity den(prob.grid(), ws.density().total, beta, depth,
+                              XCType::LSDA, true, 5, 3, 8);
+            ws.nspin = 2;
+            ws.mix_beta = beta;
+            ws.pulay_depth = depth;
+            ws.rho_spin_G.resize(2);
+            ws.rho_spin_G_old.resize(2);
+            for (int spin = 0; spin < 2; ++spin) {
+                ws.rho_spin_G[spin] =
+                    ws.rho_G * (spin == 0 ? 5.0 / 8 : 3.0 / 8);
+                ws.rho_spin_G_old[spin] = ws.rho_spin_G[spin];
+            }
+            cpupw::DensityBuilder db;
+            db.prepare(ws);
+            db.reset(ws);
+            xt::xarray<std::complex<AccReal>> out[2];
+            std::vector<double> fetched(nr);
+            for (int t = 0; t < 7; ++t) {
+                for (int spin = 0; spin < 2; ++spin) {
+                    auto real = synth_accumulation(nr, 2 * t + spin);
+                    std::memcpy(db.accumulation(), real.data(),
+                                nr * sizeof(double));
+                    db.extract(ws, out[spin]);
+                    ASSERT_EQ(cudaMemcpyAsync(den.density_accumulator(),
+                                              real.data(), nr * sizeof(double),
+                                              cudaMemcpyHostToDevice,
+                                              den.stream()),
+                              cudaSuccess);
+                    den.collect_spin_out(spin);
+                    ASSERT_EQ(cudaStreamSynchronize(den.stream()), cudaSuccess);
+                }
+                const double expected_residual =
+                    db.mix_spin(ws, out[0], out[1]);
+                den.mix_spin(t);
+                EXPECT_NEAR(den.reduce_spin(prob.ions.vol_bohr).resid,
+                            expected_residual, 1e-11);
+                for (int spin = 0; spin < 2; ++spin) {
+                    den.fetch_rho_spin_r(spin, fetched.data());
+                    std::memcpy(db.accumulation(), fetched.data(),
+                                nr * sizeof(double));
+                    xt::xarray<std::complex<AccReal>> got;
+                    db.extract(ws, got);
+                    double scale = 0;
+                    for (const auto value : ws.rho_spin_G[spin])
+                        scale = std::max(scale, std::abs(value));
+                    ASSERT_GT(scale, 0);
+                    for (int g = 0; g < ng; ++g)
+                        EXPECT_LE(std::abs(got[g] - ws.rho_spin_G[spin][g]),
+                                  1e-9 * scale)
+                            << "step=" << t << " spin=" << spin << " G=" << g;
+                }
+            }
+        }
 }

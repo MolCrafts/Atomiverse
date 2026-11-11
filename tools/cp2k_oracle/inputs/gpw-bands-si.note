@@ -14,4 +14,4 @@
 #   Path gap (n_occ=8): 0.893516 eV (VBM=CBM at Γ)
 #
 # Fair wall (1 MPI × OMP 8, warm): CP2K 1.90 s ; ATV reg 6.66 s ; ratio 3.51
-# Consumed by: regressions/gpw/gpw-bands-si/REFERENCE.md
+# Consumed by: regressions/gpw/bands-dos/REFERENCE.md

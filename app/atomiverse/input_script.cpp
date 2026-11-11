@@ -230,7 +230,7 @@ void run_input_deck(const InputDeck& d, std::ostream& log) {
 int run_input_script(const std::string& path, const std::string& log_path) {
     std::ifstream in(path);
     if (!in)
-        throw std::runtime_error("atomiverse: cannot read '" + path + "'");
+        throw std::runtime_error("cannot read '" + path + "'");
     const InputDeck deck = parse_input_script(in);
     if (log_path.empty() || log_path == "none") {
         run_input_deck(deck, std::cout);
@@ -238,8 +238,7 @@ int run_input_script(const std::string& path, const std::string& log_path) {
     }
     std::ofstream log(log_path);
     if (!log)
-        throw std::runtime_error("atomiverse: cannot write log '" + log_path
-                                 + "'");
+        throw std::runtime_error("cannot write log '" + log_path + "'");
     run_input_deck(deck, log);
     return 0;
 }

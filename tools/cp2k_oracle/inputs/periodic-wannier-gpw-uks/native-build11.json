@@ -1,0 +1,28 @@
+{
+  "kind": "native pre-batch validation baseline; not oracle pins",
+  "date": "2026-10-25",
+  "build_label": "build11",
+  "source_log": "/tmp/atv-gpw-repair-evidence/build11-wannier-uks-profile.log",
+  "archive_file": "native-build11.txt",
+  "archive_sha256": "54ef1d8a7d013d5b37106c7b1edd357066716e1717a9f8d882efa45f1b7bde36",
+  "case": "gpw/wannier",
+  "section": "periodic-wannier-gpw-uks",
+  "formula": "exact primitive Fourier integral; AO operators shared across spins but each of48 k-links computed separately",
+  "environment": {
+    "OMP_NUM_THREADS": 8,
+    "OPENBLAS_NUM_THREADS": 8,
+    "ATV_GPW_PROF": "enabled"
+  },
+  "whole_section_seconds": 84.018104,
+  "numeric_gates": "PASS",
+  "runtime_gate": "FAIL: whole-section60s bound retained",
+  "profile": {
+    "ao_links": 48,
+    "ao_links_ms": 67024,
+    "spin_localization_ms": [
+      27,
+      28
+    ]
+  },
+  "pending_change": "Canonical batch reuses the image-local Fourier integral for exactly equal q across distinct ket-k phases. Both Berry and Wannier require rebuilt validation."
+}

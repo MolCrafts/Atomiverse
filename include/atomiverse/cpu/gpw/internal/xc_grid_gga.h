@@ -4,7 +4,7 @@
 ///
 /// The GGA counterpart of `xc_grid_pade` (LDA). Density gradients are computed
 /// spectrally (`grid_fft`), the pointwise functional is reused from the
-/// project's libxc-parity `cpu::scf::evaluate_xc`, and the gradient-dependent
+/// project's libxc-parity `cpu::xc::evaluate_xc`, and the gradient-dependent
 /// part of the potential is assembled via the divergence term. Closed-shell
 /// (spin-unpolarized): rho split evenly between spins. Spin-resolved
 /// (`xc_grid_gga_spin`) is the UKS path (paired with `xc_grid_pade_lsd`).
@@ -14,7 +14,7 @@
 
 #include "atomiverse/cpu/gpw/internal/collocate.h" // UniformGrid
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"   // XcOnGrid, XcOnGridSpin
-#include "atomiverse/cpu/scf/xc_functional.h"      // XCType
+#include "atomiverse/cpu/xc/xc_functional.h"       // XCType
 
 namespace ATV {
 namespace cpu {
@@ -22,7 +22,7 @@ namespace gpw {
 
 /// @brief Evaluate a pure GGA XC energy and potential on the grid.
 ///
-/// E_xc = sum_g w rho eps_xc; the real-space potential is
+/// E_xc = sum_g w f_xc; the real-space potential is
 ///   v_xc = vrho_a - div[ (vsigma_aa + 1/2 vsigma_ab) grad rho ]
 /// (the spin-unpolarized collapse of v_a = vrho_a - div[2 vsigma_aa grad rho_a
 ///  + vsigma_ab grad rho_b] with rho_a=rho_b=rho/2, grad rho_a=grad rho/2).
@@ -31,9 +31,12 @@ namespace gpw {
 /// @param rho_r Total electron density on the grid, length grid.npts().
 /// @param xc    Pure GGA type (`PBE`, `PBEsol`, `RevPBE`, `RPBE`, `BLYP`,
 ///              or `OptB88VdW`).
-/// @return XcOnGrid with the total energy and the real-space potential.
+/// @param order Energy alone or energy plus its first derivative. Energy
+///              requests skip the potential's divergence FFTs.
+/// @return XC energy [Ha]; potential [Ha] is empty for an Energy request.
 XcOnGrid xc_grid_gga(const UniformGrid& grid, const std::vector<double>& rho_r,
-                     cpu::scf::XCType xc);
+                     cpu::xc::XCType xc,
+                     electronic::XcOrder order = electronic::XcOrder::First);
 
 /// @brief PBE GGA on the grid (`xc_grid_gga` with `XCType::PBE`).
 XcOnGrid xc_grid_pbe(const UniformGrid& grid, const std::vector<double>& rho_r);
@@ -47,10 +50,12 @@ XcOnGrid xc_grid_revpbe(const UniformGrid& grid,
                         const std::vector<double>& rho_r);
 
 /// @brief RPBE GGA on the grid (`xc_grid_gga` with `XCType::RPBE`).
-XcOnGrid xc_grid_rpbe(const UniformGrid& grid, const std::vector<double>& rho_r);
+XcOnGrid xc_grid_rpbe(const UniformGrid& grid,
+                      const std::vector<double>& rho_r);
 
 /// @brief BLYP GGA on the grid (`xc_grid_gga` with `XCType::BLYP`).
-XcOnGrid xc_grid_blyp(const UniformGrid& grid, const std::vector<double>& rho_r);
+XcOnGrid xc_grid_blyp(const UniformGrid& grid,
+                      const std::vector<double>& rho_r);
 
 /// @brief optB88-vdW semi-local on the grid (`XCType::OptB88VdW`).
 XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,
@@ -58,7 +63,7 @@ XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,
 
 /// @brief Spin-resolved pure GGA on the grid (UKS).
 ///
-/// E_xc = sum_g w (ρ_α+ρ_β) ε_xc; potentials
+/// E_xc = sum_g w f_xc; potentials
 ///   v_α = vrho_α − div[ 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β ]
 ///   v_β = vrho_β − div[ 2 vσ_ββ ∇ρ_β + vσ_αβ ∇ρ_α ]
 /// with σ_αα=|∇ρ_α|², σ_ββ=|∇ρ_β|², σ_αβ=∇ρ_α·∇ρ_β from spectral gradients.
@@ -68,11 +73,12 @@ XcOnGrid xc_grid_optb88_vdw(const UniformGrid& grid,
 /// @param rho_b Beta density on the grid.
 /// @param xc    Pure GGA type (`PBE`, `PBEsol`, `RevPBE`, `RPBE`, `BLYP`,
 ///              or `OptB88VdW`).
-/// @return Spin-resolved XC energy and potentials.
-XcOnGridSpin xc_grid_gga_spin(const UniformGrid& grid,
-                              const std::vector<double>& rho_a,
-                              const std::vector<double>& rho_b,
-                              cpu::scf::XCType xc);
+/// @param order Energy alone or energy plus its spin-resolved first derivatives.
+/// @return XC energy [Ha]; both potentials [Ha] are empty for Energy requests.
+XcOnGridSpin
+xc_grid_gga_spin(const UniformGrid& grid, const std::vector<double>& rho_a,
+                 const std::vector<double>& rho_b, cpu::xc::XCType xc,
+                 electronic::XcOrder order = electronic::XcOrder::First);
 
 /// @brief Spin-resolved PBE (`xc_grid_gga_spin` with `XCType::PBE`).
 XcOnGridSpin xc_grid_pbe_spin(const UniformGrid& grid,

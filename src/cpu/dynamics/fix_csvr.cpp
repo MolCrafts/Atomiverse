@@ -1,3 +1,4 @@
+#include "atomiverse/core/dynamics_math.h"
 /// @file cpu/dynamics/fix_csvr.cpp
 /// @brief CPU CSVR (Bussi) thermostat implementation.
 
@@ -48,31 +49,12 @@ FixCSVR::FixCSVR(double T_start, double tau, double dt, std::uint32_t seed)
 }
 
 void FixCSVR::build(const cpu::BuildContext& ctx) {
-    // Global DOF count (3N − 3). atoms.size() is global only on the initial
-    // build; after a domain partition it is n_local + n_ghost, so recover the
-    // global N by allreduce-summing dd->n_local (mirrors NoseHoover::build).
-    int n_global = static_cast<int>(ctx.frame.nlocal());
-#ifdef ATV_HAS_MPI
-    if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
-        && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
-        const int n_local = ctx.runtime.md.dd->n_local;
-        MPI_Allreduce(&n_local, &n_global, 1, MPI_INT, MPI_SUM,
-                      ctx.runtime.md.dd->cart_comm);
-    }
-#endif
-    // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
+    // Driver publishes the constraint-aware global DOF count before build.
     n_dof_global_ = ctx.runtime.md.n_dof_global;
-    (void)n_global;
 }
 
 double FixCSVR::compute_temp_target(std::int64_t step) const {
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    return T_start_ + delta * (T_stop_ - T_start_);
+    return ATV::md::ramp_target(T_start_, T_stop_, step, nfirst_, nlast_);
 }
 
 void FixCSVR::launch(const cpu::LaunchContext& ctx) {
@@ -81,6 +63,7 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
 
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
+    n_dof_global_ = ctx.runtime.md.n_dof_global;
     const int n_dof = n_dof_global_;
     if (n_dof <= 0)
         return;
@@ -102,7 +85,7 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::mass_v2_to_energy;
+    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -119,7 +102,7 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
         return;
 
     const double ke_bar =
-        0.5 * static_cast<double>(n_dof) * units::kB_ev_per_k * T_live_;
+        0.5 * static_cast<double>(n_dof) * ctx.runtime.units.boltz * T_live_;
 
     // Two GLOBAL random draws, identical on every rank (seeded from step only).
     std::mt19937_64 rng(step_seed(seed_, ctx.step));

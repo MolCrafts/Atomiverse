@@ -60,12 +60,12 @@ constexpr double kEps = 1e-8;            // GpwDft eps default
 RealMatrix gamma_overlap_h(double L_ang,
                            const std::vector<std::array<double, 3>>& frac) {
     const double cellL = L_ang * kAng;
-    std::vector<GpwAtom> atoms;
+    std::vector<ATV::cpu::gpw::internal::GpwAtom> atoms;
     for (const auto& f : frac) {
         const double p[3] = {f[0] * cellL, f[1] * cellL, f[2] * cellL};
-        atoms.push_back(
-            GpwAtom(p, GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
-                    GthPotential(molrs::Element::H, "GTH-PBE-q1"), 1));
+        atoms.push_back(ATV::cpu::gpw::internal::GpwAtom(
+            p, GaussianBasis(molrs::Element::H, "DZVP-MOLOPT-SR-GTH"),
+            GthPotential(molrs::Element::H, "GTH-PBE-q1"), 1));
     }
     std::vector<GridBasisFunction> basis;
     for (const auto& a : atoms)

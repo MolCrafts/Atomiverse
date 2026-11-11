@@ -17,40 +17,45 @@
 #include "atomiverse/cpu/multiscale/qm_mask.h"
 #include "atomiverse/cpu/multiscale/qmmm_electrostatic.h"
 #include "atomiverse/cpu/scf/methods.h"
+#ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
+#endif
 
 using namespace ATV;
 
 namespace {
 
-void insert_qm_z(cpu::Frame& f) {
+void insert_qm_mask(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                           kDynamicFieldId});
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
 }
 
 cpu::Frame make_embed_h2o() {
     cpu::Frame f(5);
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_type)[0] = 8;
     f.span(kAtom_z)[0] = 0.1173;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
     f.span(kAtom_y)[1] = 0.7572;
     f.span(kAtom_z)[1] = -0.4692;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_type)[2] = 1;
     f.span(kAtom_y)[2] = -0.7572;
     f.span(kAtom_z)[2] = -0.4692;
-    f.span(kAtom_type)[3] = 99;
+    f.span(kAtom_type)[3] = 99; // MM site type
     f.span(kAtom_z)[3] = 3.0;
     f.span(kAtom_charge)[3] = 0.5;
-    f.span(kAtom_type)[4] = 99;
+    f.span(kAtom_type)[4] = 99; // MM site type
     f.span(kAtom_z)[4] = -3.0;
     f.span(kAtom_charge)[4] = -0.5;
     for (int i = 0; i < 5; ++i)
         f.span(kAtom_tag)[i] = i + 1;
     f.box = cpu::Box::cubic(20.0);
-    insert_qm_z(f);
-    auto qm = f.span(cpu::kAtomQmZ);
-    qm[0] = 8;
+    insert_qm_mask(f);
+    auto qm = f.span(cpu::kAtomQm);
+    qm[0] = 1;
     qm[1] = 1;
     qm[2] = 1;
     qm[3] = 0;
@@ -60,6 +65,7 @@ cpu::Frame make_embed_h2o() {
 
 } // namespace
 
+#ifdef ATV_HAS_SEMIEMPIRICAL
 TEST(QmmmElectrostatic, Am1EngineThrowsNamed) {
     auto f = make_embed_h2o();
     cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
@@ -78,11 +84,12 @@ TEST(QmmmElectrostatic, Am1EngineThrowsNamed) {
         std::runtime_error);
 }
 
+#endif
+
 TEST(QmmmElectrostatic, RhfBuildSucceedsWithoutLaunch) {
     auto f = make_embed_h2o();
     cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     qmmm.set_engine(std::move(rhf));
     cpu::Context ctx;
     cpu::BuildContext b{ctx, f};
@@ -94,16 +101,14 @@ TEST(QmmmElectrostatic, EngineSwapRhfRksBuildOnly) {
     cpu::Context ctx;
     {
         cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-        cpu::scf::RHF rhf;
-        rhf.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
         qmmm.set_engine(std::move(rhf));
         EXPECT_NO_THROW(qmmm.build({ctx, f}));
     }
     {
         auto f2 = make_embed_h2o();
         cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
-        cpu::scf::RKS rks;
-        rks.basis = cpu::scf::BasisSet::STO3G;
+        cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::xc::XCType::PBE};
         qmmm.set_engine(std::move(rks));
         EXPECT_NO_THROW(qmmm.build({ctx, f2}));
     }

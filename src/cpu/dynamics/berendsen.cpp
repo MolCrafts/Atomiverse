@@ -1,3 +1,4 @@
+#include "atomiverse/core/dynamics_math.h"
 /// @file cpu/dynamics/berendsen.cpp
 /// @brief CPU Berendsen weak-coupling thermostat implementation.
 
@@ -41,13 +42,7 @@ void Berendsen::build(const cpu::BuildContext& ctx) {
 }
 
 double Berendsen::compute_temp_target(std::int64_t step) const {
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    return T_start_ + delta * (T_stop_ - T_start_);
+    return ATV::md::ramp_target(T_start_, T_stop_, step, nfirst_, nlast_);
 }
 
 void Berendsen::launch(const cpu::LaunchContext& ctx) {
@@ -56,6 +51,7 @@ void Berendsen::launch(const cpu::LaunchContext& ctx) {
 
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
+    n_dof_global_ = ctx.runtime.md.n_dof_global;
     const int n_dof = n_dof_global_;
     if (n_dof <= 0)
         return;
@@ -77,7 +73,7 @@ void Berendsen::launch(const cpu::LaunchContext& ctx) {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * units::mass_v2_to_energy;
+    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -94,7 +90,7 @@ void Berendsen::launch(const cpu::LaunchContext& ctx) {
         return;
 
     const double T =
-        2.0 * ke / (static_cast<double>(n_dof) * units::kB_ev_per_k);
+        2.0 * ke / (static_cast<double>(n_dof) * ctx.runtime.units.boltz);
 
     // Berendsen 1984 Eq. 11: λ² = 1 + (Δt/τ)(T₀/T − 1).
     //

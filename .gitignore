@@ -35,9 +35,14 @@
 # Documentation
 docs/html/
 docs/latex/
-# Staged MolVis web-component bundle (built from molvis/core/dist; ~40MB).
-# Stage with: rsync -a --delete ../molvis/core/dist/ docs/assets/molvis-core/
+# Staged MolVis / MolPlot web-component bundles (~25MB).
+# Stage from sibling checkouts, e.g.:
+#   rsync -a --delete ../molvis/stage-viewer/dist/ docs/assets/molvis-stage-viewer/
+#   rsync -a --delete ../molplot/core/dist/ docs/assets/molplot/
 docs/assets/molvis-core/
+docs/assets/molvis-stage-viewer/
+docs/assets/molvis-sketch-viewer/
+docs/assets/molplot/
 
 # CMake build directory
 build/
@@ -119,6 +124,7 @@ ipython_config.py
 
 # pyenv
 .python-version
+!python/.python-version
 
 # PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
 __pypackages__/
@@ -159,12 +165,6 @@ pyrightconfig.json
 *.cube
 *.png
 *.xyz
-# …except the checked-in benchmark starting geometries
-!benchmarks/qc/rhf/validation/molecules/*.xyz
-# …and the checked-in MSU-PE reference plots (Phase 5 acceptance artifacts)
-!benchmarks/md/reference/polyethylene/*.png
-# …and literature-facing tutorial results (docs embed these)
-!examples/results/**
 !docs/assets/structures/**
 
 
@@ -181,16 +181,10 @@ pyrightconfig.json
 build_*/
 build-*/
 
-# Debug / run artifacts for debug_amorphous LAMMPS-comparison harness
-tools/debug_amorphous/*.data
-tools/debug_amorphous/*.dat
-tools/debug_amorphous/restart.*
-tools/debug_amorphous/log.*
-
 # Ad-hoc SCF debug dumps
 tools/*.npy
 tools/dump_*.txt
-# LAMMPS run artifacts (regenerable — see benchmarks/.../SOURCES.md)
+# LAMMPS run artifacts (regenerable)
 log.lammps
 **/log.lammps
 jobs/
@@ -201,6 +195,16 @@ slurm-*.out
 # TB oracle structure twins (offline pin inputs)
 !tools/tb_oracle/**/*.xyz
 
+# AM1-BCC oracle transcripts (sqm.out carries the pinned base charges)
+!tools/bcc_oracle/outputs/*/sqm.out
+
 # local bench/job scratch (datasets and cluster scripts, not source)
 .molq/
 logs/
+
+# macOS Finder metadata
+.DS_Store
+
+
+# Benchmark output never lives in git (campaigns write under build/ or out of tree)
+benchmarks/**/results/

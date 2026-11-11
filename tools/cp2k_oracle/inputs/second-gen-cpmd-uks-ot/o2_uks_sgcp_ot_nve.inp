@@ -1,4 +1,4 @@
-# CP2K twin sketch for regressions/dynamics/second-gen-cpmd-uks-ot (offline oracle —
+# CP2K twin sketch for regressions/dynamics/second-gen-cpmd (offline oracle —
 # never run at ctest/regression time). O2 triplet NVE Quickstep UKS with
 # second-generation CP + OT corrector: EXTRAPOLATION ASPC + &OT + limited MAX_SCF.
 # NOTE (2026-07-26): no cp2k binary on the worker host — unexecuted sketch.

@@ -51,7 +51,7 @@ cpu::Frame make_h2(double r = 0.74) {
     f.span(kAtom_x)[1] = r;
     f.span(kAtom_y)[1] = 0;
     f.span(kAtom_z)[1] = 0;
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -64,15 +64,15 @@ cpu::Frame make_h2(double r = 0.74) {
 
 cpu::Frame make_water() {
     cpu::Frame f(3);
-    f.span(kAtom_type)[0] = 8;
+    f.span(kAtom_atomic_number)[0] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_x)[1] = 0.96;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_x)[2] = -0.24;
     f.span(kAtom_y)[2] = 0.93;
     f.span(kAtom_z)[2] = 0.0;
@@ -88,7 +88,7 @@ cpu::Frame make_water() {
 
 cpu::Frame make_o2(double r = 1.21) {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 8;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 8;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
@@ -107,7 +107,7 @@ cpu::Frame make_o2(double r = 1.21) {
 
 cpu::Frame make_fluorine() {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 9;
+    f.span(kAtom_atomic_number)[0] = 9;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
     f.span(kAtom_z)[0] = 0;
@@ -218,19 +218,16 @@ TEST(DftbPublishedConstants, CollapseSpinWEvHoao) {
 TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenSpinWHaEmptyOpenShell) {
     auto f = make_o2();
     cpu::Context ctx;
-    DFTB2 d;
+    DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/3};
     d.boundary = DftbBoundary::cluster;
-    d.multiplicity = 3;
-    d.with_forces = false;
-    d.build({ctx, f});
     expect_throw_has<std::invalid_argument>(
-        [&] { d.launch({ctx, f, 0, 0}); },
+        [&] { d.run(f); },
         {"spin_w_ha", "d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;"});
 }
 
 TEST(DftbPublishedConstants, Dftb2TdCasidaThrowsWhenSpinWHaEmptyTriplet) {
     auto f = make_h2();
-    DFTB2 d;
+    DFTB2 d{DftbSkSet::MioSketch};
     d.boundary = DftbBoundary::cluster;
     expect_throw_has<std::invalid_argument>(
         [&] { d.td_casida(f, 1, TdDftbChannel::triplet); },
@@ -240,8 +237,7 @@ TEST(DftbPublishedConstants, Dftb2TdCasidaThrowsWhenSpinWHaEmptyTriplet) {
 TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenHubbardDuHaUnset) {
     auto f = make_water();
     cpu::Context ctx;
-    DFTB3 d3;
-    d3.sk_set = DftbSkSet::MioSketch;
+    DFTB3 d3{DftbSkSet::MioSketch};
     d3.with_forces = false;
     d3.build({ctx, f});
     expect_throw_has<std::invalid_argument>(
@@ -253,8 +249,7 @@ TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenHubbardDuHaUnset) {
 TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenHubbardDuHaMissingZ) {
     auto f = make_fluorine();
     cpu::Context ctx;
-    DFTB3 d3;
-    d3.sk_set = DftbSkSet::MioSketch;
+    DFTB3 d3{DftbSkSet::MioSketch};
     d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;
     d3.with_forces = false;
     d3.build({ctx, f});
@@ -267,33 +262,32 @@ TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenHubbardDuHaMissingZ) {
 TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenSkSetUnset) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB3 d3;
+    DFTB3 d3{DftbSkSet::Unset};
     EXPECT_EQ(d3.sk_set, DftbSkSet::Unset);
     d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;
     d3.with_forces = false;
     d3.build({ctx, f});
     expect_throw_has<std::invalid_argument>(
         [&] { d3.launch({ctx, f, 0, 0}); },
-        {"sk_set", "d3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;"});
+        {"sk_set", "DFTB3{cpu::semiempirical::DftbSkSet::MioSketch}"});
 }
 
 TEST(DftbPublishedConstants, Dftb3LaunchChecksSkSetBeforeHubbardDu) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB3 d3;
+    DFTB3 d3{DftbSkSet::Unset};
     EXPECT_EQ(d3.sk_set, DftbSkSet::Unset);
     d3.with_forces = false;
     d3.build({ctx, f});
     expect_throw_has<std::invalid_argument>(
         [&] { d3.launch({ctx, f, 0, 0}); },
-        {"sk_set", "d3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;"});
+        {"sk_set", "DFTB3{cpu::semiempirical::DftbSkSet::MioSketch}"});
 }
 
 TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenSkSetThreeOb) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB3 d3;
-    d3.sk_set = DftbSkSet::ThreeOb;
+    DFTB3 d3{DftbSkSet::ThreeOb};
     d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;
     d3.with_forces = false;
     d3.build({ctx, f});
@@ -304,8 +298,7 @@ TEST(DftbPublishedConstants, Dftb3LaunchThrowsWhenSkSetThreeOb) {
 TEST(DftbPublishedConstants, Dftb3MioSketchLaunchWarnsOnceAndReturnsEnergy) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB3 d3;
-    d3.sk_set = DftbSkSet::MioSketch;
+    DFTB3 d3{DftbSkSet::MioSketch};
     d3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;
     d3.with_forces = false;
 
@@ -337,20 +330,17 @@ TEST(DftbPublishedConstants, Dftb3MioSketchLaunchWarnsOnceAndReturnsEnergy) {
 TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenShellResolvedSpinTrue) {
     auto f = make_o2();
     cpu::Context ctx;
-    DFTB2 d;
+    DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/3};
     d.boundary = DftbBoundary::cluster;
-    d.multiplicity = 3;
     d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
     d.shell_resolved_spin = true;
-    d.with_forces = false;
-    d.build({ctx, f});
-    expect_throw_has<std::runtime_error>([&] { d.launch({ctx, f, 0, 0}); },
+    expect_throw_has<std::runtime_error>([&] { d.run(f); },
                                          {"dftb-shell-resolved-spin"});
 }
 
 TEST(DftbPublishedConstants, Dftb2TdCasidaThrowsWhenShellResolvedSpinTrue) {
     auto f = make_h2();
-    DFTB2 d;
+    DFTB2 d{DftbSkSet::MioSketch};
     d.boundary = DftbBoundary::cluster;
     d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
     d.shell_resolved_spin = true;
@@ -363,42 +353,39 @@ TEST(DftbPublishedConstants,
      Dftb2OpenShellLaunchDoesNotThrowWhenShellResolvedSpinFalse) {
     auto f = make_o2();
     cpu::Context ctx;
-    DFTB2 d;
+    DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/3};
     d.boundary = DftbBoundary::cluster;
-    d.multiplicity = 3;
     d.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
     EXPECT_FALSE(d.shell_resolved_spin);
-    d.with_forces = false;
-    d.build({ctx, f});
-    EXPECT_NO_THROW(d.launch({ctx, f, 0, 0}));
+    EXPECT_NO_THROW(d.run(f));
 }
 
 // ── Edge: DFTB2 Unset sentinel ─────────────────────────────────────────
 
-TEST(DftbPublishedConstants, Dftb2DefaultSkSetIsMioSketch) {
-    DFTB2 d;
+TEST(DftbPublishedConstants, Dftb2CtorStoresSkSetChargeMultiplicity) {
+    const DFTB2 d{DftbSkSet::MioSketch};
     EXPECT_EQ(d.sk_set, DftbSkSet::MioSketch);
+    EXPECT_EQ(d.charge, 0);
+    EXPECT_EQ(d.multiplicity, 1);
+    const DFTB2 t{DftbSkSet::ThreeOb, /*charge=*/-1, /*multiplicity=*/2};
+    EXPECT_EQ(t.sk_set, DftbSkSet::ThreeOb);
+    EXPECT_EQ(t.charge, -1);
+    EXPECT_EQ(t.multiplicity, 2);
 }
 
-TEST(DftbPublishedConstants, Dftb2DefaultLaunchOnH2Succeeds) {
+TEST(DftbPublishedConstants, Dftb2MioSketchLaunchOnH2Succeeds) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB2 d;
-    d.with_forces = false;
-    d.build({ctx, f});
-    d.launch({ctx, f, 0, 0});
+    DFTB2 d{DftbSkSet::MioSketch};
+    d.run(f);
     EXPECT_TRUE(std::isfinite(d.last_energy()));
 }
 
 TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenSkSetUnset) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB2 d;
-    d.sk_set = DftbSkSet::Unset;
-    d.with_forces = false;
-    d.build({ctx, f});
-    expect_throw_has<std::exception>([&] { d.launch({ctx, f, 0, 0}); },
-                                     {"sk_set"});
+    DFTB2 d{DftbSkSet::Unset};
+    expect_throw_has<std::exception>([&] { d.run(f); }, {"sk_set"});
 }
 
 // ── Edge: closed-shell lazy validation ─────────────────────────────────
@@ -406,24 +393,18 @@ TEST(DftbPublishedConstants, Dftb2LaunchThrowsWhenSkSetUnset) {
 TEST(DftbPublishedConstants, Dftb2ClosedShellLaunchDoesNotRequireSpinWHa) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB2 d;
+    DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/1};
     EXPECT_TRUE(d.spin_w_ha.empty());
-    d.multiplicity = 1;
-    d.with_forces = false;
-    d.build({ctx, f});
-    EXPECT_NO_THROW(d.launch({ctx, f, 0, 0}));
+    EXPECT_NO_THROW(d.run(f));
 }
 
 TEST(DftbPublishedConstants,
      Dftb2ClosedShellDoesNotThrowWhenShellResolvedSpinTrue) {
     auto f = make_h2();
     cpu::Context ctx;
-    DFTB2 d;
-    d.multiplicity = 1;
+    DFTB2 d{DftbSkSet::MioSketch, /*charge=*/0, /*multiplicity=*/1};
     d.shell_resolved_spin = true;
-    d.with_forces = false;
-    d.build({ctx, f});
-    EXPECT_NO_THROW(d.launch({ctx, f, 0, 0}));
+    EXPECT_NO_THROW(d.run(f));
 }
 
 // ── Edge: Dftb3Scc ctor gate ───────────────────────────────────────────

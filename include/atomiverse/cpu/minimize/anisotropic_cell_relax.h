@@ -22,21 +22,26 @@ namespace minimizer {
 /// unconditionally. Axes may
 /// be masked out (`relax_x/y/z`) for constrained variable-cell runs
 /// (CP2K `CELL_OPT` `CONSTRAINT` twin): a masked axis is never scaled and
-/// never enters the residual.
+/// never enters the residual. Use StressConverged with the same axis mask for
+/// termination. Published force/displacement metrics retain eV/Å and Å units;
+/// this optimizer does not minimize non-affine atomic forces.
 class AnisotropicCellRelax : public Optimizer {
   public:
-    double P_target = 0.0;   ///< Target pressure [eV/Å³].
+    double P_target = 0.0;   ///< Target pressure [style pressure].
     double alpha0 = 0.05;    ///< Scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per axis.
-    double bulk_mod = 1.0;   ///< Soft bulk modulus [eV/Å³].
-    bool relax_x = true; ///< Relax the x box edge.
-    bool relax_y = true; ///< Relax the y box edge.
-    bool relax_z = true; ///< Relax the z box edge.
+    double bulk_mod = 1.0;   ///< Soft bulk modulus [style pressure].
+    bool relax_x = true;     ///< Relax the x box edge.
+    bool relax_y = true;     ///< Relax the y box edge.
+    bool relax_z = true;     ///< Relax the z box edge.
 
     AnisotropicCellRelax() = default;
     explicit AnisotropicCellRelax(double P_target_ev_a3, double alpha = 0.05);
 
     std::string name() const override { return "anisotropic_cell_relax"; }
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),
@@ -51,13 +56,12 @@ class AnisotropicCellRelax : public Optimizer {
     double pressure() const { return pressure_; }
 
   private:
-    void apply_scales_(Frame& f, double sx, double sy, double sz) const;
-
     double pressure_ = 0;
     double p_residual_ = 0;
     double sx_ = 1, sy_ = 1, sz_ = 1;
+    double max_disp_ = 0, rms_disp_ = 0; ///< Actual affine displacement [Å].
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 };
 

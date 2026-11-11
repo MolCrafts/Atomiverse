@@ -1,4 +1,4 @@
-# MetalWalls twin of regressions/md/constant-d-polarization-feedback (Gate A).
+# MetalWalls twin of regressions/md/electric-fields (Gate A).
 # Zero-field baseline: Coulomb only (used to subtract the Coulomb force).
 #
 # ATV system reproduced here:

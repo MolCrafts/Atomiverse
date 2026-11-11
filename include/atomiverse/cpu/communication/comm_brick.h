@@ -7,6 +7,9 @@
 /// `exchange` / `borders` over a private `comm::Halo` swap table — not a
 /// verbatim dump. Public API is ATV-native (`cpu::Comm`).
 ///
+/// Extra-field reverse protocol follows LAMMPS `src/comm_brick.h`, checkout
+/// `a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b`.
+///
 /// Copyright (2003) Sandia Corporation.  Under the terms of Contract
 /// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
 /// certain rights in this software.  This software is distributed under
@@ -42,7 +45,7 @@ class DomainRuntime;
 namespace comm {
 
 namespace detail {
-struct FaceBufs;
+struct CommBuffers;
 } // namespace detail
 
 /// @brief Brick-decomposition communicator. Private `Halo`; MPI in the four
@@ -63,15 +66,14 @@ class CommBrick : public Comm {
     void exchange(const LaunchContext& ctx) override;
     void borders(const LaunchContext& ctx) override;
     void forward_comm(Packer& packer) override;
+    void reverse_comm(ReversePacker& packer) override;
     void set_ghost_cutoff(double cutoff) override;
 
-    /// @brief Resident heap bytes of the per-swap send/recv buffers.
+    /// @brief Resident heap bytes of the shared send/recv buffers.
     std::size_t memory_bytes() const;
 
   private:
-    CommBrick();
-
-    void remember_(const LaunchContext& ctx);
+    explicit CommBrick(md::mpi::DomainDecomposition& domain);
 
     /// The run's ghost contract, cached at `setup()` from the Driver's
     /// fold. Each pass compiles its own `PackPlan` off this; there is no
@@ -84,10 +86,9 @@ class CommBrick : public Comm {
     bool setup_done_ = false;
 
     Halo swaps_;
-    std::unique_ptr<detail::FaceBufs> bufs_;
+    std::unique_ptr<detail::CommBuffers> bufs_;
     double ghost_cutoff_ = 0.0;
     md::mpi::DomainDecomposition* dd_ = nullptr;
-    int mpi_size_ = 1;
     std::uint64_t last_checked_halo_generation_{};
     /// Wire-schema fingerprints anchored collectively in `setup()`; the
     /// per-step / per-rebuild paths compare against them locally.
@@ -98,7 +99,7 @@ class CommBrick : public Comm {
     /// compared locally on every migration after it.
     std::uint64_t verified_exchange_fingerprint_{};
     bool exchange_schema_anchored_ = false;
-    /// @brief Widest `ForwardPacker::comm_forward()` seen this run; used
+    /// @brief Widest extra-field forward/reverse packer seen this run; used
     ///        to size shared packer buffers at the end of `borders()`.
     int packer_nsize_ = 0;
 };

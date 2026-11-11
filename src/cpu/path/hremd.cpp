@@ -62,9 +62,10 @@ void HRemd::ensure_built_(cpu::Frame& frame) {
         throw std::invalid_argument("HRemd: thermostat_tau must be > 0 fs");
     for (int i = 0; i < n; ++i) {
         auto md = std::make_unique<cpu::md::MD>();
+        md->set_units(units.name());
         md->set_integrator(cpu::md::VelocityVerlet{dt});
-        md->set_observer(cpu::md::InitVelocity{temperature,
-                                      static_cast<unsigned>(seed ^ (i + 1u))});
+        md->set_observer(cpu::md::InitVelocity{
+            temperature, static_cast<unsigned>(seed ^ (i + 1u))});
         // The exchange test is the Metropolis rule for swapping between two
         // CANONICAL ensembles that differ only in their Hamiltonian. Without a
         // thermostat each replica is an NVE trajectory carrying whatever its
@@ -95,7 +96,7 @@ double HRemd::energy_at_(const cpu::Frame& frame, double lambda) {
 void HRemd::exchange_round_(bool even_edges) {
     const int n = band_->size();
     std::uniform_real_distribution<double> u01(0.0, 1.0);
-    const double beta = 1.0 / (units::kB_ev_per_k * temperature);
+    const double beta = 1.0 / (units.boltz * temperature);
     for (int i = even_edges ? 0 : 1; i + 1 < n; i += 2) {
         ++attempts_;
         auto& fi = band_->frame(i);

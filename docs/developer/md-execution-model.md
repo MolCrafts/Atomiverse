@@ -43,12 +43,12 @@ run(frame, n_steps):
         # MD attaches no criterion by default, so a plain MD run simply exhausts
         # its budget. Attach one (StopOnNaN, a `fix halt` analogue) and the same
         # loop gains an early exit with no change to the driver.
-    backend.drain_analysis()         # flush async observers
+    backend.drain_capture()          # every async consumer's capture consumed
     # teardown happens on driver destruction or when a different frame is run
 ```
 
 This maps onto LAMMPS as `setup_pass` ↔ `init()`+`setup()`, the loop ↔
-`Verlet::run()`, and `drain_analysis`/teardown ↔ `post_run()`. The loop is
+`Verlet::run()`, and `drain_capture`/teardown ↔ `post_run()`. The loop is
 **continuable**: consecutive `run()` calls extend a single trajectory, and
 `build()` runs only once so stateful components (Nosé–Hoover chains, RNG
 streams, velocity initialisers) keep their state across calls.
@@ -58,7 +58,7 @@ streams, velocity initialisers) keep their state across calls.
 `backend.step()` walks a compiled **Plan** — a list of *slots*, one per phase,
 in phase order. Each slot holds the components bound to that phase, launched in
 ascending *order* (see below). The phases are the `ATV::md::Phase` enum
-(`include/atomiverse/core/stage.h`), modelled on the LAMMPS Verlet timestep so
+(`stage.h`), modelled on the LAMMPS Verlet timestep so
 the whole step is legible from the enum:
 
 | Phase | Responsibility | LAMMPS equivalent |
@@ -176,6 +176,6 @@ genuinely new point in the step that no existing phase models.
 Component class names are one to two words, `UpperCamelCase`, with the `name()`
 string the `snake_case` echo (`NeighborList` → `"neighbor_list"`). Names avoid redundant
 filler ("Exchange", "Stress") and prefer the direct verb or noun (
-`Reduce`, `Publish`, `Rebalance`, `Virial`). Force-kernel names keep the
+`Reduce`, `Rebalance`, `Virial`). Force-kernel names keep the
 functional form they implement (`BondHarmonic`, `DihedralMultiHarmonic`) because
 the form — not just "a bond" — is what distinguishes one style from the next.

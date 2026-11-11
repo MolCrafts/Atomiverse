@@ -1,0 +1,8 @@
+SQM AM1 off-equilibrium water reference
+ &qmmm
+ qm_theory='AM1', qmcharge=0, maxcyc=0, verbosity=4,
+ scfconv=1.d-12, tight_p_conv=1, itrmax=1000,
+ /
+ 8 O 0.0 0.0 0.0
+ 1 H 0.96 0.0 0.0
+ 1 H -0.24 0.93 0.1

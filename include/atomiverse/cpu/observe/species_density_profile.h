@@ -58,7 +58,8 @@ class SpeciesDensityProfile : public Observer {
             throw std::invalid_argument(
                 "SpeciesDensityProfile: z_max must be > z_min");
         dz_ = (z_max_ - z_min_) / static_cast<double>(n_bins_);
-        const std::size_t cells = types_.size() * static_cast<std::size_t>(n_bins_);
+        const std::size_t cells =
+            types_.size() * static_cast<std::size_t>(n_bins_);
         density_.assign(cells, 0.0);
         mean_sum_.assign(cells, 0.0);
     }

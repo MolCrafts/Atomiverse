@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/qmmm_oniom.cpp
 #include "atomiverse/cpu/multiscale/qmmm_oniom.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include "atomiverse/core/frame_schema.h"
 
@@ -12,18 +13,20 @@ QmmmOniom::QmmmOniom(std::vector<LJTypeCoeff> low_lj, double cutoff,
 
 void QmmmOniom::build(const BuildContext& ctx) {
     // High level is vacuum QM on the model (+ links); no embedding.
-    sub_.build(ctx.frame, ctx.runtime.mpi_size, /*require_embedding=*/false);
+    sub_.build(ctx, cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+               /*require_embedding=*/false);
 }
 
 void QmmmOniom::launch(const LaunchContext& ctx) {
     // E_high(model): QmSubsystem accumulates e_high into kEnergy / electronic.
-    sub_.launch(ctx.frame, ctx.forces_requested, e_high_);
+    sub_.launch(ctx, e_high_);
 
     // E_low(real) − E_low(model), with matching force signs.
+    const double qqrd2e = ctx.runtime.units.qqrd2e();
     e_low_real_ = low_.launch(ctx.frame, /*rows=*/{}, ctx.forces_requested,
-                              /*force_sign=*/+1.0);
+                              qqrd2e, /*force_sign=*/+1.0);
     e_low_model_ = low_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested,
-                               /*force_sign=*/-1.0);
+                               qqrd2e, /*force_sign=*/-1.0);
 
     ctx.frame.meta.get(kEnergy) += e_low_real_ - e_low_model_;
     // Classical low is not electronic — leave kEnergyElectronic = high only.

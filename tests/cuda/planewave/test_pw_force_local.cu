@@ -3,7 +3,7 @@
 ///
 /// UNIT SCOPE: local Hellmann–Feynman kernel vs a host twin on synthetic
 /// ρ(G); public-API single-atom symmetry. Full Si-dimer CUDA↔CPU dual-gate
-/// lives in regressions/pw/cuda-pw-forces — never under ctest.
+/// lives in regressions/pw/rks — never under ctest.
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
@@ -13,6 +13,7 @@
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/planewave/internal/pw_forces.cuh"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
+#include <memory>
 
 #include <cmath>
 #include <complex>
@@ -36,7 +37,8 @@ void host_local_forces(const std::vector<std::complex<double>>& rho,
                        const std::vector<double>& gy,
                        const std::vector<double>& gz,
                        const std::vector<double>& vg,
-                       const std::vector<double>& pos, int n_atoms,
+                       const std::vector<double>& pos,
+                       const std::vector<int>& species, int n_atoms,
                        double omega, std::vector<double>& F) {
     const int ng = static_cast<int>(rho.size());
     F.assign(static_cast<std::size_t>(3 * n_atoms), 0.0);
@@ -49,8 +51,8 @@ void host_local_forces(const std::vector<std::complex<double>>& rho,
             continue;
         const double rr = rho[static_cast<std::size_t>(ig)].real();
         const double ri = rho[static_cast<std::size_t>(ig)].imag();
-        const double v = vg[static_cast<std::size_t>(ig)];
         for (int ia = 0; ia < n_atoms; ++ia) {
+            const double v = vg[species[ia] * ng + ig];
             const double ax = pos[static_cast<std::size_t>(3 * ia + 0)];
             const double ay = pos[static_cast<std::size_t>(3 * ia + 1)];
             const double az = pos[static_cast<std::size_t>(3 * ia + 2)];
@@ -73,33 +75,37 @@ T* d_alloc(std::size_t n) {
 
 } // namespace
 
-TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
+TEST(CudaPWForces, LocalKernelMatchesHostForTwoSpecies) {
     // Synthetic density sphere: a few G shells, two atoms, nonzero ρ.
     constexpr int ng = 8;
     constexpr int n_atoms = 2;
     constexpr double omega = 100.0;
 
     std::vector<std::complex<double>> rho(ng);
-    std::vector<double> gx(ng), gy(ng), gz(ng), vg(ng);
+    std::vector<double> gx(ng), gy(ng), gz(ng), vg(2 * ng);
     for (int i = 0; i < ng; ++i) {
         const double t = 0.3 * static_cast<double>(i + 1);
         gx[static_cast<std::size_t>(i)] = (i == 0) ? 0.0 : t;
         gy[static_cast<std::size_t>(i)] = (i == 0) ? 0.0 : 0.1 * t;
         gz[static_cast<std::size_t>(i)] = (i == 0) ? 0.0 : -0.2 * t;
         vg[static_cast<std::size_t>(i)] = -0.5 / (1.0 + t);
+        vg[ng + i] = -0.25 / (1 + t * t);
         rho[static_cast<std::size_t>(i)] = {0.02 * std::cos(t),
                                             0.01 * std::sin(t)};
     }
     std::vector<double> pos = {0.0, 0.0, 0.0, 1.2, 0.3, -0.4};
 
+    const std::vector<int> species{1, 0};
     std::vector<double> F_host;
-    host_local_forces(rho, gx, gy, gz, vg, pos, n_atoms, omega, F_host);
+    host_local_forces(rho, gx, gy, gz, vg, pos, species, n_atoms, omega,
+                      F_host);
 
     cufftDoubleComplex* d_rho = d_alloc<cufftDoubleComplex>(ng);
     double* d_gx = d_alloc<double>(ng);
     double* d_gy = d_alloc<double>(ng);
     double* d_gz = d_alloc<double>(ng);
-    double* d_vg = d_alloc<double>(ng);
+    double* d_vg = d_alloc<double>(vg.size());
+    int* d_species = d_alloc<int>(species.size());
     double* d_pos = d_alloc<double>(3 * n_atoms);
     double* d_F = d_alloc<double>(3 * n_atoms);
 
@@ -112,15 +118,19 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
                               cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemcpy(d_gz, gz.data(), ng * sizeof(double),
                               cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMemcpy(d_vg, vg.data(), ng * sizeof(double),
+    ATV_CUDA_CHECK(cudaMemcpy(d_vg, vg.data(), vg.size() * sizeof(double),
                               cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemcpy(d_pos, pos.data(), 3 * n_atoms * sizeof(double),
                               cudaMemcpyHostToDevice));
+    ATV_CUDA_CHECK(cudaMemcpy(d_species, species.data(),
+                              species.size() * sizeof(int),
+                              cudaMemcpyHostToDevice));
     ATV_CUDA_CHECK(cudaMemset(d_F, 0, 3 * n_atoms * sizeof(double)));
 
-    cuda::pw::internal::accumulate_local_forces_device(
-        d_rho, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_F,
-        /*stream=*/nullptr);
+    cuda::pw::internal::accumulate_local_forces_device(d_rho, d_gx, d_gy, d_gz,
+                                                       d_vg, d_pos, d_species,
+                                                       ng, n_atoms, omega, d_F,
+                                                       /*stream=*/nullptr);
     ATV_CUDA_CHECK(cudaDeviceSynchronize());
 
     std::vector<double> F_dev(3 * n_atoms);
@@ -142,6 +152,7 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
     cudaFree(d_gy);
     cudaFree(d_gz);
     cudaFree(d_vg);
+    cudaFree(d_species);
     cudaFree(d_pos);
     cudaFree(d_F);
     (void)kBlock;
@@ -149,15 +160,14 @@ TEST(CudaPWForces, LocalKernelMatchesHostSynthetic) {
 
 TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
     cpu::Frame f(0);
-    cuda::pw::PW method;
-    method.gth_name = "GTH-PBE-q1";
-    method.ecut_ry = 4.0;
-    method.k_mesh = 1;
+    cuda::pw::PW method{{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1")},
+                        /*ecut_ry=*/4.0,
+                        /*k_mesh=*/1,
+                        cpu::xc::XCType::LSDA};
     method.tol = 1e-4;
     method.max_iter = 4;
-    method.xc = cpu::scf::XCType::LSDA;
-    EXPECT_THROW(cuda::pw::pw_forces_analytic(f, method),
-                 std::invalid_argument);
+    EXPECT_THROW(method.forces(f), std::invalid_argument);
 }
 
 // Spin-PBE forces are on the device whitelist (exchange_correlation_spin
@@ -165,17 +175,19 @@ TEST(CudaPWForces, PublicApiRejectsEmptyFrame) {
 // the message must not claim PBE is unsupported.
 TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
     cpu::Frame f(0);
-    cuda::pw::PW method;
-    method.gth_name = "GTH-PBE-q1";
+    cuda::pw::PW method{{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1")},
+                        /*ecut_ry=*/30.0,
+                        /*k_mesh=*/4,
+                        cpu::xc::XCType::PBE};
     method.spin_polarized = true;
     method.multiplicity = 2;
-    method.xc = cpu::scf::XCType::PBE;
     try {
-        (void)cuda::pw::pw_forces_analytic(f, method);
+        (void)method.forces(f);
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("nonempty"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("LSDA only"), std::string::npos)
             << "spin-PBE must not hit the XC reject; msg=" << msg;
     }
@@ -183,19 +195,21 @@ TEST(CudaPWForces, PublicApiAcceptsSpinPbeOnEmptyFrameGate) {
 
 TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
     cpu::Frame f(0);
-    cuda::pw::PW method;
-    method.gth_name = "GTH-PBE-q1";
+    cuda::pw::PW method{{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1")},
+                        /*ecut_ry=*/30.0,
+                        /*k_mesh=*/4,
+                        cpu::xc::XCType::LSDA};
     method.spin_polarized = true;
     method.multiplicity = 2;
-    method.smearing = cuda::pw::Smearing::fermi_dirac;
+    method.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.01;
-    method.xc = cpu::scf::XCType::LSDA;
     try {
-        (void)cuda::pw::pw_forces_analytic(f, method);
+        (void)method.forces(f);
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("nonempty"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("no force path"), std::string::npos) << msg;
     }
 }
@@ -204,19 +218,19 @@ TEST(CudaPWForces, PublicApiAcceptsSpinSmearOnEmptyFrameGate) {
 // still rejects before SCF; the message must not claim PBE is unsupported.
 TEST(CudaPWForces, PublicApiAcceptsPbeOnEmptyFrameGate) {
     cpu::Frame f(0);
-    cuda::pw::PW method;
-    method.gth_name = "GTH-PBE-q1";
-    method.ecut_ry = 4.0;
-    method.k_mesh = 1;
+    cuda::pw::PW method{{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1")},
+                        /*ecut_ry=*/4.0,
+                        /*k_mesh=*/1,
+                        cpu::xc::XCType::PBE};
     method.tol = 1e-4;
     method.max_iter = 4;
-    method.xc = cpu::scf::XCType::PBE;
     try {
-        (void)cuda::pw::pw_forces_analytic(f, method);
+        (void)method.forces(f);
         FAIL() << "expected empty-frame throw";
     } catch (const std::invalid_argument& e) {
         const std::string msg = e.what();
-        EXPECT_NE(msg.find("no atoms"), std::string::npos) << "msg=" << msg;
+        EXPECT_NE(msg.find("nonempty"), std::string::npos) << "msg=" << msg;
         EXPECT_EQ(msg.find("no device path"), std::string::npos)
             << "PBE must not hit the XC whitelist reject; msg=" << msg;
     }

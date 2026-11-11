@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <string>
 #include <type_traits>
 
@@ -132,5 +133,34 @@ TEST(TestFixLangevin, ProvidesForceTrue) {
 TEST(TestFixLangevin, ProvidesEnergyFalse) {
     ATV::cpu::md::FixLangevin langevin{300.0, 300.0, 100.0, 1.0, 1};
     EXPECT_FALSE(langevin.provides_energy());
+}
+#endif
+
+#ifdef ATV_HAS_MD
+TEST(TestFixLangevin,
+     SetupNoiseIsDistinctRepeatableAndUsesPreviousCompletedStep) {
+    auto force = [](int step, bool initializing) {
+        ATV::cpu::Frame frame(1);
+        frame.span(ATV::kAtom_mass)[0] = 1.0;
+        frame.span(ATV::kAtom_tag)[0] = 7;
+        frame.span(ATV::kAtom_vx)[0] = 0.0;
+        frame.span(ATV::kAtom_vy)[0] = 0.0;
+        frame.span(ATV::kAtom_vz)[0] = 0.0;
+        frame.span(ATV::kAtom_fx)[0] = 0.0;
+        frame.span(ATV::kAtom_fy)[0] = 0.0;
+        frame.span(ATV::kAtom_fz)[0] = 0.0;
+        ATV::cpu::Context context;
+        context.exec.initializing_forces = initializing;
+        ATV::cpu::md::FixLangevin thermostat{300.0, 300.0, 100.0, 1.0, 42u};
+        thermostat.launch({context, frame, 0, step});
+        return std::array<double, 3>{frame.span(ATV::kAtom_fx)[0],
+                                     frame.span(ATV::kAtom_fy)[0],
+                                     frame.span(ATV::kAtom_fz)[0]};
+    };
+    const auto setup = force(0, true);
+    EXPECT_EQ(setup, force(0, true));
+    EXPECT_NE(setup, force(0, false));
+    EXPECT_EQ(setup, force(-1, false));
+    EXPECT_EQ(force(7, true), force(6, false));
 }
 #endif

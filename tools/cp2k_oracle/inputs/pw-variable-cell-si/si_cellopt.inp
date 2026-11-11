@@ -2,7 +2,7 @@
 ! comparable to Atomiverse NC-UPF). Quickstep GTH-PADE + DZVP-GTH; ATV uses
 ! ONCVPSP-LDA plane-wave. Geometry: diamond Si 2-atom fcc primitive, start
 ! a0 = 5.55 A (expanded). Use for fair-ish wall / methodology only.
-! See regressions/pw/pw-variable-cell-si/REFERENCE.md.
+! See regressions/pw/variable-cell/REFERENCE.md.
 
 &GLOBAL
   PROJECT si_cellopt

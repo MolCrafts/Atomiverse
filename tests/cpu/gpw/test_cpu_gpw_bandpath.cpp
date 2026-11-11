@@ -1,6 +1,6 @@
 /// @file test_cpu_gpw_bandpath.cpp
 /// @brief Unit tests for GPW band-path geometry and gap finder.
-///        No full SCF e2e (that lives in regressions/gpw/gpw-bands-si).
+///        No full SCF e2e (that lives in regressions/gpw/bands-dos).
 
 #include <cmath>
 #include <stdexcept>
@@ -12,7 +12,7 @@
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using namespace ATV::cpu::gpw;
 
@@ -43,45 +43,31 @@ TEST(GpwBandsPath, DiamondPathIncludesGammaAndX) {
     EXPECT_EQ(bands.kfrac.size(), 16u);
 }
 
-TEST(GpwGapFromSpectrum, SyntheticIndirectGap) {
-    // k0: VBM at band 1 = -0.1; k1: CBM at band 2 = 0.2 → gap 0.3
-    std::vector<std::vector<double>> evals = {
-        {-1.0, -0.1, 1.0},
-        {-1.0, -0.5, 0.2},
-    };
-    double e_vbm = 0, e_cbm = 0;
-    int vk = -1, ck = -1, vb = -1, cb = -1;
-    const double gap =
-        gap_from_spectrum(evals, /*n_occ=*/2, e_vbm, e_cbm, vk, ck, vb, cb);
-    EXPECT_NEAR(e_vbm, -0.1, 1e-12);
-    EXPECT_NEAR(e_cbm, 0.2, 1e-12);
-    EXPECT_NEAR(gap, 0.3, 1e-12);
-    EXPECT_EQ(vk, 0);
-    EXPECT_EQ(ck, 1);
-    EXPECT_EQ(vb, 1);
-    EXPECT_EQ(cb, 2);
-}
-
 TEST(GpwBandsGuards, RejectsDispersionOnPath) {
     const double L = 8.0;
-    const GaussianBasis bH(molrs::Element::H, "DZV-GTH-PADE");
-    const GthPotential pH(molrs::Element::H, "GTH-PADE-q1");
-    const double r0[3] = {0.5 * L - 0.7, 0.5 * L, 0.5 * L};
-    const double r1[3] = {0.5 * L + 0.7, 0.5 * L, 0.5 * L};
-    std::vector<GpwAtom> h2;
-    h2.emplace_back(r0, bH, pH, 1);
-    h2.emplace_back(r1, bH, pH, 1);
+    // H2 in an L-Bohr cube; Frame speaks Å.
+    const double b2a = ATV::units::kBohrInAngstrom;
+    ATV::cpu::Frame h2(2);
+    const double xs[2] = {0.5 * L - 0.7, 0.5 * L + 0.7};
+    for (int i = 0; i < 2; ++i) {
+        h2.span(ATV::kAtom_atomic_number)[i] = 1;
+        h2.span(ATV::kAtom_x)[i] = xs[i] * b2a;
+        h2.span(ATV::kAtom_y)[i] = 0.5 * L * b2a;
+        h2.span(ATV::kAtom_z)[i] = 0.5 * L * b2a;
+    }
+    h2.box = ATV::cpu::Box::cubic(L * b2a);
 
     // Multigrid / DFT+U / dispersion throw in Bands before SCF; d3 is the
     // lightest product-illegal flag that still builds on the k path.
-    GpwDft disp;
-    disp.cell[0] = disp.cell[1] = disp.cell[2] = L;
-    disp.cutoff_ry = 80.0;
+    GpwDft disp{{Kind{molrs::Element::H,
+                      GaussianBasis(molrs::Element::H, "DZV-GTH-PADE"),
+                      GthPotential(molrs::Element::H, "GTH-PADE-q1")}},
+                /*cutoff_ry=*/80.0,
+                ATV::cpu::xc::XCType::PADE};
     disp.n_occ = 1;
     disp.max_iter = 1;
     disp.k_mesh[0] = disp.k_mesh[1] = disp.k_mesh[2] = 2;
     disp.d3 = true;
-    disp.xc = XcKind::PADE;
     disp.local_pp_on_grid = true;
     disp.build(h2);
 

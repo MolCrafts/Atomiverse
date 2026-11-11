@@ -2,6 +2,7 @@
 /// @brief Beutler/GROMACS one-leg soft-core LJ (neighbor-list walk).
 
 #include "atomiverse/cpu/potentials/pair_lj_soft.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -41,22 +43,65 @@ PairLJSoft::PairLJSoft(double epsilon, double sigma, double cutoff,
 }
 
 void PairLJSoft::build(const BuildContext& ctx) {
-    n_threads_ = 1;
+    loop_.reset();
+    int n_threads = 1;
 #ifdef _OPENMP
-    n_threads_ = omp_get_max_threads();
+    n_threads = omp_get_max_threads();
 #endif
-    const int n = ctx.frame.capacity();
-    fx_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fy_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    fz_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
     dU_dlambda_ = 0;
 }
 
-void PairLJSoft::destroy(const DestroyContext&) {
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
-}
+void PairLJSoft::destroy(const DestroyContext&) {}
+
+namespace {
+
+/// Beutler one-leg soft-core LJ pair, with its dU/dλ as the extra.
+struct LJSoftKernel {
+    double rc_sq = 0, sig6 = 0, eps4 = 0, eps24 = 0, vshift = 0, lam = 1,
+           soft0 = 0, dsoft0_dlam = 0;
+
+    double cutoff_sq() const { return rc_sq; }
+    int row(int) const { return 0; }
+
+    md::PairTermX operator()(int, const md::PairSite& p,
+                             const md::PairChunk&) const {
+        const double r2 = p.r2;
+        const double r = std::sqrt(r2);
+        const double r6 = r2 * r2 * r2;
+        const double r_lam = std::pow(soft0 + r6, 1.0 / 6.0);
+        const double r_lam2 = r_lam * r_lam;
+        const double r2inv_l = 1.0 / r_lam2;
+        const double r6inv_l = r2inv_l * r2inv_l * r2inv_l * sig6;
+
+        // Energy: λ (V_LJ(r_λ) − V_shift)
+        const double vlj = eps4 * (r6inv_l * r6inv_l - r6inv_l);
+        const double vpair = vlj - vshift;
+        md::PairTermX t;
+        t.energy = lam * vpair;
+
+        // ∂U/∂λ = vpair + λ (dV_LJ/dr_λ)(dr_λ/dλ)
+        // dV/dr = −fpair_h · r_λ  (fpair definition F = fpair·dx)
+        const double fpair_h =
+            eps24 * r2inv_l * (2.0 * r6inv_l * r6inv_l - r6inv_l);
+        const double dVdr = -fpair_h * r_lam;
+        const double r_lam5 = r_lam2 * r_lam2 * r_lam; // r_λ^4 * r_λ
+        const double drlam_dlam = dsoft0_dlam / (6.0 * r_lam5);
+        t.extra = vpair + lam * dVdr * drlam_dlam;
+
+        // Hard fpair at r_λ, then soft map: fpair_s = λ fpair_h (r/r_λ)^4
+        if (lam > 0.0) {
+            const double ratio = r / r_lam;
+            const double ratio2 = ratio * ratio;
+            t.fpair = lam * fpair_h * ratio2 * ratio2;
+        }
+        t.fvirial = t.fpair;
+        return t;
+    }
+};
+
+} // namespace
 
 void PairLJSoft::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
@@ -66,41 +111,6 @@ void PairLJSoft::compute(const LaunchContext& ctx) {
             "NeighborList ahead of the soft LJ potential?");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.box;
-
-    const auto* dd = ctx.runtime.md.dd;
-#ifdef ATV_HAS_MPI
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_force = mpi ? dd->n_local + dd->n_ghost : f.nlocal();
-#else
-    (void)dd;
-    const int n_force = f.nlocal();
-#endif
-
-    if (static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size()) < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, 0.0);
-            fy_thr_[t].resize(n_force, 0.0);
-            fz_thr_[t].resize(n_force, 0.0);
-        }
-    }
-
-    const int k_inum = pairs.inum;
-    const int* __restrict ilist = pairs.ilist.data();
-    const int* __restrict numneigh = pairs.numneigh.data();
-    const int* __restrict firstneigh = pairs.firstneigh.data();
-    const int* __restrict neighbors = pairs.neighbors.data();
-    const bool has_shifts = pairs.has_shifts;
-    const double* __restrict shx = has_shifts ? pairs.shift_x.data() : nullptr;
-    const double* __restrict shy = has_shifts ? pairs.shift_y.data() : nullptr;
-    const double* __restrict shz = has_shifts ? pairs.shift_z.data() : nullptr;
-
-    const StorageReal* __restrict x_ptr = f.span(kAtom_x);
-    const StorageReal* __restrict y_ptr = f.span(kAtom_y);
-    const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
 
     const double rc_sq = cutoff_sq_;
     const double sig6 = sigma6_;
@@ -117,142 +127,29 @@ void PairLJSoft::compute(const LaunchContext& ctx) {
         (p == 1.0) ? (-alpha * sig6)
                    : (-alpha * sig6 * p * std::pow(one_m_lam, p - 1.0));
 
-    double energy_total = 0;
-    double dU_total = 0;
-    double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
-
     if (!(lam > 0.0) && soft0 == 0.0) {
         dU_dlambda_ = 0;
         return;
     }
 
-#pragma omp parallel reduction(+ : energy_total) reduction(+ : dU_total)       \
-    reduction(+ : v_xx) reduction(+ : v_yy) reduction(+ : v_zz)                \
-    reduction(+ : v_xy) reduction(+ : v_xz) reduction(+ : v_yz)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const bool direct = (n_threads_ == 1);
-        double* __restrict fxt_ptr;
-        double* __restrict fyt_ptr;
-        double* __restrict fzt_ptr;
-        if (direct) {
-            fxt_ptr = fx_ptr;
-            fyt_ptr = fy_ptr;
-            fzt_ptr = fz_ptr;
-        } else {
-            auto& fxt = fx_thr_[tid];
-            auto& fyt = fy_thr_[tid];
-            auto& fzt = fz_thr_[tid];
-            std::fill(fxt.begin(), fxt.begin() + n_force, 0.0);
-            std::fill(fyt.begin(), fyt.begin() + n_force, 0.0);
-            std::fill(fzt.begin(), fzt.begin() + n_force, 0.0);
-            fxt_ptr = fxt.data();
-            fyt_ptr = fyt.data();
-            fzt_ptr = fzt.data();
-        }
-
-        const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
-        const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
-
-#pragma omp for schedule(static)
-        for (int ii = 0; ii < k_inum; ++ii) {
-            const int i = ilist[ii];
-            const double xi = x_ptr[i], yi = y_ptr[i], zi = z_ptr[i];
-            const int jnum = numneigh[i];
-            const int off = firstneigh[i];
-            double fi_x = 0, fi_y = 0, fi_z = 0;
-            for (int jj = 0; jj < jnum; ++jj) {
-                const int j = neighbors[off + jj];
-                double dx, dy, dz;
-                if (has_shifts) {
-                    dx = xi - (x_ptr[j] + shx[off + jj]);
-                    dy = yi - (y_ptr[j] + shy[off + jj]);
-                    dz = zi - (z_ptr[j] + shz[off + jj]);
-                } else {
-                    dx = xi - x_ptr[j];
-                    dy = yi - y_ptr[j];
-                    dz = zi - z_ptr[j];
-                    dx -= lx * std::nearbyint(dx * inv_lx);
-                    dy -= ly * std::nearbyint(dy * inv_ly);
-                    dz -= lz * std::nearbyint(dz * inv_lz);
-                }
-                const double r2 = dx * dx + dy * dy + dz * dz;
-                if (r2 >= rc_sq || r2 == 0.0)
-                    continue;
-
-                const double r = std::sqrt(r2);
-                const double r6 = r2 * r2 * r2;
-                const double r_lam = std::pow(soft0 + r6, 1.0 / 6.0);
-                const double r_lam2 = r_lam * r_lam;
-                const double r2inv_l = 1.0 / r_lam2;
-                const double r6inv_l = r2inv_l * r2inv_l * r2inv_l * sig6;
-
-                // Energy: λ (V_LJ(r_λ) − V_shift)
-                const double vlj = eps4 * (r6inv_l * r6inv_l - r6inv_l);
-                const double vpair = vlj - vshift;
-                energy_total += lam * vpair;
-
-                // ∂U/∂λ = vpair + λ (dV_LJ/dr_λ)(dr_λ/dλ)
-                // dV/dr = −fpair_h · r_λ  (fpair definition F = fpair·dx)
-                const double fpair_h =
-                    eps24 * r2inv_l * (2.0 * r6inv_l * r6inv_l - r6inv_l);
-                const double dVdr = -fpair_h * r_lam;
-                const double r_lam5 = r_lam2 * r_lam2 * r_lam; // r_λ^4 * r_λ
-                const double drlam_dlam = dsoft0_dlam / (6.0 * r_lam5);
-                dU_total += vpair + lam * dVdr * drlam_dlam;
-
-                // Hard fpair at r_λ, then soft map: fpair_s = λ fpair_h (r/r_λ)^4
-                if (lam > 0.0) {
-                    const double ratio = r / r_lam;
-                    const double ratio2 = ratio * ratio;
-                    const double fpair = lam * fpair_h * ratio2 * ratio2;
-
-                    const double fxp = fpair * dx;
-                    const double fyp = fpair * dy;
-                    const double fzp = fpair * dz;
-                    fi_x += fxp;
-                    fi_y += fyp;
-                    fi_z += fzp;
-                    fxt_ptr[j] -= fxp;
-                    fyt_ptr[j] -= fyp;
-                    fzt_ptr[j] -= fzp;
-
-                    v_xx += dx * fxp;
-                    v_yy += dy * fyp;
-                    v_zz += dz * fzp;
-                    v_xy += dx * fyp;
-                    v_xz += dx * fzp;
-                    v_yz += dy * fzp;
-                }
-            }
-            fxt_ptr[i] += fi_x;
-            fyt_ptr[i] += fi_y;
-            fzt_ptr[i] += fi_z;
-        }
-
-        if (!direct) {
-#pragma omp for schedule(static)
-            for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < n_threads_; ++t) {
-                    fx_ptr[i] += fx_thr_[t][i];
-                    fy_ptr[i] += fy_thr_[t][i];
-                    fz_ptr[i] += fz_thr_[t][i];
-                }
-            }
-        }
-    }
+    LJSoftKernel kernel;
+    kernel.rc_sq = rc_sq;
+    kernel.sig6 = sig6;
+    kernel.eps4 = eps4;
+    kernel.eps24 = eps24;
+    kernel.vshift = vshift;
+    kernel.lam = lam;
+    kernel.soft0 = soft0;
+    kernel.dsoft0_dlam = dsoft0_dlam;
+    const md::PairTotals sums = loop_.run(ctx, md::PairRows::of(pairs), kernel);
+    const double energy_total = sums.energy;
+    const double dU_total = sums.extra;
+    const md::Voigt6& vir = sums.virial;
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    f.meta.get(kStress)[0] += v_xx;
-    f.meta.get(kStress)[1] += v_yy;
-    f.meta.get(kStress)[2] += v_zz;
-    f.meta.get(kStress)[3] += v_xy;
-    f.meta.get(kStress)[4] += v_xz;
-    f.meta.get(kStress)[5] += v_yz;
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
     dU_dlambda_ = dU_total;
 }
 

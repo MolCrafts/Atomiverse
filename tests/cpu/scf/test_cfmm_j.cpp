@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -18,12 +19,13 @@
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/grid.h"
 #include "atomiverse/cpu/scf/internal/cfmm_j.h"
+#include "atomiverse/cpu/scf/internal/exact_jk.h"
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 using namespace ATV;
 using namespace ATV::cpu::scf;
@@ -32,15 +34,15 @@ namespace {
 
 cpu::Frame make_h2o() {
     cpu::Frame frame(3);
-    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_atomic_number)[0] = 8;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.1173;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 0.0;
     frame.span(kAtom_y)[1] = 0.7572;
     frame.span(kAtom_z)[1] = -0.4692;
-    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_atomic_number)[2] = 1;
     frame.span(kAtom_x)[2] = 0.0;
     frame.span(kAtom_y)[2] = -0.7572;
     frame.span(kAtom_z)[2] = -0.4692;
@@ -52,11 +54,11 @@ cpu::Frame make_h2o() {
 /// (need ≳ 50 Bohr ≈ 26 Å under the CFMM absolute far-field floor).
 cpu::Frame make_h2_far() {
     cpu::Frame frame(2);
-    frame.span(kAtom_type)[0] = 1;
+    frame.span(kAtom_atomic_number)[0] = 1;
     frame.span(kAtom_x)[0] = 0.0;
     frame.span(kAtom_y)[0] = 0.0;
     frame.span(kAtom_z)[0] = 0.0;
-    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_atomic_number)[1] = 1;
     frame.span(kAtom_x)[1] = 40.0; // Å ≳ 75 Bohr — exercises multipole far
     frame.span(kAtom_y)[1] = 0.0;
     frame.span(kAtom_z)[1] = 0.0;
@@ -78,7 +80,8 @@ double max_abs_diff(const RealMatrix& A, const RealMatrix& B) {
 TEST(CfmmJ, SSMonopoleEqualsOverlap) {
     // H2 STO-3G: all AOs are s — unit monopole must match overlap.
     auto frame = make_h2_far();
-    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0, /*compute_eri=*/false);
+    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/false);
     internal::CfmmJ cfmm(pack.shells, /*order=*/6, /*threshold=*/1e-9);
     cfmm.prepare();
     ASSERT_GT(cfmm.n_distributions(), 0);
@@ -96,7 +99,8 @@ TEST(CfmmJ, SSMonopoleEqualsOverlap) {
 
 TEST(CfmmJ, NearFarComplementaryNoDoubleCount) {
     auto frame = make_h2_far();
-    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0, /*compute_eri=*/false);
+    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/false);
     // Loose threshold → smaller extents → more far pairs.
     internal::CfmmJ cfmm(pack.shells, /*order=*/6, /*threshold=*/1e-3);
     cfmm.prepare();
@@ -122,7 +126,8 @@ TEST(CfmmJ, NearFarComplementaryNoDoubleCount) {
 
 TEST(CfmmJ, H2OSto3GMatchesDirectJ) {
     auto frame = make_h2o();
-    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0, /*compute_eri=*/false);
+    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/false);
     const int n = pack.n_ao_cart();
 
     // A simple positive-semidefinite density (not from SCF).
@@ -134,13 +139,17 @@ TEST(CfmmJ, H2OSto3GMatchesDirectJ) {
         P(0, 1) = P(1, 0) = 0.1;
     }
 
-    ShellPairList sp(pack);
+    internal::ExactJK exact;
+    exact.prepare(pack.view(), /*memory_mb=*/0.0);
     RealMatrix J_direct;
-    sp.j(P, J_direct);
+    const internal::JKRequest request{&P, &J_direct};
+    exact.compute(std::span<const internal::JKRequest>(&request, 1));
 
+    // CFMM J = exact near-field baseline + far-pair multipole correction.
     internal::CfmmJ cfmm(pack.shells, /*order=*/10, /*threshold=*/1e-9);
     cfmm.prepare();
-    RealMatrix J_cfmm = cfmm.j(P);
+    RealMatrix J_cfmm = J_direct;
+    cfmm.apply_far_correction(P, J_cfmm);
 
     const double max_diff = max_abs_diff(J_cfmm, J_direct);
     EXPECT_LE(max_diff, 1e-8) << "max |J_CFMM - J_direct| = " << max_diff;
@@ -148,7 +157,8 @@ TEST(CfmmJ, H2OSto3GMatchesDirectJ) {
 
 TEST(CfmmJ, CfmmTimesRiThrows) {
     auto frame = make_h2o();
-    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0, /*compute_eri=*/false);
+    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/false);
     internal::HamiltonianBuilder hb;
     EXPECT_THROW(hb.prepare(pack, /*is_hf=*/true, GridLevel::SG1, 0, 0, nullptr,
                             RI::J, AuxBasis::Def2JKFIT, Coulomb::CFMM, 10,
@@ -160,7 +170,8 @@ TEST(CfmmJ, DefaultDirectUnaffected) {
     // prepare with defaults must not build a CFMM workspace path that
     // changes the Direct branch (smoke: no throw, step returns finite F).
     auto frame = make_h2o();
-    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0, /*compute_eri=*/false);
+    internal::IntegralWorkspace pack(frame, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/false);
     const int n = pack.n_basis;
     RealMatrix P = xt::zeros<double>({n, n});
     for (int i = 0; i < n; ++i)
@@ -168,7 +179,8 @@ TEST(CfmmJ, DefaultDirectUnaffected) {
 
     internal::HamiltonianBuilder hb;
     hb.prepare(pack, /*is_hf=*/true, GridLevel::SG1, 0, 0, nullptr);
-    auto fr = hb.step(pack, /*restricted=*/true, /*is_hf=*/true, XCType::LSDA,
+    auto fr = hb.step(pack, /*restricted=*/true, /*is_hf=*/true,
+                      ATV::cpu::xc::XCType::LSDA,
                       /*hybrid_alpha_override=*/-1.0, P, P);
     EXPECT_TRUE(std::isfinite(fr.F_alpha(0, 0)));
 }

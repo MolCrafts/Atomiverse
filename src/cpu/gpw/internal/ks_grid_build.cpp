@@ -3,7 +3,8 @@
 
 #include "atomiverse/cpu/gpw/internal/ks_grid_build.h"
 
-#include "atomiverse/cpu/gpw/gpw_solver.h" // XcKind
+#include "atomiverse/cpu/device/chunked_range.h"
+#include "atomiverse/cpu/gpw/gpw_solver.h" // xc::XCType
 #include "atomiverse/cpu/gpw/internal/mt_poisson.h"
 #include "atomiverse/cpu/gpw/internal/poisson_fft.h"
 #include "atomiverse/cpu/gpw/internal/vdw_df.h"
@@ -16,47 +17,53 @@ namespace cpu {
 namespace gpw {
 namespace internal {
 
-XcOnGrid evaluate_xc_rks(const UniformGrid& grid, const std::vector<double>& rho,
-                         XcKind xc) {
+XcOnGrid evaluate_xc_rks(const UniformGrid& grid,
+                         const std::vector<double>& rho, xc::XCType xc) {
     switch (xc) {
-    case XcKind::PBE:
+    case xc::XCType::PBE:
         return xc_grid_pbe(grid, rho);
-    case XcKind::PBEsol:
+    case xc::XCType::PBEsol:
         return xc_grid_pbesol(grid, rho);
-    case XcKind::RevPBE:
+    case xc::XCType::RevPBE:
         return xc_grid_revpbe(grid, rho);
-    case XcKind::RPBE:
+    case xc::XCType::RPBE:
         return xc_grid_rpbe(grid, rho);
-    case XcKind::BLYP:
+    case xc::XCType::BLYP:
         return xc_grid_blyp(grid, rho);
-    case XcKind::OptB88VdW:
+    case xc::XCType::OptB88VdW:
         return xc_grid_optb88_vdw(grid, rho);
-    case XcKind::PADE:
+    case xc::XCType::PADE:
         return xc_grid_pade(grid, rho);
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
     }
-    return xc_grid_pade(grid, rho);
 }
 
 XcOnGridSpin evaluate_xc_uks(const UniformGrid& grid,
                              const std::vector<double>& rho_a,
-                             const std::vector<double>& rho_b, XcKind xc) {
+                             const std::vector<double>& rho_b, xc::XCType xc) {
     switch (xc) {
-    case XcKind::PBE:
+    case xc::XCType::PBE:
         return xc_grid_pbe_spin(grid, rho_a, rho_b);
-    case XcKind::PBEsol:
+    case xc::XCType::PBEsol:
         return xc_grid_pbesol_spin(grid, rho_a, rho_b);
-    case XcKind::RevPBE:
+    case xc::XCType::RevPBE:
         return xc_grid_revpbe_spin(grid, rho_a, rho_b);
-    case XcKind::RPBE:
+    case xc::XCType::RPBE:
         return xc_grid_rpbe_spin(grid, rho_a, rho_b);
-    case XcKind::BLYP:
+    case xc::XCType::BLYP:
         return xc_grid_blyp_spin(grid, rho_a, rho_b);
-    case XcKind::OptB88VdW:
+    case xc::XCType::OptB88VdW:
         return xc_grid_optb88_vdw_spin(grid, rho_a, rho_b);
-    case XcKind::PADE:
+    case xc::XCType::PADE:
         return xc_grid_pade_lsd(grid, rho_a, rho_b);
+    default:
+        throw std::invalid_argument(
+            "GpwDft: XCType is not a GPW functional (PADE, PBE, PBEsol, "
+            "RevPBE, RPBE, BLYP, OptB88VdW)");
     }
-    return xc_grid_pade_lsd(grid, rho_a, rho_b);
 }
 
 namespace {
@@ -66,9 +73,8 @@ void check_density_sizes(const UniformGrid& grid, std::size_t n_rho,
     if (n_rho != static_cast<std::size_t>(grid.npts())
         || n_ion != static_cast<std::size_t>(grid.npts()))
         throw std::runtime_error(
-            std::string("GPW ") + tag
-            + ": density grid size mismatch (rho=" + std::to_string(n_rho)
-            + " n_ion=" + std::to_string(n_ion)
+            std::string("GPW ") + tag + ": density grid size mismatch (rho="
+            + std::to_string(n_rho) + " n_ion=" + std::to_string(n_ion)
             + " grid.npts=" + std::to_string(grid.npts()) + ")");
 }
 
@@ -83,7 +89,7 @@ PoissonResult poisson(const UniformGrid& grid, const std::vector<double>& n_tot,
 KsGridRks ks_grid_build_rks(const UniformGrid& grid,
                             const std::vector<double>& rho,
                             const std::vector<double>& n_ion,
-                            const std::vector<double>& v_locsr, XcKind xc,
+                            const std::vector<double>& v_locsr, xc::XCType xc,
                             bool nonperiodic, bool vdw_df, bool vdw_df2,
                             bool rvv10) {
     check_density_sizes(grid, rho.size(), n_ion.size(), "ks_grid_build_rks");
@@ -125,7 +131,7 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
                             const std::vector<double>& rho_a,
                             const std::vector<double>& rho_b,
                             const std::vector<double>& n_ion,
-                            const std::vector<double>& v_locsr, XcKind xc,
+                            const std::vector<double>& v_locsr, xc::XCType xc,
                             bool nonperiodic, bool vdw_df, bool vdw_df2,
                             bool rvv10) {
     if (rho_a.size() != rho_b.size())
@@ -156,17 +162,24 @@ KsGridUks ks_grid_build_uks(const UniformGrid& grid,
         throw std::runtime_error(
             "GPW ks_grid_build_uks: v_locsr size does not match density grid");
     // Fuse V_eff^α/β assembly + optional ∫ρ V_loc (one grid walk).
-    double e_loc = 0.0;
-#pragma omp parallel for schedule(static) reduction(+ : e_loc) if (ng > 4096)
-    for (std::size_t g = 0; g < ng; ++g) {
-        const double vloc = have_loc ? v_locsr[g] : 0.0;
-        if (have_loc)
-            e_loc += rho[g] * vloc;
-        const double ves = out.v_es[g] + vloc;
-        out.veff_a[g] = ves + xcg.vxc_a[g];
-        out.veff_b[g] = ves + xcg.vxc_b[g];
+    const device::ChunkedRange range(static_cast<long>(ng), 256);
+    std::vector<double> partial(static_cast<std::size_t>(range.chunks()), 0.0);
+#pragma omp parallel for schedule(dynamic, 1) if (ng > 4096)
+    for (long c = 0; c < range.chunks(); ++c) {
+        double e_loc = 0.0;
+        for (long g = range.begin(c); g < range.end(c); ++g) {
+            const double vloc = have_loc ? v_locsr[g] : 0.0;
+            if (have_loc)
+                e_loc += rho[g] * vloc;
+            const double ves = out.v_es[g] + vloc;
+            out.veff_a[g] = ves + xcg.vxc_a[g];
+            out.veff_b[g] = ves + xcg.vxc_b[g];
+        }
+        partial[static_cast<std::size_t>(c)] = e_loc;
     }
-    out.e_locgrid = e_loc * grid.weight();
+    for (double e_loc : partial)
+        out.e_locgrid += e_loc;
+    out.e_locgrid *= grid.weight();
 
     if (vdw_df || vdw_df2 || rvv10) {
         NonlocalVdwOnGrid nl =

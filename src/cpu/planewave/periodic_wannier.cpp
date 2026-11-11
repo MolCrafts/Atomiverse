@@ -80,11 +80,11 @@ void overlap_matrix(const internal::GVectorList& bra,
 
 /// Neighbor of MP index along lattice direction `dir` by ±1 step.
 struct Neighbor {
-    int ik_nb;   ///< neighbor k-index
-    int dir;     ///< 0,1,2 lattice direction
-    int sign;    ///< +1 or -1
-    int wrap;    ///< +1 if crossed +BZ, -1 if -BZ, 0 else
-    double wb;   ///< SMV weight [Å²]
+    int ik_nb;                    ///< neighbor k-index
+    int dir;                      ///< 0,1,2 lattice direction
+    int sign;                     ///< +1 or -1
+    int wrap;                     ///< +1 if crossed +BZ, -1 if -BZ, 0 else
+    double wb;                    ///< SMV weight [Å²]
     std::array<double, 3> b_cart; ///< b in Cartesian [1/Å]
 };
 
@@ -159,12 +159,10 @@ smv_axis_weights(const std::array<std::array<double, 3>, 3>& b_shell) {
 
 /// Build ±e_i neighbors for an N³ Γ-centered MP mesh.
 std::vector<std::vector<Neighbor>>
-build_neighbors(int N, const Mat3& recip /* rows b_i [1/Å], incl. 2π */) {
+build_neighbors(int N, const Mat3& recip /* columns b_i [1/Å], incl. 2π */) {
     const int nk = N * N * N;
     std::vector<std::vector<Neighbor>> nb(static_cast<std::size_t>(nk));
-    auto idx = [N](int i, int j, int k) {
-        return (i * N + j) * N + k;
-    };
+    auto idx = [N](int i, int j, int k) { return (i * N + j) * N + k; };
     auto ijk = [N](int ik) {
         const int k = ik % N;
         const int j = (ik / N) % N;
@@ -176,9 +174,9 @@ build_neighbors(int N, const Mat3& recip /* rows b_i [1/Å], incl. 2π */) {
     std::array<std::array<double, 3>, 3> b_shell{};
     for (int d = 0; d < 3; ++d) {
         b_shell[static_cast<std::size_t>(d)] = {
-            static_cast<double>(recip(d, 0)) / static_cast<double>(N),
-            static_cast<double>(recip(d, 1)) / static_cast<double>(N),
-            static_cast<double>(recip(d, 2)) / static_cast<double>(N)};
+            static_cast<double>(recip(0, d)) / static_cast<double>(N),
+            static_cast<double>(recip(1, d)) / static_cast<double>(N),
+            static_cast<double>(recip(2, d)) / static_cast<double>(N)};
     }
     const auto w_axis = smv_axis_weights(b_shell);
 
@@ -214,8 +212,7 @@ build_neighbors(int N, const Mat3& recip /* rows b_i [1/Å], incl. 2π */) {
 
 /// Rotate M0 by U†(k) M0 U(k+b).
 void rotate_M(const std::vector<Cdouble>& M0, const std::vector<Cdouble>& Uk,
-              const std::vector<Cdouble>& Ukb, int n,
-              std::vector<Cdouble>& M) {
+              const std::vector<Cdouble>& Ukb, int n, std::vector<Cdouble>& M) {
     // T = M0 @ Ukb; M = Uk† @ T
     std::vector<Cdouble> T(static_cast<std::size_t>(n * n), Cdouble{0, 0});
     for (int i = 0; i < n; ++i)
@@ -245,9 +242,9 @@ double safe_arg(Cdouble z) {
 }
 
 /// Total SMV spread Σ_n Ω_n [Å²] from rotated diagonal M.
-double total_spread_from_M(
-    const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
-    const std::vector<std::vector<Neighbor>>& nb, int n_wann) {
+double
+total_spread_from_M(const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
+                    const std::vector<std::vector<Neighbor>>& nb, int n_wann) {
     const int nk = static_cast<int>(M_kb.size());
     if (nk == 0)
         return 0.0;
@@ -268,7 +265,8 @@ double total_spread_from_M(
                     inv_nk * e.wb * (phi * phi + 1.0 - mag2);
                 // r = −Σ w b Im ln M  (Marzari–Vanderbilt 1997 eq. 31)
                 for (int a = 0; a < 3; ++a)
-                    r[static_cast<std::size_t>(n)][static_cast<std::size_t>(a)] -=
+                    r[static_cast<std::size_t>(n)]
+                     [static_cast<std::size_t>(a)] -=
                         inv_nk * e.wb * e.b_cart[static_cast<std::size_t>(a)]
                         * phi;
             }
@@ -341,7 +339,8 @@ void expm_antihermitian(const std::vector<Cdouble>& G, int n, double alpha,
     std::vector<Cdouble> term = expG; // I
     // 12th-order Taylor is plenty for small steps.
     for (int p = 1; p <= 12; ++p) {
-        std::vector<Cdouble> next(static_cast<std::size_t>(n * n), Cdouble{0, 0});
+        std::vector<Cdouble> next(static_cast<std::size_t>(n * n),
+                                  Cdouble{0, 0});
         for (int i = 0; i < n; ++i)
             for (int j = 0; j < n; ++j) {
                 Cdouble s{0, 0};
@@ -409,9 +408,9 @@ void mv_gradient(const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
                     //   S = (R + R†)/2 Hermitian
                     //   dΩ ~ 4 wb (A + S q_n) which is Hermitian; convert via i*
                     //   so G is antihermitian: G = i * Hermitian.
-                    const Cdouble Rnm_c =
-                        std::conj(M[static_cast<std::size_t>(n * n_wann + m)]
-                                  * std::exp(-I * q[static_cast<std::size_t>(m)]));
+                    const Cdouble Rnm_c = std::conj(
+                        M[static_cast<std::size_t>(n * n_wann + m)]
+                        * std::exp(-I * q[static_cast<std::size_t>(m)]));
                     const Cdouble A = (Rmn - Rnm_c) / (2.0 * I);
                     const Cdouble S = 0.5 * (Rmn + Rnm_c);
                     const Cdouble H =
@@ -425,8 +424,10 @@ void mv_gradient(const std::vector<std::vector<std::vector<Cdouble>>>& M_kb,
         std::vector<Cdouble> Ga = G;
         for (int m = 0; m < n_wann; ++m)
             for (int n = 0; n < n_wann; ++n) {
-                const Cdouble gmn = Ga[static_cast<std::size_t>(m * n_wann + n)];
-                const Cdouble gnm = Ga[static_cast<std::size_t>(n * n_wann + m)];
+                const Cdouble gmn =
+                    Ga[static_cast<std::size_t>(m * n_wann + n)];
+                const Cdouble gnm =
+                    Ga[static_cast<std::size_t>(n * n_wann + m)];
                 G[static_cast<std::size_t>(m * n_wann + n)] =
                     0.5 * (gmn - std::conj(gnm));
             }
@@ -444,8 +445,8 @@ double max_abs_G(const std::vector<std::vector<Cdouble>>& G_k) {
 /// Fourier transform of a normalized Gaussian at τ [Å] on a G-sphere.
 /// PW coefficients live in Bohr^{-1} G-space; convert consistently.
 void gaussian_proj_coeffs(const internal::GVectorList& gv, double vol_bohr,
-                          const std::array<double, 3>& tau_ang, double alpha_ang,
-                          std::vector<Cdouble>& g) {
+                          const std::array<double, 3>& tau_ang,
+                          double alpha_ang, std::vector<Cdouble>& g) {
     // α_Bohr from α_Å: exp(-α_Å |r_Å|²) = exp(-α_Å a0² |r_B|²)
     // so α_B = α_Å * a0² with a0 = kBohrInAngstrom.
     const double a0 = units::kBohrInAngstrom;
@@ -472,8 +473,8 @@ void gaussian_proj_coeffs(const internal::GVectorList& gv, double vol_bohr,
 }
 
 /// Thin SVD for n x n complex A → U = Z W† via one-sided Jacobi (n small).
-void projection_U(const std::vector<Cdouble>& A /* n x n, rows=bands */,
-                  int n, std::vector<Cdouble>& U) {
+void projection_U(const std::vector<Cdouble>& A /* n x n, rows=bands */, int n,
+                  std::vector<Cdouble>& U) {
     // SVD A = Z Σ W† via eigen-decomposition of A†A (Hermitian n x n).
     // A†A_ij = sum_k conj(A_ki)*A_kj
     std::vector<Cdouble> H(static_cast<std::size_t>(n * n), Cdouble{0, 0});
@@ -505,16 +506,16 @@ void projection_U(const std::vector<Cdouble>& A /* n x n, rows=bands */,
                 const double aqq =
                     H[static_cast<std::size_t>(q * n + q)].real();
                 const double thr = 0.5 * (aqq - app);
-                // Complex Jacobi: phase to make apq real after rotation.
+                // Complex Jacobi: rotate by the phase of apq so it is real.
                 const double phi = std::arg(apq);
-                const Cdouble phase = std::exp(-I * phi); // so phase*apq real+
                 const double apq_r = std::abs(apq);
                 const double t =
                     (thr == 0.0)
                         ? 1.0
                         : ((thr > 0 ? 1.0 : -1.0)
                            / (std::abs(thr) / apq_r
-                              + std::sqrt(1.0 + (thr / apq_r) * (thr / apq_r))));
+                              + std::sqrt(1.0
+                                          + (thr / apq_r) * (thr / apq_r))));
                 const double c = 1.0 / std::sqrt(1.0 + t * t);
                 const double s = t * c;
                 // Rotate H and V with complex 2x2.
@@ -587,11 +588,11 @@ void projection_U(const std::vector<Cdouble>& A /* n x n, rows=bands */,
         }
 }
 
-/// Infer cubic a from fcc primitive cell (row length * √2).
+/// Infer cubic a from fcc primitive cell (lattice-vector length * √2).
 double cubic_a_from_cell(const Mat3& cell) {
     const double ax = static_cast<double>(cell(0, 0));
-    const double ay = static_cast<double>(cell(0, 1));
-    const double az = static_cast<double>(cell(0, 2));
+    const double ay = static_cast<double>(cell(1, 0));
+    const double az = static_cast<double>(cell(2, 0));
     const double len = std::sqrt(ax * ax + ay * ay + az * az);
     return len * std::sqrt(2.0);
 }
@@ -607,12 +608,13 @@ struct ChannelLoc {
 };
 
 /// Marzari–Vanderbilt localization on precomputed NSCF coefficients.
-ChannelLoc localize_channel(
-    const std::vector<std::vector<std::complex<AccReal>>>& coef,
-    const std::vector<internal::GVectorList>& gv_k, int n_wann, int N,
-    const Mat3& recip, double vol_bohr,
-    const std::vector<std::array<double, 3>>& trials, bool use_projection,
-    double proj_alpha_ang, int max_iter, double tol, double step) {
+ChannelLoc
+localize_channel(const std::vector<std::vector<std::complex<AccReal>>>& coef,
+                 const std::vector<internal::GVectorList>& gv_k, int n_wann,
+                 int N, const Mat3& recip, double vol_bohr,
+                 const std::vector<std::array<double, 3>>& trials,
+                 bool use_projection, double proj_alpha_ang, int max_iter,
+                 double tol, double step) {
     ChannelLoc out;
     if (n_wann < 1)
         return out;
@@ -671,21 +673,20 @@ ChannelLoc localize_channel(
         }
     }
 
-    auto rebuild_M =
-        [&](std::vector<std::vector<std::vector<Cdouble>>>& M_kb) {
-            M_kb.assign(static_cast<std::size_t>(nk), {});
-            for (int ik = 0; ik < nk; ++ik) {
-                const auto& neigh = nb[static_cast<std::size_t>(ik)];
-                M_kb[static_cast<std::size_t>(ik)].resize(neigh.size());
-                for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
-                    const int ikb = neigh[ib].ik_nb;
-                    rotate_M(M0[static_cast<std::size_t>(ik)][ib],
-                             U[static_cast<std::size_t>(ik)],
-                             U[static_cast<std::size_t>(ikb)], n_wann,
-                             M_kb[static_cast<std::size_t>(ik)][ib]);
-                }
+    auto rebuild_M = [&](std::vector<std::vector<std::vector<Cdouble>>>& M_kb) {
+        M_kb.assign(static_cast<std::size_t>(nk), {});
+        for (int ik = 0; ik < nk; ++ik) {
+            const auto& neigh = nb[static_cast<std::size_t>(ik)];
+            M_kb[static_cast<std::size_t>(ik)].resize(neigh.size());
+            for (std::size_t ib = 0; ib < neigh.size(); ++ib) {
+                const int ikb = neigh[ib].ik_nb;
+                rotate_M(M0[static_cast<std::size_t>(ik)][ib],
+                         U[static_cast<std::size_t>(ik)],
+                         U[static_cast<std::size_t>(ikb)], n_wann,
+                         M_kb[static_cast<std::size_t>(ik)][ib]);
             }
-        };
+        }
+    };
 
     std::vector<std::vector<std::vector<Cdouble>>> M_kb;
     {
@@ -717,8 +718,8 @@ ChannelLoc localize_channel(
         std::vector<std::vector<Cdouble>> G_k;
         mv_gradient(M_kb, nb, n_wann, G_k);
         const double gmax = max_abs_G(G_k);
-        ATV_DEBUG_CAT("pw", "mlwf iter={} |G|_max={:.3e} Omega={:.6f}", it, gmax,
-                      omega_prev);
+        ATV_DEBUG_CAT("pw", "mlwf iter={} |G|_max={:.3e} Omega={:.6f}", it,
+                      gmax, omega_prev);
         if (it > 0 && (!(gmax > 0.0) || gmax < tol || !std::isfinite(gmax))) {
             conv = std::isfinite(gmax) && gmax < tol;
             break;
@@ -814,10 +815,10 @@ double mv_pair_weight_cubic(double b_len) {
     return 1.0 / (2.0 * b_len * b_len);
 }
 
-std::array<double, 3> center_from_diagonal_phases(
-    const std::vector<std::array<double, 3>>& b_cart,
-    const std::vector<double>& w_b,
-    const std::vector<std::complex<double>>& M_diag) {
+std::array<double, 3>
+center_from_diagonal_phases(const std::vector<std::array<double, 3>>& b_cart,
+                            const std::vector<double>& w_b,
+                            const std::vector<std::complex<double>>& M_diag) {
     if (b_cart.empty() || b_cart.size() != w_b.size()
         || b_cart.size() != M_diag.size())
         throw std::invalid_argument(
@@ -838,7 +839,7 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                                                const cpu::Frame& frame) const {
     using internal::DavidsonSolver;
 
-    if (method.smearing != Smearing::none)
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "PeriodicWannier::compute: requires an insulator (no metallic "
             "smearing)");
@@ -869,15 +870,14 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                 "PeriodicWannier::compute: multiplicity must be >= 1 when "
                 "spin_polarized");
 
-        internal::PWProblem prob;
-        internal::setup_pw_problem(frame, method.upf_path, method.gth_name,
-                     method.ecut_ry,
-                                   method.k_mesh, prob);
-        internal::PWWorkspace& ws = prob.ws;
+        internal::PWSetup prob;
+        internal::PWWorkspace ws;
+        internal::setup_pw_problem(frame, method.potentials, method.ecut_ry,
+                                   method.k_mesh, prob, ws);
         auto& gv0 = prob.gv0;
-        const int n_kpts_scf = static_cast<int>(prob.kg.kpoints.size());
+        const int n_kpts_scf = static_cast<int>(prob.mesh.kg.kpoints.size());
         const int ng0 = gv0.count();
-        const int n_elec = prob.n_elec;
+        const int n_elec = prob.ions.n_elec;
         const int mag = method.multiplicity - 1;
         if ((n_elec + mag) % 2 != 0 || mag > n_elec)
             throw std::invalid_argument(
@@ -936,33 +936,21 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
 
             xt::xarray<std::complex<AccReal>> rho_out[2];
             e_band_last = AccReal(0);
-            auto* saved_gvec = ws.gvec;
+            const auto saved_point = ws.point();
             for (int s = 0; s < 2; ++s) {
                 for (int ig = 0; ig < ng0; ++ig)
                     ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
                 veff.step(ws);
                 density.begin(ws);
                 for (int ik = 0; ik < n_kpts_scf; ++ik) {
-                    auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                    ws.gvec = &gvk;
-                    ws.n_g = gvk.count();
-                    ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                    for (int ig = 0; ig < ws.n_g; ++ig)
-                        ws.T_G[ig] = gvk.ekin[ig];
-                    if (!prob.kb_proj_k.empty())
-                        ws.kb_proj =
-                            prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                    if (!prob.atom_wfc_k.empty())
-                        ws.atom_wfc =
-                            prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                    ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
                     davidson.step(ws);
                     const AccReal weight =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     for (int b = 0; b < n_occ[s]; ++b)
                         e_band_last += weight * ws.eigenvalues[b];
                     density.accumulate_kpoint(ws, weight, n_occ[s], AccReal(1));
-                    ws.gvec = saved_gvec;
-                    ws.n_g = ng0;
+                    ws.bind(saved_point);
                 }
                 density.extract(ws, rho_out[s]);
             }
@@ -1019,36 +1007,25 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
         kvec.reserve(static_cast<std::size_t>(nk));
         for (const auto& kf : kg.kpoints)
             kvec.push_back(kf);
-        internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry,
-                                   kvec);
+        const auto mesh = internal::make_pw_k_mesh(prob.ions, frame.box,
+                                                   method.ecut_ry, kvec);
 
         for (int s = 0; s < 2; ++s) {
             if (n_occ[s] < 1)
                 continue;
             // Bind frozen V_eff for this spin on the density grid.
             for (int i = 0; i < ws.nr; ++i)
-                ws.V_eff_r[i] =
-                    veff_r[static_cast<std::size_t>(s)][static_cast<std::size_t>(
-                        i)];
+                ws.V_eff_r[i] = veff_r[static_cast<std::size_t>(s)]
+                                      [static_cast<std::size_t>(i)];
 
             DavidsonSolver dav_s(n_occ[s], AccReal(method.tol) * AccReal(0.1),
                                  50);
             dav_s.prepare(ws);
             std::vector<std::vector<std::complex<AccReal>>> coef(
                 static_cast<std::size_t>(nk));
-            auto* saved_gvec = ws.gvec;
+            const auto saved_point = ws.point();
             for (int ik = 0; ik < nk; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                ws.gvec = &gvk;
-                ws.n_g = gvk.count();
-                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.T_G[ig] = gvk.ekin[ig];
-                if (!prob.kb_proj_k.empty())
-                    ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                ws.bind(mesh.point(static_cast<std::size_t>(ik)));
                 dav_s.step(ws);
                 auto& c = coef[static_cast<std::size_t>(ik)];
                 c.resize(static_cast<std::size_t>(n_occ[s] * ws.n_g));
@@ -1057,14 +1034,12 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
                         c[static_cast<std::size_t>(b * ws.n_g + ig)] =
                             ws.wfc(b, ig);
             }
-            ws.gvec = saved_gvec;
-            ws.n_g = ng0;
+            ws.bind(saved_point);
 
-            const auto trials =
-                resolve_trials(trial_centers, n_occ[s], frame);
+            const auto trials = resolve_trials(trial_centers, n_occ[s], frame);
             const ChannelLoc ch = localize_channel(
-                coef, prob.gv_k, n_occ[s], N, recip,
-                static_cast<double>(prob.vol_bohr), trials, use_projection,
+                coef, mesh.gv_k, n_occ[s], N, recip,
+                static_cast<double>(prob.ions.vol_bohr), trials, use_projection,
                 proj_alpha_ang, max_iter, tol, step);
 
             for (std::size_t i = 0; i < ch.centers.size(); ++i) {
@@ -1086,8 +1061,9 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
     }
 
     // ── Restricted closed-shell path ────────────────────────────────────
-    internal::PWProblem prob;
-    const PWResult scf = internal::run_restricted_scf(frame, method, prob);
+    internal::PWSetup prob;
+    internal::PWWorkspace ws;
+    const PWResult scf = internal::run_restricted_scf(frame, method, prob, ws);
     const int n_wann = prob.n_bands;
     if (n_wann < 1)
         throw std::invalid_argument(
@@ -1108,28 +1084,16 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
     for (const auto& kf : kg.kpoints)
         kvec.push_back(kf);
 
-    internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry,
-                               kvec);
+    const auto mesh =
+        internal::make_pw_k_mesh(prob.ions, frame.box, method.ecut_ry, kvec);
 
-    internal::PWWorkspace& ws = prob.ws;
     std::vector<std::vector<std::complex<AccReal>>> coef(
         static_cast<std::size_t>(nk));
     DavidsonSolver davidson(n_wann, AccReal(method.tol) * AccReal(0.1), 50);
     davidson.prepare(ws);
-    auto* saved_gvec = ws.gvec;
-    const int n_g0 = ws.n_g;
+    const auto saved_point = ws.point();
     for (int ik = 0; ik < nk; ++ik) {
-        auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        ws.bind(mesh.point(static_cast<std::size_t>(ik)));
 
         davidson.step(ws);
 
@@ -1139,12 +1103,12 @@ PeriodicWannierResult PeriodicWannier::compute(const PW& method,
             for (int ig = 0; ig < ws.n_g; ++ig)
                 c[static_cast<std::size_t>(b * ws.n_g + ig)] = ws.wfc(b, ig);
     }
-    ws.gvec = saved_gvec;
-    ws.n_g = n_g0;
+    ws.bind(saved_point);
 
-    const ChannelLoc ch = localize_channel(
-        coef, prob.gv_k, n_wann, N, recip, static_cast<double>(prob.vol_bohr),
-        trials, use_projection, proj_alpha_ang, max_iter, tol, step);
+    const ChannelLoc ch =
+        localize_channel(coef, mesh.gv_k, n_wann, N, recip,
+                         static_cast<double>(prob.ions.vol_bohr), trials,
+                         use_projection, proj_alpha_ang, max_iter, tol, step);
     out.centers = std::move(ch.centers);
     out.spreads = std::move(ch.spreads);
     out.total_spread = ch.total_spread;

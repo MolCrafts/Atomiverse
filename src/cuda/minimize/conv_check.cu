@@ -5,14 +5,12 @@
 
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
+#include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/minimize/conv_check.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
-
-using cuda::real_t;
-using cuda::work_t;
-
 namespace cuda {
 namespace minimizer {
 
@@ -26,44 +24,54 @@ namespace {
 ///   metrics[2] = max_i,c |x_c − x_prev| (atomic max, non-negative)
 ///   metrics[3] = Σ_i |x − x_prev|²      (atomic add)
 ///
-/// Displacements are minimum-imaged through the by-value Box: the step
+/// Forces are decoded from fixed point and every metric reduces in acc_t.
+/// Displacements use the reconstructed coordinate (primary + correction) in
+/// mixed_t and are minimum-imaged through the by-value FP64 Box: the step
 /// kernels wrap positions back into the cell (MD-integrator form), so a
 /// raw `x − x_prev` across the boundary would report a spurious ~L jump
 /// that the CPU components (which never wrap) cannot see.
 ///
 /// `x_prev` may be null (step 0) — displacement metrics stay 0.
 __global__ void
-conv_metrics(const real_t* __restrict__ fx, const real_t* __restrict__ fy,
-             const real_t* __restrict__ fz, const real_t* __restrict__ x,
-             const real_t* __restrict__ y, const real_t* __restrict__ z,
-             const work_t* __restrict__ x_prev, cuda::Box box,
-             work_t* __restrict__ metrics, int n) {
+conv_metrics(const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
+             const fixed_t* __restrict__ fz, const pos_t* __restrict__ x,
+             const pos_t* __restrict__ y, const pos_t* __restrict__ z,
+             const pos_t* __restrict__ xc, const pos_t* __restrict__ yc,
+             const pos_t* __restrict__ zc, const mixed_t* __restrict__ x_prev,
+             cuda::Box box, acc_t* __restrict__ metrics, int n) {
+    box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    work_t f2 = work_t(0), fmag = work_t(0);
-    work_t d2 = work_t(0), dmax = work_t(0);
+    acc_t f2 = acc_t(0), fmag = acc_t(0);
+    acc_t d2 = acc_t(0), dmax = acc_t(0);
     if (i < n) {
-        work_t fxi = static_cast<work_t>(fx[i]);
-        work_t fyi = static_cast<work_t>(fy[i]);
-        work_t fzi = static_cast<work_t>(fz[i]);
+        const acc_t fxi = decode_force<acc_t>(fx[i]);
+        const acc_t fyi = decode_force<acc_t>(fy[i]);
+        const acc_t fzi = decode_force<acc_t>(fz[i]);
         f2 = fxi * fxi + fyi * fyi + fzi * fzi;
         fmag = sqrt(f2);
         if (x_prev != nullptr) {
-            work_t dx = static_cast<work_t>(x[i]) - x_prev[i];
-            work_t dy = static_cast<work_t>(y[i]) - x_prev[n + i];
-            work_t dz = static_cast<work_t>(z[i]) - x_prev[2 * n + i];
+            mixed_t dx = load_position(x, xc, i) - x_prev[i];
+            mixed_t dy = load_position(y, yc, i) - x_prev[n + i];
+            mixed_t dz = load_position(z, zc, i) - x_prev[2 * n + i];
             box.min_image(dx, dy, dz);
-            d2 = dx * dx + dy * dy + dz * dz;
-            dmax = fmax(fabs(dx), fmax(fabs(dy), fabs(dz)));
+            const acc_t ax = acc_t(dx), ay = acc_t(dy), az = acc_t(dz);
+            d2 = ax * ax + ay * ay + az * az;
+            dmax = fmax(fabs(ax), fmax(fabs(ay), fabs(az)));
         }
     }
 
-    extern __shared__ work_t warp_scratch[];
-    work_t sums[2] = {f2, d2};
-    work_t out[2];
-    ATV::cuda::block_reduce_sum_n<2>(sums, warp_scratch, out);
-    work_t fmag_max = ATV::cuda::block_reduce_max(fmag, warp_scratch);
-    work_t dmax_max = ATV::cuda::block_reduce_max(dmax, warp_scratch);
+    ::cuda::std::array<acc_t, 2> sums = {f2, d2};
+
+    using Reduce =
+        cub::BlockReduce<::cuda::std::array<acc_t, 2>, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const auto out = Reduce(reduction).Reduce(sums, SumComponents<acc_t, 2>{});
+    using Max = cub::BlockReduce<acc_t, kDefaultBlock>;
+    __shared__ typename Max::TempStorage max_reduction;
+    const acc_t fmag_max = Max(max_reduction).Reduce(fmag, ::cuda::maximum<>{});
+    __syncthreads(); // CUB temporary storage is reused by the second maximum.
+    const acc_t dmax_max = Max(max_reduction).Reduce(dmax, ::cuda::maximum<>{});
     if (threadIdx.x == 0) {
         ATV::cuda::atomic_max_nonneg(&metrics[0], fmag_max);
         atomicAdd(&metrics[1], out[0]);
@@ -76,8 +84,8 @@ conv_metrics(const real_t* __restrict__ fx, const real_t* __restrict__ fy,
 
 void ConvCheck::build(int n_atoms) {
     n_ = n_atoms;
-    cudaMalloc(&d_metrics_, 4 * sizeof(work_t));
-    cudaMallocHost(&h_metrics_, 4 * sizeof(work_t));
+    cudaMalloc(&d_metrics_, 4 * sizeof(acc_t));
+    cudaMallocHost(&h_metrics_, 4 * sizeof(acc_t));
     cudaMallocHost(&h_energy_, sizeof(double));
     energy_prev_ = 0;
     last_energy_ = 0;
@@ -93,14 +101,15 @@ void ConvCheck::destroy() {
     h_energy_ = nullptr;
 }
 
-void ConvCheck::measure(const LaunchContext& ctx, const work_t* x_prev,
-                        int step, std::vector<OptRecord>& trace) {
+void ConvCheck::measure(const LaunchContext& ctx, const mixed_t* x_prev,
+                        BigInt step,
+                        std::vector<ATV::minimizer::OptRecord>& trace) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     const int n = n_;
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
-    int shmem = cuda::warps_per_block(block) * sizeof(work_t);
+    constexpr int shmem = 0;
 
     // A displacement is measurable only when the optimizer kept the pre-step geometry
     // (SteepestDescent does not) AND has actually taken a step. The component knows;
@@ -108,12 +117,12 @@ void ConvCheck::measure(const LaunchContext& ctx, const work_t* x_prev,
     // iteration counter.
     const bool has_disp = (x_prev != nullptr) && (step > 0);
 
-    cudaMemsetAsync(d_metrics_, 0, 4 * sizeof(work_t), stream);
+    cudaMemsetAsync(d_metrics_, 0, 4 * sizeof(acc_t), stream);
+    const auto& a = frame.atoms;
     conv_metrics<<<grid, block, shmem, stream>>>(
-        frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.x,
-        frame.atoms.y, frame.atoms.z, has_disp ? x_prev : nullptr,
-        ctx.runtime.host_box, d_metrics_, n);
-    cudaMemcpyAsync(h_metrics_, d_metrics_, 4 * sizeof(work_t),
+        a.fx, a.fy, a.fz, a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr,
+        has_disp ? x_prev : nullptr, ctx.runtime.host_box, d_metrics_, n);
+    cudaMemcpyAsync(h_metrics_, d_metrics_, 4 * sizeof(acc_t),
                     cudaMemcpyDeviceToHost, stream);
     cudaMemcpyAsync(h_energy_, &frame.scalars->energy, sizeof(double),
                     cudaMemcpyDeviceToHost, stream);
@@ -129,13 +138,12 @@ void ConvCheck::measure(const LaunchContext& ctx, const work_t* x_prev,
         has_disp ? std::sqrt(static_cast<double>(h_metrics_[3]) / (3.0 * n))
                  : 0.0;
     const double energy = *h_energy_;
-    // No previous energy at step 0: publish a sentinel so that no handler can call a
-    // run converged before it has moved (|ΔE| < etol would otherwise be trivially
-    // true). Same value, same reason, as the CPU optimizers.
+    // A step counter does not establish a previous energy sample. The first
+    // measurement publishes a sentinel, even after an initial-force-driven move.
     const double energy_change =
-        (step > 0) ? std::abs(energy - energy_prev_) : 1e30;
+        !trace.empty() ? std::abs(energy - energy_prev_) : 1e30;
 
-    OptRecord rec{};
+    ATV::minimizer::OptRecord rec{};
     rec.step = step;
     rec.energy = energy;
     rec.max_force = max_force_;
@@ -150,7 +158,7 @@ void ConvCheck::measure(const LaunchContext& ctx, const work_t* x_prev,
     // Until this line, ConvCheck wrote `outer_status.converged = true` itself, so the
     // criteria could not be changed without touching the optimizer — and a nested
     // loop's convergence could stop the loop above it.
-    if (LoopMetrics* m = ctx.runtime.loop.metrics) {
+    if (ConvergenceMetrics* m = ctx.runtime.loop.metrics) {
         m->energy = energy;
         m->max_force = max_force_;
         m->rms_force = rms_force;

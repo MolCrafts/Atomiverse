@@ -16,9 +16,8 @@
 /// phase-agnostic (`cuda/md/init.cuh`); `MD` binds them explicitly to
 /// `md::Phase` via `on(phase).add()`:
 /// - ZeroForces at pre_force (order -1000) -- zeros fx, fy, fz.
-/// - ZeroEnergy at pre_force (order -999) -- zeros potential energy.
-/// - ZeroStress at pre_force (order -998) -- zeros the virial tensor.
-/// - ZeroKinetic at end_of_step (order -1000) -- zeros kinetic energy.
+/// - ZeroScalars at pre_force (order -999) -- zeros every system scalar
+///   (energies, kinetic energy and stress, virial) in one memset.
 /// - KineticEnergy at end_of_step (order -100) -- accumulates KE.
 ///
 /// ## Execution model (shared with the CPU backend)
@@ -88,14 +87,19 @@
 /// @see cpu::md::MD for the CPU sibling driver with the same API surface
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cuda/component/timestep_protocol.cuh"
 #include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
@@ -121,9 +125,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     ///        KineticEnergy infrastructure components to `md::Phase`.
     MD() {
         on(ATV::md::Phase::pre_force).add(ZeroForces{}, -1000);
-        on(ATV::md::Phase::pre_force).add(ZeroEnergy{}, -999);
-        on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
-        on(ATV::md::Phase::end_of_step).add(ZeroKinetic{}, -1000);
+        on(ATV::md::Phase::pre_force).add(ZeroScalars{}, -999);
         on(ATV::md::Phase::end_of_step).add(KineticEnergy{}, -100);
     }
 
@@ -140,46 +142,99 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     ///     equipartition (T_eq diverges to ~3.5× target observed in the `Thermalises`
     ///     test).
     ///   - `NoseHoover`/`NoseHooverNPT` extended variables persist.
-    ///   - Recorder cadence keys (modulo `frequency`) stay continuous.
+    ///   - Recorder cadence keys (modulo `frequency`) stay continuous, and a
+    ///     recorder's step axis continues: each run first writes the current
+    ///     state (LAMMPS `Output::setup`) unless that step was already
+    ///     written, then labels each end-of-step write with the completed
+    ///     step count.
     /// A different `frame` ⇒ genuinely independent simulation: tear the previous run
     /// down and restart the counter.
     ///
     /// **Termination.** The step budget is the termination — MD attaches no default
     /// handler. Any handler the user attached is polled after every step, and the loop
     /// breaks on anything but `Verdict::Continue` (that includes a component having set
-    /// `status.stop_requested`, which `poll_handlers_` folds in).
+    /// `status.stop_requested`, which `poll_criteria_` folds in).
     ///
     /// @param frame Host-resident system state; transferred H2D, advanced
     ///        on the device, retrieved D2H, updated in place.
     /// @param n_steps Step budget [dimensionless step count].
-    void run(cpu::Frame& frame, int n_steps) {
+    BigInt run(cpu::Frame& frame, BigInt n_steps) {
+        if (n_steps < 0)
+            throw std::invalid_argument("MD step budget must be nonnegative");
         if (live_ && frame_ptr_ != &frame) {
-            teardown_pass(*frame_ptr_);
+            // The previous successful chunk already wrote back. Retrieving
+            // again here could overwrite caller edits made since that return.
             live_ = false;
+            frame_ptr_ = nullptr;
+            this->backend_->shutdown();
+            this->built_plugins_.clear();
         }
-        if (!live_) {
-            setup_pass(frame);
-            frame_ptr_ = &frame;
-            step_counter_ = 0;
-            live_ = true;
-        } else {
-            this->flush_new_mounts_();
+        try {
+            if (!live_) {
+                setup_pass(frame);
+                frame_ptr_ = &frame;
+                step_counter_ = 0;
+                live_ = true;
+            } else {
+                this->flush_new_mounts_(&frame);
+                this->backend_->refresh_inputs(frame);
+            }
+            this->backend_->prepare_run(step_counter_);
+            // LAMMPS Run::command → Output::setup: every run writes the
+            // current state first (recorders on cadence, never a step
+            // twice), so a recorder's frame `s` is the state after `s` steps.
+            this->backend_->setup_output(step_counter_);
+            // The final step evaluates the energy the retrieved Frame reports.
+            this->backend_->set_report_step(step_counter_ + n_steps - 1);
+            BigInt iterations = 0;
+            bool early = false;
+            for (BigInt s = 0; s < n_steps; ++s) {
+                this->mutable_outer_status().reset();
+                step_once(step_counter_);
+                ++step_counter_;
+                ++iterations;
+                // A device fault froze the state at its step; issuing more
+                // steps only burns GPU time. retrieve() reports it.
+                if (this->backend_->fault_observed())
+                    break;
+                if (this->poll_criteria_(s) != Verdict::Continue) {
+                    early = s + 1 < n_steps;
+                    break;
+                }
+            }
+            this->backend_->set_report_step(-1);
+            // A criterion stopped before the reported step: evaluate the
+            // current state once so the retrieved scalars belong to it.
+            if (early)
+                this->backend_->evaluate_current(step_counter_);
+            this->backend_->retrieve(frame);
+            return iterations;
+        } catch (...) {
+            if (this->backend_) {
+                this->backend_->mark_inputs_dirty();
+                if (!live_) {
+                    try {
+                        this->backend_->shutdown();
+                    } catch (...) {
+                    }
+                    this->built_plugins_.clear();
+                }
+            }
+            // Never retrieve a failed device evaluation. At an input-boundary
+            // failure, retry restores host inputs without rebuilding integrators.
+            // This is not rollback of thermostat/RNG state after a failure in
+            // the middle of an integration step or a multi-step chunk.
+            throw;
         }
-        for (int s = 0; s < n_steps; ++s) {
-            this->mutable_outer_status().reset();
-            step_once(step_counter_++);
-            if (this->poll_handlers_(s) != Verdict::Continue)
-                break;
-        }
-        // Pull device state back to the host frame so the caller can inspect
-        // intermediate observables between chunks. Components remain alive on the
-        // device for subsequent `run()` calls.
-        this->backend_->retrieve(frame);
     }
 
     ~MD() {
-        if (live_ && frame_ptr_)
-            teardown_pass(*frame_ptr_);
+        if (this->backend_) {
+            try {
+                this->backend_->shutdown();
+            } catch (...) {
+            }
+        }
     }
 
     // ─── Categorical setter API (LAMMPS-shaped) ─────────────────────
@@ -223,11 +278,39 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         return *this;
     }
 
+    /// @brief Borrow the time integrator (same singular slot as
+    ///        `set_integrator`). The Python CUDA driver keeps a
+    ///        `NoseHooverNPT` so it can set the temperature-ramp span.
+    /// @param integ Integrator; must outlive this driver.
+    template <typename I>
+    MD& set_integrator_ref(I& integ) {
+        const std::string n = integ.name();
+        if (integrator_set_) {
+            if (*integrator_set_ == n)
+                return *this;
+            throw std::invalid_argument(
+                "set_integrator already configured with '" + *integrator_set_
+                + "', rejected re-call with '" + n + "'");
+        }
+        integrator_set_ = n;
+        this->bind_defaults_ref(integ);
+        return *this;
+    }
+
     /// @brief Add a thermostat (LAMMPS `fix … langevin / temp/berendsen`).
     /// Plural: each call appends; insertion order preserved.
     template <typename T>
     MD& set_thermostat(T&& t) {
         this->bind_defaults(std::forward<T>(t));
+        return *this;
+    }
+
+    /// @brief Borrow a thermostat so the caller can set its ramp span.
+    /// The Python CUDA driver keeps the Langevin and calls
+    /// `set_run_span` before a continued cool.
+    template <typename T>
+    MD& set_thermostat_ref(T& t) {
+        this->bind_defaults_ref(t);
         return *this;
     }
 
@@ -241,22 +324,28 @@ class MD : public cuda::Driver<ATV::md::Phase> {
         return *this;
     }
 
-    /// @brief Configure the thermo print cadence (LAMMPS `thermo N`).
-    /// Singular: re-call with a different cadence throws.
-    /// Binds `cuda::Thermo{every}` at `end_of_step @ +20`.
-    /// @param every Print cadence [steps]. `0` is treated as "every step"
-    ///        per the `Thermo` constructor contract.
-    MD& set_thermo(int every) {
+    /// @brief Configure thermo output (LAMMPS `thermo N` +
+    ///        `thermo_style custom`). Singular: a re-call with a different
+    ///        cadence or keyword list throws.
+    /// Binds `cuda::Thermo{every, keywords}` at `end_of_step @ +20`; its
+    /// keywords decide which steps evaluate the energy and the virial.
+    /// @param every Print cadence [steps]. `0` prints the first and last
+    ///        step of each run only (LAMMPS `thermo 0`).
+    /// @param keywords `thermo_style custom` keywords; empty selects the
+    ///        LAMMPS default `step temp pe ke etotal`.
+    MD& set_thermo(int every, std::vector<std::string> keywords = {}) {
         if (thermo_every_) {
-            if (*thermo_every_ == every)
+            if (*thermo_every_ == every && thermo_keywords_ == keywords)
                 return *this;
-            throw std::invalid_argument("set_thermo already configured with "
-                                        + std::to_string(*thermo_every_)
-                                        + ", rejected re-call with "
-                                        + std::to_string(every));
+            throw std::invalid_argument(
+                "set_thermo already configured with cadence "
+                + std::to_string(*thermo_every_)
+                + "; rejected a re-call with a different cadence or style");
         }
+        cuda::Thermo thermo{every, keywords}; // validates the keywords
         thermo_every_ = every;
-        this->on(ATV::md::Phase::end_of_step).add(cuda::Thermo{every}, +20);
+        thermo_keywords_ = std::move(keywords);
+        this->on(ATV::md::Phase::end_of_step).add(std::move(thermo), +20);
         return *this;
     }
 
@@ -295,26 +384,81 @@ class MD : public cuda::Driver<ATV::md::Phase> {
             this->on(ATV::md::Phase::post_force).add(cuda::Virial{}, -50);
         }
 
-        // Per-run virial gating: tell every virial-producing evaluator whether
-        // its stress/virial contribution is consumed downstream. The pair virial
-        // is needed iff either (a) some component reads stress directly (barostat
-        // / NPT — `needs_stress`), or (b) a `cuda::Virial` observer is
-        // present (`has_virial_stress`): that observer AGGREGATES the pair
-        // virial into the reported stress tensor, so its presence — whether
-        // user-added or auto-injected above — means the pair must produce it.
-        // In a plain NVE plan (neither holds) this disables the pair kernel's
-        // virial path: skips 6 inner-loop products + the stress reduction and
-        // frees the accumulator registers (ncu: ~80M->0 spill requests; measured
-        // +8% @1M / +33% @4M atoms on a single GH200). Mirrors the multi-GPU NVE
-        // path, which already gates its default pair off.
-        const bool stress_consumed = s.needs_stress || s.has_virial_stress;
-        this->for_each_pending_mut([&](cuda::Component& c) {
-            c.set_stress_required(stress_consumed);
-        });
+        // Energy and virial are evaluated per step on demand (each
+        // component's `demand()`, LAMMPS ev_set); no build-time gating.
 
         this->throw_if_missing_neighbor_list_(
             s, "cuda::md::MD",
             "Add `sim.set_neighbor(cuda::NeighborList{cutoff})`.");
+
+        negotiate_timestep_();
+    }
+
+    /// @brief Push the integrator's dt to every `TimestepConsumer` before any
+    ///        component `build()` — the CUDA mirror of
+    ///        `cpu::Driver::negotiate_timestep_` (same rules, same messages).
+    ///
+    /// Providers and consumers are deduplicated by identity because the walk
+    /// visits bindings (VelocityVerlet binds twice). Two providers on
+    /// different clocks throw naming both; a consumer that requires a dt
+    /// throws when nothing provides one; an unusable dt (not finite, <= 0) is
+    /// refused before the first push.
+    void negotiate_timestep_() {
+        struct PublishedDt {
+            std::string owner;
+            double dt_fs;
+        };
+        std::vector<PublishedDt> published;
+        std::unordered_set<const cuda::TimestepProvider*> seen_providers;
+        this->for_each_pending([&](const cuda::Component& c) {
+            const cuda::TimestepProvider* p = c.as_timestep_provider();
+            if (!p || !seen_providers.insert(p).second)
+                return;
+            published.push_back({c.name(), p->timestep()});
+        });
+        for (std::size_t i = 1; i < published.size(); ++i) {
+            const double a = published[0].dt_fs;
+            const double b = published[i].dt_fs;
+            const double diff = std::fabs(a - b);
+            const double scale = std::max(std::fabs(a), std::fabs(b));
+            const bool disagree =
+                std::isfinite(diff) ? diff > 1e-12 * scale : !(a == b);
+            if (disagree)
+                throw std::runtime_error(
+                    "MD::build(): conflicting MD timesteps — integrator '"
+                    + published[0].owner + "' publishes " + std::to_string(a)
+                    + " fs, integrator '" + published[i].owner + "' publishes "
+                    + std::to_string(b)
+                    + " fs; exactly one clock may own the run");
+        }
+        std::vector<std::pair<cuda::TimestepConsumer*, std::string>> consumers;
+        std::unordered_set<const cuda::TimestepConsumer*> seen_consumers;
+        this->for_each_pending_mut([&](cuda::Component& c) {
+            cuda::TimestepConsumer* tc = c.as_timestep_consumer();
+            if (tc && seen_consumers.insert(tc).second)
+                consumers.emplace_back(tc, c.name());
+        });
+        if (consumers.empty())
+            return;
+        if (!published.empty()
+            && (!(published[0].dt_fs > 0.0)
+                || !std::isfinite(published[0].dt_fs)))
+            throw std::runtime_error("MD::build(): integrator '"
+                                     + published[0].owner
+                                     + "' publishes an unusable timestep "
+                                     + std::to_string(published[0].dt_fs)
+                                     + " fs (must be finite and > 0)");
+        for (auto& [consumer, owner] : consumers) {
+            if (published.empty()) {
+                if (consumer->timestep_required())
+                    throw std::runtime_error(
+                        "MD::build(): '" + owner
+                        + "' requires the nuclear timestep, but no registered "
+                          "component implements TimestepProvider");
+                continue;
+            }
+            consumer->set_timestep(published[0].dt_fs);
+        }
     }
 
     void clear_singular_on_unfix_(std::string_view name_or_id) override {
@@ -372,6 +516,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     std::optional<std::string> dihedral_set_;
     std::optional<std::string> integrator_set_;
     std::optional<int> thermo_every_;
+    std::vector<std::string> thermo_keywords_;
 
     // ── Continuation bookkeeping (folded down from cuda::DynamicsDriver) ──
 
@@ -381,7 +526,7 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// @brief Frame bound by the live run; a different frame restarts.
     cpu::Frame* frame_ptr_ = nullptr;
     /// @brief Cumulative MD step index across all `run()` calls.
-    int step_counter_ = 0;
+    BigInt step_counter_ = 0;
 };
 
 } // namespace md

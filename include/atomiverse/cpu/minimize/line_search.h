@@ -43,8 +43,11 @@ struct LsSample {
 
 /// @brief Outcome of a line search.
 struct LineSearchResult {
-    double alpha = 0;      ///< Accepted (or best) step length.
-    bool ok = false;       ///< True when the target condition was satisfied.
+    double alpha = 0; ///< Accepted (or best) step length.
+    bool ok = false;  ///< True when the target condition was satisfied.
+    /// Selected positive alpha was actually evaluated and passed Armijo.
+    /// Strong-Wolfe may return this safe fallback without satisfying curvature.
+    bool sufficient_decrease = false;
     int n_value_evals = 0; ///< phi evaluations (energy).
     int n_grad_evals = 0;  ///< phi' evaluations (gradient/force).
 };
@@ -78,9 +81,10 @@ LineSearchResult armijo_backtrack(Phi&& phi, double phi0, double dphi0,
     for (int k = 0; k < max_evals; ++k) {
         const LsSample s = phi(alpha, false);
         ++r.n_value_evals;
-        if (s.f <= phi0 + c1 * alpha * dphi0) {
+        if (std::isfinite(s.f) && s.f <= phi0 + c1 * alpha * dphi0) {
             r.alpha = alpha;
             r.ok = true;
+            r.sufficient_decrease = true;
             return r;
         }
         if (alpha <= alpha_min) {
@@ -111,13 +115,15 @@ LineSearchResult zoom(Phi&& phi, double phi0, double dphi0, double c1,
         const LsSample s = phi(alpha_j, true);
         ++r.n_value_evals;
         ++r.n_grad_evals;
-        if (s.f > phi0 + c1 * alpha_j * dphi0 || s.f >= f_lo) {
+        if (!std::isfinite(s.f) || s.f > phi0 + c1 * alpha_j * dphi0
+            || s.f >= f_lo) {
             alpha_hi =
                 alpha_j; // 3.6a violated or no improvement → shrink right
         } else {
             if (std::abs(s.dphi) <= -c2 * dphi0) { // strong-Wolfe curvature met
                 r.alpha = alpha_j;
                 r.ok = true;
+                r.sufficient_decrease = true;
                 return r;
             }
             if (s.dphi * (alpha_hi - alpha_lo) >= 0)
@@ -130,6 +136,8 @@ LineSearchResult zoom(Phi&& phi, double phi0, double dphi0, double c1,
     }
     // Budget/precision exhausted: return the best sufficient-decrease point.
     r.alpha = alpha_lo;
+    r.sufficient_decrease = alpha_lo > 0 && std::isfinite(f_lo)
+                            && f_lo <= phi0 + c1 * alpha_lo * dphi0;
     return r;
 }
 
@@ -175,7 +183,8 @@ LineSearchResult strong_wolfe(Phi&& phi, double phi0, double dphi0,
 
         // 3.7a fails, or phi did not decrease vs the previous bracket end →
         // the minimizer is between alpha_prev and alpha.
-        if (s.f > phi0 + c1 * alpha * dphi0 || (!first && s.f >= f_prev)) {
+        if (!std::isfinite(s.f) || s.f > phi0 + c1 * alpha * dphi0
+            || (!first && s.f >= f_prev)) {
             return detail::zoom(phi, phi0, dphi0, c1, c2, alpha_prev, f_prev,
                                 alpha, max_evals - r.n_value_evals, r);
         }
@@ -183,6 +192,7 @@ LineSearchResult strong_wolfe(Phi&& phi, double phi0, double dphi0,
         if (std::abs(s.dphi) <= -c2 * dphi0) {
             r.alpha = alpha;
             r.ok = true;
+            r.sufficient_decrease = true;
             return r;
         }
         // Slope turned non-negative → minimizer is between alpha and alpha_prev.
@@ -200,6 +210,8 @@ LineSearchResult strong_wolfe(Phi&& phi, double phi0, double dphi0,
     }
     // Bracketing budget exhausted; return the last admissible step.
     r.alpha = alpha_prev > 0 ? alpha_prev : alpha;
+    r.sufficient_decrease = alpha_prev > 0 && std::isfinite(f_prev)
+                            && f_prev <= phi0 + c1 * alpha_prev * dphi0;
     return r;
 }
 

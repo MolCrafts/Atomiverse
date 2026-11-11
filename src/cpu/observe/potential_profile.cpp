@@ -52,7 +52,7 @@ void PotentialProfile::launch(const LaunchContext& ctx) {
     const double Ly = f.box.length(1);
     const double area = Lx * Ly;
     const double inv_area_dz = 1.0 / (area * dz_);
-    const double four_pi_ke = 4.0 * units::pi * units::coulomb;
+    const double four_pi_ke = 4.0 * units::pi * ctx.runtime.units.qqrd2e();
 
     for (std::size_t i = 0; i < nb; ++i)
         rho_[i] = q_bin_[i] * inv_area_dz;

@@ -7,17 +7,24 @@
 
 #include "atomiverse/core/gto.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/scf/internal/cart2sph.h"
+#include "atomiverse/cpu/scf/internal/cartesian_shell_pack.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/scf/device_integrals.cuh"
 #include "atomiverse/cuda/scf/internal/rhf_fock.cuh"
 #include "cublas_dispatch.cuh"
+#include <type_traits>
 
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cmath>
 #include <cstdio>
 #include <cuda_runtime.h>
 #include <cusolverDn.h>
+#include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/reducers/xnorm.hpp>
@@ -32,6 +39,15 @@ using cuda::work_t;
 
 namespace scf {
 namespace internal {
+
+// Dense ERI kernels use signed-int linear indices. Check before computing
+// n*n or allocating; widening only the allocation would leave kernel overflow.
+static void require_dense_eri_index_range(int n) {
+    if (n <= 0 || n > std::numeric_limits<int>::max() / n / n / n)
+        throw std::invalid_argument(
+            "CUDA RHF: dense ERI requires nAO^4 within signed-int index range; "
+            "reduce the basis or system size");
+}
 
 // Level-shift diagonal kernel lives in diis_mixer.cu (CDIIS owns shift).
 
@@ -66,14 +82,17 @@ __global__ void scale_columns_by_rsqrt_kernel(prec_t* __restrict__ U,
 // Pack nuclear positions only; shell centers filled by expand_s_shells_kernel.
 __global__ void pack_atom_pos_bohr_kernel(
     prec_t* __restrict__ atom_pos, // [natm * 3] Bohr
-    const real_t* __restrict__ x_A, const real_t* __restrict__ y_A,
-    const real_t* __restrict__ z_A, int natm, prec_t a2b) {
+    const pos_t* __restrict__ x_A, const pos_t* __restrict__ y_A,
+    const pos_t* __restrict__ z_A, const pos_t* __restrict__ x_corr,
+    const pos_t* __restrict__ y_corr, const pos_t* __restrict__ z_corr,
+    int natm, prec_t a2b) {
     const int a = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (a >= natm)
         return;
-    const prec_t xb = static_cast<prec_t>(x_A[a]) * a2b;
-    const prec_t yb = static_cast<prec_t>(y_A[a]) * a2b;
-    const prec_t zb = static_cast<prec_t>(z_A[a]) * a2b;
+    // Full-precision coordinate (primary + correction in mixed mode).
+    const prec_t xb = static_cast<prec_t>(load_position(x_A, x_corr, a)) * a2b;
+    const prec_t yb = static_cast<prec_t>(load_position(y_A, y_corr, a)) * a2b;
+    const prec_t zb = static_cast<prec_t>(load_position(z_A, z_corr, a)) * a2b;
     const int o = a * 3;
     atom_pos[o + 0] = xb;
     atom_pos[o + 1] = yb;
@@ -87,11 +106,13 @@ __global__ void pack_atom_pos_bohr_kernel(
 //   center = atom_pos[atom] (Bohr, already packed)
 // Skills: choose-launch-configuration, handle-boundary, optimize-global-memory
 // (coalesced along p when n_prim is small — sequential p per thread is fine).
-__global__ void expand_s_shells_kernel(
-    prec_t* __restrict__ alpha_out, prec_t* __restrict__ coeff_out,
-    prec_t* __restrict__ shell_centers, const prec_t* __restrict__ alpha_atom,
-    const prec_t* __restrict__ coeff_atom, const prec_t* __restrict__ atom_pos,
-    int natm, int nsh_atom, int n_prim) {
+__global__ void expand_s_shells_kernel(prec_t* __restrict__ alpha_out,
+                                       prec_t* __restrict__ coeff_out,
+                                       prec_t* __restrict__ shell_centers,
+                                       const prec_t* __restrict__ alpha_atom,
+                                       const prec_t* __restrict__ coeff_atom,
+                                       const prec_t* __restrict__ atom_pos,
+                                       int natm, int nsh_atom, int n_prim) {
     const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     const int n_shells = natm * nsh_atom;
     if (s >= n_shells)
@@ -116,9 +137,10 @@ __global__ void expand_s_shells_kernel(
 // (order-insensitive for the double sum; pair set is exact).
 // Skills: choose-launch-configuration, handle-boundary, write-numerically-stable
 // (skip r=0).
-__global__ void nuclear_repulsion_pairs_kernel(
-    double* __restrict__ v_nuc_out, const prec_t* __restrict__ atom_pos,
-    const int* __restrict__ atom_Z, int natm) {
+__global__ void
+nuclear_repulsion_pairs_kernel(double* __restrict__ v_nuc_out,
+                               const prec_t* __restrict__ atom_pos,
+                               const int* __restrict__ atom_Z, int natm) {
     const int npairs = natm * (natm - 1) / 2;
     const int idx = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     double contrib = 0.0;
@@ -145,9 +167,9 @@ __global__ void nuclear_repulsion_pairs_kernel(
         }
     }
     // Block reduce then one atomicAdd per block (fewer atomics than per-thread).
-    __shared__ double warp_scratch[/* max warps in 256 */ 8];
-    const double block_sum =
-        cuda::block_reduce_sum<double>(contrib, warp_scratch);
+    using Reduce = cub::BlockReduce<double, cuda::kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const double block_sum = Reduce(reduction).Sum(contrib);
     if (threadIdx.x == 0 && block_sum != 0.0)
         atomicAdd(v_nuc_out, block_sum);
 }
@@ -188,6 +210,10 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
     auto& scf = ws;
     int n = n_basis_;
+    require_dense_eri_index_range(n);
+    if (n_occ_ < 0 || n_occ_ > n)
+        throw std::invalid_argument(
+            "CUDA RHF: occupied orbital count must be between zero and nAO");
     int nn = n * n;
     int n4 = nn * nn;
 
@@ -238,8 +264,7 @@ void RHFFock::build(const SolverContext& ctx, SCFWorkspace& ws) {
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k)
                 for (int l = 0; l < n; ++l)
-                    eri_buf[i + j * n + k * nn + l * nn * n] =
-                        ERI_(i, j, k, l);
+                    eri_buf[i + j * n + k * nn + l * nn * n] = ERI_(i, j, k, l);
     cudaMemcpy(scf.ERI, eri_buf.data(), n4 * sizeof(prec_t),
                cudaMemcpyHostToDevice);
 
@@ -341,9 +366,10 @@ void RHFFock::destroy(const SolverContext& /*ctx*/, SCFWorkspace& /*ws*/) {
 // ══════════════════════════════════════════════════════════════════════
 
 // Expand shell centers from atom_of[s] → atom_pos (Bohr). One thread / shell.
-__global__ void expand_shell_centers_kernel(
-    prec_t* __restrict__ shell_centers, const int* __restrict__ atom_of,
-    const prec_t* __restrict__ atom_pos, int n_shells) {
+__global__ void expand_shell_centers_kernel(prec_t* __restrict__ shell_centers,
+                                            const int* __restrict__ atom_of,
+                                            const prec_t* __restrict__ atom_pos,
+                                            int n_shells) {
     const int s = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (s >= n_shells)
         return;
@@ -370,6 +396,33 @@ RHFFockDevice::RHFFockDevice(int n_shells, int n_ao, int n_prim,
     atom_of_mol_.assign(atom_of_mol, atom_of_mol + n_shells);
 }
 
+RHFFockDevice::RHFFockDevice(int n_shells, int n_ao, const double* alpha,
+                             const double* coeff, int n_prim_total,
+                             const int* nprim, const int* prim_off,
+                             const int* L_mol, const int* atom_of_mol,
+                             int n_occ, double level_shift, bool spherical)
+    : n_shells_(n_shells), n_ao_(n_ao), n_prim_(0), n_occ_(n_occ),
+      level_shift_(level_shift), pure_s_broadcast_(false), ragged_(true),
+      spherical_(spherical) {
+    if (n_prim_total < 1 || nprim == nullptr || prim_off == nullptr)
+        throw std::invalid_argument(
+            "RHFFockDevice: ragged Cartesian shells need a primitive list");
+    alpha_mol_.assign(alpha, alpha + n_prim_total);
+    coeff_mol_.assign(coeff, coeff + n_prim_total);
+    L_mol_.assign(L_mol, L_mol + n_shells);
+    atom_of_mol_.assign(atom_of_mol, atom_of_mol + n_shells);
+    nprim_.assign(nprim, nprim + n_shells);
+    prim_off_.assign(prim_off, prim_off + n_shells);
+    for (int L : L_mol_) {
+        if (L < 0 || L > cpu::scf::internal::kCudaCartesianLgt1Max) {
+            throw std::invalid_argument(
+                std::string("cuda::scf::RHF: missing kernel ")
+                + cpu::scf::internal::kMissingKernelEriG
+                + " for angular momentum l=" + std::to_string(L));
+        }
+    }
+}
+
 RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
                              const double* alpha_atom, const double* coeff_atom,
                              int n_occ, int natm, double level_shift)
@@ -378,9 +431,8 @@ RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
     // Expand pure-s atom block to molecular shells immediately.
     n_shells_ = natm * n_shells_per_atom;
     n_ao_ = n_shells_; // pure-s: 1 AO / shell
-    const std::size_t nflat_atom =
-        static_cast<std::size_t>(n_shells_per_atom)
-        * static_cast<std::size_t>(n_prim);
+    const std::size_t nflat_atom = static_cast<std::size_t>(n_shells_per_atom)
+                                   * static_cast<std::size_t>(n_prim);
     alpha_mol_.resize(static_cast<std::size_t>(n_shells_)
                       * static_cast<std::size_t>(n_prim));
     coeff_mol_.resize(alpha_mol_.size());
@@ -409,17 +461,131 @@ RHFFockDevice::RHFFockDevice(int n_shells_per_atom, int n_prim,
     : n_prim_(n_prim), n_occ_(n_occ), level_shift_(level_shift),
       pure_s_broadcast_(true), n_shells_per_atom_(n_shells_per_atom) {
     // Defer molecular expand until build() knows natm.
-    const std::size_t nflat =
-        static_cast<std::size_t>(n_shells_per_atom)
-        * static_cast<std::size_t>(n_prim);
+    const std::size_t nflat = static_cast<std::size_t>(n_shells_per_atom)
+                              * static_cast<std::size_t>(n_prim);
     alpha_mol_.assign(alpha_atom, alpha_atom + nflat);
     coeff_mol_.assign(coeff_atom, coeff_atom + nflat);
+}
+
+// Cartesian → spherical sandwich. Same algebra as
+// IntegralWorkspace::c2s in integrals.cpp (CartToSph::block, row
+// rescaled by 1/sqrt(S_ii), column normalized in the Cartesian overlap).
+// Four-index order matches the column-major ERI
+// (i + j n + k n^2 + l n^3) contracted one index at a time.
+void apply_c2s_lgt1(cublasHandle_t handle, cudaStream_t stream,
+                    const std::vector<int>& shell_L,
+                    const std::vector<int>& ao_start, prec_t* S_cart,
+                    prec_t* T_cart, prec_t* V_cart, prec_t* ERI_cart, prec_t* S,
+                    prec_t* T, prec_t* V, prec_t* ERI, int n_cart, int n_sph) {
+    static_assert(std::is_same<prec_t, double>::value,
+                  "spherical sandwich is double precision");
+    const std::size_t n2 =
+        static_cast<std::size_t>(n_cart) * static_cast<std::size_t>(n_cart);
+    std::vector<double> hS(n2);
+    cudaMemcpyAsync(hS.data(), S_cart, n2 * sizeof(double),
+                    cudaMemcpyDeviceToHost, stream);
+    cudaStreamSynchronize(stream);
+    auto Sij = [&](int i, int j) {
+        return hS[static_cast<std::size_t>(i + j * n_cart)];
+    };
+    cpu::scf::internal::CartToSph tables;
+    std::vector<double> hC(static_cast<std::size_t>(n_cart)
+                               * static_cast<std::size_t>(n_sph),
+                           0.0);
+    int col = 0;
+    for (int s = 0; s < static_cast<int>(shell_L.size()); ++s) {
+        const int L = shell_L[static_cast<std::size_t>(s)];
+        const int ao0 = ao_start[static_cast<std::size_t>(s)];
+        const int nc = (L + 1) * (L + 2) / 2;
+        const int ns = 2 * L + 1;
+        const auto& m = tables.block(L);
+        for (int j = 0; j < ns; ++j) {
+            std::vector<double> v(static_cast<std::size_t>(nc));
+            for (int i = 0; i < nc; ++i) {
+                const double diag = Sij(ao0 + i, ao0 + i);
+                if (!(diag > 0.0)) {
+                    throw std::runtime_error(
+                        "cuda::scf::RHF: Cartesian overlap diagonal is not "
+                        "positive; cannot build the spherical transform");
+                }
+                v[static_cast<std::size_t>(i)] = m(i, j) / std::sqrt(diag);
+            }
+            double nrm2 = 0.0;
+            for (int i = 0; i < nc; ++i)
+                for (int k = 0; k < nc; ++k)
+                    nrm2 += v[static_cast<std::size_t>(i)]
+                            * Sij(ao0 + i, ao0 + k)
+                            * v[static_cast<std::size_t>(k)];
+            if (!(nrm2 > 0.0)) {
+                throw std::runtime_error(
+                    "cuda::scf::RHF: spherical column norm is not positive");
+            }
+            const double inv = 1.0 / std::sqrt(nrm2);
+            for (int i = 0; i < nc; ++i)
+                hC[static_cast<std::size_t>((ao0 + i) + (col + j) * n_cart)] =
+                    v[static_cast<std::size_t>(i)] * inv;
+        }
+        col += ns;
+    }
+    if (col != n_sph) {
+        throw std::runtime_error(
+            "cuda::scf::RHF: spherical AO count does not match shell L");
+    }
+    prec_t* dC = nullptr;
+    cudaMalloc(&dC, hC.size() * sizeof(prec_t));
+    cudaMemcpyAsync(dC, hC.data(), hC.size() * sizeof(prec_t),
+                    cudaMemcpyHostToDevice, stream);
+    prec_t* temp = nullptr;
+    cudaMalloc(&temp, static_cast<std::size_t>(n_cart)
+                          * static_cast<std::size_t>(n_sph) * sizeof(prec_t));
+    const prec_t one = 1;
+    const prec_t zero = 0;
+    auto sand2 = [&](prec_t* src, prec_t* dst) {
+        detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, n_cart, n_sph, n_cart,
+                     &one, src, n_cart, dC, n_cart, &zero, temp, n_cart);
+        detail::gemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n_sph, n_sph, n_cart,
+                     &one, dC, n_cart, temp, n_cart, &zero, dst, n_sph);
+    };
+    sand2(S_cart, S);
+    sand2(T_cart, T);
+    sand2(V_cart, V);
+
+    const int n_c2 = n_cart * n_cart;
+    const int n_c3 = n_c2 * n_cart;
+    const std::size_t n4c =
+        static_cast<std::size_t>(n_c2) * static_cast<std::size_t>(n_c2);
+    prec_t* scratch = nullptr;
+    cudaMalloc(&scratch, n4c * sizeof(prec_t));
+    // Contract i (fastest): (n_sph × n_cart^3) = C^T * ERI.
+    detail::gemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, n_sph, n_c3, n_cart, &one,
+                 dC, n_cart, ERI_cart, n_cart, &zero, scratch, n_sph);
+    // Contract j, one (k,l) block at a time.
+    cublasDgemmStridedBatched(
+        handle, CUBLAS_OP_N, CUBLAS_OP_N, n_sph, n_sph, n_cart, &one, scratch,
+        n_sph, static_cast<long long>(n_sph) * n_cart, dC, n_cart, 0, &zero,
+        ERI_cart, n_sph, static_cast<long long>(n_sph) * n_sph, n_c2);
+    // Contract k, one l block at a time.
+    const int ns2 = n_sph * n_sph;
+    cublasDgemmStridedBatched(
+        handle, CUBLAS_OP_N, CUBLAS_OP_N, ns2, n_sph, n_cart, &one, ERI_cart,
+        ns2, static_cast<long long>(ns2) * n_cart, dC, n_cart, 0, &zero,
+        scratch, ns2, static_cast<long long>(ns2) * n_sph, n_cart);
+    // Contract l into the spherical tensor.
+    const int ns3 = ns2 * n_sph;
+    detail::gemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, ns3, n_sph, n_cart, &one,
+                 scratch, ns3, dC, n_cart, &zero, ERI, ns3);
+    cudaStreamSynchronize(stream);
+    cudaFree(temp);
+    cudaFree(scratch);
+    cudaFree(dC);
 }
 
 void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     auto stream = static_cast<cudaStream_t>(ctx.stream);
     auto& scf = ws;
     int natm = ctx.frame.n_atoms();
+    int* d_nprim = nullptr;
+    int* d_prim_off = nullptr;
 
     // Pure-s broadcast ctor: expand atom block → molecular shells now.
     if (pure_s_broadcast_) {
@@ -451,7 +617,25 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     }
 
     const int n_shells = n_shells_;
-    const int n = n_ao_;
+    int n_cart = 0;
+    int n_sph = 0;
+    int max_l = 0;
+    for (int s = 0; s < n_shells; ++s) {
+        const int L = L_mol_[static_cast<std::size_t>(s)];
+        n_cart += (L + 1) * (L + 2) / 2;
+        n_sph += 2 * L + 1;
+        if (L > max_l)
+            max_l = L;
+    }
+    if (n_cart != n_ao_) {
+        throw std::runtime_error(
+            "RHFFockDevice::build: n_ao mismatch vs shell L list");
+    }
+    const int n = spherical_ ? n_sph : n_cart;
+    require_dense_eri_index_range(n_cart);
+    if (n_occ_ < 0 || n_occ_ > n)
+        throw std::invalid_argument(
+            "CUDA RHF: occupied orbital count must be between zero and nAO");
     int nn = n * n;
     int n4 = nn * nn;
 
@@ -473,8 +657,8 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     std::vector<int> h_L(static_cast<std::size_t>(n_shells));
     std::vector<int> h_ao_start(static_cast<std::size_t>(n_shells));
     std::vector<int> h_atom_of(static_cast<std::size_t>(n_shells));
-    std::vector<int> h_ao_shell(static_cast<std::size_t>(n));
-    std::vector<int> h_ao_cart(static_cast<std::size_t>(n));
+    std::vector<int> h_ao_shell(static_cast<std::size_t>(n_cart));
+    std::vector<int> h_ao_cart(static_cast<std::size_t>(n_cart));
     int ao = 0;
     for (int s = 0; s < n_shells; ++s) {
         const int L = L_mol_[static_cast<std::size_t>(s)];
@@ -489,26 +673,27 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
             ++ao;
         }
     }
-    if (ao != n) {
-        // Programming error: n_ao must match Σ n_cart(L).
+    if (ao != n_cart) {
         throw std::runtime_error(
-            "RHFFockDevice::build: n_ao mismatch vs shell L list");
+            "RHFFockDevice::build: Cartesian AO count mismatch vs shell L");
     }
 
-    const std::size_t nflat =
-        static_cast<std::size_t>(n_shells) * static_cast<std::size_t>(n_prim_);
+    const std::size_t nflat = ragged_ ? alpha_mol_.size()
+                                      : static_cast<std::size_t>(n_shells)
+                                            * static_cast<std::size_t>(n_prim_);
     std::vector<prec_t> h_alpha(nflat), h_coeff(nflat);
     for (int s = 0; s < n_shells; ++s) {
         const int L = h_L[static_cast<std::size_t>(s)];
-        for (int p = 0; p < n_prim_; ++p) {
-            const std::size_t k =
-                static_cast<std::size_t>(s * n_prim_ + p);
+        const int off =
+            ragged_ ? prim_off_[static_cast<std::size_t>(s)] : s * n_prim_;
+        const int np = ragged_ ? nprim_[static_cast<std::size_t>(s)] : n_prim_;
+        for (int p = 0; p < np; ++p) {
+            const std::size_t k = static_cast<std::size_t>(off + p);
             const double a = alpha_mol_[k];
             const double c = coeff_mol_[k];
             h_alpha[k] = static_cast<prec_t>(a);
-            const double norm =
-                (L == 0) ? ATV::phys_norm_s(a) : ATV::phys_norm_p(a);
-            h_coeff[k] = static_cast<prec_t>(c * norm);
+            h_coeff[k] = static_cast<prec_t>(
+                c * cpu::scf::internal::contraction_norm(L, a));
         }
     }
 
@@ -523,8 +708,8 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaMalloc(&scf.d_shell_L, n_shells * sizeof(int));
     cudaMalloc(&d_ao_start, n_shells * sizeof(int));
     cudaMalloc(&scf.d_shell_atom, n_shells * sizeof(int));
-    cudaMalloc(&scf.d_ao_shell, n * sizeof(int));
-    cudaMalloc(&scf.d_ao_cart, n * sizeof(int));
+    cudaMalloc(&scf.d_ao_shell, n_cart * sizeof(int));
+    cudaMalloc(&scf.d_ao_cart, n_cart * sizeof(int));
 
     cudaMemcpyAsync(scf.d_shell_alpha, h_alpha.data(), nflat * sizeof(prec_t),
                     cudaMemcpyHostToDevice, stream);
@@ -536,12 +721,12 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
                     cudaMemcpyHostToDevice, stream);
     cudaMemcpyAsync(scf.d_shell_atom, h_atom_of.data(), n_shells * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
-    cudaMemcpyAsync(scf.d_ao_shell, h_ao_shell.data(), n * sizeof(int),
+    cudaMemcpyAsync(scf.d_ao_shell, h_ao_shell.data(), n_cart * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
-    cudaMemcpyAsync(scf.d_ao_cart, h_ao_cart.data(), n * sizeof(int),
+    cudaMemcpyAsync(scf.d_ao_cart, h_ao_cart.data(), n_cart * sizeof(int),
                     cudaMemcpyHostToDevice, stream);
 
-    cudaMemcpyAsync(scf.d_atom_Z, ctx.frame.atoms.type,
+    cudaMemcpyAsync(scf.d_atom_Z, ctx.frame.atoms.atomic_number,
                     static_cast<std::size_t>(natm) * sizeof(int),
                     cudaMemcpyDeviceToDevice, stream);
 
@@ -551,7 +736,8 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
         const int grid = cuda::grid_size(natm, block);
         pack_atom_pos_bohr_kernel<<<grid, block, 0, stream>>>(
             scf.d_atom_pos, ctx.frame.atoms.x, ctx.frame.atoms.y,
-            ctx.frame.atoms.z, natm, a2b);
+            ctx.frame.atoms.z, ctx.frame.atoms.x_corr, ctx.frame.atoms.y_corr,
+            ctx.frame.atoms.z_corr, natm, a2b);
     }
     {
         const int block = cuda::kDefaultBlock;
@@ -561,8 +747,7 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     }
 
     // V_nuc: device-only reduction (Wave 7 — no mid-build D2H/H2D rewrite).
-    // Host `scf.V_nuc` is filled post-SCF in RhfScfCycle::drive from d_V_nuc.
-    // Energy during SCF reads d_V_nuc on device (RHFDensity).
+    // Energy reads d_V_nuc on device (RHFDensity); no unused host mirror.
     cudaMalloc(&scf.d_V_nuc, sizeof(double));
     cudaMemsetAsync(scf.d_V_nuc, 0, sizeof(double), stream);
     if (natm >= 2) {
@@ -606,8 +791,14 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
         scf.d_converged = static_cast<int*>(d_ptr);
     }
     // Device forces (pure-s and mixed s/p) need W after SCF.
-    scf.device_sp_shells = true;
-    cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
+    // Ragged l≤2 energy does not own launch_rhf_forces_lgt1.
+    scf.device_sp_shells = !ragged_;
+    if (!ragged_) {
+        cudaMalloc(&scf.d_W, nn * sizeof(prec_t));
+        ATV_CUDA_CHECK(
+            cudaMalloc(&scf.d_gradient,
+                       3 * static_cast<std::size_t>(natm) * sizeof(double)));
+    }
 
     cudaMemsetAsync(scf.P, 0, nn * sizeof(prec_t), stream);
     cudaMemsetAsync(scf.P_old, 0, nn * sizeof(prec_t), stream);
@@ -615,21 +806,77 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     // ── 3. Device integral kernels (s+p MD/OS; pure-s is the l=0 subset) ─
     // Use the unified sp path for all device RHF so pure-s and mixed share
     // one contraction (avoids dual-kernel norm/layout drift).
-    ATV::cuda::scf::launch_1e_integrals_sp(
-        scf.S, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
-        scf.d_shell_center, scf.d_shell_L, d_ao_start, scf.d_ao_shell,
-        scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_,
-        natm, stream);
-    ATV::cuda::scf::launch_eri_sp(
-        scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center,
-        scf.d_shell_L, d_ao_start, scf.d_ao_shell, scf.d_ao_cart, n_shells, n,
-        n_prim_, stream);
+    if (!ragged_) {
+        ATV::cuda::scf::launch_1e_integrals_sp(
+            scf.S, d_T_, d_V_, scf.d_shell_alpha, scf.d_shell_coeff,
+            scf.d_shell_center, scf.d_shell_L, d_ao_start, scf.d_ao_shell,
+            scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_shells, n, n_prim_,
+            natm, stream);
+        ATV::cuda::scf::launch_eri_sp(
+            scf.ERI, scf.d_shell_alpha, scf.d_shell_coeff, scf.d_shell_center,
+            scf.d_shell_L, d_ao_start, scf.d_ao_shell, scf.d_ao_cart, n_shells,
+            n, n_prim_, stream);
+    } else {
+        cudaMalloc(&d_nprim, n_shells * sizeof(int));
+        cudaMalloc(&d_prim_off, n_shells * sizeof(int));
+        cudaMemcpyAsync(d_nprim, nprim_.data(), n_shells * sizeof(int),
+                        cudaMemcpyHostToDevice, stream);
+        cudaMemcpyAsync(d_prim_off, prim_off_.data(), n_shells * sizeof(int),
+                        cudaMemcpyHostToDevice, stream);
+        prec_t* S_tgt = scf.S;
+        prec_t* T_tgt = d_T_;
+        prec_t* V_tgt = d_V_;
+        prec_t* ERI_tgt = scf.ERI;
+        prec_t* S_cart_d = nullptr;
+        prec_t* T_cart_d = nullptr;
+        prec_t* V_cart_d = nullptr;
+        prec_t* ERI_cart_d = nullptr;
+        if (spherical_) {
+            const std::size_t n2c = static_cast<std::size_t>(n_cart)
+                                    * static_cast<std::size_t>(n_cart);
+            const std::size_t n4c = n2c * n2c;
+            cudaMalloc(&S_cart_d, n2c * sizeof(prec_t));
+            cudaMalloc(&T_cart_d, n2c * sizeof(prec_t));
+            cudaMalloc(&V_cart_d, n2c * sizeof(prec_t));
+            cudaMalloc(&ERI_cart_d, n4c * sizeof(prec_t));
+            S_tgt = S_cart_d;
+            T_tgt = T_cart_d;
+            V_tgt = V_cart_d;
+            ERI_tgt = ERI_cart_d;
+        }
+        ATV::cuda::scf::launch_1e_integrals_lgt1(
+            S_tgt, T_tgt, V_tgt, scf.d_shell_alpha, scf.d_shell_coeff, d_nprim,
+            d_prim_off, scf.d_shell_center, scf.d_shell_L, scf.d_ao_shell,
+            scf.d_ao_cart, scf.d_atom_Z, scf.d_atom_pos, n_cart, natm, max_l,
+            stream);
+        ATV::cuda::scf::launch_eri_lgt1(
+            ERI_tgt, scf.d_shell_alpha, scf.d_shell_coeff, d_nprim, d_prim_off,
+            scf.d_shell_center, scf.d_shell_L, d_ao_start, n_shells, n_cart,
+            max_l, stream);
+        if (spherical_) {
+            cublasHandle_t handle_sph;
+            cublasCreate(&handle_sph);
+            cublasSetStream(handle_sph, stream);
+            cublas_handle_ = handle_sph;
+            apply_c2s_lgt1(handle_sph, stream, h_L, h_ao_start, S_cart_d,
+                           T_cart_d, V_cart_d, ERI_cart_d, scf.S, d_T_, d_V_,
+                           scf.ERI, n_cart, n);
+            cudaFree(S_cart_d);
+            cudaFree(T_cart_d);
+            cudaFree(V_cart_d);
+            cudaFree(ERI_cart_d);
+        }
+    }
 
     // ── 4. Hcore = T + V ──────────────────────────────────────────────
     cublasHandle_t handle;
-    cublasCreate(&handle);
-    cublasSetStream(handle, stream);
-    cublas_handle_ = handle;
+    if (spherical_) {
+        handle = static_cast<cublasHandle_t>(cublas_handle_);
+    } else {
+        cublasCreate(&handle);
+        cublasSetStream(handle, stream);
+        cublas_handle_ = handle;
+    }
 
     cudaMemcpyAsync(scf.Hcore, d_T_, nn * sizeof(prec_t),
                     cudaMemcpyDeviceToDevice, stream);
@@ -685,8 +932,10 @@ void RHFFockDevice::build(const SolverContext& ctx, SCFWorkspace& ws) {
     cudaFree(d_work_solver);
     cudaFree(d_info);
     cudaFree(d_ao_start);
+    cudaFree(d_nprim);
+    cudaFree(d_prim_off);
     // Wave 7: d_V_nuc stays as the sole nuclear-repulsion source for SCF energy;
-    // host scf.V_nuc mirrored only in RhfScfCycle::drive post-pass.
+    // host scf.V_nuc is unused on the device-integral path.
 }
 
 void RHFFockDevice::step(const SolverContext& ctx, SCFWorkspace& ws) {

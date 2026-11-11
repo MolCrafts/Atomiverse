@@ -1,214 +1,484 @@
 /// @file cuda/minimize/lbfgs.cu
-/// @brief L-BFGS kernels: device-resident two-loop recursion +
-///        multi-criteria convergence via the shared ConvCheck.
+/// @brief L-BFGS kernels: device-resident two-loop recursion, device-side
+///        Armijo line search, multi-criteria convergence via the shared
+///        ConvCheck.
 
+#include "atomiverse/cuda/device/error.cuh"
+#include "atomiverse/cuda/device/graph_ring.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
+#include "atomiverse/cuda/frame/transfer.cuh"
+#include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/minimize/lbfgs.cuh"
+#include <algorithm>
+#include <cmath>
 #include <cuda_runtime.h>
+#include <stdexcept>
 
 namespace ATV {
-
-using cuda::real_t;
-using cuda::work_t;
-
 namespace cuda {
 namespace minimizer {
 
 namespace {
 
-/// @brief PBC wrap helper shared by the step/rollback kernels — the
-///        same orthorhombic cached-inv_l form as the MD integrators.
-__device__ __forceinline__ void wrap_store(real_t* __restrict__ x,
-                                           real_t* __restrict__ y,
-                                           real_t* __restrict__ z, int i,
-                                           const work_t pos[3],
-                                           const cuda::Box& box) {
-    const work_t Lx = work_t(box.cell[0]), Ly = work_t(box.cell[4]),
-                 Lz = work_t(box.cell[8]);
-    const work_t inv_Lx = work_t(box.inv_l[0]), inv_Ly = work_t(box.inv_l[1]),
-                 inv_Lz = work_t(box.inv_l[2]);
-    x[i] = static_cast<real_t>(pos[0] - Lx * floor(pos[0] * inv_Lx));
-    y[i] = static_cast<real_t>(pos[1] - Ly * floor(pos[1] * inv_Ly));
-    z[i] = static_cast<real_t>(pos[2] - Lz * floor(pos[2] * inv_Lz));
+/// @brief PBC wrap (whole lattice vectors, FP64 cell) + split store shared
+///        by the step/rollback kernels; writes primary and correction columns
+///        and counts the removed lattice translation into `image` (atom i's
+///        three flags; null when the Frame carries none).
+__device__ __forceinline__ void
+wrap_store(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+           pos_t* __restrict__ xc, pos_t* __restrict__ yc,
+           pos_t* __restrict__ zc, ImageInt* image, int i, const mixed_t pos[3],
+           const cuda::Box& box) {
+    mixed_t px = pos[0], py = pos[1], pz = pos[2];
+    box.wrap_position(px, py, pz, image);
+    store_position(x, xc, i, px);
+    store_position(y, yc, i, py);
+    store_position(z, zc, i, pz);
 }
 
-/// @brief Pack frame positions + gradient (g = −F) into planar work_t
-///        buffers for the history / two-loop vector algebra.
-__global__ void
-pack_xg(const real_t* __restrict__ x, const real_t* __restrict__ y,
-        const real_t* __restrict__ z, const real_t* __restrict__ fx,
-        const real_t* __restrict__ fy, const real_t* __restrict__ fz,
-        work_t* __restrict__ xp, work_t* __restrict__ gp, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n)
-        return;
-    xp[i] = static_cast<work_t>(x[i]);
-    xp[n + i] = static_cast<work_t>(y[i]);
-    xp[2 * n + i] = static_cast<work_t>(z[i]);
-    gp[i] = -static_cast<work_t>(fx[i]);
-    gp[n + i] = -static_cast<work_t>(fy[i]);
-    gp[2 * n + i] = -static_cast<work_t>(fz[i]);
-}
+/// Device ring of correction pairs: ring position p (0 = oldest) holds
+/// buffer `slot[(oldest + p) % memory]` of the (memory + 1)-buffer s/y
+/// arrays; `spare` is the staging buffer the next candidate pair is written
+/// to, swapped into the ring only when it passes the curvature test.
+struct Ring {
+    int* state; ///< {n_stored, oldest, spare}.
+    int* slot;  ///< Buffer of each ring position [memory].
+    acc_t* rho; ///< 1 / (y·s) per buffer [memory + 1].
+    acc_t* yy;  ///< y·y per buffer [memory + 1].
+    int memory;
+    __device__ int stored() const { return state[0]; }
+    __device__ int buffer(int p) const { return slot[(state[1] + p) % memory]; }
+};
 
-/// @brief Candidate history pair: s = x − x_prev (minimum-imaged — the
-///        step kernel wraps positions), y = g − g_prev, ys += y·s.
-///
-/// Writes into the caller-chosen ring slot; the host registers the slot
-/// only if the curvature condition ys > 1e-10 holds, so a rejected
-/// candidate is simply overwritten by the next one.
-__global__ void sy_dot(const work_t* __restrict__ xc,
-                       const work_t* __restrict__ gc,
-                       const work_t* __restrict__ x_prev,
-                       const work_t* __restrict__ g_prev,
-                       work_t* __restrict__ s_slot, work_t* __restrict__ y_slot,
-                       cuda::Box box, work_t* __restrict__ ys, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+/// Reduction slots of one iteration (zeroed by pack_xg).
+enum DotSlot : int { kYs = 0, kYy = 1, kDirMax = 2, kFirstPass = 3 };
 
-    work_t my_ys = work_t(0);
-    if (i < n) {
-        work_t sx = xc[i] - x_prev[i];
-        work_t sy = xc[n + i] - x_prev[n + i];
-        work_t sz = xc[2 * n + i] - x_prev[2 * n + i];
-        box.min_image(sx, sy, sz);
-        const work_t s[3] = {sx, sy, sz};
-#pragma unroll
-        for (int c = 0; c < 3; ++c) {
-            const work_t yv = gc[c * n + i] - g_prev[c * n + i];
-            s_slot[c * n + i] = s[c];
-            y_slot[c * n + i] = yv;
-            my_ys += yv * s[c];
-        }
-    }
-
-    extern __shared__ work_t warp_scratch[];
-    work_t sum = ATV::cuda::block_reduce_sum(my_ys, warp_scratch);
-    if (threadIdx.x == 0)
-        atomicAdd(ys, sum);
-}
-
-/// @brief Generic 3N dot product: out += a·b.
-__global__ void dot3n(const work_t* __restrict__ a,
-                      const work_t* __restrict__ b, work_t* __restrict__ out,
-                      int n3) {
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    work_t v = (j < n3) ? a[j] * b[j] : work_t(0);
-
-    extern __shared__ work_t warp_scratch[];
-    work_t sum = ATV::cuda::block_reduce_sum(v, warp_scratch);
+/// Sum `v` over the block into `out` (one atomic per block).
+__device__ __forceinline__ void block_sum_into(acc_t v, acc_t* out) {
+    using Reduce = cub::BlockReduce<acc_t, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const acc_t sum = Reduce(reduction).Sum(v);
     if (threadIdx.x == 0)
         atomicAdd(out, sum);
 }
 
-/// @brief Two-loop backward pass step: a_k = ρ_k · (s_k·q) (already in
-///        *dot), q −= a_k · y_k; thread 0 parks a_k for the forward pass.
-__global__ void axpy_backward(work_t* __restrict__ q,
-                              const work_t* __restrict__ y_k,
-                              const work_t* __restrict__ dot, work_t rho,
-                              work_t* __restrict__ alpha_k, int n3) {
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    const work_t a = rho * (*dot);
-    if (j == 0)
-        *alpha_k = a;
-    if (j < n3)
-        q[j] -= a * y_k[j];
-}
-
-/// @brief Initial Hessian scaling r = γ·q with γ = 1 / (ρ_newest · y·y)
-///        (γ = 1 when the curvature norm underflows), in place.
-__global__ void gamma_scale(work_t* __restrict__ q,
-                            const work_t* __restrict__ yy, work_t rho_newest,
-                            int n3) {
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    if (j >= n3)
-        return;
-    const work_t y2 = *yy;
-    const work_t gamma =
-        (y2 > work_t(1e-30)) ? work_t(1) / (rho_newest * y2) : work_t(1);
-    q[j] *= gamma;
-}
-
-/// @brief Two-loop forward pass step: r += s_k · (a_k − ρ_k · (y_k·r)).
-__global__ void axpy_forward(work_t* __restrict__ r,
-                             const work_t* __restrict__ s_k,
-                             const work_t* __restrict__ alpha_k,
-                             const work_t* __restrict__ dot, work_t rho,
-                             int n3) {
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    if (j >= n3)
-        return;
-    const work_t b = rho * (*dot);
-    r[j] += s_k[j] * (*alpha_k - b);
-}
-
-/// @brief Max-|·| reduction over a 3N buffer (step-length cap input).
-__global__ void max_abs3n(const work_t* __restrict__ a,
-                          work_t* __restrict__ out, int n3) {
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-    work_t v = (j < n3) ? fabs(a[j]) : work_t(0);
-
-    extern __shared__ work_t warp_scratch[];
-    work_t m = ATV::cuda::block_reduce_max(v, warp_scratch);
+/// Max |v| over the block into `out`.
+__device__ __forceinline__ void block_max_into(acc_t v, acc_t* out) {
+    using Reduce = cub::BlockReduce<acc_t, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const acc_t m = Reduce(reduction).Reduce(v, ::cuda::maximum<>{});
     if (threadIdx.x == 0)
         ATV::cuda::atomic_max_nonneg(out, m);
+}
+
+/// @brief Pack reconstructed frame positions + decoded gradient (g = −F)
+///        into planar mixed_t buffers; the first thread clears the
+///        iteration's reduction slots and parks the origin energy.
+__global__ void
+pack_xg(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+        const pos_t* __restrict__ z, const pos_t* __restrict__ xc,
+        const pos_t* __restrict__ yc, const pos_t* __restrict__ zc,
+        const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
+        const fixed_t* __restrict__ fz, mixed_t* __restrict__ xp,
+        mixed_t* __restrict__ gp, acc_t* __restrict__ dots, int n_dots,
+        acc_t* __restrict__ ls, const acc_t* __restrict__ energy, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i == 0) {
+        for (int k = 0; k < n_dots; ++k)
+            dots[k] = acc_t(0);
+        ls[1] = acc_t(0);
+        ls[2] = *energy; // line-search origin energy
+    }
+    if (i >= n)
+        return;
+    xp[i] = load_position(x, xc, i);
+    xp[n + i] = load_position(y, yc, i);
+    xp[2 * n + i] = load_position(z, zc, i);
+    gp[i] = -decode_force<mixed_t>(fx[i]);
+    gp[n + i] = -decode_force<mixed_t>(fy[i]);
+    gp[2 * n + i] = -decode_force<mixed_t>(fz[i]);
+}
+
+/// @brief Candidate pair s = x − x_prev (min image), y = g − g_prev into the
+///        spare buffers; y·s and y·y in one block collective.
+__global__ void
+sy_dot(const mixed_t* __restrict__ xc, const mixed_t* __restrict__ gc,
+       const mixed_t* __restrict__ x_prev, const mixed_t* __restrict__ g_prev,
+       mixed_t* __restrict__ s_all, mixed_t* __restrict__ y_all, Ring ring,
+       cuda::Box box, acc_t* __restrict__ dots, int n) {
+    box = box.current();
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const std::size_t n3 = 3 * static_cast<std::size_t>(n);
+    mixed_t* s_slot = s_all + ring.state[2] * n3;
+    mixed_t* y_slot = y_all + ring.state[2] * n3;
+    ::cuda::std::array<acc_t, 2> mine = {acc_t(0), acc_t(0)};
+    if (i < n) {
+        mixed_t sx = xc[i] - x_prev[i];
+        mixed_t sy = xc[n + i] - x_prev[n + i];
+        mixed_t sz = xc[2 * n + i] - x_prev[2 * n + i];
+        box.min_image(sx, sy, sz);
+        const mixed_t sv[3] = {sx, sy, sz};
+#pragma unroll
+        for (int c = 0; c < 3; ++c) {
+            const mixed_t yv = gc[c * n + i] - g_prev[c * n + i];
+            s_slot[c * n + i] = sv[c];
+            y_slot[c * n + i] = yv;
+            mine[0] += acc_t(yv) * acc_t(sv[c]);
+            mine[1] += acc_t(yv) * acc_t(yv);
+        }
+    }
+    using Reduce =
+        cub::BlockReduce<::cuda::std::array<acc_t, 2>, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const auto out = Reduce(reduction).Reduce(mine, SumComponents<acc_t, 2>{});
+    if (threadIdx.x == 0) {
+        atomicAdd(&dots[kYs], out[0]);
+        atomicAdd(&dots[kYy], out[1]);
+    }
+}
+
+/// @brief Curvature test on the device: an accepted spare pair joins the
+///        ring (evicting the oldest when full, whose buffer becomes the
+///        spare); a rejected one leaves the stored history intact.
+__global__ void ring_accept(Ring ring, const acc_t* __restrict__ dots) {
+    const acc_t ys = dots[kYs];
+    if (!(ys > acc_t(1e-10)))
+        return;
+    int& n_stored = ring.state[0];
+    int& oldest = ring.state[1];
+    int& spare = ring.state[2];
+    const int fresh = spare;
+    ring.rho[fresh] = acc_t(1) / ys;
+    ring.yy[fresh] = dots[kYy];
+    if (n_stored < ring.memory) {
+        ring.slot[(oldest + n_stored) % ring.memory] = fresh;
+        ++n_stored;
+        spare = n_stored; // buffers 0..n_stored-1 are in use
+    } else {
+        spare = ring.slot[oldest];
+        ring.slot[oldest] = fresh;
+        oldest = (oldest + 1) % ring.memory;
+    }
+}
+
+/// @brief q = g, plus the first backward inner product s_{n−1}·g (or, with
+///        no stored pair, the step cap max|g|).
+__global__ void q_init(const mixed_t* __restrict__ g, mixed_t* __restrict__ q,
+                       const mixed_t* __restrict__ s_all, Ring ring,
+                       acc_t* __restrict__ dots, int n3) {
+    const int j = blockIdx.x * blockDim.x + threadIdx.x;
+    const int stored = ring.stored();
+    const mixed_t gj = j < n3 ? g[j] : mixed_t(0);
+    if (j < n3)
+        q[j] = gj;
+    if (stored > 0) {
+        const mixed_t* s = s_all + std::size_t(ring.buffer(stored - 1)) * n3;
+        block_sum_into(j < n3 ? acc_t(s[j]) * acc_t(gj) : acc_t(0),
+                       &dots[kFirstPass + stored - 1]);
+    } else {
+        block_max_into(fabs(acc_t(gj)), &dots[kDirMax]);
+    }
+}
+
+/// @brief Backward pass k: a_k = ρ_k (s_k·q), q −= a_k y_k, fused with the
+///        next inner product s_{k−1}·q (or y_0·q after the last pass).
+__global__ void backward_pass(mixed_t* __restrict__ q,
+                              const mixed_t* __restrict__ s_all,
+                              const mixed_t* __restrict__ y_all, Ring ring,
+                              mixed_t* __restrict__ alpha, acc_t* dots, int k,
+                              int n3) {
+    if (k >= ring.stored())
+        return;
+    const int j = blockIdx.x * blockDim.x + threadIdx.x;
+    const int b = ring.buffer(k);
+    const mixed_t a = mixed_t(ring.rho[b] * dots[kFirstPass + k]);
+    if (j == 0)
+        alpha[k] = a;
+    const mixed_t* yk = y_all + std::size_t(b) * n3;
+    mixed_t qj = 0;
+    if (j < n3) {
+        qj = q[j] - a * yk[j];
+        q[j] = qj;
+    }
+    // Next: s_{k-1}·q into its backward slot, or y_0·q into forward slot 0.
+    const mixed_t* next = k > 0 ? s_all + std::size_t(ring.buffer(k - 1)) * n3
+                                : y_all + std::size_t(ring.buffer(0)) * n3;
+    acc_t* out =
+        k > 0 ? &dots[kFirstPass + k - 1] : &dots[kFirstPass + ring.memory];
+    block_sum_into(j < n3 ? acc_t(next[j]) * acc_t(qj) : acc_t(0), out);
+}
+
+/// @brief Forward pass k: r += s_k (a_k − ρ_k y_k·r), with the initial
+///        Hessian scaling r = γ q folded into pass 0 (γ = s·y / y·y of the
+///        newest pair, 1 when y·y underflows), fused with the next inner
+///        product y_{k+1}·r — or, after the last pass, the step cap max|r|.
+__global__ void forward_pass(mixed_t* __restrict__ q,
+                             const mixed_t* __restrict__ s_all,
+                             const mixed_t* __restrict__ y_all, Ring ring,
+                             const mixed_t* __restrict__ alpha, acc_t* dots,
+                             int k, int n3) {
+    const int stored = ring.stored();
+    if (k >= stored)
+        return;
+    const int j = blockIdx.x * blockDim.x + threadIdx.x;
+    const int b = ring.buffer(k);
+    mixed_t gamma = 1;
+    if (k == 0) {
+        const int newest = ring.buffer(stored - 1);
+        const acc_t y2 = ring.yy[newest];
+        if (y2 > acc_t(1e-30))
+            gamma = mixed_t(acc_t(1) / (ring.rho[newest] * y2));
+    }
+    const acc_t yr =
+        dots[kFirstPass + ring.memory + k] * (k == 0 ? acc_t(gamma) : acc_t(1));
+    const mixed_t coef = alpha[k] - mixed_t(ring.rho[b] * yr);
+    const mixed_t* sk = s_all + std::size_t(b) * n3;
+    mixed_t rj = 0;
+    if (j < n3) {
+        rj = (k == 0 ? gamma * q[j] : q[j]) + sk[j] * coef;
+        q[j] = rj;
+    }
+    if (k + 1 < stored) {
+        const mixed_t* yn = y_all + std::size_t(ring.buffer(k + 1)) * n3;
+        block_sum_into(j < n3 ? acc_t(yn[j]) * acc_t(rj) : acc_t(0),
+                       &dots[kFirstPass + ring.memory + k + 1]);
+    } else {
+        block_max_into(fabs(acc_t(rj)), &dots[kDirMax]);
+    }
 }
 
 /// @brief Apply the L-BFGS step: direction = −r, α capped so no atom
 ///        moves more than 0.1 Angstrom; saves prev state, moves, wraps.
 ///
-/// Thread (0,0) parks the applied α in ls[0] for the line search (read
-/// back on the host during the next convergence-check sync).
+/// Thread (0,0) parks the applied α in ls[0]; every block adds its g·d to
+/// ls[1] for the line search. The direction was built from the decoded
+/// forces of this Frame, so a faulted force is never consumed: the step
+/// (and its history save) is skipped.
 __global__ void
-apply_step(real_t* __restrict__ x, real_t* __restrict__ y,
-           real_t* __restrict__ z, const work_t* __restrict__ xc,
-           const work_t* __restrict__ gc, const work_t* __restrict__ r,
-           work_t* __restrict__ dir, work_t* __restrict__ x_prev,
-           work_t* __restrict__ g_prev, const work_t* __restrict__ dir_max,
-           work_t alpha0, work_t* __restrict__ ls, cuda::Box box, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= n)
+apply_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+           pos_t* __restrict__ xcorr, pos_t* __restrict__ ycorr,
+           pos_t* __restrict__ zcorr, const mixed_t* __restrict__ xc,
+           const mixed_t* __restrict__ gc, const mixed_t* __restrict__ r,
+           mixed_t* __restrict__ dir, mixed_t* __restrict__ x_prev,
+           mixed_t* __restrict__ g_prev, ImageInt* __restrict__ image,
+           ImageInt* __restrict__ image_prev, const acc_t* __restrict__ dir_max,
+           mixed_t alpha0, acc_t* __restrict__ ls, bool line_search,
+           ForceFault* fault, const std::int64_t* __restrict__ tag,
+           const long long* step_ptr, long long step, cuda::Box box, int n) {
+    if (!forces_consumable(fault, tag, step_ptr, step))
         return;
+    box = box.current();
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    const work_t dmax = fmax(*dir_max, work_t(1e-20));
-    const work_t alpha = fmin(alpha0, work_t(0.1) / dmax);
+    const mixed_t dmax = mixed_t(fmax(*dir_max, acc_t(1e-20)));
+    const mixed_t alpha = fmin(alpha0, mixed_t(0.1) / dmax);
     if (i == 0)
-        ls[0] = alpha;
+        ls[0] = acc_t(alpha);
 
-    work_t pos[3];
+    acc_t gd = 0;
+    if (i < n) {
+        mixed_t pos[3];
 #pragma unroll
-    for (int c = 0; c < 3; ++c) {
-        const work_t d = -r[c * n + i];
-        dir[c * n + i] = d;
-        x_prev[c * n + i] = xc[c * n + i];
-        g_prev[c * n + i] = gc[c * n + i];
-        pos[c] = xc[c * n + i] + alpha * d;
+        for (int c = 0; c < 3; ++c) {
+            const mixed_t d = -r[c * n + i];
+            dir[c * n + i] = d;
+            x_prev[c * n + i] = xc[c * n + i];
+            g_prev[c * n + i] = gc[c * n + i];
+            pos[c] = xc[c * n + i] + alpha * d;
+            gd += acc_t(gc[c * n + i]) * acc_t(d);
+        }
+        ImageInt* row = nullptr;
+        if (image != nullptr) {
+            row = image + 3 * i;
+#pragma unroll
+            for (int c = 0; c < 3; ++c)
+                image_prev[3 * i + c] = row[c];
+        }
+        wrap_store(x, y, z, xcorr, ycorr, zcorr, row, i, pos, box);
     }
-    wrap_store(x, y, z, i, pos, box);
+    if (line_search)
+        block_sum_into(gd, &ls[1]);
 }
 
 /// @brief Armijo rollback: re-take the trial from x_prev with the
 ///        contracted α along the SAME stored direction, then wrap.
-__global__ void rollback(real_t* __restrict__ x, real_t* __restrict__ y,
-                         real_t* __restrict__ z,
-                         const work_t* __restrict__ x_prev,
-                         const work_t* __restrict__ dir, work_t alpha,
-                         cuda::Box box, int n) {
+///
+/// x_prev is the reconstructed coordinate, so the split store restores the
+/// primary and correction columns together; the image flags restart from
+/// their x_prev values, so the rejected trial's crossings are undone.
+__global__ void
+rollback(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+         pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
+         ImageInt* __restrict__ image, const ImageInt* __restrict__ image_prev,
+         const mixed_t* __restrict__ x_prev, const mixed_t* __restrict__ dir,
+         mixed_t alpha, cuda::Box box, int n) {
+    box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
-    work_t pos[3];
+    mixed_t pos[3];
 #pragma unroll
     for (int c = 0; c < 3; ++c)
         pos[c] = x_prev[c * n + i] + alpha * dir[c * n + i];
-    wrap_store(x, y, z, i, pos, box);
+    ImageInt* row = nullptr;
+    if (image != nullptr) {
+        row = image + 3 * i;
+#pragma unroll
+        for (int c = 0; c < 3; ++c)
+            row[c] = image_prev[3 * i + c];
+    }
+    wrap_store(x, y, z, xc, yc, zc, row, i, pos, box);
+}
+
+/// Line-search verdicts, written by the device into the mapped host word.
+enum LineVerdict : int {
+    kSearching = 0,       ///< Rejected: the next trial is in place.
+    kAccepted = 1,        ///< Armijo holds at the current trial.
+    kNoDescent = 2,       ///< g·d ≥ 0: back at the origin, no search.
+    kNonfiniteOrigin = 3, ///< Origin energy or slope is not finite.
+    kNonfiniteEnergy = 4, ///< A trial energy is not finite.
+    kExhausted = 5,       ///< Trial budget or α floor reached.
+    kFault = 6,           ///< A trial evaluation raised a force fault.
+};
+
+/// Device state of one line search (the α of the trial is `ls[0]`).
+struct LineState {
+    int verdict;
+    int attempt;
+    int move;     ///< 1: `line_move` re-takes the trial at `target`.
+    acc_t target; ///< α of that trial from x_prev (0 = the origin).
+};
+
+/// @brief Open the search at the tail of the direction phase: classify the
+///        origin (finite energy and slope, g·d < 0). A search that cannot
+///        start is sent back to the origin by the following `line_move`.
+__global__ void line_begin(const acc_t* __restrict__ ls, LineState* state,
+                           volatile int* verdict) {
+    const acc_t gd = ls[1], e0 = ls[2];
+    int v = kSearching;
+    if (!isfinite(e0) || !isfinite(gd))
+        v = kNonfiniteOrigin;
+    else if (!(gd < acc_t(0)))
+        v = kNoDescent;
+    state->verdict = v;
+    state->attempt = 0;
+    state->move = v != kSearching;
+    state->target = acc_t(0);
+    *verdict = v;
+}
+
+/// @brief Armijo acceptance of the evaluated trial on the device: accept
+///        `E − E0 <= c1 α g·d`, or contract α (to the floor) and schedule the
+///        next trial, or stop at the budget / floor, a nonfinite energy or a
+///        force fault. Publishes the verdict to the mapped host word.
+__global__ void line_judge(const acc_t* __restrict__ energy,
+                           const ForceFault* __restrict__ fault, acc_t* ls,
+                           LineState* state, acc_t c1, acc_t contract,
+                           acc_t min_alpha, int max_ls, volatile int* verdict) {
+    if (state->verdict != kSearching) {
+        // line_begin decided; its move to the origin already ran.
+        state->move = 0;
+        *verdict = state->verdict;
+        return;
+    }
+    const acc_t e = *energy;
+    int v = kSearching;
+    if (fault != nullptr && fault->kinds != 0)
+        v = kFault;
+    else if (!isfinite(e))
+        v = kNonfiniteEnergy;
+    else if (e - ls[2] <= c1 * ls[0] * ls[1])
+        v = kAccepted;
+    else if (ls[0] <= min_alpha || state->attempt + 1 == max_ls)
+        v = kExhausted;
+    state->move = 0;
+    if (v == kSearching) {
+        ls[0] = fmax(min_alpha, ls[0] * contract);
+        ++state->attempt;
+        state->move = 1;
+        state->target = ls[0];
+    }
+    state->verdict = v;
+    *verdict = v;
+}
+
+/// @brief Re-take the scheduled trial (`LineState::move`) from x_prev with
+///        α = `target` along the stored direction — the rollback below with
+///        a device-decided α.
+__global__ void
+line_move(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+          pos_t* __restrict__ xc, pos_t* __restrict__ yc,
+          pos_t* __restrict__ zc, ImageInt* __restrict__ image,
+          const ImageInt* __restrict__ image_prev,
+          const mixed_t* __restrict__ x_prev, const mixed_t* __restrict__ dir,
+          const LineState* __restrict__ state, cuda::Box box, int n) {
+    if (!state->move)
+        return;
+    box = box.current();
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
+    const mixed_t alpha = mixed_t(state->target);
+    mixed_t pos[3];
+#pragma unroll
+    for (int c = 0; c < 3; ++c)
+        pos[c] = x_prev[c * n + i] + alpha * dir[c * n + i];
+    ImageInt* row = nullptr;
+    if (image != nullptr) {
+        row = image + 3 * i;
+#pragma unroll
+        for (int c = 0; c < 3; ++c)
+            row[c] = image_prev[3 * i + c];
+    }
+    wrap_store(x, y, z, xc, yc, zc, row, i, pos, box);
+}
+
+/// Enqueue directly on the legacy default stream or inside an enclosing
+/// capture; otherwise capture once into `ring` and replay.
+template <class Enqueue>
+void replay(GraphRing& ring, cudaStream_t stream, Enqueue&& enqueue) {
+    cudaStreamCaptureStatus capturing = cudaStreamCaptureStatusNone;
+    if (stream != nullptr)
+        ATV_CUDA_CHECK(cudaStreamIsCapturing(stream, &capturing));
+    if (stream == nullptr || capturing != cudaStreamCaptureStatusNone) {
+        enqueue();
+        return;
+    }
+    if (!ring.ready())
+        ring.build([&]() -> cudaGraph_t {
+            cudaGraph_t graph = nullptr;
+            ATV_CUDA_CHECK(cudaStreamBeginCapture(
+                stream, cudaStreamCaptureModeThreadLocal));
+            try {
+                enqueue();
+            } catch (...) {
+                cudaStreamEndCapture(stream, &graph);
+                if (graph)
+                    cudaGraphDestroy(graph);
+                throw;
+            }
+            ATV_CUDA_CHECK(cudaStreamEndCapture(stream, &graph));
+            return graph;
+        });
+    ATV_CUDA_CHECK(ring.launch(stream));
 }
 
 } // anonymous namespace
 
 void LBFGS::build(const BuildContext& ctx) {
+    if (memory_ <= 0 || max_ls_ <= 0 || !std::isfinite(alpha0_) || alpha0_ <= 0
+        || (ls_enabled_
+            && (!std::isfinite(ls_c1_) || ls_c1_ <= 0 || ls_c1_ >= 1
+                || !std::isfinite(ls_contract_) || ls_contract_ <= 0
+                || ls_contract_ >= 1 || !std::isfinite(ls_min_alpha_)
+                || ls_min_alpha_ <= 0)))
+        throw std::invalid_argument("CUDA LBFGS requires finite positive "
+                                    "controls and Armijo c1/contract in (0,1)");
     n_ = ctx.frame.n_atoms();
     n3_ = 3 * n_;
-    const size_t bytes3n = static_cast<size_t>(n3_) * sizeof(work_t);
+    const size_t bytes3n = static_cast<size_t>(n3_) * sizeof(mixed_t);
 
     cudaMalloc(&d_x_, bytes3n);
     cudaMalloc(&d_g_, bytes3n);
@@ -216,28 +486,36 @@ void LBFGS::build(const BuildContext& ctx) {
     cudaMalloc(&d_gprev_, bytes3n);
     cudaMalloc(&d_q_, bytes3n);
     cudaMalloc(&d_dir_, bytes3n);
-    cudaMalloc(&d_s_, static_cast<size_t>(memory_) * bytes3n);
-    cudaMalloc(&d_y_, static_cast<size_t>(memory_) * bytes3n);
-    cudaMalloc(&d_alpha_, memory_ * sizeof(work_t));
-    cudaMalloc(&d_dot_, 2 * sizeof(work_t));
-    cudaMalloc(&d_ys_, sizeof(work_t));
-    cudaMalloc(&d_ls_, 2 * sizeof(work_t));
+    // memory + 1 pair buffers: the ring plus the staging spare.
+    cudaMalloc(&d_s_, static_cast<size_t>(memory_ + 1) * bytes3n);
+    cudaMalloc(&d_y_, static_cast<size_t>(memory_ + 1) * bytes3n);
+    cudaMalloc(&d_alpha_, memory_ * sizeof(mixed_t));
+    cudaMalloc(&d_image_prev_, static_cast<size_t>(n3_) * sizeof(ImageInt));
+    cudaMemset(d_image_prev_, 0, static_cast<size_t>(n3_) * sizeof(ImageInt));
+    n_dots_ = kFirstPass + 2 * memory_;
+    cudaMalloc(&d_dot_, n_dots_ * sizeof(acc_t));
+    cudaMalloc(&d_ring_state_, (3 + memory_) * sizeof(int));
+    cudaMemset(d_ring_state_, 0, (3 + memory_) * sizeof(int));
+    cudaMalloc(&d_rho_, 2 * (memory_ + 1) * sizeof(acc_t));
+    cudaMemset(d_rho_, 0, 2 * (memory_ + 1) * sizeof(acc_t));
+    cudaMalloc(&d_ls_, 3 * sizeof(acc_t));
     cudaMemset(d_xprev_, 0, bytes3n);
     cudaMemset(d_gprev_, 0, bytes3n);
     cudaMemset(d_dir_, 0, bytes3n);
-    cudaMemset(d_ls_, 0, 2 * sizeof(work_t));
-    cudaMallocHost(&h_ys_, sizeof(work_t));
-    cudaMallocHost(&h_ls_, 2 * sizeof(work_t));
+    cudaMemset(d_ls_, 0, 3 * sizeof(acc_t));
+    cudaMalloc(&d_line_state_, sizeof(LineState));
+    cudaMemset(d_line_state_, 0, sizeof(LineState));
+    ATV_CUDA_CHECK(cudaHostAlloc(reinterpret_cast<void**>(&h_verdict_),
+                                 sizeof(int), cudaHostAllocMapped));
+    *h_verdict_ = kSearching;
+    ATV_CUDA_CHECK(cudaHostGetDevicePointer(
+        reinterpret_cast<void**>(&d_verdict_), h_verdict_, 0));
+    for (auto& g : graphs_)
+        g.reset();
+    trial_graph_.reset();
 
-    rho_.assign(memory_, 0.0);
-    n_stored_ = 0;
-    oldest_ = 0;
     step_ = 0;
     has_prev_ = false;
-    ls_had_trial_ = false;
-    ls_fetch_pending_ = false;
-    ls_alpha_ = 0;
-    ls_gd_ = 0;
     trace_.clear();
     conv_.build(n_);
 }
@@ -245,135 +523,147 @@ void LBFGS::build(const BuildContext& ctx) {
 void LBFGS::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
 
-    // ── Convergence check phase ──────────────────────────────────────
     if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
-        // Batch the line-search scalars produced by this iteration's
-        // search_direction onto the ConvCheck sync — zero extra host blocks.
-        if (ls_fetch_pending_)
-            cudaMemcpyAsync(h_ls_, d_ls_, 2 * sizeof(work_t),
-                            cudaMemcpyDeviceToHost, stream);
-        // Measure and publish. The Verdict is the loop's, through its handlers.
         conv_.measure(ctx, d_xprev_, step_, trace_);
-        if (ls_fetch_pending_) {
-            ls_alpha_ = static_cast<double>(h_ls_[0]);
-            ls_gd_ = static_cast<double>(h_ls_[1]);
-            ls_fetch_pending_ = false;
-        }
         return;
+    }
+    if (ctx.at(ATV::minimizer::Phase::line_search)) {
+        if (!ls_enabled_)
+            return;
+        if (!ctx.runtime.opt.reeval_forces)
+            throw std::logic_error(
+                "CUDA LBFGS line search requires Minimize force replay");
+        struct RestoreTrial {
+            cuda::Context& context;
+            bool saved;
+            ~RestoreTrial() { context.exec.trial_evaluation = saved; }
+        } guard{ctx.runtime, ctx.runtime.exec.trial_evaluation};
+        ctx.runtime.exec.trial_evaluation = true;
+        auto& frame = ctx.frame;
+        auto& a = frame.atoms;
+        auto* state = static_cast<LineState*>(d_line_state_);
+        // The search opened at the tail of the direction graph (line_begin);
+        // each trial is one force evaluation and the device verdict
+        // (line_judge, then the next trial's move), replayed as a graph.
+        // The only host exchange per trial is the stream sync that makes
+        // the mapped verdict visible.
+        auto judge = [&] {
+            line_judge<<<1, 1, 0, stream>>>(
+                &frame.scalars->energy, frame.force_fault, d_ls_, state,
+                acc_t(ls_c1_), acc_t(ls_contract_), acc_t(ls_min_alpha_),
+                max_ls_, d_verdict_);
+            line_move<<<cuda::grid_size(n_), cuda::kDefaultBlock, 0, stream>>>(
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
+                d_image_prev_, d_xprev_, d_dir_, state, ctx.runtime.host_box,
+                n_);
+        };
+        auto restore_origin = [&] {
+            rollback<<<cuda::grid_size(n_), cuda::kDefaultBlock, 0, stream>>>(
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
+                d_image_prev_, d_xprev_, d_dir_, mixed_t(0),
+                ctx.runtime.host_box, n_);
+        };
+        try {
+            // line_judge stops the search by the budget at the latest.
+            for (int trial = 0; trial < max_ls_; ++trial) {
+                ctx.runtime.opt.reeval_forces(true);
+                replay(trial_graph_, stream, judge);
+                ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+                switch (*h_verdict_) {
+                case kSearching:
+                    continue;
+                case kAccepted:
+                case kNoDescent:
+                    // The normal force phase evaluates this accepted point
+                    // (the origin after a non-descent direction).
+                    return;
+                case kFault:
+                    cuda::throw_if_force_fault(frame);
+                    throw std::logic_error(
+                        "CUDA LBFGS line search: fault verdict without a "
+                        "device fault");
+                case kNonfiniteOrigin:
+                    throw std::runtime_error(
+                        "CUDA LBFGS nonfinite line-search origin");
+                case kNonfiniteEnergy:
+                    throw std::runtime_error(
+                        "CUDA LBFGS nonfinite trial energy");
+                default:
+                    throw std::runtime_error(
+                        "CUDA LBFGS line search exhausted its trial budget or "
+                        "alpha floor");
+                }
+            }
+            throw std::logic_error("CUDA LBFGS line search: no verdict within "
+                                   "the trial budget");
+        } catch (...) {
+            // No failed candidate is returned. The outer driver discards device
+            // results and the evaluation-history transaction on this exception.
+            restore_origin();
+            cudaStreamSynchronize(stream);
+            throw;
+        }
     }
 
     // ── Search direction phase ───────────────────────────────────────
+    // One fixed launch sequence per history state (the device decides the
+    // curvature test and the stored count), replayed as a graph: no
+    // device-to-host exchange in the iteration.
     auto& frame = ctx.frame;
     const int n = n_;
     const int n3 = n3_;
-    int block = cuda::kDefaultBlock;
-    int grid = cuda::grid_size(n);
-    int grid3 = cuda::grid_size(n3);
-    int shmem = cuda::warps_per_block(block) * sizeof(work_t);
-
-    pack_xg<<<grid, block, 0, stream>>>(
-        frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.fx,
-        frame.atoms.fy, frame.atoms.fz, d_x_, d_g_, n);
-
-    // ── Armijo rejection & rollback (host decision on cached scalars) ─
-    //
-    // Mirrors the CPU flow: the trial taken during the previous
-    // search_direction was evaluated by the force phase; its energy
-    // arrived on the host through the previous ConvCheck sync. On
-    // rejection, roll back to x_prev with the contracted α and return —
-    // history update + new direction happen on the next accepted trial.
-    if (ls_enabled_ && ls_had_trial_) {
-        const double armijo_rhs = ls_c1_ * ls_alpha_ * ls_gd_;
-        const double dE = conv_.last_energy() - ls_origin_energy_;
-        if (!(dE <= armijo_rhs) && ls_alpha_ > ls_min_alpha_) {
-            ls_alpha_ *= ls_contract_;
-            rollback<<<grid, block, 0, stream>>>(
-                frame.atoms.x, frame.atoms.y, frame.atoms.z, d_xprev_, d_dir_,
-                static_cast<work_t>(ls_alpha_), ctx.runtime.host_box, n);
-            return;
+    const int block = cuda::kDefaultBlock;
+    const int grid = cuda::grid_size(n);
+    const int grid3 = cuda::grid_size(n3);
+    const auto& a = frame.atoms;
+    const Ring ring{d_ring_state_, d_ring_state_ + 3, d_rho_,
+                    d_rho_ + memory_ + 1, memory_};
+    const bool with_pair = has_prev_;
+    auto enqueue = [&] {
+        pack_xg<<<grid, block, 0, stream>>>(
+            a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, d_x_,
+            d_g_, d_dot_, n_dots_, d_ls_, &frame.scalars->energy, n);
+        if (with_pair) {
+            sy_dot<<<grid, block, 0, stream>>>(d_x_, d_g_, d_xprev_, d_gprev_,
+                                               d_s_, d_y_, ring,
+                                               ctx.runtime.host_box, d_dot_, n);
+            ring_accept<<<1, 1, 0, stream>>>(ring, d_dot_);
         }
-    }
-
-    // ── History update (one 8-byte D2H — see file header) ────────────
-    if (has_prev_) {
-        const int idx = (n_stored_ < memory_) ? n_stored_ : oldest_;
-        cudaMemsetAsync(d_ys_, 0, sizeof(work_t), stream);
-        sy_dot<<<grid, block, shmem, stream>>>(
-            d_x_, d_g_, d_xprev_, d_gprev_,
-            d_s_ + static_cast<size_t>(idx) * n3,
-            d_y_ + static_cast<size_t>(idx) * n3, ctx.runtime.host_box, d_ys_,
-            n);
-        cudaMemcpyAsync(h_ys_, d_ys_, sizeof(work_t), cudaMemcpyDeviceToHost,
-                        stream);
-        cudaStreamSynchronize(stream);
-        const double ys = static_cast<double>(*h_ys_);
-        // Curvature condition gates the host ring bookkeeping (and with
-        // it the number of two-loop kernel launches below).
-        if (ys > 1e-10) {
-            rho_[idx] = 1.0 / ys;
-            if (n_stored_ < memory_)
-                ++n_stored_;
-            else
-                oldest_ = (oldest_ + 1) % memory_;
+        q_init<<<grid3, block, 0, stream>>>(d_g_, d_q_, d_s_, ring, d_dot_, n3);
+        for (int k = memory_ - 1; k >= 0; --k)
+            backward_pass<<<grid3, block, 0, stream>>>(d_q_, d_s_, d_y_, ring,
+                                                       d_alpha_, d_dot_, k, n3);
+        for (int k = 0; k < memory_; ++k)
+            forward_pass<<<grid3, block, 0, stream>>>(d_q_, d_s_, d_y_, ring,
+                                                      d_alpha_, d_dot_, k, n3);
+        apply_step<<<grid, block, 0, stream>>>(
+            a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, d_x_, d_g_, d_q_,
+            d_dir_, d_xprev_, d_gprev_, a.image, d_image_prev_,
+            d_dot_ + kDirMax, static_cast<mixed_t>(alpha0_), d_ls_, ls_enabled_,
+            frame.force_fault, a.tag, ctx.runtime.device_step,
+            static_cast<long long>(ctx.step), ctx.runtime.host_box, n);
+        if (ls_enabled_) {
+            auto* state = static_cast<LineState*>(d_line_state_);
+            line_begin<<<1, 1, 0, stream>>>(d_ls_, state, d_verdict_);
+            line_move<<<grid, block, 0, stream>>>(
+                a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.image,
+                d_image_prev_, d_xprev_, d_dir_, state, ctx.runtime.host_box,
+                n);
         }
-    }
-
-    // ── Two-loop recursion (GPU-pure, device-scalar chained) ─────────
-    cudaMemcpyAsync(d_q_, d_g_, static_cast<size_t>(n3) * sizeof(work_t),
-                    cudaMemcpyDeviceToDevice, stream);
-
-    for (int k = n_stored_ - 1; k >= 0; --k) {
-        const int idx = (oldest_ + k) % memory_;
-        cudaMemsetAsync(d_dot_, 0, sizeof(work_t), stream);
-        dot3n<<<grid3, block, shmem, stream>>>(
-            d_s_ + static_cast<size_t>(idx) * n3, d_q_, d_dot_, n3);
-        axpy_backward<<<grid3, block, 0, stream>>>(
-            d_q_, d_y_ + static_cast<size_t>(idx) * n3, d_dot_,
-            static_cast<work_t>(rho_[idx]), d_alpha_ + k, n3);
-    }
-
-    if (n_stored_ > 0) {
-        const int newest = (oldest_ + n_stored_ - 1) % memory_;
-        cudaMemsetAsync(d_dot_, 0, sizeof(work_t), stream);
-        dot3n<<<grid3, block, shmem, stream>>>(
-            d_y_ + static_cast<size_t>(newest) * n3,
-            d_y_ + static_cast<size_t>(newest) * n3, d_dot_, n3);
-        gamma_scale<<<grid3, block, 0, stream>>>(
-            d_q_, d_dot_, static_cast<work_t>(rho_[newest]), n3);
-    }
-
-    for (int k = 0; k < n_stored_; ++k) {
-        const int idx = (oldest_ + k) % memory_;
-        cudaMemsetAsync(d_dot_, 0, sizeof(work_t), stream);
-        dot3n<<<grid3, block, shmem, stream>>>(
-            d_y_ + static_cast<size_t>(idx) * n3, d_q_, d_dot_, n3);
-        axpy_forward<<<grid3, block, 0, stream>>>(
-            d_q_, d_s_ + static_cast<size_t>(idx) * n3, d_alpha_ + k, d_dot_,
-            static_cast<work_t>(rho_[idx]), n3);
-    }
-
-    // ── Step application (α capped at 0.1 Angstrom max displacement) ─
-    cudaMemsetAsync(d_dot_ + 1, 0, sizeof(work_t), stream);
-    max_abs3n<<<grid3, block, shmem, stream>>>(d_q_, d_dot_ + 1, n3);
-    apply_step<<<grid, block, 0, stream>>>(
-        frame.atoms.x, frame.atoms.y, frame.atoms.z, d_x_, d_g_, d_q_, d_dir_,
-        d_xprev_, d_gprev_, d_dot_ + 1, static_cast<work_t>(alpha0_), d_ls_,
-        ctx.runtime.host_box, n);
-
-    if (ls_enabled_) {
-        // g·d at the trial origin, fetched with the next ConvCheck sync.
-        cudaMemsetAsync(d_ls_ + 1, 0, sizeof(work_t), stream);
-        dot3n<<<grid3, block, shmem, stream>>>(d_g_, d_dir_, d_ls_ + 1, n3);
-        ls_origin_energy_ = conv_.last_energy();
-        ls_had_trial_ = true;
-        ls_fetch_pending_ = true;
-    }
+    };
+    // The legacy default stream cannot be captured (component tests drive
+    // the optimizer on it); an enclosing capture records the kernels itself.
+    replay(graphs_[with_pair ? 1 : 0], stream, enqueue);
+    ATV_CUDA_CHECK(cudaGetLastError());
 
     has_prev_ = true;
     ++step_;
 }
 
 void LBFGS::destroy(const DestroyContext& ctx) {
+    for (auto& g : graphs_)
+        g.reset();
+    trial_graph_.reset();
     cudaFree(d_x_);
     cudaFree(d_g_);
     cudaFree(d_xprev_);
@@ -383,14 +673,20 @@ void LBFGS::destroy(const DestroyContext& ctx) {
     cudaFree(d_s_);
     cudaFree(d_y_);
     cudaFree(d_alpha_);
+    cudaFree(d_image_prev_);
+    d_image_prev_ = nullptr;
     cudaFree(d_dot_);
-    cudaFree(d_ys_);
+    cudaFree(d_ring_state_);
+    cudaFree(d_rho_);
     cudaFree(d_ls_);
-    cudaFreeHost(h_ys_);
-    cudaFreeHost(h_ls_);
+    cudaFree(d_line_state_);
+    cudaFreeHost(h_verdict_);
     d_x_ = d_g_ = d_xprev_ = d_gprev_ = d_q_ = d_dir_ = nullptr;
-    d_s_ = d_y_ = d_alpha_ = d_dot_ = d_ys_ = d_ls_ = nullptr;
-    h_ys_ = h_ls_ = nullptr;
+    d_s_ = d_y_ = d_alpha_ = nullptr;
+    d_dot_ = d_rho_ = d_ls_ = nullptr;
+    d_ring_state_ = nullptr;
+    d_line_state_ = nullptr;
+    h_verdict_ = d_verdict_ = nullptr;
     conv_.destroy();
 }
 

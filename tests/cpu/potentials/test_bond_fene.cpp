@@ -63,3 +63,67 @@ TEST(BondFene, ThrowsAtOrBeyondR0) {
     EXPECT_THROW(bond.launch({ctx, f, 0, 0}), std::runtime_error);
     bond.destroy({ctx, f});
 }
+
+TEST(BondFene, MissingPartnerFailsBeforePartialEvaluation) {
+    auto f = dimer_with_bond(1.0);
+    f.add_bond(0, 999, 0);
+    cpu::Context ctx;
+    cpu::BondFene bond({30.0}, {1.5});
+    bond.build({ctx, f});
+    f.meta.get(kEnergy) = 123;
+    f.span(kAtom_fx)[0] = 456;
+    EXPECT_THROW(bond.launch({ctx, f, 0, 0}), std::runtime_error);
+    EXPECT_EQ(f.meta.get(kEnergy), 123);
+    EXPECT_EQ(f.span(kAtom_fx)[0], 456);
+    EXPECT_THROW(bond.launch({ctx, f, 0, 1}), std::runtime_error);
+    bond.destroy({ctx, f});
+}
+
+TEST(BondFene, AddedTopologyInvalidatesCachedTuples) {
+    auto f = dimer_with_bond(1.0);
+    cpu::Context ctx;
+    cpu::BondFene bond({30.0}, {1.5});
+    bond.build({ctx, f});
+    f.meta.get(kEnergy) = 0;
+    bond.launch({ctx, f, 0, 0});
+    const double one_bond = f.meta.get(kEnergy);
+    f.add_bond(0, 1, 0);
+    f.meta.get(kEnergy) = 0;
+    bond.launch({ctx, f, 0, 1});
+    EXPECT_NEAR(f.meta.get(kEnergy), 2 * one_bond, 1e-12);
+    bond.destroy({ctx, f});
+}
+
+TEST(BondFene, RequestsAreIndependentAndFrameRebindingRefreshesTuples) {
+    auto f = dimer_with_bond(1.0);
+    cpu::Context ctx;
+    cpu::BondFene bond({30.0}, {1.5});
+    bond.build({ctx, f});
+    f.meta.get(kEnergy) = 0;
+    f.meta.get(kStress).fill(0);
+    f.span(kAtom_fx)[0] = f.span(kAtom_fx)[1] = 0;
+    bond.launch({ctx, f, 0, 0});
+    const double energy = f.meta.get(kEnergy), force = f.span(kAtom_fx)[0];
+    const auto stress = f.meta.get(kStress);
+    auto reordered = f;
+    reordered.copy_row_from(f, 0, 1);
+    reordered.copy_row_from(f, 1, 0);
+    reordered.clear_tag_index();
+    reordered.rebuild_tag_index(0, 2);
+    for (bool forces : {false, true})
+        for (bool virial : {false, true}) {
+            reordered.meta.get(kEnergy) = 0;
+            reordered.meta.get(kStress).fill(7);
+            reordered.span(kAtom_fx)[0] = reordered.span(kAtom_fx)[1] = 8;
+            bond.launch({ctx, reordered, 0, 1, forces, virial});
+            EXPECT_NEAR(reordered.meta.get(kEnergy), energy, 1e-12);
+            EXPECT_NEAR(reordered.span(kAtom_fx)[1], 8 + (forces ? force : 0),
+                        1e-12);
+            EXPECT_NEAR(reordered.span(kAtom_fx)[0], 8 - (forces ? force : 0),
+                        1e-12);
+            for (int d = 0; d < 6; ++d)
+                EXPECT_NEAR(reordered.meta.get(kStress)[d],
+                            7 + (virial ? stress[d] : 0), 1e-12);
+        }
+    bond.destroy({ctx, reordered});
+}

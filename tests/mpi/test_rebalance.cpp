@@ -95,7 +95,7 @@ TEST(Rebalance, RebalancesSkewedDistribution) {
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
     // Baseline: uniform brick. High-coord ranks should be (near) empty.
-    const int n_local_uniform = dd->n_local;
+    const int n_local_uniform = frame.nlocal();
     int min_uniform = 0, max_uniform = 0;
     MPI_Allreduce(&n_local_uniform, &min_uniform, 1, MPI_INT, MPI_MIN,
                   MPI_COMM_WORLD);
@@ -139,7 +139,7 @@ TEST(Rebalance, RebalancesSkewedDistribution) {
     EXPECT_FALSE(dd->partition_dirty);
 
     // Post-migration: per-rank counts should be much more balanced.
-    const int n_local_post = dd->n_local;
+    const int n_local_post = frame.nlocal();
     int min_post = 0, max_post = 0, sum_post = 0;
     MPI_Allreduce(&n_local_post, &min_post, 1, MPI_INT, MPI_MIN,
                   MPI_COMM_WORLD);
@@ -167,11 +167,49 @@ TEST(Rebalance, RebalancesSkewedDistribution) {
     backend.shutdown();
 }
 
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
+TEST(Rebalance, TriclinicHistogramPreservesFractionalCuts) {
+    int world = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &world);
+    if (world != 8)
+        GTEST_SKIP() << "eight-rank rebalance";
+    cpu::Frame frame(512);
+    frame.box = cpu::Box::cubic(20.0);
+    for (int i = 0; i < 512; ++i) {
+        // Interior bin samples avoid arithmetic ties at histogram edges.
+        frame.span(kAtom_x)[i] = 20.0 * ((i % 32) + 0.371) / 80.0;
+        frame.span(kAtom_y)[i] = 20.0 * (((i / 32) % 8) + 0.371) / 20.0;
+        frame.span(kAtom_z)[i] = 20.0 * ((i / 256) + 0.371) / 5.0;
+    }
+    cpu::Runtime backend;
+    backend.init();
+    backend.set_frame(frame);
+    auto* dd = backend.context().md.dd;
+    cpu::md::mpi::Rebalance balance(1, 64);
+    cpu::LaunchContext ctx{backend.context(), frame, 0, 1};
+    balance.launch(ctx);
+    const auto expected = dd->cuts;
+    Mat3 cell = Mat3::diagonal(20.0, 20.0, 20.0);
+    cell(0, 1) = 8.0;
+    cell(1, 0) = 3.0;
+    cell(2, 1) = -4.0;
+    frame.box.set_cell(cell);
+    for (int i = 0; i < frame.nlocal(); ++i) {
+        const Vec3 point = frame.box.to_cartesian(
+            {frame.span(kAtom_x)[i] / 20.0, frame.span(kAtom_y)[i] / 20.0,
+             frame.span(kAtom_z)[i] / 20.0});
+        frame.span(kAtom_x)[i] = point[0];
+        frame.span(kAtom_y)[i] = point[1];
+        frame.span(kAtom_z)[i] = point[2];
+    }
+    balance.launch(ctx);
+    for (int d = 0; d < 3; ++d) {
+        ASSERT_EQ(dd->cuts[d].size(), expected[d].size());
+        for (std::size_t k = 0; k < expected[d].size(); ++k)
+            EXPECT_DOUBLE_EQ(dd->cuts[d][k], expected[d][k]);
+        if (dd->dims[d] > 1) {
+            EXPECT_DOUBLE_EQ(dd->sublo[d], dd->cuts[d][dd->coords[d]]);
+            EXPECT_DOUBLE_EQ(dd->subhi[d], dd->cuts[d][dd->coords[d] + 1]);
+        }
+    }
+    backend.shutdown();
 }

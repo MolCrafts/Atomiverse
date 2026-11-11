@@ -1,0 +1,63 @@
+ Fermi distribution function
+
+
+ Total charge:    -0.00000000
+
+ Atomic gross charges (e)
+ Atom           Charge
+    1       0.17210262
+    2      -0.17210262
+
+Nr. of electrons (up):     10.00000000
+Atom populations (up)
+ Atom       Population
+    1       3.82789738
+    2       6.17210262
+
+l-shell populations (up)
+ Atom Sh.   l       Population
+    1   1   0       1.65231516
+    1   2   1       2.17558222
+    2   1   0       1.77533231
+    2   2   1       4.39677031
+
+Orbital populations (up)
+ Atom Sh.   l   m       Population  Label
+    1   1   0   0       1.65231516  s
+    1   2   1  -1       0.54949276  p_y
+    1   2   1   0       0.54099108  p_z
+    1   2   1   1       1.08509838  p_x
+    2   1   0   0       1.77533231  s
+    2   2   1  -1       1.45931267  p_y
+    2   2   1   0       1.45900892  p_z
+    2   2   1   1       1.47844873  p_x
+
+Fermi level:                        -0.2119453927 H           -5.7673 eV
+Band energy:                        -5.1822176348 H         -141.0153 eV
+TS:                                  0.0000000000 H            0.0000 eV
+Band free energy (E-TS):            -5.1822176348 H         -141.0153 eV
+Extrapolated E(0K):                 -5.1822176348 H         -141.0153 eV
+Output electrons (q):     10.0000000000
+
+Energy H0:                          -5.1822176348 H         -141.0153 eV
+Total Electronic energy:            -5.1822176348 H         -141.0153 eV
+Repulsive energy:                    0.1551451325 H            4.2217 eV
+Total energy:                       -5.0270725023 H         -136.7936 eV
+Extrapolated to 0:                  -5.0270725023 H         -136.7936 eV
+Total Mermin free energy:           -5.0270725023 H         -136.7936 eV
+Force related energy:               -5.0270725023 H         -136.7936 eV
+
+Non-constrained calculation
+
+Non-SCC calculation
+
+Total Forces
+    1      0.183901804021      0.022987724205     -0.000000000000
+    2     -0.183901804021     -0.022987724205      0.000000000000
+
+Maximal derivative component:        0.183902E+00 au
+
+Dipole moment:   -0.39027216   -0.04878402    0.00000000 au
+Dipole moment:   -0.99197296   -0.12399662    0.00000000 Debye
+
+

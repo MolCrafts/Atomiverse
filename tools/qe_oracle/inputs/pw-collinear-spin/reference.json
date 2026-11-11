@@ -1,0 +1,77 @@
+{
+  "oracle": "Quantum ESPRESSO",
+  "version": "7.5",
+  "source_revision": "770a0b2d12928a67048e2f3da8d10d057e52179e",
+  "source_url": "https://github.com/QEF/q-e/tree/qe-7.5",
+  "binary": "/tmp/atv-qe-7.5-build/bin/pw.x",
+  "binary_sha256": "36c549c4451708f3808606e4458373b7630a907768b0cf591dacf9a30e00942d",
+  "date": "2026-10-25",
+  "pseudopotential": "tests/data/pw/O_ONCV_PBE-1.2.upf",
+  "pseudopotential_sha256": "212d0bcacf75a66f5e086100069a3ddf5d754afd335f054ddfb4ca4b9e730400",
+  "hamiltonian": {
+    "xc": "PBE",
+    "cell_angstrom": [
+      8,
+      8,
+      8
+    ],
+    "bond_angstrom": 1.2075,
+    "ecutwfc_ry": 12,
+    "ecutrho_ry": 48,
+    "n_up": 7,
+    "n_down": 5,
+    "k_points": "Gamma",
+    "nc_upf": true
+  },
+  "pins": {
+    "energy_ry": -57.46535365,
+    "energy_ha": -28.732676825,
+    "magnetization": 2,
+    "density_grid": [
+      36,
+      36,
+      36
+    ]
+  },
+  "predeclared_acceptance": {
+    "energy_ha": 0.001,
+    "magnetization": 1e-09,
+    "gga_activation_floor_ha": 0.0001,
+    "whole_section_seconds": 60
+  },
+  "runs": [
+    {
+      "command": [
+        "/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "o2_pbe.in"
+      ],
+      "cwd": "/tmp/atv-gpw-repair-evidence/qe-spin",
+      "wall_seconds": 1.8828146250452846,
+      "exit_code": 0,
+      "OMP_NUM_THREADS": 1,
+      "OPENBLAS_NUM_THREADS": 1
+    },
+    {
+      "command": [
+        "/tmp/atv-qe-7.5-build/bin/pw.x",
+        "-in",
+        "o2_pbe_grid72.in"
+      ],
+      "wall_seconds": 4.822693041991442,
+      "exit_code": 0,
+      "OMP_NUM_THREADS": 1,
+      "OPENBLAS_NUM_THREADS": 1
+    }
+  ],
+  "grid72_energy_ry": -57.46536001,
+  "grid_refinement_difference_ha": 3.1800000002135675e-06,
+  "build_command": "cmake -S /tmp/atv-qe-7.5-src -B /tmp/atv-qe-7.5-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_Fortran_COMPILER=/opt/homebrew/bin/gfortran -DQE_ENABLE_MPI=OFF -DQE_ENABLE_OPENMP=OFF -DQE_ENABLE_TEST=OFF -DQE_ENABLE_SCALAPACK=OFF -DQE_ENABLE_LIBXC=OFF -DQE_ENABLE_HDF5=OFF -DBLA_VENDOR=OpenBLAS -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/openblas;/opt/homebrew/opt/fftw",
+  "build_target": "cmake --build /tmp/atv-qe-7.5-build --target qe_pw_exe -j4",
+  "archive_sha256": {
+    "o2_pbe.in": "b1022660b57d154394ab0ca593fd66ebc228afef60690bfe58174e1c59c66242",
+    "o2_pbe.qe.txt": "b1fe105d96252d8c439515dcc2fa7590ac9763f90585d70150102c68ffc0fb0c",
+    "o2_pbe_grid72.in": "70fd1f1ebcf36269bc0e72e5364629a82d59be543df3392645047bdb9b40ecab",
+    "o2_pbe_grid72.qe.txt": "458d7cd2cacbf8df2553498ee1392a890bbb751f62ee8b305cce7e21a8cbcc37"
+  }
+}

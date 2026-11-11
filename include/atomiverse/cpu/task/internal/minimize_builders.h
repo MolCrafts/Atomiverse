@@ -42,7 +42,7 @@ cpu::minimizer::FIRE tuned_fire(const FIREParams& p);
 /// are members. The constructor validates the two members against their
 /// DEFAULTS, so an out-of-range payload is caught on the assignment's own
 /// terms at `launch()` rather than here — the same split the hand-built
-/// `regressions/minimizer/cell_lj_pressure` recipe has.
+/// `regressions/minimizer/cell-relax` recipe has.
 ///
 /// @param p Typed isotropic relax params (pressure [eV/Å³], gains).
 /// @return Optimizer ready for any registration path.
@@ -75,7 +75,7 @@ tuned_joint_isotropic_relax(const JointIsotropicRelaxParams& p);
 ///
 /// `Minimize::install_defaults` supplies its own `ForceConverged` only when no
 /// criterion was added, so naming one here replaces it — which is the whole
-/// point of the v5 variant: a variable-cell run terminates on pressure or
+/// point of the criterion variant: a variable-cell run terminates on pressure or
 /// stress, never on forces.
 ///
 /// The criterion is CONSTRUCTED here, so its own invariants (`ptol > 0`,

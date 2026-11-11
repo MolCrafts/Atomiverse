@@ -35,7 +35,7 @@ stack. Three work at fixed cell:
     from the minimum. Its defaults are ASE's and assume forces of order
     1 eV/Å; on a soft system (an argon Lennard-Jones dimer sits at ~10⁻²
     eV/Å) grow the pseudo-time scale — ``FIRE(dt0=1.0, dt_max=20.0)``, the
-    retune ``regressions/minimizer/fire_lj_dimer`` uses.
+    retune ``regressions/minimizer/geometry`` uses.
 
 Note ``alpha0`` means a step size in Å²/eV for ``LBFGS`` and ``CG``, but a
 dimensionless velocity-mixing fraction for ``FIRE``.
@@ -71,11 +71,12 @@ Three things follow, none of which the API can check for you:
 
 * **The force source must write that virial.** The classical evaluators
   (``PairLJCut``, ``PairCoulCut``, ``CoulLong`` + ``KSpacePME``, the bonded
-  styles) do, by default. ``AM1Evaluator`` writes none — it is a molecular
-  method with no cell — and ``PWEvaluator`` is installed here as a
-  gradient-only copy, so neither drives a cell step from Python. With a zero
-  virial the cell simply never moves, and a ``PressureConverged(P_target=0)``
-  reports success on the untouched cell.
+  styles) do, by default. ``AM1`` writes none — it is a molecular
+  method with no cell — so it cannot drive a cell step. A mounted ``PW``
+  computes its analytic virial whenever the plan reads stress (a cell relaxer
+  or a stress/pressure criterion). With a zero virial the cell simply never
+  moves, and a ``PressureConverged(P_target=0)`` reports success on the
+  untouched cell.
 * **The first iteration is a free one.** A step is computed from the stress
   the *previous* iteration's force evaluation left behind, and iteration 0 has
   no such evaluation — it reads whatever the frame arrived with, which is zero
@@ -105,10 +106,13 @@ re-optimizes from the frame's current state.
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, require_domain, backend_type
+from atomiverse._units import resolve as _resolve_units
+
+require_domain(__name__, "minimize")
 from atomiverse._dispatch import (
     EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH,
-    unsupported_evaluator_message as _unsupported_evaluator_message,
+    bind_evaluator as _bind_evaluator,
 )
 
 _PHASE_MAP: dict[str, object] = {
@@ -172,25 +176,37 @@ class Minimize:
     convergence : ForceConverged | PressureConverged | StressConverged, optional
         Stop policy. If omitted, C++ ``install_defaults()`` attaches a
         default ``ForceConverged`` at build time.
+    units : str, optional
+        LAMMPS ``units`` style of the run (see :class:`atomiverse.MD`);
+        default :func:`atomiverse.units_style`.
     device : str, optional
-        Execution backend. v1 accepts only ``"cpu"``.
+        Execution backend: ``"cpu"`` or ``"cuda"``. CUDA currently binds
+        AM1/RM1/MNDO/PM3, native SteepestDescent and ForceConverged. CPU optimizers
+        are never silently converted to a different CUDA line-search policy.
     """
 
     def __init__(
         self,
         convergence: object | None = None,
         device: str = "cpu",
+        units: str | None = None,
     ) -> None:
-        if device != "cpu":
-            raise ValueError(
-                f"device={device!r}: GPU minimization is deferred; "
-                "only device='cpu' is supported"
-            )
         self.device = device
-        self._cpp = _cpp.Minimize()
+        self._cpp = backend_type(device, "Minimize", "_CudaMinimize")()
+        self._cpp.set_units(_resolve_units(units))
         self._built = False
         if convergence is not None:
             self.add_criterion(convergence)
+
+    def set_units(self, style: str) -> Minimize:
+        """LAMMPS ``units <style>`` of this run (before the first ``run``)."""
+        self._cpp.set_units(style)
+        return self
+
+    @property
+    def units_style(self) -> str:
+        """LAMMPS ``units`` style of this run."""
+        return self._cpp.units_style
 
     def set_optimizer(self, component: object) -> Minimize:
         """Install the optimizer (``Minimize::set_optimizer``).
@@ -202,6 +218,13 @@ class Minimize:
         A relaxer also needs a force source that writes the virial, and skips
         its first iteration — see this module's docstring for both gates.
         """
+        if self.device == "cuda":
+            supported = getattr(_cpp, "_CudaSteepestDescent", None)
+            if supported is None or not isinstance(component, supported):
+                raise TypeError("CUDA Minimize currently accepts native SteepestDescent only; CPU optimizer/line-search policies are not converted")
+            self._cpp.set_optimizer(component)
+            self._built = False
+            return self
         if type(component) not in _OPTIMIZER_TYPES:
             supported = ", ".join(t.__name__ for t in _OPTIMIZER_TYPES)
             raise TypeError(
@@ -221,6 +244,10 @@ class Minimize:
         Ewald split, a semiempirical method or plane-wave DFT all drive a
         geometry optimization.
 
+        Native Gaussian methods and ``DFTB2`` are borrowed and kept alive by
+        the driver, with diagnostics on the original object. Their current
+        task format supports local runs; launcher use is rejected explicitly.
+
         Two caveats this dispatch cannot catch for you:
 
         * ``CoulLong`` and ``KSpacePME`` are the two halves of one Ewald
@@ -229,15 +256,19 @@ class Minimize:
         * every Coulomb style reads the per-atom ``charge`` column [e] of the
           frame.
         """
-        method_name = _EVALUATOR_DISPATCH.get(type(component))
-        if method_name is None:
-            raise TypeError(_unsupported_evaluator_message(component))
-        getattr(self._cpp, method_name)(component)
+        if getattr(component, "device", "cpu") != self.device:
+            raise ValueError("Evaluator and driver must use the same device")
+        if self.device == "cuda":
+            self._cpp.set_evaluator(component)
+        else:
+            _bind_evaluator(self._cpp, component)
         self._built = False
         return self
 
     def set_neighbor(self, component: object) -> Minimize:
         """Install the neighbor list (``Driver::set_neighbor``)."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python set_neighbor is not implemented for this molecular slice")
         if type(component) is not _cpp.NeighborList:
             raise TypeError(
                 f"set_neighbor expects NeighborList, got {type(component).__name__}"
@@ -253,6 +284,8 @@ class Minimize:
         (Stop > Converged > Continue), which is how a joint atom-plus-cell
         relaxation gets both a force and a pressure test.
         """
+        if self.device == "cuda" and type(criterion) is not _cpp.ForceConverged:
+            raise TypeError("CUDA molecular Minimize supports ForceConverged only")
         if type(criterion) not in _CRITERION_TYPES:
             supported = ", ".join(t.__name__ for t in _CRITERION_TYPES)
             raise TypeError(
@@ -270,6 +303,8 @@ class Minimize:
         registration entry point, so the refusal lands here rather than at
         ``PhaseBuilder.add``.
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python on is not implemented for this molecular slice")
         cpp_phase = _PHASE_MAP.get(phase)
         if cpp_phase is None:
             valid = ", ".join(f'"{p}"' for p in _PHASE_MAP)
@@ -313,6 +348,11 @@ class Minimize:
 # (`cpu/driver/criteria.h`) share this module: `cpu/minimize/` is the one
 # backend-root directory the whole geometry-optimization surface belongs to,
 # and ForceConverged has been re-exported from here since the first binding.
+def SteepestDescent(alpha: float = 0.01, *, device: str = "cuda"):
+    """Construct native CUDA steepest descent; no CPU binding is provided."""
+    return backend_type(device, "_CpuSteepestDescent", "_CudaSteepestDescent")(alpha)
+
+
 LBFGS = _cpp.LBFGS
 CG = _cpp.CG
 FIRE = _cpp.FIRE
@@ -327,6 +367,7 @@ MinimizeResult = _cpp.MinimizeResult
 
 __all__ = [
     "Minimize",
+    "SteepestDescent",
     "LBFGS",
     "CG",
     "FIRE",

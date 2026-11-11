@@ -1,4 +1,4 @@
-# CP2K twin for regressions/dynamics/second-gen-cpmd-ot (offline oracle —
+# CP2K twin for regressions/dynamics/second-gen-cpmd (offline oracle —
 # never run at ctest/regression time). Second-generation Car–Parrinello MD
 # (Kühne et al., PRL 98, 066401 (2007)) with OT as the partial-SCF corrector:
 # ASPC density extrapolation + limited OT MAX_SCF on the same H2O NVE twin

@@ -11,7 +11,7 @@
 /// consumer, as the producer split below states.
 ///
 /// Producer split:
-///   - Kinetic term `Σ m·vα·vβ · ATV::units::mass_v2_to_energy` → `cuda::md::KineticEnergy`
+///   - Kinetic term `Σ m·vα·vβ · mvv2e → `cuda::md::KineticEnergy`
 ///     atomic-adds it into `frame.scalars->stress_kinetic[6]` via the
 ///     packed warp-shuffle reduction it does for KE (one fused kernel
 ///     since cuda-md-review-cleanup-05).
@@ -51,13 +51,17 @@ class Virial : public Observer {
     Virial& operator=(Virial&&) noexcept;
 
     std::string name() const override { return "virial"; }
+    bool graph_capturable() const override { return true; }
     bool provides_system_stress() const override { return true; }
+    /// The stress tensor this observer publishes needs the virial each step.
+    EvaluationDemand demand() const override { return {false, true, 1}; }
     /* role via Observer */
     /// @brief Zero the kinetic-stress accumulator. Pair/bonded virial
     ///        writes stay on the force kernels; this Observer only
     ///        declares `provides_system_stress()`.
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void destroy(const DestroyContext& ctx) override;
 
   private:

@@ -1,0 +1,1089 @@
+{
+  "displacements_angstrom": [
+    0.001,
+    0.0005,
+    0.00025
+  ],
+  "cases": {
+    "am1-ammonia": {
+      "samples": [
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -5.27159238446893,
+          "hof_plus_kcal_mol": -5.26272847162181
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -5.2039016765566,
+          "hof_plus_kcal_mol": -5.33044091545162
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -5.27714242590264,
+          "hof_plus_kcal_mol": -5.25791210354873
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -5.24853083174366,
+          "hof_plus_kcal_mol": -5.28613939422394
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -5.27559369609298,
+          "hof_plus_kcal_mol": -5.2599118320677
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -5.2689100320431,
+          "hof_plus_kcal_mol": -5.26667206711863
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -5.26712753699758,
+          "hof_plus_kcal_mol": -5.26822780519615
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -5.28914754850121,
+          "hof_plus_kcal_mol": -5.24585087073046
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -5.27964653756408,
+          "hof_plus_kcal_mol": -5.25588775005144
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 9,
+          "hof_minus_kcal_mol": -5.28262352864658,
+          "hof_plus_kcal_mol": -5.2527785892571
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 10,
+          "hof_minus_kcal_mol": -5.30125530001442,
+          "hof_plus_kcal_mol": -5.23369453700798
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 11,
+          "hof_minus_kcal_mol": -5.2450488259874,
+          "hof_plus_kcal_mol": -5.29027615994983
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -5.2698775359404,
+          "hof_plus_kcal_mol": -5.26544618892149
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -5.23602970355842,
+          "hof_plus_kcal_mol": -5.29929945519325
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -5.27256128707904,
+          "hof_plus_kcal_mol": -5.26294585595042
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -5.25830364203011,
+          "hof_plus_kcal_mol": -5.27710742542513
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -5.27173039639547,
+          "hof_plus_kcal_mol": -5.26388949650845
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -5.26837897802307,
+          "hof_plus_kcal_mol": -5.26726005762703
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -5.26751611927284,
+          "hof_plus_kcal_mol": -5.26806622707136
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -5.27857086576296,
+          "hof_plus_kcal_mol": -5.25692224989962
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -5.27375321288127,
+          "hof_plus_kcal_mol": -5.26187386985657
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 9,
+          "hof_minus_kcal_mol": -5.2752582935691,
+          "hof_plus_kcal_mol": -5.26033574670691
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 10,
+          "hof_minus_kcal_mol": -5.28463060706417,
+          "hof_plus_kcal_mol": -5.25085036293603
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 11,
+          "hof_minus_kcal_mol": -5.25648051514418,
+          "hof_plus_kcal_mol": -5.27909424208701
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -5.26889501970163,
+          "hof_plus_kcal_mol": -5.26667942236327
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -5.25197045409459,
+          "hof_plus_kcal_mol": -5.2836053464398
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -5.27021402295031,
+          "hof_plus_kcal_mol": -5.26540627364284
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -5.26309722412498,
+          "hof_plus_kcal_mol": -5.27249905359622
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -5.2697844650038,
+          "hof_plus_kcal_mol": -5.26586401907662
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -5.26810636110167,
+          "hof_plus_kcal_mol": -5.26754690866164
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -5.26768202341373,
+          "hof_plus_kcal_mol": -5.26795707402198
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -5.27322056616049,
+          "hof_plus_kcal_mol": -5.26239622361118
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -5.27079497335308,
+          "hof_plus_kcal_mol": -5.26485530818081
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 9,
+          "hof_minus_kcal_mol": -5.27155165199838,
+          "hof_plus_kcal_mol": -5.264090368918
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 10,
+          "hof_minus_kcal_mol": -5.2762519291191,
+          "hof_plus_kcal_mol": -5.2593618242272
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 11,
+          "hof_minus_kcal_mol": -5.26216516459317,
+          "hof_plus_kcal_mol": -5.27347203556201
+        }
+      ],
+      "richardson_gradient_ev_angstrom": [
+        0.19215258581620465,
+        -2.7436380164803196,
+        0.4169684597697381,
+        -0.8154020275846315,
+        0.34001313561150576,
+        0.04852008357665299,
+        -0.023854551354644538,
+        0.9387768380898058,
+        0.5151363360955838,
+        0.6471039935055133,
+        1.4648480419373895,
+        -0.9806248794288669
+      ],
+      "max_richardson_refinement_ev_angstrom": 5.325477836493064e-10,
+      "max_fine_vs_richardson_ev_angstrom": 2.2020608495543215e-06,
+      "max_pinned_gradient_vs_richardson_ev_angstrom": 1.3450357355671017e-07
+    },
+    "am1-co": {
+      "samples": [
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -4.36517736447422,
+          "hof_plus_kcal_mol": -4.48326129194902
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -4.3828615615239,
+          "hof_plus_kcal_mol": -4.46621570813295
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -4.3828615615239,
+          "hof_plus_kcal_mol": -4.46621570813659
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -4.48326129194902,
+          "hof_plus_kcal_mol": -4.36517736447422
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -4.46621570813295,
+          "hof_plus_kcal_mol": -4.3828615615239
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -4.46621570813659,
+          "hof_plus_kcal_mol": -4.3828615615239
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -4.39520156701656,
+          "hof_plus_kcal_mol": -4.45424380152144
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -4.40396402610895,
+          "hof_plus_kcal_mol": -4.44564099578929
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -4.40396402611077,
+          "hof_plus_kcal_mol": -4.44564099579293
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -4.45424380152144,
+          "hof_plus_kcal_mol": -4.39520156701656
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -4.44564099578929,
+          "hof_plus_kcal_mol": -4.40396402610895
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -4.44564099579293,
+          "hof_plus_kcal_mol": -4.40396402611259
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -4.41008794785012,
+          "hof_plus_kcal_mol": -4.43960909894668
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -4.41444924413372,
+          "hof_plus_kcal_mol": -4.43528771601086
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -4.41444924412826,
+          "hof_plus_kcal_mol": -4.43528771601268
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -4.43960909894668,
+          "hof_plus_kcal_mol": -4.41008794785012
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -4.43528771601086,
+          "hof_plus_kcal_mol": -4.41444924412826
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -4.43528771601268,
+          "hof_plus_kcal_mol": -4.41444924412826
+        }
+      ],
+      "richardson_gradient_ev_angstrom": [
+        -2.56031752539167,
+        -1.8072829586868566,
+        -1.807282959502336,
+        2.56031752539167,
+        1.8072829593181954,
+        1.807282959528642
+      ],
+      "max_richardson_refinement_ev_angstrom": 1.1571528180098767e-09,
+      "max_fine_vs_richardson_ev_angstrom": 9.784132970480641e-07,
+      "max_pinned_gradient_vs_richardson_ev_angstrom": 8.970897269477973e-08
+    },
+    "am1-water": {
+      "samples": [
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -59.2273992807259,
+          "hof_plus_kcal_mol": -59.2195422735767
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -59.2215493143731,
+          "hof_plus_kcal_mol": -59.2254814870739
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -59.2238269579002,
+          "hof_plus_kcal_mol": -59.2242500582406
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -59.2228950692379,
+          "hof_plus_kcal_mol": -59.2241750412968
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -59.2218185789552,
+          "hof_plus_kcal_mol": -59.2261289846947
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -59.2238119665417,
+          "hof_plus_kcal_mol": -59.2242754493545
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -59.2206486499881,
+          "hof_plus_kcal_mol": -59.2272256962215
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -59.2277087200255,
+          "hof_plus_kcal_mol": -59.2194661061521
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -59.2244797080057,
+          "hof_plus_kcal_mol": -59.2235931617852
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -59.2258645503662,
+          "hof_plus_kcal_mol": -59.2219366936561
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -59.2229284793229,
+          "hof_plus_kcal_mol": -59.2248950764188
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -59.2239368057581,
+          "hof_plus_kcal_mol": -59.2241483035696
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -59.22359699765,
+          "hof_plus_kcal_mol": -59.2242363854566
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -59.2229487736777,
+          "hof_plus_kcal_mol": -59.225103972416
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -59.2239279837968,
+          "hof_plus_kcal_mol": -59.2241597253878
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -59.2223729857014,
+          "hof_plus_kcal_mol": -59.2256614559983
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -59.2259906810959,
+          "hof_plus_kcal_mol": -59.2218688808289
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -59.2242636537194,
+          "hof_plus_kcal_mol": -59.2238204189334
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -59.2249900068409,
+          "hof_plus_kcal_mol": -59.2230261593413
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -59.223519190863,
+          "hof_plus_kcal_mol": -59.2245025532475
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -59.2239906950717,
+          "hof_plus_kcal_mol": -59.2240964374296
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -59.2238522909138,
+          "hof_plus_kcal_mol": -59.224171910043
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -59.223500721414,
+          "hof_plus_kcal_mol": -59.2245783202698
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -59.2239859558204,
+          "hof_plus_kcal_mol": -59.2241018266404
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -59.2232151185208,
+          "hof_plus_kcal_mol": -59.2248593470686
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -59.2250458537255,
+          "hof_plus_kcal_mol": -59.2229848919314
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -59.2241542429674,
+          "hof_plus_kcal_mol": -59.2239326303634
+        }
+      ],
+      "richardson_gradient_ev_angstrom": [
+        0.17031863789205506,
+        -0.08528710337395122,
+        -0.009170655967397199,
+        -0.027717832798078823,
+        -0.09345820338697149,
+        -0.01004926934199845,
+        -0.14260080546782913,
+        0.17874530672661862,
+        0.019219925675340088
+      ],
+      "max_richardson_refinement_ev_angstrom": 7.676308616533234e-10,
+      "max_fine_vs_richardson_ev_angstrom": 2.3374828873046205e-06,
+      "max_pinned_gradient_vs_richardson_ev_angstrom": 3.505672289821904e-07
+    },
+    "rm1-ammonia": {
+      "samples": [
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -4.05457395907251,
+          "hof_plus_kcal_mol": -4.04371576439917
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -3.98763335188414,
+          "hof_plus_kcal_mol": -4.11067451476629
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -4.06267371312333,
+          "hof_plus_kcal_mol": -4.0365011374106
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -4.01876411044395,
+          "hof_plus_kcal_mol": -4.07982368910689
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -4.0555140198403,
+          "hof_plus_kcal_mol": -4.04395245384603
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -4.0514808019816,
+          "hof_plus_kcal_mol": -4.04807757975505
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -4.0542427706514,
+          "hof_plus_kcal_mol": -4.04506034928727
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -4.06150294402232,
+          "hof_plus_kcal_mol": -4.03742399729981
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -4.06097835243963,
+          "hof_plus_kcal_mol": -4.03852864521014
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 9,
+          "hof_minus_kcal_mol": -4.07018799134403,
+          "hof_plus_kcal_mol": -4.02916899154388
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 10,
+          "hof_minus_kcal_mol": -4.09314185938274,
+          "hof_plus_kcal_mol": -4.00574114570099
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 11,
+          "hof_minus_kcal_mol": -4.02363768040505,
+          "hof_plus_kcal_mol": -4.07566331611542
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -4.05235252948842,
+          "hof_plus_kcal_mol": -4.046924056016
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -4.01888020622846,
+          "hof_plus_kcal_mol": -4.08040091497605
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -4.05629219320144,
+          "hof_plus_kcal_mol": -4.04320567403738
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -4.03441091187506,
+          "hof_plus_kcal_mol": -4.06494019275306
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -4.05267576113511,
+          "hof_plus_kcal_mol": -4.04689501193297
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -4.05064764991221,
+          "hof_plus_kcal_mol": -4.04894610017163
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -4.05206058490148,
+          "hof_plus_kcal_mol": -4.0474693496617
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -4.05573782347346,
+          "hof_plus_kcal_mol": -4.04369806650084
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -4.05540285238385,
+          "hof_plus_kcal_mol": -4.04417805165758
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 9,
+          "hof_minus_kcal_mol": -4.06002648856065,
+          "hof_plus_kcal_mol": -4.03951691174734
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 10,
+          "hof_minus_kcal_mol": -4.07156255815062,
+          "hof_plus_kcal_mol": -4.02786234763789
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 11,
+          "hof_minus_kcal_mol": -4.03675825886148,
+          "hof_plus_kcal_mol": -4.06277114480599
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -4.051118729888,
+          "hof_plus_kcal_mol": -4.04840457112823
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -4.03438203231963,
+          "hof_plus_kcal_mol": -4.06514240260913
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -4.05306095497326,
+          "hof_plus_kcal_mol": -4.04651766647294
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -4.04213867695671,
+          "hof_plus_kcal_mol": -4.05740325384249
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -4.05124360914124,
+          "hof_plus_kcal_mol": -4.04835323876068
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -4.0502266796766,
+          "hof_plus_kcal_mol": -4.04937591248017
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -4.05094112948154,
+          "hof_plus_kcal_mol": -4.04864550879302
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -4.05279152053117,
+          "hof_plus_kcal_mol": -4.04677160659503
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -4.05260588719557,
+          "hof_plus_kcal_mol": -4.04699349344719
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 9,
+          "hof_minus_kcal_mol": -4.05492240136482,
+          "hof_plus_kcal_mol": -4.04466760334253
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 10,
+          "hof_minus_kcal_mol": -4.06070523402104,
+          "hof_plus_kcal_mol": -4.03885514705416
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 11,
+          "hof_minus_kcal_mol": -4.04329002703071,
+          "hof_plus_kcal_mol": -4.05629647851583
+        }
+      ],
+      "richardson_gradient_ev_angstrom": [
+        0.2353918725225894,
+        -2.667792267614017,
+        0.5674885252346377,
+        -1.3238675692782895,
+        0.25067652294759274,
+        0.07378529293625143,
+        0.19909515838552547,
+        0.5220973757403518,
+        0.4867526638729356,
+        0.8893805388166286,
+        1.8950183691103675,
+        -1.1280264821352082
+      ],
+      "max_richardson_refinement_ev_angstrom": 7.621360209597583e-10,
+      "max_fine_vs_richardson_ev_angstrom": 2.2542523270552284e-06,
+      "max_pinned_gradient_vs_richardson_ev_angstrom": 7.840817464188632e-07
+    },
+    "rm1-co": {
+      "samples": [
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -9.00018689727949,
+          "hof_plus_kcal_mol": -9.20639340211528
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -9.03075247677225,
+          "hof_plus_kcal_mol": -9.17631056152095
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -9.03075247676861,
+          "hof_plus_kcal_mol": -9.17631056152459
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -9.20639340211528,
+          "hof_plus_kcal_mol": -9.00018689727949
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -9.17631056152095,
+          "hof_plus_kcal_mol": -9.03075247677225
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -9.17631056152459,
+          "hof_plus_kcal_mol": -9.03075247676861
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -9.0521447357969,
+          "hof_plus_kcal_mol": -9.15524814815217
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -9.06736731020465,
+          "hof_plus_kcal_mol": -9.14014625850177
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -9.06736731020465,
+          "hof_plus_kcal_mol": -9.14014625849995
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -9.15524814815217,
+          "hof_plus_kcal_mol": -9.0521447357969
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -9.14014625850177,
+          "hof_plus_kcal_mol": -9.06736731020465
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -9.14014625849995,
+          "hof_plus_kcal_mol": -9.06736731020646
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -9.07802215204902,
+          "hof_plus_kcal_mol": -9.12957387819915
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -9.08561836951776,
+          "hof_plus_kcal_mol": -9.12200783190565
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -9.0856183695214,
+          "hof_plus_kcal_mol": -9.12200783190565
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -9.12957387819915,
+          "hof_plus_kcal_mol": -9.07802215204902
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -9.12200783190565,
+          "hof_plus_kcal_mol": -9.08561836951958
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -9.12200783190565,
+          "hof_plus_kcal_mol": -9.0856183695214
+        }
+      ],
+      "richardson_gradient_ev_angstrom": [
+        -4.470989430630934,
+        -3.155992540589107,
+        -3.1559925401945335,
+        4.470989430630934,
+        3.1559925403787634,
+        3.155992540220698
+      ],
+      "max_richardson_refinement_ev_angstrom": 2.2754189643592326e-09,
+      "max_fine_vs_richardson_ev_angstrom": 5.773928961616548e-07,
+      "max_pinned_gradient_vs_richardson_ev_angstrom": 3.7702404753758856e-07
+    },
+    "rm1-water": {
+      "samples": [
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -57.7863341414813,
+          "hof_plus_kcal_mol": -57.7859449279922
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -57.7800352399236,
+          "hof_plus_kcal_mol": -57.7923406833352
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -57.7859848228854,
+          "hof_plus_kcal_mol": -57.7873082528058
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -57.7906693921868,
+          "hof_plus_kcal_mol": -57.7817046473847
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -57.7841945642685,
+          "hof_plus_kcal_mol": -57.7889824527438
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -57.7863957537047,
+          "hof_plus_kcal_mol": -57.786910580252
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -57.781873902868,
+          "hof_plus_kcal_mol": -57.791227874387
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -57.7947868489582,
+          "hof_plus_kcal_mol": -57.7776935031407
+        },
+        {
+          "h_angstrom": 0.001,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -57.7875657014984,
+          "hof_plus_kcal_mol": -57.7857274731432
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -57.7866238162123,
+          "hof_plus_kcal_mol": -57.7864298564937
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -57.7834623294139,
+          "hof_plus_kcal_mol": -57.7896155566632
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -57.7863227518437,
+          "hof_plus_kcal_mol": -57.7869844221741
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -57.7887801965462,
+          "hof_plus_kcal_mol": -57.7842972187027
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -57.7854421103302,
+          "hof_plus_kcal_mol": -57.7878360489258
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -57.7865265378932,
+          "hof_plus_kcal_mol": -57.7867839506252
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -57.784291205031,
+          "hof_plus_kcal_mol": -57.7889681442448
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -57.790825580435,
+          "hof_plus_kcal_mol": -57.7822784128457
+        },
+        {
+          "h_angstrom": 0.0005,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -57.7871131391175,
+          "hof_plus_kcal_mol": -57.786194059564
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 0,
+          "hof_minus_kcal_mol": -57.7866721110822,
+          "hof_plus_kcal_mol": -57.7865752121006
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 1,
+          "hof_minus_kcal_mol": -57.7850883498495,
+          "hof_plus_kcal_mol": -57.788165026669
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 2,
+          "hof_minus_kcal_mol": -57.7864899344504,
+          "hof_plus_kcal_mol": -57.7868207640413
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 3,
+          "hof_minus_kcal_mol": -57.7877474117122,
+          "hof_plus_kcal_mol": -57.7855058471068
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 4,
+          "hof_minus_kcal_mol": -57.7860532381028,
+          "hof_plus_kcal_mol": -57.7872502066975
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 5,
+          "hof_minus_kcal_mol": -57.7865914104095,
+          "hof_plus_kcal_mol": -57.7867201167046
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 6,
+          "hof_minus_kcal_mol": -57.785480139255,
+          "hof_plus_kcal_mol": -57.7878186030457
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 7,
+          "hof_minus_kcal_mol": -57.7887667744772,
+          "hof_plus_kcal_mol": -57.7844931288464
+        },
+        {
+          "h_angstrom": 0.00025,
+          "coordinate_index": 8,
+          "hof_minus_kcal_mol": -57.786885120051,
+          "hof_plus_kcal_mol": -57.7864255846052
+        }
+      ],
+      "richardson_gradient_ev_angstrom": [
+        0.008401536951560153,
+        -0.26683649556323946,
+        -0.028692096582501738,
+        0.19440907039635522,
+        -0.10381092150309483,
+        -0.0111624643450328,
+        -0.2028106070283944,
+        0.37064741689964104,
+        0.0398545607435866
+      ],
+      "max_richardson_refinement_ev_angstrom": 5.116340823230203e-10,
+      "max_fine_vs_richardson_ev_angstrom": 2.3381261401549114e-06,
+      "max_pinned_gradient_vs_richardson_ev_angstrom": 6.585805624459429e-08
+    }
+  }
+}

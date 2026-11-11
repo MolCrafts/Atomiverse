@@ -2,17 +2,10 @@
 /// @brief Multi-rank EAM: the domain-decomposed forces must equal a brute-force
 ///        O(N^2) serial reference.
 ///
-/// This is the test that closes the probe-1 comm wall. EAM's second pass needs
-/// F'(rho_j) for a GHOST j, and rho_j is a sum over *j's* neighbours — so a ghost
-/// shell of one cutoff leaves every ghost's density silently truncated. The component
-/// declares a ghost-of-ghost halo (`halo_cutoff() = 2 * cutoff`) so it can complete
-/// rho on ghosts locally, which buys multi-rank EAM without inventing a mid-force
-/// communication point the engine does not have.
-///
-/// The reference is deliberately brute force: it uses no neighbor list, no halo, no
-/// decomposition. If the ghost-of-ghost reasoning is wrong, the density on
-/// near-boundary atoms is too small, their embedding derivative is too large in
-/// magnitude, and the forces differ — there is nowhere for the error to hide.
+/// EAM consumes a Newton-on half list. Ghost density contributions return to
+/// owners before embedding derivatives travel forward; one cutoff of halo is
+/// sufficient. Small and larger boxes cover forwarding and two-face images.
+/// The kernel is invoked directly: no MD trajectory or integrator is involved.
 
 #include <gtest/gtest.h>
 
@@ -22,10 +15,11 @@
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/cpu/communication/domain_runtime.h"
 #include "atomiverse/cpu/communication/gather.h"
-#include "atomiverse/cpu/dynamics/md.h"
-#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/frame/pbc.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/eam.h"
 
@@ -67,34 +61,55 @@ cpu::Frame copper(int n_cell) {
 } // namespace
 
 /// Decomposed EAM forces == brute-force serial EAM forces.
-TEST(EAMMultiRank, ForcesMatchBruteForce) {
+class EAMMultiRank : public ::testing::TestWithParam<int> {};
+
+TEST_P(EAMMultiRank, ForcesEnergyAndVirialMatchBruteForce) {
     int rank = 0, size = 1;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // The box must be big enough that the GHOST-OF-GHOST halo (2 * cutoff, plus the
-    // engine's 10% pad = 7.7 A) still fits inside a subdomain. cutoff 3.5 A captures
-    // Cu's first two neighbour shells (2.55, 3.61 A); n_cell 6 -> box 21.7 A.
-    const int n_cell = 6; // 864 atoms
+    const int n_cell = GetParam();
     cpu::Frame frame = copper(n_cell);
     const int n = frame.nlocal();
+    cpu::Context context;
+    context.mpi_rank = rank;
+    context.mpi_size = size;
+    cpu::communication::DomainRuntime domain;
+    domain.allocate(context);
+    cpu::md::wrap_owned(frame, n);
+    domain.bind_frame(frame, context);
+    cpu::EAM eam{cpu::EAMPotential{molrs::Element::Cu, "sutton-chen"}, kCutoff};
+    cpu::md::NeighborList<> neighbors{kCutoff, 0.3, 1, 0, true};
+    EXPECT_EQ(eam.neighbor_list_mode(), cpu::NeighborListMode::Half);
+    EXPECT_DOUBLE_EQ(eam.halo_cutoff(), kCutoff);
+    EXPECT_FALSE(eam.requires_ghost_neighbor_rows());
+    domain.comm()->set_ghost_cutoff(neighbors.neighbor_reach());
+    const cpu::LaunchContext launch{context, frame, 0, 0};
+    domain.comm()->setup(launch);
+    domain.comm()->borders(launch);
+    neighbors.build({context, frame});
+    neighbors.launch(launch);
+    eam.build({context, frame});
+    eam.launch(launch);
+    domain.comm()->reverse_comm(launch);
+    const auto g = cpu::md::mpi::gather_to_root(frame, *domain.dd());
+    double local[7] = {frame.meta.get(kEnergy)};
+    for (int k = 0; k < 6; ++k)
+        local[k + 1] = frame.meta.get(kStress)[k];
+    double total[7]{};
+    MPI_Allreduce(local, total, 7, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    // The MD driver, NOT Evaluate: only Dynamics installs the decomposition and the
-    // halo, so only it actually exercises ghosts. dt = 0 keeps the geometry fixed, so
-    // the forces are those of the frame we hand the brute-force reference.
-    cpu::md::MD sim;
-    sim.set_neighbor(cpu::md::NeighborList<>{kCutoff, 0.3, 1, 0, true});
-    sim.set_integrator(cpu::md::VelocityVerlet{0.0});
-    sim.on(md::Phase::force)
-        .add(cpu::EAM{cpu::EAMPotential{molrs::Element::Cu, "sutton-chen"},
-                      kCutoff});
-    sim.enable_timing(false);
-    sim.build();
-    sim.run(frame, 1);
-
-    auto dd = sim.release_dd(); // public handle to the decomposition
-    ASSERT_NE(dd, nullptr);
-    const auto g = cpu::md::mpi::gather_to_root(frame, *dd);
+    // Re-evaluating energy must reset density scratch, preserve forces/stress,
+    // and retain the same result after both intermediate communication passes.
+    frame.meta.get(kEnergy) = 0.0;
+    frame.meta.get(kEnergyPair) = 0.0;
+    eam.launch({context, frame, 0, 1, false, false});
+    EXPECT_NEAR(frame.meta.get(kEnergy), local[0], 1e-10);
+    for (int k = 0; k < 6; ++k)
+        EXPECT_DOUBLE_EQ(frame.meta.get(kStress)[k], local[k + 1]);
+    const auto repeated = cpu::md::mpi::gather_to_root(frame, *domain.dd());
+    neighbors.destroy({context, frame});
+    domain.release_comm(context);
 
     if (rank != 0) {
         SUCCEED();
@@ -126,6 +141,10 @@ TEST(EAMMultiRank, ForcesMatchBruteForce) {
         dF[i] = pot.dF(r_sum);
     }
 
+    double energy = 0.0;
+    double virial[6]{};
+    for (int i = 0; i < n; ++i)
+        energy += pot.F(rho[i]);
     std::vector<double> fx(n, 0.0), fy(n, 0.0), fz(n, 0.0);
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < n; ++j) {
@@ -140,12 +159,24 @@ TEST(EAMMultiRank, ForcesMatchBruteForce) {
                 continue;
             const double dE_dr = pot.dphi(r) + (dF[i] + dF[j]) * pot.df(r);
             const double fpair = -dE_dr / r;
+            energy += 0.5 * (pot.phi(r) - phi_shift);
+            virial[0] += 0.5 * dx * fpair * dx;
+            virial[1] += 0.5 * dy * fpair * dy;
+            virial[2] += 0.5 * dz * fpair * dz;
+            virial[3] += 0.5 * dx * fpair * dy;
+            virial[4] += 0.5 * dx * fpair * dz;
+            virial[5] += 0.5 * dy * fpair * dz;
             fx[i] += fpair * dx;
             fy[i] += fpair * dy;
             fz[i] += fpair * dz;
         }
     }
-    (void)phi_shift; // the shift is a constant: it moves E, never a force.
+    EXPECT_NEAR(total[0], energy, 1e-9);
+    for (int k = 0; k < 6; ++k)
+        EXPECT_NEAR(total[k + 1], virial[k], 1e-9);
+    EXPECT_EQ(g.fx, repeated.fx);
+    EXPECT_EQ(g.fy, repeated.fy);
+    EXPECT_EQ(g.fz, repeated.fz);
 
     double worst = 0.0;
     for (int i = 0; i < n; ++i) {
@@ -157,14 +188,9 @@ TEST(EAMMultiRank, ForcesMatchBruteForce) {
         << "on " << size
         << " ranks, the decomposed EAM forces differ from the "
            "brute-force reference by "
-        << worst << " eV/A — the ghost densities are truncated";
+        << worst
+        << " eV/A — density/derivative communication or half-list ownership is "
+           "wrong";
 }
 
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}
+INSTANTIATE_TEST_SUITE_P(PeriodicBricks, EAMMultiRank, ::testing::Values(3, 6));

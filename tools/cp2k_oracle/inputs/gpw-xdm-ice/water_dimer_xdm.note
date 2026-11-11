@@ -20,4 +20,4 @@ Free-atom XDM, QE NC-PBE a1=0.4283, a2=2.4690 Å, rcut 50 Å:
 - Isolated: E_disp = -2.1020435998516220e-03 Ha
 - Periodic: E_disp = -2.1148157612879029e-03 Ha
 
-See `regressions/gpw/gpw-xdm-ice/REFERENCE.md`.
+See `regressions/gpw/xdm/REFERENCE.md`.

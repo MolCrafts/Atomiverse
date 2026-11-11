@@ -2,6 +2,8 @@
 /// @brief Unit tests for cpu::vib::PhononDispersion (Fourier ω(q)).
 
 #include <cmath>
+#include <complex>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
 
@@ -12,6 +14,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/vibration/phonon_dispersion.h"
+#include "atomiverse/cpu/vibration/supercell.h"
 
 using namespace ATV;
 using namespace ATV::cpu::vib;
@@ -21,7 +24,7 @@ namespace {
 /// @brief 1-atom cubic cell (mass via Z=14).
 cpu::Frame mono_cubic(double a) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 14;
+    f.span(kAtom_atomic_number)[0] = 14;
     f.span(kAtom_mass)[0] = 28.085;
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_y)[0] = 0;
@@ -115,4 +118,96 @@ TEST(PhononDispersion, DefaultPathWhenQfracEmpty) {
         for (double w : br)
             EXPECT_TRUE(std::isfinite(w));
     }
+}
+
+TEST(PhononDispersion, SupercellReplicatesColumnsOfNonSymmetricCell) {
+    auto unit = mono_cubic(4.0);
+    Mat3 h = Mat3::diagonal(4.0, 5.0, 6.0);
+    h(0, 1) = 1.5;
+    h(2, 0) = 0.8;
+    unit.box.set_cell(h);
+    auto sc = expand_supercell(unit, 2, 3, 1);
+    ASSERT_EQ(sc.nlocal(), 6);
+    const auto& hs = sc.box.cell();
+    for (int d = 0; d < 3; ++d) {
+        EXPECT_DOUBLE_EQ(hs(d, 0), 2 * h(d, 0));
+        EXPECT_DOUBLE_EQ(hs(d, 1), 3 * h(d, 1));
+        EXPECT_DOUBLE_EQ(hs(d, 2), h(d, 2));
+    }
+    // Enumeration order ia/ib/ic: atom 1 is b; atom 3 is a.
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_x)[1], 1.5);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_y)[1], 5.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_z)[1], 0.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_x)[3], 4.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_y)[3], 0.0);
+    EXPECT_DOUBLE_EQ(sc.span(kAtom_z)[3], 0.8);
+}
+
+// Analytic monatomic nearest-neighbor chain: C(q)=2k[1−cos(2πq)].
+// The raw on-site supercell block is 2k, which is NOT C(X)=4k.
+TEST(PhononDispersion, RawFourierSpringChainMatrixHasTrueQDependence) {
+    const auto unit = mono_cubic(4.0);
+    constexpr int cells = 4;
+    constexpr double spring = 7.5; // eV/Å²; output must remain unweighted
+    xt::xtensor<double, 2> H = xt::zeros<double>({12, 12});
+    for (int cell = 0; cell < cells; ++cell)
+        for (int axis = 0; axis < 3; ++axis) {
+            const int a = 3 * cell + axis, b = 3 * ((cell + 1) % cells) + axis;
+            H(a, a) += spring;
+            H(b, b) += spring;
+            H(a, b) -= spring;
+            H(b, a) -= spring;
+        }
+    PhononDispersion path;
+    for (double q : {0.0, 0.25, 0.5}) {
+        double asym = 0;
+        const auto C =
+            path.force_constants_at_q(H, unit, cells, 1, 1, {q, 0, 0}, &asym);
+        const double want =
+            2 * spring * (1 - std::cos(2 * std::numbers::pi * q));
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j) {
+                EXPECT_NEAR(C(i, j).real(), i == j ? want : 0.0, 2e-13);
+                EXPECT_NEAR(C(i, j).imag(), 0.0, 2e-13);
+            }
+        EXPECT_NEAR(asym, 0.0, 2e-13);
+    }
+}
+
+// Alternating A/B chain: C_AB(q)=−k(1+exp(−2πiq)),
+// C_BA=conj(C_AB), while C_AA=C_BB=2k. This also checks the imaginary
+// observable, which cannot be obtained from the top-left primitive block.
+TEST(PhononDispersion, RawFourierAlternatingChainRetainsComplexPhase) {
+    cpu::Frame unit(2);
+    unit.span(kAtom_atomic_number)[0] = unit.span(kAtom_atomic_number)[1] = 14;
+    unit.box = cpu::Box::cubic(4.0);
+    constexpr int cells = 4;
+    constexpr double spring = 3.25;
+    xt::xtensor<double, 2> H = xt::zeros<double>({24, 24});
+    auto bond = [&](int a, int b) {
+        H(3 * a, 3 * a) += spring;
+        H(3 * b, 3 * b) += spring;
+        H(3 * a, 3 * b) -= spring;
+        H(3 * b, 3 * a) -= spring;
+    };
+    for (int cell = 0; cell < cells; ++cell) {
+        bond(2 * cell, 2 * cell + 1);
+        bond(2 * cell + 1, 2 * ((cell + 1) % cells));
+    }
+    PhononDispersion path;
+    const auto C =
+        path.force_constants_at_q(H, unit, cells, 1, 1, {0.25, 0, 0});
+    EXPECT_NEAR(C(0, 0).real(), 2 * spring, 2e-13);
+    EXPECT_NEAR(C(3, 3).real(), 2 * spring, 2e-13);
+    EXPECT_NEAR(std::abs(C(0, 3) - std::complex<double>(-spring, spring)), 0.0,
+                2e-13);
+    EXPECT_NEAR(std::abs(C(3, 0) - std::conj(C(0, 3))), 0.0, 2e-13);
+    // A deliberately nonsymmetric IFC proves publication is raw, with the
+    // asymmetry diagnostic retaining the discarded-information magnitude.
+    H(0, 3) += 0.02;
+    double asym = 0;
+    const auto raw =
+        path.force_constants_at_q(H, unit, cells, 1, 1, {0.25, 0, 0}, &asym);
+    EXPECT_NEAR((raw(0, 3) - C(0, 3)).real(), 0.02, 2e-13);
+    EXPECT_NEAR(asym, 0.01, 2e-13);
 }

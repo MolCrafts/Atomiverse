@@ -45,7 +45,7 @@ enum class Channel { singlet, triplet };
 /// @brief Result of the shared direct random-phase-approximation (dRPA) /
 ///        Casida (linear-response) Hermitian reduction
 ///        \((A-B)^{1/2}(A+B)(A-B)^{1/2}\) — the single solve behind both
-///        `RHF::direct_rpa` (reads `omega` + `e_c`) and `RHF::g0w0` (reads
+///        `DirectRPA<RHF>::run` (reads `omega` + `e_c`) and `G0W0<RHF>::run` (reads
 ///        `omega` + the `X`/`Y` amplitude matrices its screened Coulomb
 ///        consumes). Lightweight value object; \(T,T^{-1}\) stay method-private.
 struct DirectRpaResult {
@@ -97,28 +97,35 @@ class OrbitalHessian {
     /// @param v  Trial vector, length n_ov(), composite index a·n_occ + i
     ///           (dimensionless amplitudes).
     /// @param ch Excitation channel (singlet or triplet).
+    /// @param alpha_hf Exact-exchange fraction in [0, 1] (1 = HF; a global
+    ///        hybrid's \(\alpha_{\mathrm{hf}}\) for KS response).
     /// @return (A + B)·v [Hartree].
     /// @throws std::invalid_argument when v.size() != n_ov().
-    RealVector sigma_plus(const RealVector& v, Channel ch) const;
+    RealVector sigma_plus(const RealVector& v, Channel ch,
+                          double alpha_hf = 1.0) const;
 
     /// @brief Matrix-free product σ = (A − B)_ch · v. For real closed-shell
     ///        orbitals (A − B) is channel-independent; `ch` is kept so the
     ///        RPA-facing interface stays uniform for CPHF/TDHF reuse.
     /// @param v  Trial vector, length n_ov() (dimensionless amplitudes).
     /// @param ch Excitation channel (singlet or triplet).
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return (A − B)·v [Hartree].
     /// @throws std::invalid_argument when v.size() != n_ov().
-    RealVector sigma_minus(const RealVector& v, Channel ch) const;
+    RealVector sigma_minus(const RealVector& v, Channel ch,
+                           double alpha_hf = 1.0) const;
 
     /// @brief Explicit dense (A + B)_ch — small systems and validation.
     /// @param ch Excitation channel.
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return Symmetric n_ov × n_ov matrix [Hartree].
-    RealMatrix dense_plus(Channel ch) const;
+    RealMatrix dense_plus(Channel ch, double alpha_hf = 1.0) const;
 
     /// @brief Explicit dense (A − B)_ch — small systems and validation.
     /// @param ch Excitation channel.
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return Symmetric n_ov × n_ov matrix [Hartree].
-    RealMatrix dense_minus(Channel ch) const;
+    RealMatrix dense_minus(Channel ch, double alpha_hf = 1.0) const;
 
     /// @brief Explicit dense Casida **A** matrix with global-hybrid exact-
     ///        exchange fraction `alpha_hf` (dimensionless in [0, 1]).
@@ -128,7 +135,7 @@ class OrbitalHessian {
     ///   ³A_ai,bj = δ_ab δ_ij (ε_a − ε_i)           − α_hf (ij|ab)
     ///
     /// `alpha_hf = 1` recovers the pure-HF A used by CIS / RHF-TDA;
-    /// hybrid TDDFT-TDA uses the functional's `hybrid_exchange_fraction`
+    /// hybrid TDDFT-TDA uses the functional's `xc::hybrid_exchange_fraction`
     /// (0.20 B3LYP, 0.25 PBE0) and adds the semi-local \(f^{\mathrm{xc}}\)
     /// kernel separately (Dreuw & Head-Gordon, Chem. Rev. 105, 4009 (2005)).
     /// @param ch        Excitation channel.
@@ -156,8 +163,9 @@ class OrbitalHessian {
     ///        for the matrix-free lowest-root solve (also reusable by the
     ///        CPHF/TDHF iterative solvers).
     /// @param ch Excitation channel.
+    /// @param alpha_hf Exact-exchange fraction in [0, 1].
     /// @return Length-n_ov diagonal [Hartree].
-    RealVector diagonal_plus(Channel ch) const;
+    RealVector diagonal_plus(Channel ch, double alpha_hf = 1.0) const;
 
     /// @brief Dense direct-RPA / Casida Hermitian reduction on this reference:
     ///        \(A=\)`dense_A(ch,alpha_hf)`, \(B=\)`dense_B(ch,alpha_hf)`,
@@ -166,7 +174,7 @@ class OrbitalHessian {
     ///        excitation energies \(\Omega_s=\sqrt{\omega_s^2}\), the plasmon
     ///        correlation energy \(E_c=\tfrac12(\sum_s\Omega_s-\mathrm{Tr}\,A)\),
     ///        and the RPA \(X,Y\) amplitudes. The one solve shared by
-    ///        `RHF::direct_rpa` (dRPA correlation) and `RHF::g0w0` (screened W).
+    ///        `DirectRPA<RHF>::run` (dRPA correlation) and `G0W0<RHF>::run` (screened W).
     ///
     /// The \((A-B)^{\pm1/2}\) factors use `linalg::sym_power`; a positive-
     /// definiteness guard on \(\lambda_{\min}(A-B)\le\)`kAmBFloor` and the

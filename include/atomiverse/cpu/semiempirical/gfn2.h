@@ -16,18 +16,17 @@ namespace semiempirical {
 /// @brief GFN2-xTB energy and analytic nuclear forces for H/C/N/O
 ///        (Bannwarth, Ehlert, Grimme, JCTC 2019).
 ///
-/// Molecular closed-shell energy: STO-*n*G valence basis, CN-shifted H⁰,
-/// shell-resolved isotropic SCC, on-site third-order, anisotropic
-/// electrostatics (charge–dipole, dipole–dipole, charge–quadrupole) +
-/// dipole/quadrupole AXC **in the SCC Fock**, screened repulsion, Grimme D4
-/// (GFN2 damping). CAMM quadrupole uses tblite `shift_operator`
-/// \(\langle(r-R)(r-R)\rangle\) on **every** centre (including s-only H)
-/// and analytic \(G\) chains frozen-\(P\) \(\partial\Theta/\partial R\).
-/// Angular \(F_{H1,y}\) vs xtb remains open: this operator is not xtb
-/// `mmompop` (minus-RRS from opab4-signed Q breaks SCC). Parameters are
-/// static in-tree tables — there is no `libxtb` kernel. Oracle: **xtb**
-/// 6.7.1 (`reg_gfn2-camm-r`, `reg_gfn2-aes-fock`). Units: energy [eV],
-/// positions [Å], forces [eV/Å].
+/// Molecular closed-shell energy: STO-*n*G valence basis, CN'-shifted H⁰
+/// (double-exponential CN), shell-resolved isotropic SCC, on-site
+/// third-order, anisotropic electrostatics (charge–dipole, dipole–dipole,
+/// charge–quadrupole) + dipole/quadrupole AXC on cumulative atomic
+/// multipoles of every atom, screened repulsion and self-consistent D4
+/// (C6 scaled by the SCC charges). AES and D4 enter the Fock as
+/// \(\partial E/\partial P\), so the converged energy is stationary in
+/// the density and the analytic gradient is its exact derivative
+/// (Hellmann–Feynman + Pulay with frozen-\(P\) multipole chains).
+/// Parameters are static in-tree tables — there is no `libxtb` kernel.
+/// Oracle: **xtb** 6.7.1. Units: energy [eV], positions [Å], forces [eV/Å].
 ///
 /// @code
 ///   cpu::semiempirical::GFN2 gfn2;
@@ -37,18 +36,21 @@ namespace semiempirical {
 /// @endcode
 class GFN2 : public cpu::Semiempirical, public cpu::QmEngine {
   public:
-    /// @brief SCC residual tolerance on max |Δq_shell| [e].
+    /// @brief SCC tolerance on max |Δ| of the shell populations [e] and the
+    ///        atomic dipoles/quadrupoles [e·Bohr, e·Bohr²] between cycles.
     double scc_tol = 1e-8;
     /// @brief Maximum SCC iterations. Exhausting it throws.
     int max_scc = 50;
-    /// @brief Anderson charge-mixing β ∈ (0, 1].
+    /// @brief Anderson mixing β ∈ (0, 1] (populations + multipoles).
     double mix_beta = 0.4;
     /// @brief Net molecular charge [e].
-    int charge = 0;
+    const int charge;
     /// @brief When true, write analytic forces \(F=-\nabla E\) [eV/Å] on launch.
     bool with_forces = false;
 
-    GFN2() = default;
+    /// @brief GFN2-xTB.
+    /// @param charge Net molecular charge [e].
+    explicit GFN2(int charge = 0) : charge(charge) {}
 
     std::string name() const override { return "gfn2"; }
 
@@ -61,7 +63,7 @@ class GFN2 : public cpu::Semiempirical, public cpu::QmEngine {
 
     /// @brief Last total energy [eV].
     double last_energy() const { return energy_; }
-    /// @brief Last SCC residual max|Δq| [e].
+    /// @brief Last SCC residual (populations and multipoles).
     double last_scc_residual() const { return scc_residual_; }
     /// @brief SCC iterations of the last solve.
     int last_scc_iterations() const { return scc_iterations_; }

@@ -27,8 +27,8 @@
 using namespace ATV;
 using cpu::scf::angular_convention;
 using cpu::scf::BasisSet;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::basis_data::AngularConvention;
+using cpu::scf::internal::IntegralWorkspace;
 
 namespace {
 
@@ -37,7 +37,7 @@ cpu::Frame water() {
     auto x = f.span(kAtom_x);
     auto y = f.span(kAtom_y);
     auto z = f.span(kAtom_z);
-    auto t = f.span(kAtom_type);
+    auto t = f.span(kAtom_atomic_number);
     t[0] = 8;
     x[0] = 0.0;
     y[0] = 0.0;
@@ -165,7 +165,7 @@ TEST(SphericalGradient, SphericalOverlapDerivMatchesFiniteDifference) {
 /// single-atom gradient to zero for any density, so no SCF solve is needed.
 TEST(SphericalGradient, RhfSphericalRunsSiblingsStillThrow) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 8; // O
+    f.span(kAtom_atomic_number)[0] = 8; // O
     f.box = cpu::Box::cubic(50.0);
     const cpu::scf::internal::IntegralWorkspace p{f, BasisSet::Def2SVP};
     ASSERT_TRUE(p.spherical());
@@ -182,7 +182,7 @@ TEST(SphericalGradient, RhfSphericalRunsSiblingsStillThrow) {
     auto make_grad = [](cpu::scf::SpinType spin) {
         return cpu::scf::internal::ScfGradient{cpu::scf::MeanFieldType::HF,
                                                spin,
-                                               cpu::scf::XCType::LSDA,
+                                               cpu::xc::XCType::LSDA,
                                                cpu::scf::GridLevel::SG0,
                                                0,
                                                0,

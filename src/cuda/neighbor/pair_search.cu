@@ -1,13 +1,15 @@
 /// @file cuda/neighbor/pair_search.cu
-/// @brief Stencil-based cluster pair search — single-pass with coarse count.
-///
-/// Pipeline: coarse_count → prefix_sum → fill(AABB) → prefix_sum → compact.
-/// The expensive AABB traversal happens only ONCE (in the fill kernel).
+/// @brief Hierarchical cluster AABB search with exact CSR count and fill.
 
 #include "nlist_impl.cuh"
 #include "triclinic.cuh"
 
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
+#include <cmath>
+#include <cooperative_groups.h>
+#include <cooperative_groups/reduce.h>
+#include <cuda/std/limits>
 #include <cuda_runtime.h>
 
 namespace ATV::cuda::md::nlist {
@@ -19,302 +21,331 @@ namespace ATV::cuda::md::nlist {
 // Templated on `bool Ortho` so the triclinic min_image branch is
 // dead-eliminated from the orthorhombic specialization
 // (cuda-md-review-cleanup-04-box-by-value-pbc).
-template <bool Ortho, typename work_t>
-__device__ work_t min_aabb_dist_sq(work_t ci_min_x, work_t ci_min_y,
-                                   work_t ci_min_z, work_t ci_max_x,
-                                   work_t ci_max_y, work_t ci_max_z,
-                                   work_t cj_min_x, work_t cj_min_y,
-                                   work_t cj_min_z, work_t cj_max_x,
-                                   work_t cj_max_y, work_t cj_max_z,
-                                   bool periodic, cuda::Box box) {
-    work_t cx_i = (ci_min_x + ci_max_x) * work_t(0.5);
-    work_t cy_i = (ci_min_y + ci_max_y) * work_t(0.5);
-    work_t cz_i = (ci_min_z + ci_max_z) * work_t(0.5);
-    work_t cx_j = (cj_min_x + cj_max_x) * work_t(0.5);
-    work_t cy_j = (cj_min_y + cj_max_y) * work_t(0.5);
-    work_t cz_j = (cj_min_z + cj_max_z) * work_t(0.5);
+template <bool Ortho, typename T>
+__device__ T min_aabb_dist_sq(T ci_min_x, T ci_min_y, T ci_min_z, T ci_max_x,
+                              T ci_max_y, T ci_max_z, T cj_min_x, T cj_min_y,
+                              T cj_min_z, T cj_max_x, T cj_max_y, T cj_max_z,
+                              bool periodic, BoxGeometry<T> box) {
+    T cx_i = (ci_min_x + ci_max_x) * T(0.5);
+    T cy_i = (ci_min_y + ci_max_y) * T(0.5);
+    T cz_i = (ci_min_z + ci_max_z) * T(0.5);
+    T cx_j = (cj_min_x + cj_max_x) * T(0.5);
+    T cy_j = (cj_min_y + cj_max_y) * T(0.5);
+    T cz_j = (cj_min_z + cj_max_z) * T(0.5);
 
-    work_t dx = cx_j - cx_i, dy = cy_j - cy_i, dz = cz_j - cz_i;
+    T dx = cx_j - cx_i, dy = cy_j - cy_i, dz = cz_j - cz_i;
     if (periodic) {
         if constexpr (Ortho) {
-            dx -= work_t(box.cell[0]) * nearbyint(dx * work_t(box.inv_l[0]));
-            dy -= work_t(box.cell[4]) * nearbyint(dy * work_t(box.inv_l[1]));
-            dz -= work_t(box.cell[8]) * nearbyint(dz * work_t(box.inv_l[2]));
+            dx -= T(box.cell[0]) * nearbyint(dx * T(box.inv_l[0]));
+            dy -= T(box.cell[4]) * nearbyint(dy * T(box.inv_l[1]));
+            dz -= T(box.cell[8]) * nearbyint(dz * T(box.inv_l[2]));
         } else {
             box.min_image(dx, dy, dz);
         }
     }
 
-    work_t hx_i = (ci_max_x - ci_min_x) * work_t(0.5);
-    work_t hy_i = (ci_max_y - ci_min_y) * work_t(0.5);
-    work_t hz_i = (ci_max_z - ci_min_z) * work_t(0.5);
-    work_t hx_j = (cj_max_x - cj_min_x) * work_t(0.5);
-    work_t hy_j = (cj_max_y - cj_min_y) * work_t(0.5);
-    work_t hz_j = (cj_max_z - cj_min_z) * work_t(0.5);
+    T hx_i = (ci_max_x - ci_min_x) * T(0.5);
+    T hy_i = (ci_max_y - ci_min_y) * T(0.5);
+    T hz_i = (ci_max_z - ci_min_z) * T(0.5);
+    T hx_j = (cj_max_x - cj_min_x) * T(0.5);
+    T hy_j = (cj_max_y - cj_min_y) * T(0.5);
+    T hz_j = (cj_max_z - cj_min_z) * T(0.5);
 
-    work_t gx = fmax(work_t(0), fabs(dx) - hx_i - hx_j);
-    work_t gy = fmax(work_t(0), fabs(dy) - hy_i - hy_j);
-    work_t gz = fmax(work_t(0), fabs(dz) - hz_i - hz_j);
+    T gx = fmax(T(0), fabs(dx) - hx_i - hx_j);
+    T gy = fmax(T(0), fabs(dy) - hy_i - hy_j);
+    T gz = fmax(T(0), fabs(dz) - hz_i - hz_j);
     return gx * gx + gy * gy + gz * gz;
 }
 
-// ---------------------------------------------------------------------------
-// Kernel: Fill cluster pairs (single AABB pass)
-//
-// Writes pairs at row_ptr_upper[ci] offsets (pre-allocated from coarse count).
-// Outputs actual pair_counts[ci] for subsequent exact prefix sum.
-// Uses cluster_cell_idx to avoid recomputing home cell (P5).
-// ---------------------------------------------------------------------------
+// Algorithm reference: OpenMM platforms/cuda/src/kernels/findInteractingBlocks.cu
+// at 3a2326d0dd091229eaa4c0d7b5ad1001d5fe376e, sortBoxData and
+// findBlocksWithInteractions: coarse AABBs over 32 blocks, followed by
+// warp-parallel block AABB rejection. This ATV implementation reuses its own
+// AABB predicate and CSR count/fill primitives; no OpenMM source is copied.
+// A centroid grid with an atom-cutoff stencil is not conservative: a cluster
+// can extend outside its center's cell by arbitrarily many bins.
 
-// Templated on `bool Ortho` — propagates through to `min_aabb_dist_sq`
-// so the triclinic branch dead-eliminates in the ortho specialization.
-// Templated on `bool CountOnly`: when true the kernel runs the identical
-// AABB-filtered stencil walk but writes ONLY pair_counts[ci] (no col_idx /
-// row_ptr_upper touched) — the exact-count pre-pass that sizes the CSR.
-// Running the SAME predicate in both passes guarantees the fill pass writes
-// exactly row_ptr_upper[ci+1]-row_ptr_upper[ci] entries per cluster, so the
-// CSR can never overflow. (The old coarse counter was an unfiltered
-// stencil-cell sum — a wildly loose upper bound that overflowed int32 and
-// wasted gigabytes at ~1M dense atoms.)
-template <bool Ortho, bool CountOnly, typename work_t>
-__global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void fill_pairs(
-    const int* __restrict__ cell_start, const int* __restrict__ cell_clusters,
-    const int* __restrict__ cluster_cell_idx, int dims_x, int dims_y,
-    int dims_z, const int* __restrict__ stencil_dx,
-    const int* __restrict__ stencil_dy, const int* __restrict__ stencil_dz,
-    const int* __restrict__ num_stencil_ptr,
-    const real_t* __restrict__ aabb_min_x,
-    const real_t* __restrict__ aabb_min_y,
-    const real_t* __restrict__ aabb_min_z,
-    const real_t* __restrict__ aabb_max_x,
-    const real_t* __restrict__ aabb_max_y,
-    const real_t* __restrict__ aabb_max_z, int num_clusters, bool periodic,
-    work_t cutoff_plus_skin_sq, cuda::Box box,
-    const int* __restrict__ row_ptr_upper, int* __restrict__ col_idx,
-    int* __restrict__ pair_counts) {
-    int warp_id = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
+__global__ void large_cluster_bounds_k(ClusterBounds b, int num_clusters,
+                                       force_t* __restrict__ large_bounds) {
     int lane = threadIdx.x % 32;
-
-    if (warp_id >= num_clusters)
+    int group = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
+    int num_groups = (num_clusters + 31) / 32;
+    if (group >= num_groups)
         return;
+    int ci = group * 32 + lane;
+    force_t lo_x = ci < num_clusters ? b.min_x[ci] : force_t(INFINITY);
+    force_t lo_y = ci < num_clusters ? b.min_y[ci] : force_t(INFINITY);
+    force_t lo_z = ci < num_clusters ? b.min_z[ci] : force_t(INFINITY);
+    force_t hi_x = ci < num_clusters ? b.max_x[ci] : force_t(-INFINITY);
+    force_t hi_y = ci < num_clusters ? b.max_y[ci] : force_t(-INFINITY);
+    force_t hi_z = ci < num_clusters ? b.max_z[ci] : force_t(-INFINITY);
+    namespace cg = cooperative_groups;
+    auto warp = cg::tiled_partition<32>(cg::this_thread_block());
+    lo_x = cg::reduce(warp, lo_x, cg::less<force_t>{});
+    hi_x = cg::reduce(warp, hi_x, cg::greater<force_t>{});
+    lo_y = cg::reduce(warp, lo_y, cg::less<force_t>{});
+    hi_y = cg::reduce(warp, hi_y, cg::greater<force_t>{});
+    lo_z = cg::reduce(warp, lo_z, cg::less<force_t>{});
+    hi_z = cg::reduce(warp, hi_z, cg::greater<force_t>{});
 
-    int num_stencil = *num_stencil_ptr;
-    int ci = warp_id;
+    if (lane == 0) {
+        large_bounds[group] = lo_x;
+        large_bounds[num_groups + group] = lo_y;
+        large_bounds[2 * num_groups + group] = lo_z;
+        large_bounds[3 * num_groups + group] = hi_x;
+        large_bounds[4 * num_groups + group] = hi_y;
+        large_bounds[5 * num_groups + group] = hi_z;
+    }
+}
 
-    // Home cell from pre-computed cluster_cell_idx (P5: no cart_to_frac)
-    int home = cluster_cell_idx[ci];
-    int ncells_yz = dims_y * dims_z;
-    int hx = home / ncells_yz;
-    int hy = (home / dims_z) % dims_y;
-    int hz = home % dims_z;
+void launch_large_cluster_bounds(ClusterBounds bounds, int num_clusters,
+                                 force_t* large_bounds, cudaStream_t stream) {
+    if (num_clusters <= 0)
+        return;
+    int num_groups = (num_clusters + 31) / 32;
+    int grid = ATV::cuda::grid_size(num_groups * 32);
+    large_cluster_bounds_k<<<grid, ATV::cuda::kDefaultBlock, 0, stream>>>(
+        bounds, num_clusters, large_bounds);
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
 
-    int write_offset = CountOnly ? 0 : row_ptr_upper[ci];
-    int count = 0;
-
-    for (int s = 0; s < num_stencil; ++s) {
-        int nx = hx + stencil_dx[s];
-        int ny = hy + stencil_dy[s];
-        int nz = hz + stencil_dz[s];
-
-        if (periodic) {
-            nx = ((nx % dims_x) + dims_x) % dims_x;
-            ny = ((ny % dims_y) + dims_y) % dims_y;
-            nz = ((nz % dims_z) + dims_z) % dims_z;
-        } else {
-            if (nx < 0 || nx >= dims_x || ny < 0 || ny >= dims_y || nz < 0
-                || nz >= dims_z)
-                continue;
+// Conservative periodic lower bound for skew cells. Any separation q − p of
+// points in the two boxes is d + e with d the center difference and
+// |e_j| <= h_j (summed half-extents). Lattice vectors are the cell columns,
+// so the fractional coordinate along reciprocal vector b_k (row k of the
+// inverse cell) of every periodic image lies in [s_k − r_k, s_k + r_k] + Z,
+// r_k = Σ_j h_j |b_kj|.
+//  1. Projection bound, valid for every image: |v| >= |v·b_k| / |b_k|, so
+//     the distance of that interval to the nearest integer times the plane
+//     spacing w_k = 1/|b_k| bounds all images; the largest k is kept.
+//  2. Image bound: an image n further than one cell from the rounded center
+//     difference has |s_k + n_k| >= 1.5 along some k; when (1.5 − r_k) w_k
+//     exceeds the search radius for every k, only the 27 nearest images can
+//     interact, and the Cartesian AABB gap of each bounds its distance.
+// The larger of the two is returned. Intervals are widened by a rounding
+// margin, so a doubtful pair is kept for the exact per-atom mask.
+template <typename T>
+__device__ T skew_periodic_lower_bound_sq(T ci_min_x, T ci_min_y, T ci_min_z,
+                                          T ci_max_x, T ci_max_y, T ci_max_z,
+                                          T cj_min_x, T cj_min_y, T cj_min_z,
+                                          T cj_max_x, T cj_max_y, T cj_max_z,
+                                          const BoxGeometry<T>& box,
+                                          T search_sq) {
+    const T d[3] = {T(0.5) * (cj_min_x + cj_max_x - ci_min_x - ci_max_x),
+                    T(0.5) * (cj_min_y + cj_max_y - ci_min_y - ci_max_y),
+                    T(0.5) * (cj_min_z + cj_max_z - ci_min_z - ci_max_z)};
+    const T h[3] = {T(0.5) * (ci_max_x - ci_min_x + cj_max_x - cj_min_x),
+                    T(0.5) * (ci_max_y - ci_min_y + cj_max_y - cj_min_y),
+                    T(0.5) * (ci_max_z - ci_min_z + cj_max_z - cj_min_z)};
+    constexpr T kSlack = T(64) * ::cuda::std::numeric_limits<T>::epsilon();
+    T projection = T(0), s_round[3];
+    bool images_bounded = true;
+#pragma unroll
+    for (int k = 0; k < 3; ++k) {
+        T s = T(0), r = T(0), norm2 = T(0);
+#pragma unroll
+        for (int j = 0; j < 3; ++j) {
+            const T b = box.inv_cell[3 * k + j];
+            s += b * d[j];
+            r += fabs(b) * h[j];
+            norm2 += b * b;
         }
+        s_round[k] = nearbyint(s);
+        const T margin = kSlack * (fabs(s) + r + T(1));
+        const T spacing = rsqrt(norm2);
+        const T gap = fabs(s - s_round[k]) - r - margin;
+        if (gap > T(0))
+            projection = fmax(projection, gap * spacing);
+        const T far = (T(1.5) - r - margin) * spacing;
+        images_bounded = images_bounded && far > T(0) && far * far > search_sq;
+    }
+    T bound = projection * projection;
+    if (images_bounded) {
+        T nearest = ::cuda::std::numeric_limits<T>::infinity();
+        for (int n0 = -1; n0 <= 1; ++n0)
+            for (int n1 = -1; n1 <= 1; ++n1)
+                for (int n2 = -1; n2 <= 1; ++n2) {
+                    const T t[3] = {T(n0) - s_round[0], T(n1) - s_round[1],
+                                    T(n2) - s_round[2]};
+                    T gap2 = T(0);
+#pragma unroll
+                    for (int j = 0; j < 3; ++j) {
+                        const T v = d[j] + box.cell[3 * j] * t[0]
+                                    + box.cell[3 * j + 1] * t[1]
+                                    + box.cell[3 * j + 2] * t[2];
+                        const T g =
+                            fabs(v) - h[j] - kSlack * (fabs(v) + h[j] + T(1));
+                        if (g > T(0))
+                            gap2 += g * g;
+                    }
+                    nearest = fmin(nearest, gap2);
+                }
+        bound = fmax(bound, nearest);
+    }
+    return bound;
+}
 
-        int cell_idx = nx * ncells_yz + ny * dims_z + nz;
-        int start = cell_start[cell_idx];
-        int end = cell_start[cell_idx + 1];
-        int num_cj = end - start;
+template <bool Ortho, typename T>
+__device__ bool bounds_interact(ClusterBounds a, int ai, ClusterBounds b,
+                                int bi, bool periodic, T cutoff_sq,
+                                BoxGeometry<T> box) {
+    // Axis-aligned Cartesian bounds under a skew lattice do not guarantee
+    // that center minimum-image selects the closest box image; use the
+    // fractional-projection lower bound instead.
+    if constexpr (!Ortho) {
+        if (periodic) {
+            const T search_sq = cutoff_sq * (T(1) + T(1e-5));
+            return skew_periodic_lower_bound_sq<T>(
+                       a.min_x[ai], a.min_y[ai], a.min_z[ai], a.max_x[ai],
+                       a.max_y[ai], a.max_z[ai], b.min_x[bi], b.min_y[bi],
+                       b.min_z[bi], b.max_x[bi], b.max_y[bi], b.max_z[bi], box,
+                       search_sq)
+                   <= search_sq;
+        }
+    }
+    return min_aabb_dist_sq<Ortho, T>(
+               a.min_x[ai], a.min_y[ai], a.min_z[ai], a.max_x[ai], a.max_y[ai],
+               a.max_z[ai], b.min_x[bi], b.min_y[bi], b.min_z[bi], b.max_x[bi],
+               b.max_y[bi], b.max_z[bi], periodic, box)
+           <= cutoff_sq;
+}
 
-        for (int batch = 0; batch < (num_cj + 31) / 32; ++batch) {
-            int local = batch * 32 + lane;
-            bool passes = false;
-            int cj_val = -1;
-
-            if (local < num_cj) {
-                cj_val = cell_clusters[start + local];
-                // FULL neighbor list: keep every neighbor cluster (cj < ci,
-                // cj == ci, cj > ci), not just the cj >= ci upper triangle.
-                // The atom-centric LJ force kernel owns each atom's force and
-                // accumulates it in registers from ITS cluster's full neighbor
-                // set, so it needs cj < ci entries too — in exchange it does
-                // zero atomicAdds (vs the old half-list + 6-atomic Newton).
-                work_t dist_sq = min_aabb_dist_sq<Ortho, work_t>(
-                    aabb_min_x[ci], aabb_min_y[ci], aabb_min_z[ci],
-                    aabb_max_x[ci], aabb_max_y[ci], aabb_max_z[ci],
-                    aabb_min_x[cj_val], aabb_min_y[cj_val], aabb_min_z[cj_val],
-                    aabb_max_x[cj_val], aabb_max_y[cj_val], aabb_max_z[cj_val],
-                    periodic, box);
-                passes = (dist_sq <= cutoff_plus_skin_sq);
+template <bool Ortho, bool CountOnly, typename T>
+__global__ __launch_bounds__(ATV::cuda::kDefaultBlock) void fill_pairs(
+    ClusterBounds bounds, const force_t* __restrict__ large_bounds,
+    int num_clusters, bool periodic, T cutoff_plus_skin_sq, cuda::Box box_arg,
+    int* __restrict__ row_ptr, int* __restrict__ col_idx,
+    int* __restrict__ pair_counts, const int* __restrict__ overflow) {
+    const auto box = box_arg.current().as<T>();
+    int ci = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
+    int lane = threadIdx.x % 32;
+    if (ci >= num_clusters)
+        return;
+    if constexpr (!CountOnly) {
+        // An outgrown reserve empties the CSR: no consumer may read past it.
+        // Uniform across the grid; each warp writes only its own offset.
+        if (*overflow) {
+            if (lane == 0) {
+                row_ptr[ci] = 0;
+                if (ci == 0)
+                    row_ptr[num_clusters] = 0;
             }
-
-            unsigned ballot = __ballot_sync(0xFFFFFFFF, passes);
-            int batch_count = __popc(ballot);
-
-            if (!CountOnly) {
-                int prefix = __popc(ballot & ((1u << lane) - 1));
+            return;
+        }
+    }
+    const int num_groups = (num_clusters + 31) / 32;
+    ClusterBounds large{large_bounds,
+                        large_bounds + num_groups,
+                        large_bounds + 2 * num_groups,
+                        large_bounds + 3 * num_groups,
+                        large_bounds + 4 * num_groups,
+                        large_bounds + 5 * num_groups};
+    int count = 0;
+    int write_offset = CountOnly ? 0 : row_ptr[ci];
+    for (int base = 0; base < num_groups; base += 32) {
+        int group = base + lane;
+        bool possible =
+            group < num_groups
+            && bounds_interact<Ortho, T>(bounds, ci, large, group, periodic,
+                                         cutoff_plus_skin_sq, box);
+        unsigned groups = __ballot_sync(0xffffffffu, possible);
+        while (groups) {
+            int group_idx = base + __ffs(static_cast<int>(groups)) - 1;
+            groups &= groups - 1;
+            int cj = group_idx * 32 + lane;
+            bool passes =
+                cj < num_clusters
+                && bounds_interact<Ortho, T>(bounds, ci, bounds, cj, periodic,
+                                             cutoff_plus_skin_sq, box);
+            unsigned accepted = __ballot_sync(0xffffffffu, passes);
+            int batch_count = __popc(accepted);
+            if constexpr (!CountOnly) {
                 if (passes) {
-                    col_idx[write_offset + prefix] = cj_val;
+                    int prefix = __popc(accepted & ((1u << lane) - 1));
+                    col_idx[write_offset + prefix] = cj;
                 }
                 write_offset += batch_count;
             }
             count += batch_count;
         }
     }
-
-    if (lane == 0) {
-        pair_counts[ci] = count;
+    if constexpr (CountOnly) {
+        if (lane == 0)
+            pair_counts[ci] = count;
     }
 }
 
-template <typename work_t>
-void launch_fill_cluster_pairs(
-    const int* cell_start, const int* cell_clusters,
-    const int* cluster_cell_idx, int dims_x, int dims_y, int dims_z,
-    const int* stencil_dx, const int* stencil_dy, const int* stencil_dz,
-    const int* num_stencil_ptr, const real_t* aabb_min_x,
-    const real_t* aabb_min_y, const real_t* aabb_min_z,
-    const real_t* aabb_max_x, const real_t* aabb_max_y,
-    const real_t* aabb_max_z, int num_clusters, bool periodic,
-    work_t cutoff_plus_skin_sq, cuda::Box box, const int* row_ptr_upper,
-    int* col_idx, int* pair_counts, cudaStream_t stream) {
-    if (num_clusters == 0)
+template <typename T>
+void launch_fill_cluster_pairs(ClusterBounds bounds,
+                               const force_t* large_bounds, int num_clusters,
+                               bool periodic, T cutoff_plus_skin_sq,
+                               cuda::Box box, int* row_ptr, int* col_idx,
+                               const int* overflow, cudaStream_t stream) {
+    if (num_clusters <= 0)
         return;
-    int threads_needed = num_clusters * 32;
+    int grid = ATV::cuda::grid_size(num_clusters * 32);
     int block = ATV::cuda::kDefaultBlock;
-    int grid = (threads_needed + block - 1) / block;
     if (box.ortho) {
-        fill_pairs<true, false, work_t><<<grid, block, 0, stream>>>(
-            cell_start, cell_clusters, cluster_cell_idx, dims_x, dims_y, dims_z,
-            stencil_dx, stencil_dy, stencil_dz, num_stencil_ptr, aabb_min_x,
-            aabb_min_y, aabb_min_z, aabb_max_x, aabb_max_y, aabb_max_z,
-            num_clusters, periodic, cutoff_plus_skin_sq, box, row_ptr_upper,
-            col_idx, pair_counts);
+        fill_pairs<true, false, T><<<grid, block, 0, stream>>>(
+            bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
+            box, row_ptr, col_idx, nullptr, overflow);
     } else {
-        fill_pairs<false, false, work_t><<<grid, block, 0, stream>>>(
-            cell_start, cell_clusters, cluster_cell_idx, dims_x, dims_y, dims_z,
-            stencil_dx, stencil_dy, stencil_dz, num_stencil_ptr, aabb_min_x,
-            aabb_min_y, aabb_min_z, aabb_max_x, aabb_max_y, aabb_max_z,
-            num_clusters, periodic, cutoff_plus_skin_sq, box, row_ptr_upper,
-            col_idx, pair_counts);
+        fill_pairs<false, false, T><<<grid, block, 0, stream>>>(
+            bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
+            box, row_ptr, col_idx, nullptr, overflow);
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-// Exact-count pre-pass: same AABB-filtered stencil walk as the fill, writing
-// only pair_counts[ci]. Its prefix sum (row_ptr_upper) is therefore the EXACT
-// number of pairs the fill will emit — never an overflowing loose bound.
-template <typename work_t>
-void launch_count_cluster_pairs(
-    const int* cell_start, const int* cell_clusters,
-    const int* cluster_cell_idx, int dims_x, int dims_y, int dims_z,
-    const int* stencil_dx, const int* stencil_dy, const int* stencil_dz,
-    const int* num_stencil_ptr, const real_t* aabb_min_x,
-    const real_t* aabb_min_y, const real_t* aabb_min_z,
-    const real_t* aabb_max_x, const real_t* aabb_max_y,
-    const real_t* aabb_max_z, int num_clusters, bool periodic,
-    work_t cutoff_plus_skin_sq, cuda::Box box, int* pair_counts,
-    cudaStream_t stream) {
-    if (num_clusters == 0)
+template <typename T>
+void launch_count_cluster_pairs(ClusterBounds bounds,
+                                const force_t* large_bounds, int num_clusters,
+                                bool periodic, T cutoff_plus_skin_sq,
+                                cuda::Box box, int* pair_counts,
+                                cudaStream_t stream) {
+    if (num_clusters <= 0)
         return;
-    int threads_needed = num_clusters * 32;
+    int grid = ATV::cuda::grid_size(num_clusters * 32);
     int block = ATV::cuda::kDefaultBlock;
-    int grid = (threads_needed + block - 1) / block;
     if (box.ortho) {
-        fill_pairs<true, true, work_t><<<grid, block, 0, stream>>>(
-            cell_start, cell_clusters, cluster_cell_idx, dims_x, dims_y, dims_z,
-            stencil_dx, stencil_dy, stencil_dz, num_stencil_ptr, aabb_min_x,
-            aabb_min_y, aabb_min_z, aabb_max_x, aabb_max_y, aabb_max_z,
-            num_clusters, periodic, cutoff_plus_skin_sq, box, /*row_ptr_upper*/
-            nullptr, /*col_idx*/ nullptr, pair_counts);
+        fill_pairs<true, true, T><<<grid, block, 0, stream>>>(
+            bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
+            box, nullptr, nullptr, pair_counts, nullptr);
     } else {
-        fill_pairs<false, true, work_t><<<grid, block, 0, stream>>>(
-            cell_start, cell_clusters, cluster_cell_idx, dims_x, dims_y, dims_z,
-            stencil_dx, stencil_dy, stencil_dz, num_stencil_ptr, aabb_min_x,
-            aabb_min_y, aabb_min_z, aabb_max_x, aabb_max_y, aabb_max_z,
-            num_clusters, periodic, cutoff_plus_skin_sq, box, /*row_ptr_upper*/
-            nullptr, /*col_idx*/ nullptr, pair_counts);
+        fill_pairs<false, true, T><<<grid, block, 0, stream>>>(
+            bounds, large_bounds, num_clusters, periodic, cutoff_plus_skin_sq,
+            box, nullptr, nullptr, pair_counts, nullptr);
     }
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-// ---------------------------------------------------------------------------
-// Kernel: Write row_ptr sentinel on device (avoids D→H readback)
-// ---------------------------------------------------------------------------
-
-__global__ void write_row_ptr_sentinel(int* __restrict__ row_ptr,
-                                       const int* __restrict__ pair_counts,
-                                       int num_clusters) {
-    if (threadIdx.x == 0 && blockIdx.x == 0) {
-        row_ptr[num_clusters] =
-            row_ptr[num_clusters - 1] + pair_counts[num_clusters - 1];
-    }
+__global__ void close_csr_k(int* __restrict__ row_ptr,
+                            const int* __restrict__ pair_counts,
+                            int num_clusters, int capacity,
+                            int* __restrict__ overflow, ForceFault* fault) {
+    const int total = num_clusters > 0 ? row_ptr[num_clusters - 1]
+                                             + pair_counts[num_clusters - 1]
+                                       : 0;
+    row_ptr[num_clusters] = total;
+    const bool outgrown = total > capacity;
+    *overflow = outgrown;
+    if (outgrown)
+        raise_capacity_fault(fault, total);
 }
 
-void launch_write_row_ptr_sentinel(int* row_ptr, const int* pair_counts,
-                                   int num_clusters, cudaStream_t stream) {
-    write_row_ptr_sentinel<<<1, 1, 0, stream>>>(row_ptr, pair_counts,
-                                                num_clusters);
+void launch_close_csr(int* row_ptr, const int* pair_counts, int num_clusters,
+                      int capacity, int* overflow, ForceFault* fault,
+                      cudaStream_t stream) {
+    close_csr_k<<<1, 1, 0, stream>>>(row_ptr, pair_counts, num_clusters,
+                                     capacity, overflow, fault);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
-// ---------------------------------------------------------------------------
-// Kernel: In-place compaction of col_idx from upper-bound to exact CSR layout.
-// Safe because row_ptr[ci] <= row_ptr_upper[ci] for all ci (exact count <=
-// coarse count implies smaller prefix sums).
-// ---------------------------------------------------------------------------
-
-__global__ void compact_pairs(int* __restrict__ col_idx,
-                              const int* __restrict__ row_ptr_upper,
-                              const int* __restrict__ row_ptr,
-                              const int* __restrict__ pair_counts,
-                              int num_clusters) {
-    // One warp per cluster for parallel copy
-    int warp_id = (blockIdx.x * blockDim.x + threadIdx.x) / 32;
-    int lane = threadIdx.x % 32;
-
-    if (warp_id >= num_clusters)
-        return;
-
-    int ci = warp_id;
-    int src = row_ptr_upper[ci];
-    int dst = row_ptr[ci];
-    int n = pair_counts[ci];
-
-    // Warp-cooperative copy: each lane handles elements at stride 32
-    for (int i = lane; i < n; i += 32) {
-        col_idx[dst + i] = col_idx[src + i];
-    }
-}
-
-void launch_compact_pairs(int* col_idx, const int* row_ptr_upper,
-                          const int* row_ptr, const int* pair_counts,
-                          int num_clusters, cudaStream_t stream) {
-    if (num_clusters == 0)
-        return;
-    int block = ATV::cuda::kDefaultBlock;
-    int threads_needed = num_clusters * 32;
-    int grid = (threads_needed + block - 1) / block;
-    compact_pairs<<<grid, block, 0, stream>>>(col_idx, row_ptr_upper, row_ptr,
-                                              pair_counts, num_clusters);
-    ATV_CUDA_CHECK(cudaGetLastError());
-}
-
-// ── Forced template instantiations ───────────────────────────────────
-// Instantiate each launcher template over the configured work_t type
-// (the only argument the call sites use). Address-of ODR-uses the
-// template, so the compiler-deduced signature is instantiated without
-// a hand-written parameter list that could drift out of sync.
 namespace {
 [[maybe_unused]] const void* _inst_launch_fill_cluster_pairs =
-    reinterpret_cast<const void*>(&launch_fill_cluster_pairs<work_t>);
+    reinterpret_cast<const void*>(&launch_fill_cluster_pairs<force_t>);
 [[maybe_unused]] const void* _inst_launch_count_cluster_pairs =
-    reinterpret_cast<const void*>(&launch_count_cluster_pairs<work_t>);
+    reinterpret_cast<const void*>(&launch_count_cluster_pairs<force_t>);
 } // namespace
 
 } // namespace ATV::cuda::md::nlist

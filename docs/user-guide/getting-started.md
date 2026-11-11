@@ -13,7 +13,7 @@ Requires **C++20** and **CMake ≥ 3.18**.
 |---|---|
 | C++20 compiler + CMake ≥ 3.18 | build |
 | BLAS/LAPACK (OpenBLAS) | dense linear algebra in SCF |
-| Rust toolchain | molrs (I/O) is built via corrosion |
+| Rust toolchain | molpy's CXX bridge (`molcxx`) is built via corrosion |
 | FFTW3 *(optional)* | plane-wave DFT / k-space (`ATV_BUILD_PW`) |
 | CUDA toolkit + GPU *(optional)* | CUDA backend (`ATV_BUILD_CUDA`) |
 
@@ -50,28 +50,21 @@ export RUSTUP_TOOLCHAIN=stable-x86_64-unknown-linux-gnu
 Smallest useful start — Gaussian SCF + examples, CPU only:
 
 ```bash
-git submodule update --init --recursive molrs   # once per clone
+export ATV_MOLPY_PATH=/absolute/path/to/molpy   # default: ../molpy
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON \
       -DBLA_VENDOR=OpenBLAS
-cmake --build build --target 02_rhf -j
+cmake --build build --target 01_rhf -j
 ```
 
 Add `-DATV_BUILD_PW=ON` for plane-wave, `-DATV_BUILD_TESTS=ON` for tests.
 
-> **molrs path:** molrs is a hard dependency with two documented sources.
-> A plain `cmake -B build` (and CI, via `cmake/AtvUnitGate.cmake`) builds the
-> git submodule at `./molrs` — `ATV_MOLRS_PATH` defaults to
-> `${CMAKE_SOURCE_DIR}/molrs`. Every developer preset
-> (`cmake --preset cpu-unit`, `cpu-unit-hf`, …) instead sets
-> `ATV_MOLRS_PATH=${sourceDir}/../molrs`, the sibling MolCrafts checkout of
-> molrs `dev`: its uncommitted working tree carries the streaming `*.mrec`
-> trajectory writer (`cpu::MrecRecorder`) that no submodule pointer can pin,
-> and the gitlink only tracks the newest committed `dev` commit. In a git
-> worktree or other layout pass an absolute path:
-> `-DATV_MOLRS_PATH=/abs/path/to/molrs`. The CXX API version gate applies to
-> every source; optional bridge surfaces (WHAM, TrajectoryWriter) are
-> detected per pin and reported at configure time.
+> **molpy source:** configure against the local MolCrafts/molpy checkout
+> with `ATV_MOLPY_PATH` (environment variable or CMake option).
+> The default is the sibling `../molpy` directory.
+> The repository must contain `molcxx/`, `molpy/` and `crates/molrs-ffi/`.
+> No version is pinned; build the Python wheel and CXX bridge from this same
+> checkout. Optional bridge surfaces are reported at configure time.
 
 ## 4. Run a first example
 
@@ -79,13 +72,13 @@ Native CLI (LAMMPS-shaped input, no Python):
 
 ```bash
 cmake --build build --target atomiverse_cli
-./build/app/atomiverse/atomiverse -in examples/in.lj
+./build/app/atomiverse/atomiverse -in examples/cli/in.lj
 ```
 
 Or a compiled example:
 
 ```bash
-./build/examples/02_rhf
+./build/examples/01_rhf
 ```
 
 H₂ / STO-3G restricted Hartree–Fock. You should see a converged total energy
@@ -93,10 +86,9 @@ and a small iteration count. That proves the build chain works. Chapter 2
 walks through the theory and shows **density and HOMO cubes** produced from
 the same SCF — not a bare geometry canvas.
 
-Theory and Practice snippets: [Chapter 2](../tutorial/ch02-rhf.md). Other
-runnable demos live under `examples/` and document themselves; the handbook
-does not catalogue them. `examples/CMakeLists.txt` shows which build flag each
-one is gated behind (e.g. `08_pw` needs `ATV_BUILD_PW`, `09_gpw` needs
+Theory and Practice snippets: [Chapter 2](../tutorial/ch02-rhf.md). The other
+examples are indexed in `examples/README.md`. `examples/cpp/CMakeLists.txt` shows which build flags each
+one is gated behind (e.g. `09_pw` needs `ATV_BUILD_PW`, `10_gpw` needs
 `ATV_BUILD_GPW`); a target that is not configured simply does not exist.
 
 Full catalog and scientific context: [Tutorial index](../tutorial/).

@@ -1,0 +1,55 @@
+
+
+                     SUMMARY OF  RM1 CALCULATION
+
+                                                       MOPAC v23.2.5 MacOS
+                                                       Sat Oct 24 00:03:05 2026
+
+           Empirical Formula: C O  =     2 atoms
+
+ RM1 1SCF GRADIENTS XYZ AUX(PRECISION=9) PRECISE SCFCRT=1.D-12 DISP
+ RM1 off-equilibrium co
+ Native standalone OpenMOPAC reference, no geometry optimization
+
+
+     1SCF WAS SPECIFIED, SO BFGS WAS NOT USED                 
+     SCF FIELD WAS ACHIEVED                                   
+
+          HEAT OF FORMATION       =         -9.10383 KCAL/MOL =     -38.09043 KJ/MOL
+
+          TOTAL ENERGY            =     -10153.45987 KCAL/MOL = ELECTRONIC ENERGY + CORE-CORE REPULSION
+          ENERGY OF ATOMS         =      10144.35604 KCAL/MOL
+                              SUM =         -9.10383 KCAL/MOL
+          DISPERSION ENERGY       =          0.00000 KCAL/MOL
+                              SUM =         -9.10383 KCAL/MOL = FINAL HEAT OF FORMATION
+
+          TOTAL ENERGY            =       -440.29569 EV
+          ELECTRONIC ENERGY       =       -669.52014 EV
+          CORE-CORE REPULSION     =        229.22445 EV
+          GRADIENT NORM           =        206.02846          =       145.68412 PER ATOM
+          DIPOLE                  =          0.33695 DEBYE   POINT GROUP:  C*v 
+          NO. OF FILLED LEVELS    =          5
+          IONIZATION POTENTIAL    =         13.180599 EV
+          HOMO LUMO ENERGIES (EV) =        -13.181  1.097
+          MOLECULAR WEIGHT        =         28.0104
+          COSMO AREA              =         58.33 SQUARE ANGSTROMS
+          COSMO VOLUME            =         40.72 CUBIC ANGSTROMS
+
+          MOLECULAR DIMENSIONS (Angstroms)
+
+            Atom       Atom       Distance
+            O     2    C     1     1.20104
+            O     2    C     1     0.00000
+            C     1    O     2     0.00000
+          SCF CALCULATIONS        =          1
+          WALL-CLOCK TIME         =      0.011 SECONDS
+          COMPUTATION TIME        =      0.011 SECONDS
+
+
+          FINAL GEOMETRY OBTAINED
+ RM1 1SCF GRADIENTS XYZ AUX(PRECISION=9) PRECISE SCFCRT=1.D-12 DISP
+ RM1 off-equilibrium co
+ Native standalone OpenMOPAC reference, no geometry optimization
+  C     0.10000000 +1  -0.20000000 +1   0.30000000 +1
+  O     0.95000000 +1   0.40000000 +1   0.90000000 +1
+ 

@@ -1,7 +1,7 @@
 /// @file cpu/scf/eom_ip_ccsd.h
 /// @brief EOM-IP-CCSD ionization potentials (public API).
 ///
-/// User path: `RHF::eom_ip_ccsd(frame, n_states)` — drives closed-shell RHF,
+/// User path: `CCSD<RHF>{rhf}.eom_ip_ccsd(frame, n_states)` — drives closed-shell RHF,
 /// spin-orbital Gauss–Stanton CCSD, then EOM-IP on the similarity-transformed
 /// Hamiltonian (Stanton & Bartlett, J. Chem. Phys. **98**, 7029 (1993);
 /// Tu, Wang & Li, J. Chem. Phys. **136**, 174102 (2012)). Matches PySCF

@@ -163,13 +163,8 @@ TEST(MCScaffold, ValidatePassesWithMoverAndEnergy) {
 
 // ── Node-aware energy-source recognition (esmm-contract-02, ac-001) ─────────
 //
-// `HF` is a pure polymorphic tag, not a Component: a Gaussian method is a
-// `Driver<scf::Phase> + HF` bound as a NESTED DRIVER NODE. `McBase`'s
-// validation walks components only (`for_each_pending`), so it cannot see any
-// Gaussian method — the "RHF x MC" row of the free-combination matrix fails to
-// build even though it would run. MD / Evaluate / Minimize / Hessian already
-// use the node-aware `for_each_pending_kind` with a
-// `dynamic_cast<const HF*>(node)` driver-node lambda.
+// `HF` is a pure polymorphic tag, not a Component. `on(phase).add` copies
+// `provides_energy` onto the slot, so `require_energy` sees a nested method.
 
 /// ac-001 — a nested HF node IS the energy source. RED today: `build()` throws
 /// "missing required Potential / Bias / HF / Semiempirical / PlaneWave / GPW"
@@ -193,8 +188,9 @@ TEST(MCScaffold, ValidateStillThrowsWithNonHfNestedNode) {
     StubBareNode not_a_method;
     cpu::mc::MC d{/*temperature_K=*/300.0, /*seed=*/1u};
     d.on(sampling::Phase::propose).add(StubMover{});
-    d.on(sampling::Phase::energy).add_ref(not_a_method, /*order=*/0,
-                                         /*budget=*/0);
+    d.on(sampling::Phase::energy)
+        .add_ref(not_a_method, /*order=*/0,
+                 /*budget=*/0);
     EXPECT_THROW(d.build(), std::runtime_error);
 }
 

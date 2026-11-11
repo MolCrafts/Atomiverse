@@ -3,6 +3,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -10,6 +11,7 @@
 
 #include "atomiverse/cpu/component/qm_engine.h"
 #include "atomiverse/cpu/component/semiempirical.h"
+#include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/electronic/aspc_predictor.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/semiempirical/basis_data/dftb_spin_constants.h"
@@ -73,7 +75,7 @@ enum class DftbBoundary {
 /// polarization (Köhler / DFTB+ spin channel): dual α/β Fock matrices,
 /// Mulliken Δq and spin population m = Nα−Nβ.
 ///
-/// - `sk_set = MioSketch` (default): full mio-1-1 H/C/N/O SK + repulsive
+/// - `sk_set = MioSketch`: full mio-1-1 H/C/N/O SK + repulsive
 ///   (`basis_data/dftb_mio_sk_tables.h`; DFTB+ pins
 ///   `regressions/semiempirical/{dftb2-dftbplus-energy-pin,h2o_dftb2_mio}/`).
 ///   **Γ-point PBC** (`boundary = lattice`): lattice-summed H⁰/S and
@@ -102,8 +104,8 @@ enum class DftbBoundary {
 ///   lattice-image walk** as the energy — not min-image only — so
 ///   \(F=-\nabla E\) under Γ-PBC (`reg_dftb2-periodic-forces`,
 ///   `reg_dftb2-analytic-forces`, `reg_dftb2-spin-analytic-forces`). Both spin
-///   cases also offer an **analytic** intensive cell stress on `kStress`
-///   [eV/Å³] — the pair virial of those same image bond terms, spin-resolved
+///   cases also offer an **analytic** intensive cell stress through `last_stress()`
+///   [eV/Å³], with extensive virial on `kStress` [eV] — the pair virial of those same image bond terms, spin-resolved
 ///   over the α/β channels (`reg_dftb2-analytic-stress`,
 ///   `reg_dftb2-spin-analytic-stress`). No strain-FD is left on the MioSketch
 ///   product path.
@@ -111,7 +113,7 @@ enum class DftbBoundary {
 ///   repulsive (Gaus et al., JCTC 2013; organic CHNO). Closed shell: **analytic**
 ///   nuclear forces (same HF + Pulay + γ + repulsive assembly as MioSketch, on
 ///   the Ha/Bohr 3ob tables; `reg_dftb2-analytic-forces-threeob`) **and** an
-///   analytic intensive cell stress on `kStress` [eV/Å³] — the pair virial of
+///   analytic intensive cell stress through `last_stress()` [eV/Å³] — the pair virial of
 ///   those same bond terms, same sign and Voigt order as the MioSketch path
 ///   (`reg_dftb2-analytic-stress-threeob`). The 3ob path is a **molecular
 ///   cluster** sum (no lattice images), so its virial is the isolated-molecule
@@ -122,7 +124,7 @@ enum class DftbBoundary {
 /// correction using in-tree Grimme tables and the published DFTB3-D3(BJ)
 /// damping set (s6, s8, a1, a2) as used by DFTB+ / simple-dftd3 `--bj dftb3`.
 /// It is added on top of **either** `sk_set` path, with its own analytic
-/// gradient and (when `with_stress`) pair-virial / strain-FD stress, so
+/// gradient and (when requested) pair-virial / strain-FD stress, so
 /// \(F = -\nabla E\) and \(\sigma = -(1/\Omega)\partial E/\partial\varepsilon\)
 /// hold for the total. Three-body ATM is off.
 /// Default (`d3_periodic = false`): isolated-cluster D3 (no lattice images) —
@@ -136,12 +138,10 @@ enum class DftbBoundary {
 ///
 /// Molecule, open shell, dispersion, forces + stress:
 /// @code
-///   cpu::semiempirical::DFTB2 dftb;
-///   dftb.multiplicity = 3;   // O2 triplet (MioSketch)
+///   cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch,
+///                                  /*charge=*/0, /*multiplicity=*/3}; // O2 triplet
 ///   dftb.spin_w_ha = basis_data::kDftbSpinConstantsPbeHa;
 ///   dftb.d3 = true;
-///   dftb.with_forces = true;
-///   dftb.with_stress = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
 /// @endcode
 ///
@@ -150,11 +150,17 @@ enum class DftbBoundary {
 /// @code
 ///   cpu::semiempirical::DFTB2 dftb;
 ///   dftb.k_mesh = {4, 1, 1};
-///   dftb.with_forces = true;
-///   dftb.with_stress = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(dftb));
 /// @endcode
-class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
+///
+/// `cpu::Semiempirical` (the Component identity) is the FIRST base on purpose:
+/// nanobind upcasts without a pointer adjustment, so the Python `DFTB2`
+/// (bound with `cpu::Component` as its base) is only a valid `Component&`
+/// when that subobject sits at offset zero. With the Driver first, every
+/// Python `set_evaluator(dftb2)` handed the engine a misaligned Component.
+class DFTB2 : public cpu::Semiempirical,
+              public cpu::Driver<ATV::scc::Phase>,
+              public cpu::QmEngine {
   public:
     /// @brief SCC residual tolerance on max |Δq| (and |Δm| when open shell) [e].
     double scc_tol = 1e-8;
@@ -169,28 +175,17 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// converges every in-tree case in ≤ 14 iterations; β ≳ 0.7 stops
     /// converging for hydrogen-bonded systems.
     double mix_beta = 0.3;
-    /// @brief When true, write F=−∇E [eV/Å] on launch.
-    bool with_forces = true;
-    /// @brief When true, write intensive cell stress to `kStress` [eV/Å³].
-    ///
-    /// Closed-form pair virial of the analytic force terms on **every**
-    /// product path, σ = −(1/Ω)∂E/∂ε, Voigt `(xx,yy,zz,xy,xz,yz)`. No
-    /// strain-FD is left anywhere. MioSketch Γ is spin-resolved — the α/β
-    /// Hellmann–Feynman + Pulay ∂S (including the ±W_A m_A spin shift), the
-    /// SCC γ virial on the total Mulliken Δq, and the repulsive pair virial;
-    /// ThreeOb is the same assembly on the 3ob tables; multi-k restricted
-    /// MioSketch has its own closed-form Bloch pair virial.
-    ///
-    /// Every closed-form virial walks the **self-image** A–(A+T) bonds as well
-    /// as A–B: those carry no nuclear force (the bond is T, independent of
-    /// every nuclear coordinate) but do scale with the cell, so dropping them
-    /// is a silent error for any cell whose own images sit inside `r_cut`.
-    ///
-    /// When `d3=true`, D3 stress is folded in on top from the analytic pair
-    /// virial of `dftd3_pbe_bj` (image-aware when `d3_periodic=true`).
-    bool with_stress = false;
+    /// @brief Declare nuclear forces for both the Driver and Component protocols.
+    /// @return True.
+    bool provides_force() const override { return true; }
+    /// @brief Declare the Mulliken charge publication to the parent Runtime.
+    /// @return True.
+    bool updates_owned_charges() const override { return true; }
+    /// @brief Declare the cell virial supplied by the configured Hamiltonian.
+    /// @return False for +U, whose cell derivative is not implemented.
+    bool provides_system_stress() const override;
     /// @brief Static SK parameter set (member — not a Config bag).
-    DftbSkSet sk_set = DftbSkSet::MioSketch;
+    const DftbSkSet sk_set;
     /// @brief Cluster or lattice Hamiltonian. Default `lattice`.
     ///
     /// A Frame always carries a `Box`, so the box alone cannot say whether the
@@ -212,9 +207,9 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// @brief Ewald relative accuracy in (0, 1); sets the \(|k|\) cutoff.
     double ewald_accuracy = 1e-8;
     /// @brief Net molecular charge [e] (subtracted from valence electron count).
-    int charge = 0;
+    const int charge;
     /// @brief Spin multiplicity 2S+1 (dimensionless). Default 1 = closed shell.
-    int multiplicity = 1;
+    const int multiplicity;
     /// @brief Opt-in Grimme DFT-D3 with Becke–Johnson damping (two-body).
     bool d3 = false;
     /// @brief When true with `d3`, lattice-sum D3 over the orthorhombic box.
@@ -228,7 +223,7 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// the cutoff is discarded, and different D3 engines truncate differently
     /// (simple-dftd3 defaults to 60 Bohr = 31.75 Å for the two-body term).
     /// Set it to the oracle's cutoff when pinning a periodic dispersion
-    /// energy — see `regressions/semiempirical/dftb2-dispersion-d3-periodic/`.
+    /// energy — see `regressions/semiempirical/dftb2/`.
     double d3_cutoff = 49.84849326866401;
     /// @brief D3 C6 scale (dimensionless). DFTB3-D3(BJ) default = 1.
     double d3_s6 = 1.0;
@@ -305,7 +300,56 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// naming `dftb-shell-resolved-spin` when the spin channel is taken.
     bool shell_resolved_spin = false;
 
-    DFTB2() = default;
+    /// @brief SCC-DFTB2.
+    /// @param sk_set Slater–Koster parameter set.
+    /// @param charge Net molecular charge [e].
+    /// @param multiplicity Spin multiplicity 2S+1 (dimensionless).
+    explicit DFTB2(DftbSkSet sk_set, int charge = 0, int multiplicity = 1);
+    /// @brief Release the SCC plan before its private stage storage.
+    ~DFTB2() override;
+    /// @brief Transfer an unmounted method and its persistent SCC stages.
+    /// @param other Method to move; a mounted method cannot be moved.
+    DFTB2(DFTB2&& other);
+
+    /// @brief Evaluate energy [eV] and charges [e], preserving existing forces.
+    /// @param frame Geometry and overwritten energy/charge outputs.
+    void run(Frame& frame);
+    /// @brief Evaluate method results without changing the input Frame.
+    /// @param frame Read-only geometry [Å] and species.
+    void run(const Frame& frame);
+    /// @brief Evaluate and overwrite energy, charges and forces [eV/Å].
+    /// @param frame Geometry and physical output fields.
+    void forces(Frame& frame);
+    /// @brief Evaluate energy, charges and cell stress.
+    /// @param frame Geometry; kStress receives the extensive virial [eV].
+    /// @return Intensive Voigt stress [eV/Å³].
+    std::array<double, 6> stress(Frame& frame);
+
+    using cpu::Driver<ATV::scc::Phase>::build;
+    /// @brief Declare a total-energy source.
+    /// @return True.
+    bool provides_energy() const override { return true; }
+    /// @brief Require the whole electronic system on this rank.
+    /// @return True; spatial partitions are unsupported.
+    bool requires_full_frame() const override { return true; }
+    /// @brief SCC assembly uses local atom indices, not global tag lookup.
+    /// @return False.
+    bool requires_tag_index() const override { return false; }
+    /// @brief Expose this concrete SCC loop to the parent lifecycle ledger.
+    /// @return This method's DriverNode.
+    cpu::DriverNode* nested_node() const override {
+        return const_cast<DFTB2*>(this);
+    }
+    /// @brief Default nested SCC budget.
+    /// @return max_scc iterations.
+    int default_budget() const override { return max_scc; }
+    /// @brief Evaluate on the parent's Runtime with a bounded SCC budget.
+    /// @param ctx Parent execution services.
+    /// @param frame Parent geometry and additive output fields.
+    /// @param budget Maximum SCC iterations.
+    /// @return SCC iterations executed for the physical geometry.
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
 
     /// @brief Extrapolate the SCC starting charges from previous launches.
     ///
@@ -319,8 +363,8 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// This changes **where the SCC starts, never where it converges**: the
     /// residual gate is unchanged, so the energy is the same to `scc_tol` and
     /// only the iteration count moves. History resets automatically when the
-    /// atom count changes; call `reset_predictor()` after any other geometry
-    /// discontinuity.
+    /// species, atom count, boundary, k mesh or spin constants change; call
+    /// `reset_predictor()` after a geometry discontinuity.
     ///
     /// Off by default — a single point has no history to extrapolate from.
     ///
@@ -354,14 +398,18 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// @brief Component name token `"dftb2"` (dimensionless).
     std::string name() const override { return "dftb2"; }
 
-    /// @brief No-op; DFTB2 allocates no per-run workspace in `build`.
-    /// @param ctx Driver build context (unused).
+    /// @brief Attach the SCC stages to the parent Runtime, when present.
+    /// @param ctx Parent build context.
     void build(const BuildContext& ctx) override;
+
+    /// @brief Release the SCC stages from the parent Runtime.
+    /// @param ctx Parent destruction context.
+    void destroy(const DestroyContext& ctx) override;
 
     /// @brief One SCC-DFTB2 evaluation; writes `kEnergy` [eV] to `frame`.
     ///
-    /// Optional: `with_forces` writes \(F=-\nabla E\) [eV/Å]; `with_stress`
-    /// writes intensive `kStress` [eV/Å³].
+    /// Parent requests select forces \(F=-\nabla E\) [eV/Å] and stress; this
+    /// accumulates extensive `kStress` [eV].
     ///
     /// @param ctx Driver launch context (non-owning `frame` + services).
     /// @throws std::invalid_argument when `sk_set` is `Unset`, when
@@ -374,9 +422,11 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
 
     /// @brief `QmEngine` name token; same as `name()` (`"dftb2"`).
     std::string qm_engine_name() const override { return name(); }
-    /// @brief `QmEngine` prepare; forwards to `build`.
+    /// @brief Compile the private QM plan without a persistent Runtime mount.
     /// @param qm_ctx Driver build context (unused by DFTB2).
-    void prepare(const BuildContext& qm_ctx) override { build(qm_ctx); }
+    void prepare(const BuildContext&) override {
+        cpu::Driver<ATV::scc::Phase>::build();
+    }
     /// @brief `QmEngine` evaluate; forwards to `launch`.
     /// @param qm_ctx Driver launch context (non-owning `frame` + services).
     void evaluate(const LaunchContext& qm_ctx) override { launch(qm_ctx); }
@@ -458,9 +508,9 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
     /// collapse of the published PBE table); empty `spin_w_ha` throws.
     /// Absolute excitation energies are not DFTB+/mio-1-1 numbers for
     /// anything but the structural limits gated in
-    /// `regressions/semiempirical/td-dftb-h2/`.
+    /// `regressions/semiempirical/td-dftb/`.
     ///
-    /// @param frame          Geometry [Å] + atomic number Z in the type column.
+    /// @param frame          Geometry [Å] + atomic number Z in the atomic_number column.
     ///                       Read-only; nothing is written to it.
     /// @param n_states       Number of lowest excitations to return
     ///                       (dimensionless), 1 ≤ n_states ≤ n_pair.
@@ -492,7 +542,17 @@ class DFTB2 : public cpu::Semiempirical, public cpu::QmEngine {
                            int n_occ_window = 0, int n_virt_window = 0,
                            double coupling_scale = 1.0) const;
 
+  protected:
+    void validate_components() const override {}
+    bool phase_wants_forces(ATV::scc::Phase) const override { return false; }
+    bool phase_wants_stress(ATV::scc::Phase) const override { return false; }
+
   private:
+    void compute(const Frame& frame, bool forces, bool stress,
+                 bool history_step, Runtime* host);
+    void publish(Frame& frame, bool forces, bool stress, bool accumulate) const;
+    struct Workspace;
+    std::unique_ptr<Workspace> workspace_;
     double energy_ = 0;
     double e_band_ = 0;
     double e_scc_ = 0;

@@ -24,6 +24,13 @@ boundary between them falls:
     transformed back — O(N log N) instead of the O(N²) direct sum
     (``cpu::KSpacePME``).
 
+``KSpacePPPM``
+    The same split with Hockney–Eastwood PPPM and ik differentiation, the
+    LAMMPS ``pppm`` default. The mesh Green's function is the alias-sum
+    G(k), the energy scale is ``coulomb / (2V)``, and the force is the
+    Cartesian field ``i·k·V`` gathered with the spreading weights. It is
+    not the Essmann solver and it is not carried by the MPI task wire.
+
 Neither half is a Hamiltonian on its own. The driver enforces exactly one
 matched real/reciprocal pair at ``build()``, so installing one without the
 other raises there rather than running half an electrostatic model, and
@@ -46,25 +53,48 @@ column [e] of the ``molpy.Frame``, and ``run()`` rejects a frame that has
 no such column instead of treating the system as neutral. A genuinely
 neutral system is still expressible — insert an explicit zero column.
 
-The reciprocal solver needs FFTW3 and is therefore compile-optional: on an
-extension built without ``ATV_BUILD_KSPACE=ON`` this module still imports
-and still exports ``CoulLong``, but ``KSpacePME`` is absent — the surface
-reflects the compiled capability rather than pretending a solver exists.
+``CoulLong`` comes with the ``potentials`` module: without it, importing
+this module raises ``MissingDomainError`` naming ``ATV_BUILD_POTENTIALS``.
+The reciprocal solver needs FFTW3 and is its own module, ``kspace``: on an
+extension built without ``ATV_BUILD_KSPACE=ON`` this module still exports
+``CoulLong``, and asking for ``KSpacePME`` or ``KSpacePPPM`` raises
+``AttributeError`` naming the flag.
 For the cutoff (non-Ewald) Coulomb style see
 :data:`atomiverse.potentials.pair.CoulCut`.
 """
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp
+from typing import Any
+
+from atomiverse._binding import (
+    _cpp,
+    has_domain,
+    missing_domain_message,
+    require_domain,
+)
+
+require_domain(__name__, "potentials")
 
 #: Real-space Ewald/PME half — ``cpu::CoulLong(alpha [1/Å], cutoff [Å])``.
 CoulLong = _cpp.CoulLong
 
-if hasattr(_cpp, "KSpacePME"):
+if has_domain("kspace"):
     #: Reciprocal-space Ewald/PME half —
     #: ``cpu::KSpacePME(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6)``.
     KSpacePME = _cpp.KSpacePME
-    __all__ = ["CoulLong", "KSpacePME"]
+    #: ik PPPM reciprocal half —
+    #: ``cpu::KSpacePPPM(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6,
+    #: mesh = None)``; ``KSpacePPPM.from_accuracy(frame, accuracy, cutoff,
+    #: order=6, alpha=None, mesh=None)`` is LAMMPS ``kspace_style pppm
+    #: <accuracy>`` (alpha and mesh for this frame's cell and charges).
+    KSpacePPPM = _cpp.KSpacePPPM
+    __all__ = ["CoulLong", "KSpacePME", "KSpacePPPM"]
 else:
     __all__ = ["CoulLong"]
+
+
+def __getattr__(name: str) -> Any:
+    if name in ("KSpacePME", "KSpacePPPM"):
+        raise AttributeError(missing_domain_message(f"{__name__}.{name}", "kspace"))
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

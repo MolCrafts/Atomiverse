@@ -7,10 +7,13 @@
 /// `PairCoulCut` / `coul/long` for the Coulomb term).
 #pragma once
 
+#include <array>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -18,8 +21,8 @@ namespace cpu {
 /// @brief One Born–Mayer–Huggins type-pair coefficient entry.
 ///
 /// Frame `kAtom_type` values are used as-is and are never renumbered. In this
-/// tree that column carries the ATOMIC NUMBER — `cpu::from_molrs` fills it from
-/// the molrs `atomic_number` column — so a Na–Cl row is `{11, 17}` and an argon
+/// tree that column carries the ATOMIC NUMBER — `cpu::from_molpy` fills it from
+/// the molpy `atomic_number` column — so a Na–Cl row is `{11, 17}` and an argon
 /// dimer is `{18, 18}`, not a 0-based dense index. Symmetric table: (i,j) and
 /// (j,i) share the same parameters.
 struct BornTypeCoeff {
@@ -65,6 +68,7 @@ struct BornTypeCoeff {
 /// cell onto the Madelung attraction.
 class PairBorn : public Pair {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param A      Born–Mayer prefactor [eV] (must be ≥ 0).
     /// @param rho    Softness length [Å] (must be > 0).
     /// @param sigma  Ionic-pair radius parameter [Å].
@@ -90,10 +94,23 @@ class PairBorn : public Pair {
     /// @brief True when a per-type coefficient table is active.
     bool is_multi_type() const { return multi_; }
 
+    /// @brief The per-type table reads the neighbour's force-field type.
+    static constexpr std::array kTypedGhosts = {
+        GhostField::read_stable(kAtom_type, "PairBorn"),
+    };
+    std::span<const GhostField> declare_ghosts() const override {
+        if (multi_)
+            return kTypedGhosts;
+        return {};
+    }
+
     /// @brief O(N²) path: withdraw neighbor-list gate.
     const NeighborConsumer* as_neighbor_consumer() const final {
         return nullptr;
     }
+
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
 
   protected:
     void compute(const LaunchContext& ctx) override;
@@ -126,6 +143,8 @@ class PairBorn : public Pair {
     std::vector<Entry> table_; ///< dense n_types_ × n_types_
 
     double cutoff_sq_ = 0;
+
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

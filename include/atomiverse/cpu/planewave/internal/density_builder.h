@@ -4,11 +4,8 @@
 /// Facade-private step helper owned by `cpu::pw::PW`. NOT a
 /// `cpu::Component` subclass and never registered into a Plan.
 ///
-/// Single canonical implementation of the density build (the previous
-/// tree carried two divergent copies: a dead `PW_Density` component and
-/// an inline copy in the original monolithic solver — consolidated here with the k-point
-/// weighting of the production copy and the correct sliding-window Pulay
-/// history of the component copy).
+/// Restricted densities use Pulay mixing; collinear channels use joint
+/// Pulay mixing with a joint residual that retains both spin errors.
 #pragma once
 
 #include "atomiverse/cpu/planewave/internal/pw_workspace.h"
@@ -32,10 +29,10 @@ class DensityBuilder {
     ///        caller changing them between run()s takes effect.
     DensityBuilder() = default;
 
-    /// @brief Size scratch to the workspace's FFT grid (idempotent).
+    /// @brief Size FFT and joint-spin density scratch to the workspace.
     void prepare(const PWWorkspace& ws);
 
-    /// @brief Clear the Pulay history on the workspace (once per SCF run).
+    /// @brief Clear Pulay history (once per SCF run).
     void reset(PWWorkspace& ws);
 
     /// @brief Zero the real-space density accumulation buffer.
@@ -59,7 +56,18 @@ class DensityBuilder {
 
     /// @brief Save ρ_old, extract the new ρ(G) on the density G-sphere,
     ///        and Pulay-mix toward self-consistency.
-    void finish(PWWorkspace& ws);
+    /// @return The unmixed ||rho_out-rho_in||_2, independent of damping
+    ///         and Pulay history. Only this residual measures self-consistency.
+    AccReal finish(PWWorkspace& ws);
+
+    /// @brief Mix both spin densities and return their unmixed joint residual.
+    /// @param ws Collinear workspace; reads live Pulay controls.
+    /// @param alpha Output alpha density on the density G-sphere.
+    /// @param beta Output beta density on the density G-sphere.
+    /// @return sqrt(sum_sigma,G |rho_out-rho_in|^2), before damping.
+    AccReal mix_spin(PWWorkspace& ws,
+                     const xt::xarray<std::complex<AccReal>>& alpha,
+                     const xt::xarray<std::complex<AccReal>>& beta);
 
     /// @brief FFT the real-space accumulation onto `rho_out` (density G-sphere).
     ///        No mixing — used by the collinear spin channel before a total mix.
@@ -67,6 +75,8 @@ class DensityBuilder {
                  xt::xarray<std::complex<AccReal>>& rho_out);
 
   private:
+    xt::xarray<std::complex<AccReal>> spin_input_;
+    xt::xarray<std::complex<AccReal>> spin_output_;
     FFTWBuffer<AccReal> rho_r_accum_;
     FFTWBuffer<fftw_complex> psi_cc_;
     FFTWBuffer<fftw_complex> rho_g_full_;

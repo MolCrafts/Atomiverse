@@ -1,0 +1,26 @@
+&CONTROL
+ calculation='scf', prefix='h3', pseudo_dir='./', outdir='./scratch',
+ tprnfor=.true., tstress=.true., verbosity='high'
+/
+&SYSTEM
+ ibrav=0, nat=3, ntyp=1, ecutwfc=6.0, ecutrho=24.0,
+ nr1=72, nr2=72, nr3=72, nr1s=72, nr2s=72, nr3s=72,
+ input_dft='PBE', occupations='smearing', smearing='fermi-dirac',
+ degauss=0.12, nspin=2, nbnd=5, starting_magnetization(1)=0.3333333333333333,
+ nosym=.true., noinv=.true.
+/
+&ELECTRONS
+ conv_thr=1.0d-12, electron_maxstep=250, mixing_beta=0.35,
+ diagonalization='david', diago_thr_init=1.0d-12
+/
+ATOMIC_SPECIES
+H 1.008 H_GTH_PBE_q1.gth
+CELL_PARAMETERS angstrom
+4.2 0.0 0.0
+0.3 4.0 0.0
+0.2 0.1 3.8
+ATOMIC_POSITIONS angstrom
+H 1.2 1.1 1.0
+H 2.1 1.6 1.3
+H 1.6 2.25 1.8
+K_POINTS gamma

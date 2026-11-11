@@ -1,18 +1,18 @@
 /// @file tests/cpu/scf/test_stability.cpp
 /// @brief Unit checks for cpu::scf::internal::StabilityAnalysis and the
-///        RHF::stability() guards: Seeger-Pople channel split on H2/STO-3G,
+///        `Stability<RHF>::run` guards: Seeger-Pople split on H2/STO-3G,
 ///        Davidson-vs-dense lowest-root parity, no-virtuals / before-run
 ///        throws.
 ///
-/// NO SCF loop runs here (the full RHF.run()+stability() path lives in
-/// regressions/scf/h2_rhf_stability). The converged H2/STO-3G determinant
+/// NO SCF loop runs here (the full RHF.run()+Stability<RHF>::run path lives in
+/// regressions/scf/rhf). The converged H2/STO-3G determinant
 /// is symmetry-exact in closed form (see test_orbital_hessian.cpp for the
 /// derivation): φ_g = (χ₁+χ₂)/√(2(1+S₁₂)), φ_u = (χ₁−χ₂)/√(2(1−S₁₂)),
 /// ε_p = c_pᵀ F c_p from ONE Fock build over the symmetry-fixed density.
 ///
 /// PySCF 2.14.0 pins (H2/STO-3G, cart=True, RHF conv_tol=1e-12; (A±B)
 /// built from ao2mo MO integrals with the same closed-shell formulas —
-/// commands in regressions/scf/h2_rhf_stability/REFERENCE.md):
+/// commands in regressions/scf/rhf/REFERENCE.md):
 ///   R = 0.735 Å: λ_min[¹(A+B)] = +1.1351770407 Ha,
 ///                λ_min[³(A+B)] = +0.4114522416 Ha  (both stable)
 ///   R = 1.5 Å:   λ_min[¹(A+B)] = +0.7088965814 Ha,
@@ -31,14 +31,15 @@
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/internal/orbital_hessian.h"
 #include "atomiverse/cpu/scf/internal/stability.h"
+#include "atomiverse/cpu/scf/response.h"
 #include "atomiverse/cpu/scf/rhf.h"
 
 using namespace ATV;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::SlaterDeterminant;
 using cpu::scf::internal::Channel;
+using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::internal::OrbitalHessian;
 using cpu::scf::internal::StabilityAnalysis;
 
@@ -52,8 +53,8 @@ cpu::Frame make_h2(double r_angstrom) {
     f.span(kAtom_x)[1] = 0.0;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = r_angstrom;
-    f.span(kAtom_type)[0] = 1;
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.box = cpu::Box::cubic(20.0);
     return f;
 }
@@ -65,8 +66,9 @@ struct H2Reference {
 
 H2Reference make_h2_reference(double r_angstrom) {
     auto frame = make_h2(r_angstrom);
-    cpu::scf::internal::IntegralWorkspace pack{frame, cpu::scf::BasisSet::STO3G, 0,
-                      /*compute_eri=*/true};
+    cpu::scf::internal::IntegralWorkspace pack{frame, cpu::scf::BasisSet::STO3G,
+                                               0,
+                                               /*compute_eri=*/true};
     const double s12 = pack.S(0, 1);
     const double cg = 1.0 / std::sqrt(2.0 * (1.0 + s12));
     const double cu = 1.0 / std::sqrt(2.0 * (1.0 - s12));
@@ -216,8 +218,9 @@ TEST(StabilityAnalysis, LowestVectorIsNormalizedEigenvector) {
 }
 
 TEST(RhfStability, ThrowsBeforeRun) {
-    cpu::scf::RHF rhf;
-    EXPECT_THROW(rhf.stability(), std::runtime_error);
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
+    using Stab = cpu::scf::Stability<cpu::scf::RHF>;
+    EXPECT_THROW(Stab{rhf}.run(), std::runtime_error);
 }
 
 TEST(OrbitalHessian, NoVirtualsThrowsWithClearMessage) {

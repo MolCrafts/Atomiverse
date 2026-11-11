@@ -1,0 +1,41 @@
+          Start  707: GpwOneElectron.SsOverlap
+ 707/1766 Test  #707: GpwOneElectron.SsOverlap ............................................................   Passed    0.01 sec
+          Start  708: GpwOneElectron.SsKinetic
+ 708/1766 Test  #708: GpwOneElectron.SsKinetic ............................................................   Passed    0.01 sec
+          Start  709: GpwOneElectron.PxSelfOverlap
+ 709/1766 Test  #709: GpwOneElectron.PxSelfOverlap ........................................................   Passed    0.01 sec
+          Start  710: GpwOneElectron.Symmetry
+ 710/1766 Test  #710: GpwOneElectron.Symmetry .............................................................   Passed    0.01 sec
+          Start  711: GpwOneElectron.ContractedIsSumOfPrimitives
+ 711/1766 Test  #711: GpwOneElectron.ContractedIsSumOfPrimitives ..........................................   Passed    0.01 sec
+          Start  712: GpwOneElectron.DFunctionsFinite
+ 712/1766 Test  #712: GpwOneElectron.DFunctionsFinite .....................................................   Passed    0.01 sec
+          Start  713: GpwOneElectron.ContractedSsMatchesClosedForm
+ 713/1766 Test  #713: GpwOneElectron.ContractedSsMatchesClosedForm ........................................   Passed    0.01 sec
+          Start  714: GpwOneElectron.ContractedSTPeriodicFusedMatchesImageSum
+ 714/1766 Test  #714: GpwOneElectron.ContractedSTPeriodicFusedMatchesImageSum .............................   Passed    0.01 sec
+          Start  715: GpwOneElectron.ContractedSTPeriodicAngularMatchesPrimImageSum
+ 715/1766 Test  #715: GpwOneElectron.ContractedSTPeriodicAngularMatchesPrimImageSum .......................   Passed    0.01 sec
+          Start  716: GpwOneElectron.ContractedAngularMatchesPrimSum
+ 716/1766 Test  #716: GpwOneElectron.ContractedAngularMatchesPrimSum ......................................   Passed    0.01 sec
+          Start  717: GpwOneElectron.FourierSsSeparatedCenters
+ 717/1766 Test  #717: GpwOneElectron.FourierSsSeparatedCenters ............................................   Passed    0.01 sec
+          Start  718: GpwOneElectron.FourierOddProductsRetainNonzeroImaginaryPart
+ 718/1766 Test  #718: GpwOneElectron.FourierOddProductsRetainNonzeroImaginaryPart .........................   Passed    0.01 sec
+          Start  719: GpwOneElectron.FourierPAndDClosedMoments
+ 719/1766 Test  #719: GpwOneElectron.FourierPAndDClosedMoments ............................................   Passed    0.01 sec
+          Start  720: GpwOneElectron.FourierSeparatedPdClosedForm
+ 720/1766 Test  #720: GpwOneElectron.FourierSeparatedPdClosedForm .........................................   Passed    0.01 sec
+          Start  721: GpwOneElectron.FourierZeroWavevectorAndConjugation
+ 721/1766 Test  #721: GpwOneElectron.FourierZeroWavevectorAndConjugation ..................................   Passed    0.01 sec
+          Start  722: GpwOneElectron.FourierRejectsInvalidPrimitiveDomain
+ 722/1766 Test  #722: GpwOneElectron.FourierRejectsInvalidPrimitiveDomain .................................   Passed    0.01 sec
+          Start  723: GpwOneElectron.FourierConcurrentHermiteGeometry
+ 723/1766 Test  #723: GpwOneElectron.FourierConcurrentHermiteGeometry .....................................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 1766
+
+Label Time Summary:
+unit    =   0.72 sec*proc (53 tests)
+
+Total Test time (real) =  31.97 sec

@@ -11,6 +11,10 @@
 /// Rev. Mod. Phys. 66, 899 (1994)). Closing links use the short reciprocal
 /// step \(b = 2\pi/(L_i J)\) with wrapped k-labels (same convention as
 /// multi-k MLWF).
+/// The Cartesian Gaussian Fourier overlap is exact in every angular term:
+/// \(\int a(\mathbf r)b(\mathbf r)e^{-i\mathbf q\cdot\mathbf r}d^3r\).
+/// Here \(\mathbf q\) is the short unwrapped ket-minus-bra step [Bohr⁻¹]
+/// and primitive coordinates are [Bohr]; the phase sign is negative.
 ///
 /// **Closed shell** (`!is_uks()`): spin factor \(f=2\),
 /// \(p^\mathrm{el}=f\varphi/2\pi\), total wrapped with quantum 2.
@@ -24,16 +28,17 @@
 /// (GPW convention). Twin: CP2K Quickstep `&MOMENTS PERIODIC`.
 ///
 /// @code
-///   cpu::gpw::GpwDft dft;
-///   dft.cell[0] = dft.cell[1] = a / std::sqrt(2.0); // BCT Si [Bohr]
-///   dft.cell[2] = a;
-///   dft.cutoff_ry = 100.0;
+///   // frame: Si positions [Å], Z in kAtom_atomic_number,
+///   //        box = Box::orthorhombic(a/√2, a/√2, a) [Å] (BCT Si)
+///   cpu::gpw::GpwDft dft{{{molrs::Element::Si,
+///                          cpu::gpw::GaussianBasis(molrs::Element::Si, "SZV-GTH"),
+///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}},
+///                        /*cutoff_ry=*/100.0, cpu::xc::XCType::PADE};
 ///   dft.n_occ = 8;
-///   dft.xc = cpu::gpw::XcKind::PADE;
-///   dft.build(atoms);
+///   dft.build(frame);
 ///
 ///   cpu::gpw::BerryPolarization berry;   // members: k_perp, k_string, …
-///   auto r = berry.compute(dft, atoms);
+///   auto r = berry.compute(dft, frame);
 ///   // r.p_frac[i]  — total formal polarization along a_i [e, fractional]
 ///   // r.dipole_e_ang — Cartesian cell dipole P·a  [e Å]
 /// @endcode
@@ -108,21 +113,23 @@ class BerryPolarization {
     /// @return `k_perp^2 * k_string` fractional (crystal) k-points.
     std::vector<std::array<double, 3>> string_kpoints(int dir) const;
 
-    /// @brief Multi-k SCF strings + Berry phase for the geometry in `atoms`.
+    /// @brief Multi-k SCF strings + Berry phase for the geometry in `frame`.
     ///
     /// For each requested direction: sets `method.k_points` to the string
-    /// mesh (equal weights, TR off), runs `method.run(atoms)`, then forms
-    /// link determinants from `last_result()` occupied Bloch MOs.
+    /// mesh (equal weights, TR off), runs `method.run(frame)`, then forms
+    /// link determinants from `last_result()` occupied Bloch MOs. Each
+    /// direction converges independently on its own mesh. The spin-independent
+    /// AO link is shared by the occupied spin manifolds.
     ///
     /// @param method GPW DFT method (`build()` already done; k-mesh / list
     ///               and TR flag are overwritten per direction).
-    /// @param atoms  Atom set at the current geometry [Bohr] (same as `build`).
+    /// @param frame  Geometry (positions [Å], Z, orthorhombic box [Å]); the
+    ///               SCF energy [eV] is written to `frame.meta[kEnergy]`.
     /// @return Owned `BerryPolarizationResult` (fractional [e], dipole [e Å]).
     /// @throws std::invalid_argument on metallic smearing, non-positive
     ///         mesh, empty occupied manifold, or non-periodic cell.
     /// @throws std::logic_error when `method` was not `build()`'d.
-    BerryPolarizationResult compute(GpwDft& method,
-                                    const std::vector<GpwAtom>& atoms) const;
+    BerryPolarizationResult compute(GpwDft& method, Frame& frame) const;
 };
 
 /// @brief \(\operatorname{Im}\ln\prod_j d_j\) of a closed string of link

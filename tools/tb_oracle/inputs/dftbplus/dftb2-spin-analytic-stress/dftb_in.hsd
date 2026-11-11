@@ -1,6 +1,6 @@
 # Offline DFTB+ 24.1 twin for ATV slug dftb2-spin-analytic-stress.
 # Cluster O2 triplet, tilted bond |R|=1.30 Å along (0.6, 0.7, sqrt(0.15)),
-# matching regressions/semiempirical/dftb2-spin-analytic-stress/. ATV uses
+# matching regressions/semiempirical/dftb2/. ATV uses
 # DftbBoundary::cluster with a cubic 20 Å box only to define Ω for the
 # intensive virial — that is still a cluster Hamiltonian. A DFTB+ `S`
 # geometry would add Ewald images ATV does not use, so this twin stays `C`.

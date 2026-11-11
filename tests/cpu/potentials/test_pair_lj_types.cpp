@@ -7,9 +7,13 @@
 /// to wear the oxygen's sigma and a liquid-density water box self-destructs.
 
 #include <cmath>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
@@ -147,11 +151,45 @@ TEST(PairLJTypes, TypeWithoutAnLJSiteDoesNotInteract) {
     EXPECT_LT(energy_of(oo, pair, rc), 0.0) << "O-O should be bound at 3.5 A";
 }
 
+/// A type above every coefficient line is an unset pair too: build() sizes the
+/// table to the Frame's types instead of the kernel indexing past it.
+TEST(PairLJTypes, TypeAboveTheTableDoesNotInteract) {
+    const double rc = 9.0;
+    const auto pair = cpu::PairLJCut{{{0, 0, 0.1, 3.0}}, rc};
+    cpu::Frame oh = dimer(0, 3, 0.96);
+    EXPECT_NEAR(energy_of(oh, pair, rc), 0.0, 1e-14);
+    cpu::Frame hh = dimer(3, 3, 0.96);
+    EXPECT_NEAR(energy_of(hh, pair, rc), 0.0, 1e-14);
+}
+
+/// A type that appears after build() (an MC insertion) is refused at the
+/// neighbor rebuild that brings it in, not read past the table.
+TEST(PairLJTypes, TypeIntroducedAfterBuildThrowsAtRebuild) {
+    cpu::Frame f = dimer(0, 0, 4.0);
+    cpu::md::PairList pairs;
+    pairs.inum = 2;
+    pairs.ilist = {0, 1};
+    pairs.firstneigh = {0, 1};
+    pairs.numneigh = {1, 0};
+    pairs.neighbors = {1};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    auto pair = cpu::PairLJCut{{{0, 0, 0.1, 3.0}}, 9.0};
+    pair.build({context, f});
+    EXPECT_NO_THROW(pair.launch({context, f, 0, 0, true, true}));
+    f.span(ATV::kAtom_type)[1] = 5;
+    pairs.version = 1;
+    EXPECT_THROW(pair.launch({context, f, 0, 1, true, true}),
+                 std::runtime_error);
+    pair.destroy({context, f});
+}
+
 /// The per-type constructor refuses an empty table: a PairLJCut cannot EXIST in a
 /// state where it has no coefficients. That is why the table is a constructor argument
 /// and not something you attach afterwards.
 TEST(PairLJTypes, PerTypeConstructorRefusesAnEmptyTable) {
-    EXPECT_THROW(cpu::PairLJCut(std::vector<cpu::LJTypeCoeff>{}, 8.0),
+    EXPECT_THROW(cpu::PairLJCut(std::vector<LJTypeCoeff>{}, 8.0),
                  std::invalid_argument);
 }
 
@@ -159,15 +197,101 @@ TEST(PairLJTypes, PerTypeConstructorRefusesAnEmptyTable) {
 TEST(PairLJTypes, SetTypeCoeffEditsOneEntry) {
     const double rc = 9.0, r = 4.2;
     auto pair = cpu::PairLJCut{{{0, 0, 0.1, 3.0}}, rc};
-    pair.set_type_coeff(0, 0, 0.7, 3.6); // overwrite it
+    pair.set_type_coeff({0, 0, 0.7, 3.6}); // overwrite it
 
     cpu::Frame f = dimer(0, 0, r);
     EXPECT_NEAR(energy_of(f, pair, rc), lj_ref(0.7, 3.6, r, rc),
                 kEnergyTolerance);
 }
 
+/// The per-type table needs the force-field type column. A Frame without one
+/// (a QM geometry from molpy carries `atomic_number` only) is refused at build
+/// with the how-to — never read as all-zero types, never keyed on the species
+/// instead. The single-pair form reads no type and runs on the same Frame.
+TEST(PairLJTypes, TypedTableRefusesAFrameWithoutTypes) {
+    const double eps = 0.0104, sigma = 3.4, rc = 8.5, r = 4.0;
+    cpu::Frame f = dimer(1, 1, r);
+    f.block("atoms").erase(ATV::kAtom_type.key);
+    f.span(ATV::kAtom_atomic_number)[0] = 1;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    try {
+        (void)energy_of(f, cpu::PairLJCut{{{1, 1, eps, sigma}}, rc}, rc);
+        FAIL() << "a per-type LJ table ran on a Frame without types";
+    } catch (const std::exception& e) {
+        EXPECT_NE(std::string(e.what()).find("type_id"), std::string::npos)
+            << e.what();
+    }
+    cpu::Frame g = dimer(1, 1, r);
+    g.block("atoms").erase(ATV::kAtom_type.key);
+    EXPECT_NEAR(energy_of(g, cpu::PairLJCut{eps, sigma, rc}, rc),
+                lj_ref(eps, sigma, r, rc), kEnergyTolerance);
+}
+
 /// A single-type PairLJCut has no table, and says so rather than growing one silently.
 TEST(PairLJTypes, SetTypeCoeffThrowsOnASingleTypePair) {
     cpu::PairLJCut pair{0.0104, 3.4, 8.5};
-    EXPECT_THROW(pair.set_type_coeff(0, 0, 0.1, 3.0), std::logic_error);
+    EXPECT_THROW(pair.set_type_coeff({0, 0, 0.1, 3.0}), std::logic_error);
 }
+
+#ifdef _OPENMP
+TEST(PairLJTypes, LaunchUsesOnlyTheActiveTeamWithinBuiltCapacity) {
+    const int saved_threads = omp_get_max_threads();
+    const int saved_dynamic = omp_get_dynamic();
+    const int saved_levels = omp_get_max_active_levels();
+    omp_set_dynamic(0);
+    omp_set_num_threads(2);
+    omp_set_max_active_levels(1);
+
+    // Two isolated dimers place nonzero work in both thread buffers. A later
+    // serialized nested launch must not add the previous second buffer.
+    cpu::Frame f(4);
+    f.box = cpu::Box::cubic(40.0);
+    for (int i = 0; i < 4; ++i) {
+        f.span(kAtom_x)[i] = 5.0 + 12.0 * (i / 2) + 1.2 * (i % 2);
+        f.span(kAtom_y)[i] = f.span(kAtom_z)[i] = 5.0;
+        f.span(kAtom_type)[i] = 0;
+    }
+    cpu::md::PairList pairs;
+    pairs.inum = pairs.n_rows = 4;
+    pairs.ilist = {0, 1, 2, 3};
+    pairs.numneigh = {1, 0, 1, 0};
+    pairs.firstneigh = {0, 1, 1, 2};
+    pairs.neighbors = {1, 3};
+    pairs.total_pairs = 2;
+    cpu::Context ctx;
+    ctx.md.pair_list = &pairs;
+    cpu::PairLJCut pair{1.0, 1.0, 2.5};
+    pair.build({ctx, f});
+    const double s6 = std::pow(1.0 / 1.2, 6);
+    const double force = -24.0 / 1.2 * s6 * (2.0 * s6 - 1.0);
+
+    for (int mode = 0; mode < 4; ++mode) {
+        // Defaults of 1 and 4 do not resize the object's two-thread capacity.
+        omp_set_num_threads(mode == 1 ? 1 : 4);
+        for (int i = 0; i < 4; ++i)
+            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
+        f.meta.get(kEnergy) = f.meta.get(kEnergyPair) = 0;
+        if (mode == 3) {
+            // Unlike OMP_DYNAMIC, max_active_levels deterministically forces
+            // the component's nested parallel region down to one thread.
+#pragma omp parallel num_threads(2)
+            {
+#pragma omp single
+                pair.launch({ctx, f, 0, 0, true, false});
+            }
+        } else {
+            pair.launch({ctx, f, 0, 0, true, false});
+        }
+        EXPECT_NEAR(f.meta.get(kEnergy), 2 * lj_ref(1, 1, 1.2, 2.5), 1e-12);
+        for (int i = 0; i < 4; ++i) {
+            EXPECT_NEAR(f.span(kAtom_fx)[i], i % 2 ? -force : force, 1e-12);
+            EXPECT_DOUBLE_EQ(f.span(kAtom_fy)[i], 0);
+            EXPECT_DOUBLE_EQ(f.span(kAtom_fz)[i], 0);
+        }
+    }
+    pair.destroy({ctx, f});
+    omp_set_max_active_levels(saved_levels);
+    omp_set_num_threads(saved_threads);
+    omp_set_dynamic(saved_dynamic);
+}
+#endif

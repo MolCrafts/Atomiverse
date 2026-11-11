@@ -10,12 +10,18 @@
 ///      loop cannot stop its enclosing loop).
 #pragma once
 
+#include "atomiverse/core/input_change.h"
+
 namespace ATV {
+template <typename Component>
+struct Plan;
 namespace cpu {
 
+class Component;
 class Runtime;
 class Context;
 class Frame;
+class TimestepConsumer;
 
 /// @brief Erased base for a nestable CPU loop node.
 ///
@@ -41,9 +47,31 @@ class DriverNode {
     /// @param rt Parent Backend.
     virtual void destroy_on(Runtime& rt) = 0;
 
+    /// Synchronize live bindings before the enclosing tree begins dispatch.
+    virtual void refresh_on(Runtime&) {}
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    virtual void invalidate_inputs(InputChange, Runtime&) {}
+
+    /// Only plans sharing the enclosing Runtime participate in its contracts.
+    virtual const Plan<Component>* execution_plan() const { return nullptr; }
+
     /// @brief Default nested-run budget when the caller passes budget < 0.
     /// @return Preset-specific default (0 unless overridden).
     virtual int default_budget() const { return 0; }
+
+    /// Energy/force and clock contracts survive node type erasure.
+    virtual bool provides_energy() const { return false; }
+    virtual bool provides_force() const { return false; }
+    virtual TimestepConsumer* timestep_consumer() { return nullptr; }
+
+    /// @brief A line-search trial of this loop is as good as a committed run.
+    ///
+    /// Same contract as `Component::trial_invariant`, forwarded by the
+    /// nested-slot adapter so a minimizer can keep the accepted trial of a
+    /// nested method instead of replaying it. Opt-in: false by default.
+    virtual bool trial_invariant() const { return false; }
 
     /// @brief Does anything in this loop resolve global tags at run time?
     ///
@@ -53,6 +81,7 @@ class DriverNode {
     /// `Runtime::set_frame`, which is one call above the whole tree.
     /// @see cpu::Component::requires_tag_index
     virtual bool requires_tag_index() const { return false; }
+    virtual bool requires_full_frame() const { return false; }
 };
 
 } // namespace cpu

@@ -1,327 +1,133 @@
 # Molecular Dynamics
 
-Legend and caveats: [Roadmap index](index.md).
+Tutorial: [MD](../tutorial/ch10-classical-md.md) · [ensembles](../tutorial/ch11-ensembles.md) · [vibrations](../tutorial/ch14-vibrations.md).
 
-The Dynamics driver (`cpu::md::MD`, `cuda::md::MD`) is the most complete part of
-the engine: NVE/NVT/NPT all run on both backends, with MPI domain decomposition,
-halo exchange, and migration on CPU, and multi-GPU support on CUDA. Constraints
-(RATTLE) run on CPU under MPI. On **CPU**, full-cell **Parrinello–Rahman NPT**
-and isotropic **NPH** also ship. Remaining gaps are specific rather than
-structural — uniaxial-only `Deform`, no general rigid bodies, no CUDA PR/NPH.
+`cpu::md::MD` / `cuda::md::MD`. NVE/NVT/NPT on both backends. Legend:
+[Roadmap index](index.md). Electrode Components:
+[Electrodes](electrodes.md).
 
-## 1. Molecular-Dynamics Integrators
+## 0. CUDA precision modes
 
-| Method                            | CPU | CUDA | Kokkos |
-| --------------------------------- | :-: | :--: | :---: |
-| Velocity Verlet                   |  ✓  |   ✓  |   ○  |
-| Forest–Ruth integrator            |  ○  |   ○  |   ○  |
-| Reversible RESPA                  |  ○  |   ○  |   ○  |
-| Langevin dynamics                 |  ✓  |   ✓  |   ○  |
-| BAOAB Langevin integrator         |  ○  |   ○  |   ○  |
-| GJF Langevin integrator           |  ○  |   ○  |   ○  |
-| Langevin-middle integrator        |  ○  |   ○  |   ○  |
-| Brownian dynamics                 |  ✓  |   ○  |   ○  |
-| Generalized Langevin equation     |  ○  |   ○  |   ○  |
-| Rigid-body quaternion integration |  ○  |   ○  |   ○  |
+| Mode | Force math / mesh / FFT | Coordinates | Integration, v, m | Energy, virial | Forces |
+| ---- | ----------------------- | ----------- | ----------------- | -------------- | ------ |
+| `double` (default) | FP64 | FP64 | FP64 | FP64 | 64-bit fixed point |
+| `mixed` | FP32 | FP32 + FP32 correction | FP64 | FP64 | 64-bit fixed point |
+| `single` | FP32 | FP32 | FP32 | FP64 | 64-bit fixed point |
 
-Langevin dynamics is the Schneider–Stoll additive-force form (`FixLangevin`),
-not one of the named splitting schemes. `NVELimit` (LAMMPS `nve/limit`, a
-per-step displacement cap) is also available on both backends for relaxing
-overlapping start configurations.
+`ATV_CUDA_PREC_MODE` selects the mode; `mixed` follows OpenMM's mixed
+precision. A force outside the fixed-point range (|F| ≥ 2.2·10⁶ eV/Å, or
+NaN) stops integration and is reported with atom tag and step.
 
-## 2. Thermostats
+## 1. Integrators and thermostats
 
-| Method                                   | CPU | CUDA | Kokkos |
-| ---------------------------------------- | :-: | :--: | :---: |
-| Langevin thermostat                      |  ✓  |   ✓  |   ○  |
-| Nosé–Hoover thermostat                   |  ✓  |   ✓  |   ○  |
-| Nosé–Hoover chain thermostat             |  ✓  |   ✓  |   ○  |
-| Bussi stochastic velocity rescaling      |  ✓  |   ○  |   ○  |
-| Gaussian isokinetic thermostat           |  ○  |   ○  |   ○  |
-| Massive Nosé–Hoover chains               |  ○  |   ○  |   ○  |
-| Dissipative particle dynamics thermostat |  ✓  |   ○  |   ○  |
-| Dual thermostat for Drude particles      |  ○  |   ○  |   ○  |
-| PILE thermostat                          |  ○  |   ○  |   ○  |
-| PIGLET thermostat                        |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| Velocity Verlet | ✓ | ✓ | |
+| Langevin (Schneider–Stoll) | ✓ | ✓ | Not BAOAB/GJF |
+| Brownian dynamics | ✓ | ◐ | CUDA: device kernel; CPU-only build throws `brownian_integrate`. Einstein ⟨r²⟩=6Dt pin stays the CPU regression |
+| Nosé–Hoover (single chain) | ✓ | ✓ | Standalone NVT |
+| Nosé–Hoover chain (M-chain) | ✓ | ✓ | Inside MTK NPT only |
+| Bussi / CSVR | ✓ | ○ | |
+| DPD thermostat | ◐ | ○ | No external pin; self-pinned case removed |
+| NVELimit | ✓ | ✓ | Displacement cap |
 
-Two caveats behind those ✓ marks:
+## 2. Barostats and ensembles
 
-- The standalone `NoseHoover` component is a **single-chain** thermostat (one
-  scalar ξ) — a documented divergence from LAMMPS, which chains by default.
-- The real **M-chain NHC** (default M = 3, with `drag`) exists only *inside* the
-  MTK NPT integrator, not as a standalone NVT thermostat. Choosing NVT with
-  chains today means running the NPT integrator, or accepting the single chain.
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| NVE / NVT / NPT | ✓ | ✓ | |
+| NPH (isotropic) | ✓ | ○ | `NphIntegrator` |
+| MTK NPT (diagonal) | ✓ | ✓ | `NoseHooverNPT`; CUDA orthorhombic, with PME or Ewald reciprocal virial |
+| Parrinello–Rahman NPT (full cell) | ✓ | ○ | CPU full-cell LJ regression; general-cell neighbor lists and spatial decomposition |
+| Surface-tension NPT | ✓ | ○ | Semi-isotropic |
+| Berendsen barostat | ✓ | ✓ | Protocol reproduction — not for sampling |
+| Temperature ramp | ✓ | ✓ | |
 
-Bussi/CSVR (`FixCSVR`) is CPU-only.
+CPU `Box` uses lattice vectors in columns (`r = H s`) and supports general
+triclinic cells. Neighbor construction, fractional spatial decomposition and
+periodic halo images support both single-rank and MPI execution, including
+shear changes and multiple images of the same atom. LJ, EAM and SW+LJ tilted
+initial/one-step states are compared with LAMMPS; general cell matrices and
+self-image multiplicity have direct tests. The 800-step PR-NPT LJ regression
+also passes. These checks do not establish every potential/barostat combination;
+GPW and slab Ewald retain orthorhombic restrictions.
 
-## 3. Barostats
+Image flags follow LAMMPS `Domain::pbc` on both backends: every wrap of atom
+state (CPU rebuild wrap, SLLOD and the MC translate move; CUDA velocity
+Verlet, NVE limit, MTK NPT, SLLOD, Brownian and the `sd` / `cg` / `lbfgs`
+minimizer steps) adds the lattice translation to `image`, so
+\(r + H\,\mathrm{image}\) is continuous and is what a retrieved Frame carries
+(unwrapped transport, `FixEfield` energy). A rejected MC move and an L-BFGS
+Armijo rollback restore the images they changed. Each image component is an
+`ImageInt` (int32) on both backends, so a run may cross the cell ±2³¹ times
+per axis; LAMMPS data files and molpy frames carry `ix/iy/iz` in and out
+exactly.
 
-| Method                              | CPU | CUDA | Kokkos |
-| ----------------------------------- | :-: | :--: | :---: |
-| Berendsen barostat                  |  ✓  |   ✓  |   ○  |
-| Parrinello–Rahman barostat          |  ✓  |   ○  |   ○  |
-| Martyna–Tobias–Klein barostat       |  ✓  |   ✓  |   ○  |
-| Langevin piston                     |  ○  |   ○  |   ○  |
-| Monte Carlo isotropic barostat      |  ○  |   ○  |   ○  |
-| Monte Carlo anisotropic barostat    |  ○  |   ○  |   ○  |
-| Isotropic pressure coupling         |  ✓  |   ✓  |   ○  |
-| Semi-isotropic pressure coupling    |  ✓  |   ✓  |   ○  |
-| Fully anisotropic pressure coupling |  ✓  |   ○  |   ○  |
-| Constant-surface-tension coupling   |  ✓  |   ○  |   ○  |
-| Constant-stress dynamics            |  ✓  |   ○  |   ○  |
+On CUDA a plan whose integrator tilts the cell (SLLOD yz/xz/xy) dispatches the
+general-cell pair, neighbor and mask kernels from the first step. Both
+backends decide a Verlet rebuild with LAMMPS `Neighbor::check_distance`'s box
+check: the half-skin trigger shrinks by the motion of the cell corners since
+the last build (`core/neighbor_check.h`), and a cell change that alone
+consumes the skin rebuilds; on CUDA the decision is the device skin gate, so a
+deforming cell no longer rebuilds every step.
 
-Two NPT integrators on CPU:
+CPU MD uses one Runtime rebuild sequence and explicit periodic ghost rows for
+both serial and MPI execution. Frame owns row extents; neighbor consumers
+declare interaction coverage independently of skin and communication reach.
+The [LJ CPU benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/compare/lj-lammps/README.md) compared
+the same input against LAMMPS at 10,648 and 103,823 atoms (Apple M4,
+2026-10-19): the tested loop meets the performance target, while communication category
+parity remains open. This does not establish parity for other potentials or
+cluster hardware.
 
-- **`NoseHooverNPT`** (MTK) couples the **cell diagonal** only: isotropic, or
-  per-axis via `couple_axis[3]` (an axis left off is held rigid). No
-  off-diagonal / shear DOFs. Also on CUDA.
-- **`ParrinelloRahmanNPT`** is MTK with the **full cell matrix** (9 DOFs with
-  constraints for volume/shape as configured) — the PR constant-stress path
-  (`reg_pr_npt_lj`). CPU-only.
+## 3. Constraints and virtual sites
 
-Berendsen remains isotropic only. **Constant surface tension** ships as
-`cpu::md::SurfaceTensionNPT` (MTK semi-isotropic, LAMMPS `fix npt … couple xy`
-lockstep + NPγT \(P_\perp = P_n - n_{\mathrm{surf}}\gamma/L_z\`); pin
-`reg_surface-tension-coupling`.
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| RATTLE | ✓ | ✓ | Distance + 1–3; per-cluster solve (X–H clusters converge independently); MPI on CPU, one thread per cluster on CUDA (single GPU) |
+| SETTLE | ✓ | ✓ | Three-site rigid water; one thread per water on CUDA (single GPU) |
+| Virtual sites | ✓ | ○ | Weighted3 (TIP4P), OutOfPlane3 (TIP5P) |
+| LINCS / general rigid bodies | ○ | ○ | |
 
-## 4. Molecular-Dynamics Ensembles
+## 4. Nonequilibrium
 
-| Method                              | CPU | CUDA | Kokkos |
-| ----------------------------------- | :-: | :--: | :---: |
-| Microcanonical dynamics, NVE        |  ✓  |   ✓  |   ○  |
-| Canonical dynamics, NVT             |  ✓  |   ✓  |   ○  |
-| Isothermal–isobaric dynamics, NPT   |  ✓  |   ✓  |   ○  |
-| Isoenthalpic–isobaric dynamics, NPH |  ✓  |   ○  |   ○  |
-| Constant surface-tension dynamics   |  ✓  |   ○  |   ○  |
-| Constant stress dynamics            |  ✓  |   ○  |   ○  |
-| Simulated annealing                 |  ○  |   ○  |   ○  |
-| Temperature-ramp dynamics           |  ✓  |   ✓  |   ○  |
-| Pressure-ramp dynamics              |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| Constant E-field | ✓ | ◐ | `FixEfield` (LAMMPS `fix efield`, constant path): \(F = qE\), field in V/Å; \(U = -\sum q\,E\cdot r^u\) through the image flags (orthorhombic and triclinic), no virial (LAMMPS `fix_modify virial` default off). CUDA `cuda::md::FixEfield`: device-only, graph-capturable; unit tests vs analytic and CPU on a charged pair, no external pin. Wire ID 38; Python `FixEfield` via `MD.set_evaluator` on CPU and CUDA |
+| Oscillating E-field | ✓ | ○ | |
+| Constant-force pull | ✓ | ○ | |
+| Constant-velocity pull (SMD) | ◐ | ○ | No external pin; self-pinned case removed |
+| Uniaxial Deform | ✓ | ✓ | `Deform(Mode::erate` or `Mode::trate, rate, dt, axis)` on both backends: one axis, remap x (the axis row of the cell and the coordinates scale together, so tilted cells keep fractional coordinates), no shear; CUDA unit test vs CPU on a tilted cell; neither backend's `Deform` is exposed to Python |
+| NVT SLLOD (`fix nvt/sllod` + `fix deform erate`, remap v) | ◐ | ◐ | `NvtSllod`, one direction per run (x y z yz xz xy), constant engineering rate, upper-triangular cell, Nosé–Hoover chain of length `tchain` (default 1, the LAMMPS `fix nvt/sllod` default; FixNH order with the carried peculiar temperature), LAMMPS `flip yes` box flip when a tilt passes half its box length (decided at end_of_step, executed at the next pre_exchange with `Domain::image_flip`; on CUDA both on the device). Same scalar laws on both backends (`core/sllod_flow.h`); unit tests: the chain against a transcription of `FixNH::nhc_temp_integrate`, CUDA vs CPU one step and an eight-step `tchain = 3` run (chain variables, unwrapped state), the flip on both backends, and an LJ shear across the flip whose per-step energy and forces equal a freshly built list (CPU) and the CPU run (CUDA). `PressureSeries` writes the six-component −P (lab-frame kinetic, LAMMPS default thermo) for one continuous run. Python: `NvtSllod(..., tchain=1)` + `MD.set_pressure_series` (CUDA). No external pin |
+| Lees–Edwards / heat flux | ○ | ○ | |
 
-**Isotropic NPH** ships as `NphIntegrator` — a thermostat-free barostat
-integrator (`reg_nph_lj`). Anisotropic NPH and CUDA NPH remain ○. Constant-stress
-dynamics is the PR-NPT path above.
+## 5. Ab initio MD
 
-Temperature ramps are supported by both the Langevin thermostat and the MTK NPT
-integrator (`T_target` → `T_stop`). Simulated annealing is marked ○ because it
-is a *protocol* over those ramps, not a component — you can express it today by
-driving the ramp yourself, but the engine ships no annealing schedule.
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| HF BOMD | ✓ | ◐ | CUDA: STO-3G s/p RHF only |
+| KS BOMD (Gaussian) | ✓ | ○ | |
+| GPW BOMD | ✓ | ○ | Γ pinned; multi-k / UKS / smear reachable, not separately pinned |
+| PW BOMD | ✓ | ○ | Foothold |
+| AM1 BOMD | ◐ | ○ | AM1 forces pinned; no external-pinned MD case (self-pinned case removed) |
+| DFTB / xTB MD | ◐ | ○ | Via forces → MD; forces pinned, no external-pinned MD case (self-pinned DFTB2 MD cases removed) |
+| CPMD (GPW) | ✓ | ○ | eNH; multi-k / UKS |
+| Second-gen CPMD | ✓ | ○ | ASPC + partial SCF; OT variants |
+| XL-BOMD | ✓ | ○ | Incl. linearized F/σ |
 
-## 5. Constraint and Rigid-Body Methods
+## 6. Nuclear quantum / nonadiabatic
 
-| Method                       | CPU | CUDA | Kokkos |
-| ---------------------------- | :-: | :--: | :---: |
-| RATTLE                       |  ✓  |   ○  |   ○  |
-| P-LINCS                      |  ○  |   ○  |   ○  |
-| SETTLE                       |  ✓  |   ○  |   ○  |
-| CCMA                         |  ○  |   ○  |   ○  |
-| Distance constraints         |  ✓  |   ○  |   ○  |
-| Angle constraints            |  ✓  |   ○  |   ○  |
-| Rigid-water dynamics         |  ✓  |   ○  |   ○  |
-| General rigid-body dynamics  |  ○  |   ○  |   ○  |
-| Virtual-site dynamics        |  ✓  |   ○  |   ○  |
-| Hydrogen-mass repartitioning |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| PIMD skeleton | ✓ | ○ | Ring springs + IdentityReplication |
+| RPMD / PILE / contraction | ○ | ○ | |
+| FSSH / Ehrenfest | ○ | ○ | NAC vectors ship; no dynamics consumer |
 
-`cpu::md::FixRattle` (Andersen 1983) holds distance and 1–3 (angle) constraints, runs
-under MPI, and throws rather than return a molecule that is merely *nearly* rigid. It
-holds TIP3P geometry to 5 × 10⁻¹¹ relative over 5 ps at `dt = 2 fs`
-(`regressions/md/rigid_water`) — that is the **rigid-water** path today (general
-RATTLE, not a water-only closed form).
+## 7. Vibrations
 
-**SETTLE** ships as `cpu::md::FixSettle` (`reg_settle_tip3p`) — closed-form
-three-site rigid water; general molecules still use RATTLE.
-
-**Virtual sites:** (1) TIP4P foothold via `cpu::PairLJCutTip4pCut` (in-pair M-site
-reconstruct + Feenstra partition; `reg_four-site-tip4p-foothold`); (2) multi-topology
-engine `cpu::md::VirtualSites` with **Weighted3** (TIP4P M-site as Frame atoms) and
-**OutOfPlane3** (TIP5P lone-pair geometry) + force redistribute
-(`reg_virtual-site-multi-topology` vs LAMMPS tip4p path). Further Gromacs-style
-`virtual_sitesn` / tabulated constructions remain open.
-
-Before RATTLE, every molecule was fully flexible: water models had to be flexible
-variants and the timestep was bounded by the fastest X–H stretch (~9 fs period for O–H,
-so ~0.5 fs steps). Constrained water runs at `dt = 2 fs`. What is still missing for
-biomolecular work is **general rigid bodies** (and remaining vsite constructors).
-
-## 6. Nonequilibrium Molecular Dynamics
-
-| Method                              | CPU | CUDA | Kokkos |
-| ----------------------------------- | :-: | :--: | :---: |
-| Constant electric-field MD          |  ✓  |   ○  |   ○  |
-| Oscillating electric-field MD       |  ✓  |   ○  |   ○  |
-| Constant-force pulling              |  ✓  |   ○  |   ○  |
-| Constant-velocity pulling           |  ✓  |   ○  |   ○  |
-| Steered molecular dynamics          |  ○  |   ○  |   ○  |
-| SLLOD shear dynamics                |  ○  |   ○  |   ○  |
-| Lees–Edwards shear dynamics         |  ○  |   ○  |   ○  |
-| Uniaxial-deformation MD             |  ✓  |   ✓  |   ○  |
-| Biaxial-deformation MD              |  ○  |   ○  |   ○  |
-| Triaxial-deformation MD             |  ○  |   ○  |   ○  |
-| Oscillatory-shear MD                |  ○  |   ○  |   ○  |
-| Reverse nonequilibrium MD           |  ○  |   ○  |   ○  |
-| Müller–Plathe heat-flux method      |  ○  |   ○  |   ○  |
-| Homogeneous nonequilibrium MD       |  ○  |   ○  |   ○  |
-| Temperature-gradient MD             |  ○  |   ○  |   ○  |
-| Pressure-driven flow                |  ○  |   ○  |   ○  |
-| Poiseuille-flow MD                  |  ○  |   ○  |   ○  |
-| Shock-wave MD                       |  ○  |   ○  |   ○  |
-
-`Deform` drives one axis at a time, with affine coordinate remap, in either
-engineering strain (`erate`, `L = L₀(1 + Rt)`) or true strain (`trate`,
-`L = L₀·exp(Rt)`). The CUDA port supports `erate` only. This is enough for a
-uniaxial tension/compression run (see `/* benchmarks removed; re-add later */ pe/`, polyethylene under
-tension) and nothing more — no shear, no flow, no heat flux.
-
-**Constant electric field** ships as `cpu::md::FixEfield` (LAMMPS `fix efield`
-constant path): \(\mathbf{F}_i = q_i\mathbf{E}\), energy
-\(U=-\sum_i q_i\mathbf{E}\cdot\mathbf{r}_i^{\mathrm{u}}\) (`reg_external-efield-md`).
-**Oscillating / AC field** is `cpu::md::FixOscillatingEfield` (cosine
-\(E(t)\); `reg_oscillating-efield-md`). **Constant-force pull** is
-`cpu::md::FixAddForce` (LAMMPS `fix addforce`; `reg_constant-force-pull-ion`).
-**Constant-velocity SMD** is `cpu::md::FixMove` (LAMMPS `fix move`;
-`reg_constant-velocity-smd`). **Displacement \(\mathbf{D}\)-field** is
-`cpu::md::FixDfield` (`reg_displacement-dfield-md`). Classical electrochemistry
-Components on `cpu::md::MD` — constant-potential and constant-charge
-electrodes, MaZe mass-zero charge dynamics, Thomas–Fermi metallicity, the
-piston electrode, coupled dipole–electrode SCF, and the electrode observers —
-have their own chapter: **[Electrodes and Electrochemistry](electrodes.md)**.
-They are not repeated here.
-
-## 7. Ab Initio Molecular Dynamics
-
-| Method                                  | CPU | CUDA | Kokkos |
-| --------------------------------------- | :-: | :--: | :---: |
-| Hartree–Fock Born–Oppenheimer MD        |  ✓  |   ○  |   ○  |
-| Kohn–Sham Born–Oppenheimer MD           |  ✓  |   ○  |   ○  |
-| Plane-wave Born–Oppenheimer MD          |  ✓  |   ○  |   ○  |
-| Semiempirical Born–Oppenheimer MD       |  ✓  |   ○  |   ○  |
-| DFTB molecular dynamics                 |  ○  |   ○  |   ○  |
-| xTB molecular dynamics                  |  ○  |   ○  |   ○  |
-| Car–Parrinello molecular dynamics       |  ✓  |   ○  |   ○  |
-| Extended-Lagrangian Born–Oppenheimer MD |  ✓  |   ○  |   ○  |
-| Second-generation Car–Parrinello MD     |  ✓  |   ○  |   ○  |
-
-AIMD works by binding a force-providing method/component to `md::Phase::force`
-(energy/force kinds: `HF`, `PlaneWave`, `GPW`, `Semiempirical`, `Potential`, …):
-
-- Concrete `RHF`/`UHF`/`RKS`/`UKS` (or nested SCF) with gradients → **HF and KS
-  BOMD**, with an ASPC density predictor for warm starts.
-- `cpu::gpw::GPWEvaluator` with forces on → **periodic KS BOMD**. Γ-point
-  closed-shell carries the NVE energy-drift pin (`reg_gpw-bomd-water`);
-  multi-k RKS and multi-k UKS both ship, each warm-starting the SCF from the
-  previous step's \(P_k\) (dual-spin \(P_k^\sigma\) for UKS), mirroring
-  CP2K's `EXTRAPOLATION USE_PREV_P` and pinned against CP2K Quickstep AIMD on
-  the same k-mesh (`reg_gpw-bomd-kpoints`, `reg_gpw-bomd-uks-kpoints`; fair
-  wall ratio 0.064). Metallic occupation-smear BOMD — the free-energy /
-  Mermin trajectory — ships as `reg_gpw-bomd-smearing`, and multi-k
-  free-energy forces *and* stress under smear are both product
-  (`reg_gpw-metallic-forces` / `reg_gpw-uks-metallic-forces`,
-  `reg_gpw-metallic-stress` / `reg_gpw-uks-metallic-stress`).
-- `cpu::pw::PWEvaluator` with `with_gradient(true)` → **plane-wave BOMD**
-  (analytic local + Ewald + KB forces; default is energy-only); foothold
-  `reg_pw-bomd-h`.
-- `cpu::semiempirical::AM1Evaluator` with `with_gradient(true)` (default) writes
-  nuclear forces (eV/Å). Semiempirical BOMD is pinned by
-  `regressions/semiempirical/am1_water_bomd`.
-- GPU BOMD for STO-3G s/p (l ≤ 1): `cuda::md::MD` +
-  `set_evaluator(cuda::scf::RHF{…})` + VelocityVerlet
-  (`reg_h2_rhf_sto3g_aimd --device=cuda`, GH200 **1332540**,
-  PE = −30.397789 eV). Out-of-coverage device forces throw.
-
-**XL-BOMD** (Niklasson dissipative auxiliary density) ships as
-`cpu::electronic::XlBomd` + `GPWEvaluator::{xl_bomd, xl_bomd_k}` on closed-shell
-GPW (`reg_xl-bomd-water`) **and Γ-UKS** dual-spin auxiliary densities
-(`reg_xl-bomd-uks`) **and multi-k RKS** (`reg_xl-bomd-kpoints`) **and
-multi-k UKS** dual-spin \(P_k^\sigma\) (`reg_xl-bomd-uks-kpoints`). ASPC
-remains a separate density *predictor* (warm start); OT+XL stays
-architecturally excluded (OT parameterizes orbitals, not density);
-**zero-SCF linearized-functional forces** productize on **Γ RKS**
-(`xl_bomd_linearized`; `reg_xl-bomd-linearized-forces`), **Γ-UKS**
-dual-spin shadow densities (`reg_xl-bomd-linearized-uks`), **and the
-multi-k path** — RKS and collinear UKS, k-weighted complex shadow
-\(D_k^\sigma\) with the new k-UKS fixed-density eval
-(`reg_xl-bomd-linearized-kpoints`, CP2K-anchored per-step trace);
-linearized XL + analytic fixed-\(P\) **stress** productizes
-(`reg_xl-bomd-linearized-stress`; multi-SCF strain-FD oracle still
-refused — BO stress, not the zero-SCF shadow functional).
-
-**Car–Parrinello MD** (fictitious electronic DOF) ships as `cpu::electronic::Cpmd` +
-`GPWEvaluator::{cpmd, cpmd_mu}` (the nuclear dt is pushed in from the MD
-integrator through `TimestepProvider`/`TimestepConsumer`, never re-declared on
-the evaluator) on closed-shell Γ GPW: cold SCF seed,
-then fixed-density KS eval + electronic Verlet + analytic forces at that
-density (`reg_cpmd-water`) **and Γ-UKS** (`reg_cpmd-uks`). Conserved
-\(E_{\mathrm{cons}} = T_n + T_e + E_{\mathrm{KS}}\). **Electronic RATTLE**
-(Andersen constraint-preserving orbitals; `reg_cpmd-rattle-water`) is product
-on the closed-shell path. **Electronic thermostat** (Nosé–Hoover on fictitious
-electronic DOF) productizes at Γ (`reg_cpmd-electronic-thermostat`) **and on
-the multi-k path** (one thermostatted `CpmdCplx` per (k, σ) channel;
-k-weighted \(T_e\) / \(E_{\mathrm{therm}}\`;
-`reg_cpmd-thermostat-kpoints`) **and multi-k UKS** (dual-spin eNH combo
-pin; `reg_cpmd-uks-thermostat-kpoints`). **Multi-k
-CPMD** (Bloch \(C_k\), one `cpu::electronic::CpmdCplx` per sampled k) ships
-for RKS (`reg_cpmd-kpoints`) **and collinear UKS** (dual-spin Bloch
-\(C_k^\sigma\), one propagator per (k, spin) with occ-1 spin-diagonal EOM
-on \(H_k^\sigma\) from the dual-spin fixed-density multi-k eval;
-`reg_cpmd-uks-kpoints`).
-
-**Second-generation Car–Parrinello MD** (Kühne et al. 2007; ASPC predictor +
-partial-SCF corrector, no fictitious electronic mass) ships on closed-shell Γ
-GPW via `GPWEvaluator::{second_gen_cp, second_gen_cp_k, second_gen_cp_max_iter}`
-(`reg_second-gen-cpmd-water`) **and Γ-UKS** (`reg_second-gen-cpmd-uks`).
-**RKS OT corrector** is product (`use_ot=true` with ASPC natural-orbital
-warm-start; `reg_second-gen-cpmd-ot`) **and Γ-UKS OT + SGCP**
-(`reg_second-gen-cpmd-uks-ot`) **and multi-k SGCP** (ASPC on complex
-\(P_k\); `reg_second-gen-cpmd-kpoints`) **and multi-k SGCP + OT corrector**
-(per-k OT manifold warm-started from natural orbitals of the predicted
-\(P_k\); `reg_second-gen-cpmd-ot-kpoints`) **and multi-k UKS SGCP + OT**
-(dual-spin per-(k, σ) OT manifolds warm-started from natural orbitals of
-the predicted \(P_k^\sigma\); `reg_second-gen-cpmd-ot-uks-kpoints`).
-
-## 8. Nuclear Quantum Dynamics
-
-| Method                                 | CPU | CUDA | Kokkos |
-| -------------------------------------- | :-: | :--: | :---: |
-| Path-integral molecular dynamics       |  ✓  |   ○  |   ○  |
-| Ring-polymer molecular dynamics        |  ○  |   ○  |   ○  |
-| Centroid molecular dynamics            |  ○  |   ○  |   ○  |
-| Thermostatted ring-polymer MD          |  ○  |   ○  |   ○  |
-| Normal-mode PIMD                       |  ○  |   ○  |   ○  |
-| Staging-coordinate PIMD                |  ○  |   ○  |   ○  |
-| Ring-polymer contraction               |  ○  |   ○  |   ○  |
-| Quantum thermal bath                   |  ○  |   ○  |   ○  |
-| Path-integral free-energy perturbation |  ○  |   ○  |   ○  |
-
-## 9. Nonadiabatic Dynamics
-
-| Method                                | CPU | CUDA | Kokkos |
-| ------------------------------------- | :-: | :--: | :---: |
-| Ehrenfest dynamics                    |  ○  |   ○  |   ○  |
-| Fewest-switches surface hopping       |  ○  |   ○  |   ○  |
-| Landau–Zener surface hopping          |  ○  |   ○  |   ○  |
-| Decoherence-corrected surface hopping |  ○  |   ○  |   ○  |
-| Spin-mixed surface hopping            |  ○  |   ○  |   ○  |
-| Mapping-variable dynamics             |  ○  |   ○  |   ○  |
-| Ab initio multiple spawning           |  ○  |   ○  |   ○  |
-| Diabatic-state dynamics               |  ○  |   ○  |   ○  |
-
-Nonadiabatic dynamics needs a dynamics consumer of NAC / excited forces.
-CIS/TDA forces and true NAC vectors now ship (see
-[Excited States and Many-Body](excited-states.md)); FSSH / Ehrenfest loops
-themselves remain ○.
-
-## 10. Vibrational Analysis
-
-Not part of the reference taxonomy, but it is what the Response driver does, and
-it is what stands in for every "analytic Hessian" row in this roadmap.
-
-| Method                                    | CPU | CUDA | Kokkos |
-| ----------------------------------------- | :-: | :--: | :---: |
-| Finite-difference Hessian (central, 6N)   |  ✓  |   ○  |   ○  |
-| Mass-weighted normal modes / frequencies  |  ✓  |   ○  |   ○  |
-| Harmonic thermochemistry (RRHO ideal gas) |  ✓  |   ○  |   ○  |
-| Analytic Hessian (any method)             |  ○  |   ○  |   ○  |
-
-`cpu::vib::Hessian` displaces each Cartesian degree of freedom and differences
-the analytic forces, so it works with any force-providing evaluator — classical
-or SCF. It is molecular: there is no supercell/q-point phonon machinery.
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| FD Hessian (`cpu::vib::Hessian`) | ✓ | ○ | 6N central; any force evaluator |
+| Normal modes / RRHO thermochem | ✓ | ○ | |
+| Method analytic Hessian | — | — | See [HF](hartree-fock.md) / [DFT](dft.md); not this generic path |
+| FD phonons / DFPT | — | — | See [DFT §5](dft.md#5-periodic-response-and-analysis) |

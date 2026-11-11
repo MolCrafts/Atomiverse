@@ -8,7 +8,7 @@ DFTD3(BJ) / DFTD4). Oracle is **libMBD** free-atom TS energy + **force dual-gate
 `gpw-ts-ice` / `gpw-mbd-forces`.
 
 Never launch libMBD or CP2K from ctest — pins are hard-coded in
-`regressions/gpw/gpw-ts-forces/REFERENCE.md`.
+`regressions/gpw/tkatchenko-scheffler/REFERENCE.md`.
 
 ## Geometry
 

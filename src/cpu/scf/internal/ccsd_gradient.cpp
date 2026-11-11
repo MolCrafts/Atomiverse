@@ -22,6 +22,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/internal/ccsd_pack.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
+#include "atomiverse/cpu/scf/post_hf.h"
 #include "atomiverse/cpu/scf/rhf.h"
 
 namespace ATV {
@@ -45,13 +46,11 @@ Frame displace(const Frame& frame, int A, int d, double delta_A) {
 
 /// RHF + CCSD total energy [Ha] at `frame` (fresh SCF each call).
 double ccsd_tot_ha(const Frame& frame, BasisSet basis, double scf_tol) {
-    RHF rhf;
-    rhf.basis = basis;
+    RHF rhf{basis};
     rhf.tol = scf_tol;
     rhf.max_iter = 200;
-    rhf.compute_eri = true;
     Frame f = frame;
-    const CCSDResult c = rhf.ccsd(f);
+    const CCSDResult c = CCSD<RHF>{rhf}.run(f);
     if (!rhf.converged() || !c.converged)
         throw std::invalid_argument(
             "ccsd_analytic_forces: RHF/CCSD did not converge on a displaced "
@@ -76,7 +75,7 @@ GradientResult ccsd_analytic_forces(const Frame& frame,
 
     const int natm = static_cast<int>(frame.nlocal());
     // Infer basis from AO count when possible; regression uses STO-3G (7 AO).
-    // Parent MeanFieldMethod::ccsd_forces always materializes the same pack
+    // CCSD::forces always materializes the same pack
     // the energy path used; FD rebuilds RHF with STO3G when n_basis matches
     // the water/STO-3G case, else STO3G still (this link's supported surface).
     const BasisSet basis = BasisSet::STO3G;

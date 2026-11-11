@@ -36,7 +36,6 @@ class BondHarmonic : public Bond {
   private:
     std::vector<double> K_, r0_;
 
-    md::BondedForceScratch scratch_;
     md::DropTally drops_;
     /// @brief Resolved-tuple cache; rebuilt on migration / halo full rebuild.
     md::BondedTupleCache cache_;

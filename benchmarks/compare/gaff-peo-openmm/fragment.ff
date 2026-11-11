@@ -1,0 +1,7 @@
+# GAFF coefficients in kcal/mol, Angstrom, degrees (LAMMPS real).
+pair_modify mix arithmetic
+pair_coeff 1 1 0.1094 3.39967
+pair_coeff 2 2 0.17 3.000012
+bond_coeff 1 300.9 1.5375
+angle_coeff 1 46.4 109.560047
+dihedral_coeff 1 2 0.1 2 180.0 0.383 3 0.0

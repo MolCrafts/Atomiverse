@@ -23,10 +23,11 @@ void BondHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    // Per-thread accumulators are sized to the full backing-store capacity
+    // Chunk accumulators are sized to the full backing-store capacity
     // (`nmax`); only the live `[0, n_force)` rows are touched per step (a
     // partner row may be a ghost, so the range must span owners + ghosts).
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void BondHarmonic::compute(const LaunchContext& ctx) {
@@ -37,13 +38,12 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
 
     // Single source of truth for owned/ghost counts + bounded tag→local
     // resolution. `n_local` = owners to iterate; `n_force` = owners + ghosts,
-    // the extent the per-thread force buffers and the reduction touch (NOT
+    // the extent the chunk force buffers and the reduction touch (NOT
     // `Frame::n_total()`, which is the global atom count in multi-rank).
     // `resolve()` returns -1 for any tag that is absent or maps outside
-    // `[0, n_force)` — a stale ghost partner is dropped, not read as garbage.
+    // `[0, n_force)`; incomplete topology fails collectively before evaluation.
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int n_force = rv.n_force();
 
     // Tuple cache: tag→local hash resolution happens only when row
     // indices may have moved (migration / halo full rebuild), not every
@@ -67,78 +67,73 @@ void BondHarmonic::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "BondHarmonic");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 3;
     if (n_tuples == 0)
         return;
     const int* __restrict tup = cache_.flat.data();
 
-    double energy_total = 0;
-    md::Voigt6 vir;
-
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    // Resolve the frame's force spans ONCE, before the parallel region opens
-    // (never inside it — see BondedForceScratch::bind).
-    scratch_.bind(f);
+    // Open this launch's chunks of the Runtime's accumulators once, before
+    // the parallel region (see md::ForcePass).
+    md::ForcePass forces(ctx);
+    const bool do_virial = ctx.stress_requested; // LAMMPS vflag
 
-// Stiff bonds contribute significantly to the stress tensor. The per-pair
-// virial accumulates into a thread-private `vir_local` and is combined under
-// a critical section (once per thread per step) — an OMP user-defined
-// reduction on Voigt6 would heap-allocate per step, violating the
-// "no allocation in launch()" invariant.
-#pragma omp parallel if (scratch_.n_threads() > 1) reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = scratch_.begin_thread(tid, n_force);
-        md::Voigt6 vir_local;
+    // Stiff bonds contribute significantly to the stress tensor. Each chunk
+    // keeps its own energy and virial and stores them once; ForcePass sums
+    // the chunks in order (deterministic for a given thread count).
+    forces.for_each_chunk(
+        n_tuples, [&](int c, int t_begin, int t_end, md::ForceRows tf) {
+            double energy_total = 0;
+            md::Voigt6 vir_local;
 
-        // Hot loop over pre-resolved tuples (Newton-bond-ON: each bond is
-        // owned by its smaller-tag atom, stored once). Partner `j` may be
-        // an owner or a ghost; ghost force halves ship home via CommBrick.
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
-            const int i = tup[3 * t + 0];
-            const int j = tup[3 * t + 1];
-            const int type = tup[3 * t + 2];
+            // Hot loop over pre-resolved tuples (Newton-bond-ON: each bond is
+            // owned by its smaller-tag atom, stored once). Partner `j` may be
+            // an owner or a ghost; ghost force halves ship home via CommBrick.
+            for (int t = t_begin; t < t_end; ++t) {
+                const int i = tup[3 * t + 0];
+                const int j = tup[3 * t + 1];
+                const int type = tup[3 * t + 2];
 
-            double dx = x_ptr[i] - x_ptr[j];
-            double dy = y_ptr[i] - y_ptr[j];
-            double dz = z_ptr[i] - z_ptr[j];
-            f.box.min_image(dx, dy, dz);
+                double dx = x_ptr[i] - x_ptr[j];
+                double dy = y_ptr[i] - y_ptr[j];
+                double dz = z_ptr[i] - z_ptr[j];
+                f.box.min_image(dx, dy, dz);
 
-            const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
-            const double dr = r - r0_[type];
+                const double r = std::sqrt(dx * dx + dy * dy + dz * dz);
+                const double dr = r - r0_[type];
 
-            energy_total += K_[type] * dr * dr;
+                energy_total += K_[type] * dr * dr;
 
-            const double fpair = -double(2) * K_[type] * dr / r;
-            const double fx_val = fpair * dx;
-            const double fy_val = fpair * dy;
-            const double fz_val = fpair * dz;
+                const double fpair = -double(2) * K_[type] * dr / r;
+                const double fx_val = fpair * dx;
+                const double fy_val = fpair * dy;
+                const double fz_val = fpair * dz;
 
-            tf.fx[i] += fx_val;
-            tf.fx[j] -= fx_val;
-            tf.fy[i] += fy_val;
-            tf.fy[j] -= fy_val;
-            tf.fz[i] += fz_val;
-            tf.fz[j] -= fz_val;
+                if (ctx.forces_requested) {
+                    tf.fx[i] += fx_val;
+                    tf.fx[j] -= fx_val;
+                    tf.fy[i] += fy_val;
+                    tf.fy[j] -= fy_val;
+                    tf.fz[i] += fz_val;
+                    tf.fz[j] -= fz_val;
+                }
 
-            vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
-        }
-#pragma omp critical
-        vir += vir_local;
-    }
-
-    scratch_.reduce_into(n_force);
+                if (do_virial)
+                    vir_local.add_pair(dx, dy, dz, fx_val, fy_val, fz_val);
+            }
+            forces.store(c, energy_total, vir_local);
+        });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyBond) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }
@@ -147,7 +142,6 @@ void BondHarmonic::destroy(const DestroyContext& /*ctx*/) {
     drops_.report("BondHarmonic");
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
     // Owned-tuple cache is owned by the cpu::Bond base; nothing to clear here.
 }
 

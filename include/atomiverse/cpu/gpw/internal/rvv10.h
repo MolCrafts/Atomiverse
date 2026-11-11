@@ -15,6 +15,7 @@
 /// SCF iteration adds V_nl = δE_c^{nl}/δρ to the KS effective potential.
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "atomiverse/cpu/gpw/internal/collocate.h"
@@ -34,7 +35,7 @@ constexpr double kRvv10QMin = 1.0e-4;
 
 /// @brief Result of an rVV10 nonlocal evaluation.
 struct Rvv10Result {
-    double energy = 0.0; ///< E_c^{nl} [Hartree] (kernel + β∫ρ).
+    double energy = 0.0;   ///< E_c^{nl} [Hartree] (kernel + β∫ρ).
     double e_kernel = 0.0; ///< Kernel (nonlocal) piece only [Hartree].
     double e_beta = 0.0;   ///< β∫ρ local piece [Hartree].
     /// Local KS potential V_nl [Hartree] on the grid (empty if energy-only).
@@ -55,14 +56,16 @@ void rvv10_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
 ///
 /// @param grid       Uniform orthorhombic cell (Bohr).
 /// @param rho        Total density on the grid, length grid.npts().
-/// @param sigma      |∇ρ|² on the grid (spectral or finite-difference).
+/// @param grad_rho   Physical Cartesian ∇ρ on the grid [e/Bohr⁴].
 /// @param b          rVV10 b (default 6.3).
 /// @param C          rVV10 C (default 0.0093).
 /// @param potential  If true, fill `Rvv10Result::v_r` (SC KS potential).
 /// @return E_c^{nl} [Hartree] and optional V_nl.
-Rvv10Result rvv10_energy(const UniformGrid& grid, const std::vector<double>& rho,
-                         const std::vector<double>& sigma, double b = kRvv10B,
-                         double C = kRvv10C, bool potential = false);
+Rvv10Result rvv10_energy(const UniformGrid& grid,
+                         const std::vector<double>& rho,
+                         const std::array<std::vector<double>, 3>& grad_rho,
+                         double b = kRvv10B, double C = kRvv10C,
+                         bool potential = false);
 
 } // namespace gpw
 } // namespace cpu

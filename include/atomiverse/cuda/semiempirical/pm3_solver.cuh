@@ -1,0 +1,77 @@
+/// @file cuda/semiempirical/pm3_solver.cuh
+/// @brief Native CUDA PM3 self-consistency Driver, energy, charges and analytic forces.
+#pragma once
+#include "atomiverse/cuda/driver/driver.cuh"
+#include "atomiverse/cuda/driver/driver_node.h"
+#include "atomiverse/semiempirical/nddo_result.h"
+#include <memory>
+
+namespace ATV::cuda::semiempirical {
+namespace internal {
+struct NddoWorkspace;
+}
+using PM3Result = ATV::semiempirical::NDDOResult;
+
+/// FP64 neutral, closed-shell CHNO molecules without periodic cells.
+/// The concrete method owns diagonalize → density → fock → check and its
+/// Criterion. Device matrices and analytic-force scratch persist across solves.
+class PM3 : public cuda::Driver<ATV::nddo::Phase>,
+            public cuda::DriverNode,
+            public EvaluationHistory {
+  public:
+    const int charge, multiplicity;
+    int max_iter;
+    double density_tol, energy_tol;
+    explicit PM3(int charge = 0, int multiplicity = 1, int max_iter = 200,
+                 double density_tol = 1e-8, double energy_tol = 1e-10);
+    ~PM3();
+    PM3(PM3&& other);
+    PM3(const PM3& other);
+    PM3& operator=(PM3&&) = delete;
+    PM3& operator=(const PM3&) = delete;
+    using cuda::Driver<ATV::nddo::Phase>::build;
+    /// Prepare persistent device workspace for the supplied molecular identity.
+    void build(const cpu::Frame& frame);
+    /// Compute energy/charges, overwrite these outputs, preserve existing forces.
+    PM3Result& run(cpu::Frame& frame);
+    /// Compute method results without modifying any caller Frame field.
+    PM3Result& run(const cpu::Frame& frame);
+    /// Compute energy, charges and analytic forces; overwrite these Frame outputs.
+    PM3Result& forces(cpu::Frame& frame);
+    /// Explicit result-read boundary; downloads charges and requested forces.
+    const PM3Result& last_result() const;
+    bool has_density() const noexcept;
+    bool built() const noexcept;
+    std::string name() const { return "pm3"; }
+    bool provides_energy() const { return true; }
+    bool provides_force() const { return true; }
+    bool provides_system_stress() const { return false; }
+    int default_budget() const override { return -1; }
+    void build_on(cuda::Context& ctx, cuda::Frame& frame) override;
+    bool supports_input_changes(InputChange changes) const override;
+    void invalidate_inputs(InputChange, cuda::Context&, cuda::Frame&) override;
+
+    int run_nested_erased(cuda::Context& ctx, cuda::Frame& frame,
+                          int budget) override;
+    void destroy_on(cuda::Context& ctx, cuda::Frame& frame) override;
+    void shutdown() override;
+    void commit_evaluation() noexcept override;
+    void discard_evaluation() noexcept override;
+
+  protected:
+    void validate_components() const override {}
+
+  private:
+    void start_();
+    void standalone_(const cpu::Frame& frame);
+    PM3Result& run_host_(const cpu::Frame& frame, bool force_request);
+    int solve_(cuda::Context& ctx, cuda::Frame& frame, int budget,
+               bool accumulate);
+    void release_backend_();
+    std::unique_ptr<internal::NddoWorkspace> workspace_;
+    cuda::Context* attached_ = nullptr;
+    void* last_stream_ = nullptr;
+    bool active_ = false;
+    int standalone_atoms_ = 0;
+};
+} // namespace ATV::cuda::semiempirical

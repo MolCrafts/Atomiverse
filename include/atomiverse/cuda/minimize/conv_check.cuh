@@ -13,7 +13,7 @@
 /// default, attached by the `Minimize` preset — reads them and returns the `Verdict`.
 /// The tolerances live with the policy, in the handler.
 ///
-/// Per the CLAUDE.md "no duplication across methods" rule the shared reduction lives
+/// Per the docs/developer/project-contract.md "no duplication across methods" rule the shared reduction lives
 /// here once, owned by each Optimizer component (it is NOT a Plan component itself).
 ///
 /// Execution-model classification: **host-dependent compute**. The metric reduction is
@@ -21,8 +21,8 @@
 /// driver polls its handlers on the host after each `step_once()`. `measure()` therefore
 /// issues one pinned D2H + `cudaStreamSynchronize` per minimizer iteration. This is the
 /// documented exception for the minimizer (an iteration is dominated by the force
-/// evaluation; the deferred `AsyncBridge` ring is not applicable because its K-step lag
-/// would overrun the convergence point).
+/// evaluation; the asynchronous capture buffer is not applicable because a verdict
+/// consumed later than its iteration would overrun the convergence point).
 ///
 /// @see cuda/driver/criterion.cuh for the handler that judges these metrics
 /// @see cpu/minimizer/lbfgs.cpp for the CPU publish-don't-decide sibling
@@ -30,7 +30,7 @@
 
 #include <vector>
 
-#include "atomiverse/cpu/minimize/lbfgs.h" // cpu::minimizer::OptRecord
+#include "atomiverse/core/optimization_record.h"
 #include "atomiverse/cuda/component/component.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 
@@ -40,7 +40,6 @@ namespace minimizer {
 
 /// @brief Per-step optimization record — shared with the CPU backend so
 ///        diagnostics tooling reads one type.
-using OptRecord = ATV::cpu::minimizer::OptRecord;
 
 /// @brief Fused force/displacement metric reduction, published to the loop.
 ///
@@ -63,22 +62,21 @@ class ConvCheck {
     ///
     /// Launches the fused metric kernel, copies the four metrics + the frame potential
     /// energy D2H into pinned memory, synchronizes the compute stream, appends an
-    /// `OptRecord` to @p trace, and writes `ctx.runtime.loop.metrics` — max/RMS force,
+    /// `ATV::minimizer::OptRecord` to @p trace, and writes `ctx.runtime.loop.metrics` — max/RMS force,
     /// max/RMS displacement, energy, |ΔE|, and `has_displacement`.
     ///
-    /// Displacement and energy-change criteria are not meaningful at `step == 0`
-    /// (nothing has moved yet, and there is no previous energy): displacement is then
-    /// flagged `has_displacement = false`, and `energy_change` is published as a
-    /// large sentinel so no handler can call an unstarted run converged. Exactly as on
-    /// the CPU.
+    /// Displacement is meaningful only with a saved geometry and a completed
+    /// move. Energy change requires a previous measurement; the first sample
+    /// publishes a large sentinel, even when a move has already completed.
     ///
     /// Because `measure()` ends with a stream synchronize, any D2H copies the caller
     /// enqueued on the same stream beforehand are complete when it returns (LBFGS
     /// batches its line-search scalars this way).
     ///
     /// @param ctx     Launch context (frame, stream, loop services).
-    /// @param x_prev  Pre-step positions, planar [x:0..n, y:n..2n, z:2n..3n] device
-    ///                buffer (saved by the optimizer's search_direction step). Pass
+    /// @param x_prev  Pre-step reconstructed positions [Angstrom], planar
+    ///                [x:0..n, y:n..2n, z:2n..3n] mixed_t device buffer (saved
+    ///                by the optimizer's search_direction step). Pass
     ///                `nullptr` when the optimizer keeps no previous geometry
     ///                (`SteepestDescent`) — the displacement metrics are then simply
     ///                not measured, and the handler is told so. May be stale at
@@ -86,8 +84,8 @@ class ConvCheck {
     /// @param step    Optimizer step counter (post search_direction increment,
     ///                mirroring the CPU components).
     /// @param trace   Per-step diagnostics sink (host).
-    void measure(const LaunchContext& ctx, const work_t* x_prev, int step,
-                 std::vector<OptRecord>& trace);
+    void measure(const LaunchContext& ctx, const mixed_t* x_prev, BigInt step,
+                 std::vector<ATV::minimizer::OptRecord>& trace);
 
     /// @brief Potential energy read back by the most recent measure() [eV].
     double last_energy() const { return last_energy_; }
@@ -96,12 +94,12 @@ class ConvCheck {
     double max_force() const { return max_force_; }
 
   private:
-    int n_ = 0;                   ///< Atom count.
-    work_t* d_metrics_ = nullptr; ///< Device {max_f, sum_f2, max_disp, sum_d2}.
-    work_t* h_metrics_ = nullptr; ///< Pinned mirror of d_metrics_.
-    double* h_energy_ = nullptr;  ///< Pinned mirror of frame.scalars->energy.
-    double energy_prev_ = 0;      ///< Energy at the previous measure [eV].
-    double last_energy_ = 0;      ///< Energy at the latest measure [eV].
+    int n_ = 0;                  ///< Atom count.
+    acc_t* d_metrics_ = nullptr; ///< Device {max_f, sum_f2, max_disp, sum_d2}.
+    acc_t* h_metrics_ = nullptr; ///< Pinned mirror of d_metrics_.
+    double* h_energy_ = nullptr; ///< Pinned mirror of frame.scalars->energy.
+    double energy_prev_ = 0;     ///< Energy at the previous measure [eV].
+    double last_energy_ = 0;     ///< Energy at the latest measure [eV].
     double max_force_ = 0; ///< Max |F| at the latest measure [eV/Angstrom].
 };
 

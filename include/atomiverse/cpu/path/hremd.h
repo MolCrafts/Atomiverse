@@ -2,6 +2,8 @@
 /// @brief Hamiltonian REMD — replica exchange on a λ ladder at fixed T.
 #pragma once
 
+#include "atomiverse/core/unit_system.h"
+
 #include <cstdint>
 #include <memory>
 #include <random>
@@ -44,7 +46,10 @@ class HRemd {
     std::vector<double> lambdas;
     /// @brief Fixed T [K] for all replicas.
     double temperature = 300.0;
-    /// @brief Nested MD timestep [fs].
+    /// @brief LAMMPS `units` of every replica program (default lj); the
+    ///        temperatures, `dt` and the exchange test are in this style.
+    units::UnitSystem units = units::UnitSystem::lj();
+    /// @brief Nested MD timestep [style time].
     double dt = 1.0;
     /// @brief Nested MD steps between exchange rounds.
     int steps_per_exchange = 10;

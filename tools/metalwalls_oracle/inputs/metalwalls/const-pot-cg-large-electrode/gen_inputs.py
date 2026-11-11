@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MetalWalls twins of ``regressions/md/const-pot-cg-large-electrode``.
+"""MetalWalls twins of ``regressions/md/constant-potential``.
 
 Offline oracle generator — never run at ctest time.  Emits MetalWalls
 ``runtime.inpt`` / ``data.inpt`` pairs for the two systems the regression
@@ -64,7 +64,7 @@ def runtime(species, rcut_bohr, rtol=1.0e-12, ktol=1.0e-12,
             cg_tol=1.0e-14, cg_max=2000):
     """runtime.inpt text.  species = [(name, count, mass, kind, value)]."""
     out = ["# MetalWalls twin of Atomiverse",
-           "# regressions/md/const-pot-cg-large-electrode",
+           "# regressions/md/constant-potential",
            "# Single-point constant-potential electrode charge solve.",
            "",
            "num_steps    0",

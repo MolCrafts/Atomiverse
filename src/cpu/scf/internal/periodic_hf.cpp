@@ -127,7 +127,6 @@ void apply_gamma_images(IntegralWorkspace& ws, const LatticeSpec& spec) {
         return;
 
     const auto blocks = blocks_from_shells(ws.shells);
-    const int n = ws.n_basis;
 
     foreach_image(spec, /*include_zero=*/false, [&](const double T[3]) {
         for (const auto& A : blocks) {

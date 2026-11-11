@@ -1,10 +1,10 @@
 """``python -m atomiverse`` — native build stages **and** script launch.
 
-Build pipeline (matches cmake)::
+Native build pipeline (pip owns the install)::
 
     python -m atomiverse config md pw --mpi --src /path/to/Atomiverse
-    python -m atomiverse compile -j 8
-    python -m atomiverse install
+    python -m atomiverse compile -j 8     # pip wheel → native wheel
+    python -m atomiverse install          # pip install of that wheel
 
 Run a user script (no cmake)::
 
@@ -43,7 +43,7 @@ from atomiverse.cli.status import run_status
 app = typer.Typer(
     name="atomiverse",
     help=(
-        "Atomiverse native build CLI (cmake config → compile → install). "
+        "Atomiverse native build CLI (config → compile → install, via pip). "
         "Pure-Python wheels ship without the C++ extension."
     ),
     add_completion=False,
@@ -69,7 +69,7 @@ def _print_banner() -> None:
         __version__ = "unknown"
     print(f"atomiverse {__version__}")
     print()
-    print("CMake-aligned native build (raw cmake output is streamed):")
+    print("Native build from a source checkout (raw pip/cmake output is streamed):")
     print("  python -m atomiverse config md pw --mpi --src /path/to/Atomiverse")
     print("  python -m atomiverse compile -j 8")
     print("  python -m atomiverse install")
@@ -160,6 +160,9 @@ def config_cmd(
         "--id-size",
         help="global: ATV_ID_SIZE",
     ),
+    cuda: bool = typer.Option(
+        False, "--cuda", help="enable CUDA (ATV_BUILD_CUDA); combines with --hf and --mpi",
+    ),
     hf: bool = typer.Option(
         False,
         "--hf",
@@ -171,15 +174,10 @@ def config_cmd(
     src: Optional[Path] = typer.Option(
         None,
         "--src",
-        help="Atomiverse checkout root (required for local cmake config)",
+        help="Atomiverse checkout root (with a local molpy checkout)",
         exists=False,
         file_okay=False,
         dir_okay=True,
-    ),
-    url: Optional[str] = typer.Option(
-        None,
-        "--url",
-        help="(reserved) remote source URL — use --src for staged cmake builds",
     ),
     define: Optional[List[str]] = typer.Option(
         None,
@@ -190,19 +188,21 @@ def config_cmd(
     build_dir: Optional[Path] = typer.Option(
         None,
         "--build-dir",
-        help="cmake -B directory (default: <src>/build)",
+        help="build directory (default: <src>/build-python)",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="print cmake configure command without running it",
+        help="print the resolved defines and compile command; record nothing",
     ),
 ) -> None:
-    """Configure the native build (``cmake -S -B -D…``). Streams raw cmake output."""
+    """Resolve modules into CMake defines and record the native build."""
     mod_list = list(modules or [])
     if hf and "hf" not in mod_list:
         # --hf is the flag spelling of the `hf` product module.
         mod_list.append("hf")
+    if cuda and "cuda" not in mod_list:
+        mod_list.append("cuda")
     for m in mod_list:
         if m not in MODULE_TO_DEFINE:
             typer.echo(
@@ -233,14 +233,11 @@ def config_cmd(
             apply_cli_modules(cfg, mod_list, options=cli_options)
         if define:
             merge_unbound_cli(cfg, define)
-        if src is None and url is None:
+        if src is None:
             raise ConfigError(
-                "config requires --src /path/to/Atomiverse (staged cmake pipeline)"
+                "config requires --src /path/to/Atomiverse (a source checkout)"
             )
-        source = resolve_source(
-            src=str(src) if src is not None else None,
-            url=url,
-        )
+        source = resolve_source(str(src))
         code = run_config(
             cfg,
             source,
@@ -260,15 +257,15 @@ def compile_cmd(
         None,
         "-j",
         "--jobs",
-        help="parallel build jobs (cmake --build -j)",
+        help="parallel build jobs (CMAKE_BUILD_PARALLEL_LEVEL)",
     ),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="print cmake --build command without running it",
+        help="print the pip wheel command without running it",
     ),
 ) -> None:
-    """Compile the native extension (``cmake --build``). Streams raw cmake output."""
+    """Build the native wheel (``pip wheel`` → CMake). Streams raw output."""
     try:
         code = run_compile(jobs=jobs, dry_run=dry_run)
     except ConfigError as exc:
@@ -283,20 +280,15 @@ def install_cmd(
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
-        help="print cmake --install command without running it",
-    ),
-    prefix: Optional[Path] = typer.Option(
-        None,
-        "--prefix",
-        help="cmake install prefix (default: this env's site-packages)",
+        help="print the pip install command without running it",
     ),
 ) -> None:
-    """Install built artifacts into the environment (``cmake --install``).
+    """Install the native wheel into this environment (``pip install``).
 
-    Streams raw cmake output. Requires a prior successful ``config`` + ``compile``.
+    Requires a prior successful ``config`` + ``compile``.
     """
     try:
-        code = run_install_stage(dry_run=dry_run, prefix=prefix)
+        code = run_install_stage(dry_run=dry_run)
     except ConfigError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
@@ -306,7 +298,7 @@ def install_cmd(
 
 @app.command("status")
 def status_cmd() -> None:
-    """Show modules / fingerprint from the last config or install."""
+    """Show the installed extension's modules and the active build."""
     code = run_status()
     if code != 0:
         raise typer.Exit(code)

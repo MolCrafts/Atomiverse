@@ -49,7 +49,7 @@ TEST(Widom, HardSphereFreeVolumeFixedHost) {
     const double sigma = 2.0; // Å
     const double L = 10.0;    // Å
     const double T = 300.0;   // K
-    const double kT = units::kB_ev_per_k * T;
+    const double kT = units::UnitSystem::lj().boltz * T;
     const double V_ex = 4.0 / 3.0 * units::pi * sigma * sigma * sigma;
     const double V = L * L * L;
     const double P_insert = 1.0 - V_ex / V;
@@ -70,7 +70,7 @@ TEST(Widom, AveragesBoltzmannNotMu) {
     // Ideal empty host: both are 0 so only assert the API uses boltzmann_avg.
     cpu::Widom w(200.0, 1.0, 3.0, 8.0, 100, 1);
     w.sample(empty_box(15.0));
-    const double kT = units::kB_ev_per_k * 200.0;
+    const double kT = units::UnitSystem::lj().boltz * 200.0;
     EXPECT_NEAR(w.mu_ex(), -kT * std::log(w.boltzmann_avg()), 1e-15);
 }
 

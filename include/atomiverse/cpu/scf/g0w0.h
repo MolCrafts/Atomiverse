@@ -1,12 +1,13 @@
 /// @file cpu/scf/g0w0.h
-/// @brief G0W0 quasiparticle energies (public, result-only header — mp2.h /
-///        tdhf.h precedent).
+/// @brief Spectral G0W0 on a closed-shell RHF reference (result + the
+///        `G0W0` type; not a member of `RHF`).
 ///
-/// User path: `RHF::g0w0()` on a converged closed-shell RHF reference.
-/// Spectral (frequency-exact) G0W0 with direct-RPA (dRPA) screening of W —
-/// Berkelbach / PySCF `gw.gw_exact.GWExact` twin (HF reference via
-/// `xc = 'hf'`). Quasiparticle equation solved orbit-by-orbit (non-linear
-/// Newton, not the perturbative linearized form).
+/// User path: `G0W0<RHF>{mf}.run()` after `mf.run` (not a member of
+/// `RHF`). Spectral (frequency-exact) G0W0 with direct-RPA (dRPA)
+/// screening of W — `pyscf.gw.gw_exact.GWExact(mf).kernel`, which builds
+/// `tdscf.dRPA` inside the kernel when no TD object was supplied. HF
+/// reference (the `xc='hf'` density `GWExact` requires). Quasiparticle
+/// equation solved orbit-by-orbit (non-linear Newton, not linearized).
 ///
 /// References: Hybertsen & Louie, Phys. Rev. B 34, 5390 (1986),
 /// DOI 10.1103/PhysRevB.34.5390; van Setten et al., JCTC 11, 5665 (2015);
@@ -43,6 +44,31 @@ struct G0W0Result {
 
     /// @brief true when every orbital's Newton QP solve converged.
     bool converged = false;
+};
+
+/// @brief Spectral G0W0 quasiparticle energies of a converged closed-shell RHF.
+///
+/// Mirrors `pyscf.gw.gw_exact.GWExact`. `run` is `kernel`: dRPA screening
+/// is built inside the call (`GWExact.kernel` constructs `tdscf.dRPA` when
+/// `tdmf` is None). Not a method of `RHF` or `MeanFieldMethod`. Call
+/// `mf.run` first.
+/// @tparam Method Concrete mean-field type. Instantiated for `RHF`.
+template <typename Method>
+class G0W0 {
+  public:
+    /// @brief Bind a mean-field reference. The reference must outlive `*this`.
+    /// @param mf Mean-field method that has already been run (not copied).
+    explicit G0W0(const Method& mf);
+
+    /// @brief Diagonal G0W0 quasiparticle spectrum.
+    /// @return QP energies [Hartree], HOMO–LUMO gap / IP / EA [eV].
+    /// @throws std::runtime_error when called before `mf.run`, on a
+    ///         non-restricted reference, or when dRPA is ill-conditioned.
+    /// @throws std::invalid_argument when n_occ = 0 or n_virt = 0.
+    G0W0Result run() const;
+
+  private:
+    const Method* mf_ = nullptr;
 };
 
 } // namespace scf

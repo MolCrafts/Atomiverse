@@ -1,7 +1,7 @@
 /// @file tests/cpu/multiscale/test_link_atom.cpp
 /// @brief Unit tests for H link-atom placement and topology-derived cuts.
 ///
-/// Full QMMM electrostatic launch/SCF: regressions/multiscale/qmmm_link_ch3oh
+/// Full QMMM electrostatic launch/SCF: regressions/multiscale/qmmm
 /// (e2e-in-tests wave-2).
 #include <cmath>
 #include <gtest/gtest.h>
@@ -21,10 +21,10 @@ using namespace ATV;
 
 namespace {
 
-void insert_qm_z(cpu::Frame& f) {
+void insert_qm_mask(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
-        "qm_z", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                               kDynamicFieldId});
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
 }
 
 } // namespace
@@ -65,7 +65,9 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 5.0;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     f.span(kAtom_type)[2] = 18;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -74,16 +76,15 @@ TEST(LinkAtom, NoBondsMeansZeroLinks) {
         f.span(kAtom_charge)[i] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
 
     cpu::Context ctx;
-    cpu::QmmmElectrostatic q{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0,
-                             12.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::QmmmElectrostatic q{
+        {{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0, 12.0};
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     q.set_engine(std::move(rhf));
     q.build({ctx, f});
     EXPECT_EQ(q.last_n_links(), 0);
@@ -94,18 +95,21 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 1.5;
     f.span(kAtom_x)[2] = 4.0;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 6;
     f.span(kAtom_type)[1] = 6;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_type)[2] = 1;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
     f.span(kAtom_tag)[2] = 3;
-    f.span(kAtom_charge)[0] = f.span(kAtom_charge)[1] = f.span(kAtom_charge)[2] =
-        0;
+    f.span(kAtom_charge)[0] = f.span(kAtom_charge)[1] =
+        f.span(kAtom_charge)[2] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    auto qmcol = f.span(cpu::kAtomQmZ);
+    insert_qm_mask(f);
+    auto qmcol = f.span(cpu::kAtomQm);
     qmcol[0] = 1; // H QM
     qmcol[1] = 0; // C MM
     qmcol[2] = 0;
@@ -116,8 +120,7 @@ TEST(LinkAtom, QmmmPlacesLinkHydrogenFromBond) {
     cpu::Context ctx;
     cpu::QmmmElectrostatic qm{{{1, 1, 0.01, 3.4}}, 10.0, 12.0};
     qm.link_scale() = 0.709;
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     qm.set_engine(std::move(rhf));
     qm.build({ctx, f});
     EXPECT_EQ(qm.last_n_links(), 1);
@@ -127,22 +130,22 @@ TEST(LinkAtom, BothQmBondIsNotALink) {
     cpu::Frame f(2);
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
+    f.span(kAtom_atomic_number)[0] = f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[0] = f.span(kAtom_type)[1] = 1;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
     f.span(kAtom_charge)[0] = f.span(kAtom_charge)[1] = 0;
     f.box = cpu::Box::cubic(20);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
     f.rebuild_tag_index(0, 2);
     f.add_bond(1, 2, 1);
 
     cpu::Context ctx;
     cpu::QmmmElectrostatic q{{{1, 1, 0.01, 3.4}}, 10.0, 12.0};
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     q.set_engine(std::move(rhf));
     q.build({ctx, f});
     EXPECT_EQ(q.last_n_links(), 0);

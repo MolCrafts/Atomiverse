@@ -37,8 +37,12 @@ import numpy as np
 import pytest
 import molpy
 
-import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
+from _domains import needs, skip_module_unless
+
+skip_module_unless("ATV_BUILD_MINIMIZER")
+
+import atomiverse as av
 from atomiverse.longrange import CoulLong
 from atomiverse.minimizer import ForceConverged, LBFGS, Minimize, MinimizeResult
 from atomiverse.neighbor import NeighborList
@@ -83,9 +87,14 @@ def test_wrong_phase_fails_before_build() -> None:
         Minimize().on("md.force")
 
 
-def test_gpu_is_explicitly_deferred() -> None:
-    with pytest.raises(ValueError, match="(?i)gpu|cuda"):
-        Minimize(device="cuda")
+def test_cuda_device_follows_the_built_backend() -> None:
+    """A CUDA extension selects the native CUDA Minimize; a CPU-only one
+    refuses ``device="cuda"`` loudly instead of silently running on CPU."""
+    if hasattr(_cpp, "_CudaMinimize"):
+        assert Minimize(device="cuda").device == "cuda"
+    else:
+        with pytest.raises(ValueError, match="(?i)gpu|cuda"):
+            Minimize(device="cuda")
 
 
 def test_run_returns_control_result_and_mutates_same_frame(argon_frame: object) -> None:
@@ -103,7 +112,7 @@ def test_run_returns_control_result_and_mutates_same_frame(argon_frame: object) 
 
 # ── Ar LJ parameters, shared by every case below ────────────────────
 #
-# Identical to regressions/minimizer/lj_dimer, fire_lj_dimer and
+# Identical to regressions/minimizer/geometry, fire_lj_dimer and
 # cell_lj_pressure: eps = 0.0104 eV, sigma = 3.4 A, r_c = 2.5 sigma.
 
 _EPS: float = 0.0104  # [eV]
@@ -115,7 +124,7 @@ _Z_AR: int = 18
 
 #: HARD-CODED GOLDEN — analytic minimum of the 12-6 Lennard-Jones pair
 #: potential, r* = 2^(1/6) sigma. Not measured here; see
-#: regressions/minimizer/fire_lj_dimer/REFERENCE.md ("Analytic LJ minimum").
+#: regressions/minimizer/geometry/REFERENCE.md ("Analytic LJ minimum").
 _R_STAR: float = 2.0 ** (1.0 / 6.0) * _SIGMA  # 3.816371 A
 
 #: Isolation cell for the dimer cases: 40 A, as in both dimer regressions.
@@ -191,7 +200,7 @@ def _lj_dimer_minimize(optimizer: object, criterion: object) -> Minimize:
 def test_cg_minimizes_dimer_to_rmin() -> None:
     """Polak-Ribiere+ CG drives a stretched Ar dimer onto r* = 2^(1/6) sigma.
 
-    Recipe and gates are regressions/minimizer/lj_dimer (the LBFGS twin):
+    Recipe and gates are regressions/minimizer/geometry (the LBFGS twin):
     start at 1.2 r*, |r - r*| < 0.01 A, and the run must stop because the
     criterion said so — ``force_converged`` — not because the iteration
     budget ran out. CG's convergence tolerances are NOT its constructor's
@@ -248,7 +257,7 @@ def test_fire_minimizes_dimer_to_rmin() -> None:
 
 # ── ac-002: variable-cell relaxation ────────────────────────────────
 #
-# Recipe verbatim from regressions/minimizer/cell_lj_pressure
+# Recipe verbatim from regressions/minimizer/cell-relax
 # (reg_cell_lj_pressure.cpp + REFERENCE.md): two Ar atoms 3.0 A apart in a
 # 6.0 A cubic cell — compressed well inside the LJ minimum, so the virial
 # pressure is positive (compressive) and a P_target = 0 relaxer must
@@ -261,7 +270,7 @@ _CELL_MAX_SCALE: float = 0.08  # cap on |s-1| per step
 _CELL_BULK_MOD: float = 0.5  # [eV/A^3] soft modulus
 _CELL_PTOL: float = 5e-4  # [eV/A^3] PressureConverged tolerance
 
-#: Pass gates of regressions/minimizer/cell_lj_pressure/REFERENCE.md
+#: Pass gates of regressions/minimizer/cell-relax/REFERENCE.md
 #: ("Pass"): L1 > L0 + 0.05 A and |P1| < 5e-2 eV/A^3 — a skeleton
 #: expansion test, deliberately NOT an EOS equilibrium (spec
 #: py-minimize-full, DECIDED 2026-08-15).
@@ -312,10 +321,10 @@ def test_cell_relax_expands_compressed_cell() -> None:
     """IsotropicCellRelax expands the compressed cell and drops |P|.
 
     Both gates are the regression's own
-    (regressions/minimizer/cell_lj_pressure/REFERENCE.md "Pass"), read off
+    (regressions/minimizer/cell-relax/REFERENCE.md "Pass"), read off
     the molpy.Frame the Python facade hands back: the relaxed cell is
     written into ``frame.box`` and the virial into ``frame.meta["stress"]``
-    by the same ``to_molrs`` boundary MD's NPT cases rely on.
+    by the same ``to_molpy`` boundary MD's NPT cases rely on.
 
     The 200-iteration budget is the regression's; it deliberately stops on
     the budget rather than on ``PressureConverged`` (measured L1 = 6.3212 A,
@@ -484,9 +493,9 @@ _MD_EVALUATOR_SAMPLES: tuple[tuple[str, Callable[[], object]], ...] = (
 )
 
 #: AM1 is compile-optional (ATV_BUILD_SEMIEMPIRICAL) and is the marquee
-#: case for the generalized dispatch: Minimize + AM1Evaluator is a real
+#: case for the generalized dispatch: Minimize + AM1 is a real
 #: C++ capability (regressions/semiempirical/am1_water_minimize).
-_HAS_SEMIEMPIRICAL: bool = extension_available() and hasattr(_cpp, "AM1Evaluator")
+_HAS_SEMIEMPIRICAL: bool = extension_available() and hasattr(_cpp, "AM1")
 
 
 @pytest.mark.parametrize(
@@ -513,13 +522,14 @@ def test_minimize_accepts_am1_evaluator() -> None:
     """A semiempirical method is a legal force source for minimization.
 
     The C++ twin is regressions/semiempirical/am1_water_minimize:
-    ``Minimize`` + ``AM1Evaluator`` + LBFGS. Accept-level here.
+    ``Minimize`` + ``AM1`` + LBFGS. Accept-level here.
     """
-    from atomiverse.semiempirical import AM1Evaluator
+    from atomiverse.semiempirical import AM1
 
-    assert Minimize().set_evaluator(AM1Evaluator()) is not None
+    assert Minimize().set_evaluator(AM1()) is not None
 
 
+@needs("ATV_BUILD_MD")
 def test_evaluator_dispatch_is_one_shared_table() -> None:
     """MD and Minimize read the SAME dispatch object, not two copies.
 
@@ -533,10 +543,11 @@ def test_evaluator_dispatch_is_one_shared_table() -> None:
     assert md_facade._EVALUATOR_DISPATCH is minimizer_facade._EVALUATOR_DISPATCH
 
 
+@needs("ATV_BUILD_MD")
 def test_minimize_dispatch_covers_every_md_type() -> None:
     """The behavioral half of ac-003, including capability-gated types.
 
-    ``KSpacePME`` / ``AM1Evaluator`` / ``PWEvaluator`` join MD's table only
+    ``KSpacePME`` / ``AM1`` / ``PW`` join MD's table only
     on an extension that carries them; asserting key-set equality covers
     them without constructing one.
     """
@@ -559,17 +570,17 @@ def test_set_evaluator_still_rejects_unknown_type() -> None:
 # ONE dispatch table (ac-003 above) means Minimize accepts every force
 # source MD accepts — including the three Coulomb styles. It does NOT yet
 # mean Minimize *guards* them: `MdHandle::require_charge_column`
-# (python/src/bindings/bind_md.cpp) rejects a molrs Frame with no `charge`
+# (python/src/bindings/bind_md.cpp) rejects a molpy Frame with no `charge`
 # column before an electrostatic MD run, and `MinimizeHandle::run`
 # (python/src/bindings/bind_minimizer.cpp:215) has no equivalent. The
 # consequence is the exact failure mode that guard was written for:
-# `cpu::from_molrs` allocates the optional `charge` column and zero-fills
+# `cpu::from_molpy` allocates the optional `charge` column and zero-fills
 # it, so a forgotten charge column and a deliberately neutral system are
 # indistinguishable by the time the optimizer runs — the geometry relaxes
 # under LJ (or under nothing) while the electrostatics the caller asked
 # for is silently absent, and the result looks plausible.
 #
-# The refusal belongs to the SAME boundary for both drivers: the molrs
+# The refusal belongs to the SAME boundary for both drivers: the molpy
 # Frame is the last place where a column's absence is visible.
 
 
@@ -731,3 +742,50 @@ class TestMinimizeLateSetters:
         assert abs(r_after - _R_STAR) < abs(r_mid - _R_STAR), (
             "the second leg must move the dimer TOWARD the minimum"
         )
+
+
+# ── reproducibility: identical input → identical minimization ────────
+
+_REPRO_SCRIPT = r"""
+import numpy as np, molpy
+from atomiverse.longrange import CoulLong, KSpacePPPM
+from atomiverse.minimizer import LBFGS, ForceConverged, Minimize
+from atomiverse.neighbor import NeighborList
+from atomiverse.potentials.pair import LJCut
+rng = np.random.default_rng(3)
+side, a = 4, 2.9
+g = np.arange(side) * a
+xyz = np.array(np.meshgrid(g, g, g, indexing="ij")).reshape(3, -1).T + rng.normal(0, 0.15, (side**3, 3))
+q = np.array([1.0 if (i + j + k) % 2 == 0 else -1.0 for i in range(side) for j in range(side) for k in range(side)])
+frame = molpy.Frame(); atoms = molpy.Block()
+for axis, col in zip("xyz", xyz.T): atoms.insert(axis, col.copy())
+atoms.insert("mass", np.full(len(q), 30.0)); atoms.insert("charge", q)
+atoms.insert("atomic_number", np.full(len(q), 11, dtype=np.uint32))
+frame["atoms"] = atoms; frame.box = molpy.Box.cube(side * a)
+opt = Minimize()
+opt.add_criterion(ForceConverged(ftol=0.05, rms_ftol=0.03, max_dtol=0.0, rms_dtol=0.0, etol=0.0))
+opt.set_optimizer(LBFGS(memory=5, alpha0=0.01, max_ls=10))
+opt.set_neighbor(NeighborList(5.5, 0.5))
+opt.set_evaluator(LJCut(0.01, 2.6, 5.5))
+opt.set_evaluator(CoulLong(0.6, 5.5))
+opt.set_evaluator(KSpacePPPM(0.6, grid_spacing=0.6, order=5))
+r = opt.run(frame, 300)
+print(r.iterations, r.stop_reason, repr(float(frame.meta["energy"])))
+"""
+
+
+@needs("ATV_BUILD_KSPACE")
+def test_pppm_minimization_reproduces_across_processes() -> None:
+    """A timed FFTW plan could differ between processes and change the path;
+    two fresh interpreters at the same thread count must agree bit for bit."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, OMP_NUM_THREADS="2")
+    runs = [
+        subprocess.run([sys.executable, "-c", _REPRO_SCRIPT], env=env, check=True,
+                       capture_output=True, text=True).stdout.strip().splitlines()[-1]
+        for _ in range(2)
+    ]
+    assert runs[0] == runs[1], runs

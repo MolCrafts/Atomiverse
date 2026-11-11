@@ -2,6 +2,8 @@
 /// @brief Unit: PW is a Driver node with multi-path pw::Phase stage bindings.
 
 #include <functional>
+#include <memory>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -18,16 +20,26 @@
 
 using ATV::cpu::pw::DensityStage;
 using ATV::cpu::pw::DiagonalizeStage;
+using ATV::cpu::pw::GthPseudopotential;
 using ATV::cpu::pw::MixStage;
 using ATV::cpu::pw::PW;
 using ATV::cpu::pw::PwConverged;
-using ATV::cpu::pw::Smearing;
+using ATV::cpu::pw::UpfPseudopotential;
 using ATV::cpu::pw::VeffStage;
+using ATV::electronic::Smearing;
+
+namespace {
+constexpr double kEcutRy = 30.0; // [Ry]
+constexpr int kKMesh = 4;        // Monkhorst-Pack points per dimension
+} // namespace
 
 // PW is the plane-wave self-consistency Driver node (MeanFieldMethod / GpwDft).
 TEST(PwDriverNode, InheritsCpuDriverPwPhase) {
     static_assert(std::is_base_of_v<ATV::cpu::Driver<ATV::pw::Phase>, PW>);
-    PW m;
+    PW m{
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        kEcutRy,
+        kKMesh};
     EXPECT_EQ(ATV::slot_count<ATV::pw::Phase>(), 5);
     EXPECT_EQ(ATV::pw::kind_of(ATV::pw::Phase{}), ATV::PhaseKind::SCF);
 }
@@ -73,14 +85,48 @@ TEST(PwDriverNode, PathLocalStepFnsAreCallable) {
 
 // Public multi-path members remain constructible without *Config bags.
 TEST(PwDriverNode, MultiPathPublicMembers) {
-    PW m;
+    PW m{
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        kEcutRy,
+        kKMesh};
     m.spin_polarized = true;
     m.multiplicity = 3;
-    m.smearing = Smearing::fermi_dirac;
+    m.smearing = ATV::electronic::Smearing::fermi_dirac;
     m.degauss = 0.02;
     m.extra_bands = 4;
     EXPECT_TRUE(m.spin_polarized);
     EXPECT_EQ(m.multiplicity, 3);
     EXPECT_EQ(static_cast<int>(m.smearing),
-              static_cast<int>(Smearing::fermi_dirac));
+              static_cast<int>(ATV::electronic::Smearing::fermi_dirac));
+}
+
+// Identity is fixed at construction: an empty pseudopotential is refused
+// there, not at the first run.
+TEST(PwDriverNode, EmptyPseudopotentialThrowsAtConstruction) {
+    EXPECT_THROW(
+        (PW{{std::make_shared<GthPseudopotential>(molrs::Element::H, "")},
+            kEcutRy,
+            kKMesh}),
+        std::invalid_argument);
+    EXPECT_THROW(
+        (PW{{std::make_shared<UpfPseudopotential>("")}, kEcutRy, kKMesh}),
+        std::invalid_argument);
+}
+
+TEST(PwDriverNode, NestedMountBindsToOneRuntime) {
+    PW method{
+        {std::make_shared<GthPseudopotential>(molrs::Element::H, "GTH-PBE-q1")},
+        kEcutRy,
+        kKMesh};
+    ATV::cpu::Runtime runtime;
+    ATV::cpu::Runtime other;
+    ATV::cpu::DriverNode& node = method;
+    // A nested PW attaches to its parent Runtime and refuses a second one.
+    EXPECT_NO_THROW(node.build_on(runtime));
+    EXPECT_THROW(node.build_on(other), std::logic_error);
+    node.destroy_on(runtime);
+    EXPECT_NO_THROW(node.build_on(other));
+    node.destroy_on(other);
+    EXPECT_TRUE(method.provides_energy());
+    EXPECT_TRUE(method.provides_force());
 }

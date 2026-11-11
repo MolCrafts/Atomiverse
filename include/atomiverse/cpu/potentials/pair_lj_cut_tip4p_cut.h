@@ -69,6 +69,7 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     /// @return This style's ghost declarations.
     static constexpr std::array kGhosts = {
         GhostField::read_stable(kAtom_charge, "PairLJCutTip4pCut"),
+        GhostField::read_stable(kAtom_type, "PairLJCutTip4pCut"),
     };
     std::span<const GhostField> declare_ghosts() const override {
         return kGhosts;
@@ -107,7 +108,7 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     void compute(const LaunchContext& ctx) override;
 
   private:
-    void ensure_sites_(const Frame& f);
+    void ensure_sites_(const Frame& f, const md::PairList& pairs);
     void rebuild_filtered_list_(const Frame& frame, const md::PairList& pairs);
 
     int type_O_ = 0;
@@ -129,22 +130,29 @@ class PairLJCutTip4pCut : public cpu::PairPotential {
     bool any_special_ = false;
     md::SpecialScaleTable special_;
 
-    // Cached H indices + M-site positions (size = n_total).
+    // Cached H indices + M-site positions (size = n_total). Row indices are
+    // valid for one neighbor build: `atom_modify sort` and `borders` renumber
+    // rows only at a rebuild, so the cache is keyed on the list identity and
+    // version (LAMMPS resets `hneigh` when `neighbor->ago == 0`).
     std::vector<int> h1_;
     std::vector<int> h2_;
     std::vector<char> is_O_;
     std::vector<double> mx_, my_, mz_;
     int n_sites_ = 0;
+    // Null source denotes an unresolved cache; version zero is a valid list.
+    const md::PairList* sites_source_ = nullptr;
+    unsigned long long sites_version_ = 0;
 
     std::vector<int> filtered_neighbors_;
+    std::vector<int>
+        filtered_entries_; ///< Source entries retain periodic image shifts.
     std::vector<int> filtered_numneigh_;
     std::vector<int> filtered_firstneigh_;
     std::vector<double> filtered_scale_;
     int filtered_inum_ = 0;
+    // Null source denotes an unbuilt cache; version zero is a valid list.
+    const md::PairList* filtered_source_ = nullptr;
     unsigned long long filtered_version_ = 0;
-
-    int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
 };
 
 } // namespace cpu

@@ -75,8 +75,7 @@ void MioSketchPair::add_block(double dx, double dy, double dz, double r,
 }
 
 void MioSketchPair::set_block_derivative(double dx, double dy, double dz,
-                                         double r,
-                                         linalg::RealMatrix (&dh0)[3],
+                                         double r, linalg::RealMatrix (&dh0)[3],
                                          linalg::RealMatrix (&ds)[3], int ia0,
                                          int ib0) const {
     if (r < 1e-12)

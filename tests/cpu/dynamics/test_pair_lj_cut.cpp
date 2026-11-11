@@ -4,6 +4,7 @@
 /// Verifies that the class resolves and that energy + per-atom forces on a two-atom test
 /// match the documented LJ 12-6 formula bit-for-bit.
 
+#include <cmath>
 #include <gtest/gtest.h>
 
 #include "atomiverse/core/mat3.h"
@@ -17,6 +18,40 @@ TEST(PairLJCutPort, NewClassExists) {
     ATV::cpu::PairLJCut lj{0.1, 3.0, 8.0};
     EXPECT_EQ(lj.name(), "lj");
     EXPECT_DOUBLE_EQ(lj.pair_cutoff(), 8.0);
+}
+
+TEST(PairLJCutPort, FilteredSubsetPreservesExplicitCentreRows) {
+    using namespace ATV;
+    cpu::Frame frame(3);
+    frame.box = cpu::Box::cubic(20.0);
+    for (int i = 0; i < 3; ++i) {
+        frame.span(kAtom_x)[i] = 1.5 * i;
+        frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = 0.0;
+        frame.span(kAtom_tag)[i] = i + 1;
+    }
+    cpu::md::PairList pairs;
+    pairs.inum = 1;
+    pairs.n_rows = 3;
+    pairs.ilist = {2};
+    pairs.firstneigh = {0, 0, 0};
+    pairs.numneigh = {0, 0, 1};
+    pairs.neighbors = {0};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    cpu::PairLJCut potential(0.2, 1.0, 4.0);
+    potential.set_special_bonds(0.0, 0.0, 0.0); // activate filtering, no bonds
+    potential.build({context, frame});
+    potential.launch({context, frame, 0, 0, true, true});
+    const double r6 = std::pow(1.0 / 3.0, 6);
+    const double cut6 = std::pow(1.0 / 4.0, 6);
+    const double expected_energy = 0.8 * (r6 * r6 - r6 - cut6 * cut6 + cut6);
+    const double expected_fx = 4.8 * (2 * r6 * r6 - r6) / 3.0;
+    EXPECT_NEAR(frame.meta.get(kEnergy), expected_energy, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_fx)[2], expected_fx, 1e-14);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0], -expected_fx, 1e-14);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[1], 0.0);
+    potential.destroy({context, frame});
 }
 
 TEST(PairLJCutPort, EnergyMatchesAnalyticFormula) {
@@ -39,11 +74,11 @@ TEST(PairLJCutPort, EnergyMatchesAnalyticFormula) {
     ATV::cpu::md::MD sim;
     sim.set_neighbor(ATV::cpu::md::NeighborList<>{rcut, /*skin=*/0.5});
     sim.set_evaluator(ATV::cpu::PairLJCut{eps, sigma, rcut});
-    sim.set_integrator(ATV::cpu::md::VelocityVerlet{/*dt=*/0.001});
+    sim.set_integrator(ATV::cpu::md::VelocityVerlet{/*dt=*/1e-5});
     sim.build();
-    // 1 integration step at dt=0.001 fs with zero initial velocities ≈
-    // 0 displacement; the launch records the energy at the starting
-    // geometry while leaving positions essentially untouched.
+    // 1 integration step from rest. The energy is read after the step, so
+    // the atoms must stay put: at r = σ the force is 24ε/σ = 4, and in lj
+    // units (ftm2v = 1) a = 4 moves each atom a·dt²/2 = 2e-10.
     sim.run(frame, 1);
 
     // Energy at r≈σ with shifted potential:
@@ -54,9 +89,8 @@ TEST(PairLJCutPort, EnergyMatchesAnalyticFormula) {
     const double sr_cut12 = sr_cut6 * sr_cut6;
     const double v_shift = 4.0 * eps * (sr_cut12 - sr_cut6);
     const double expected = -v_shift;
-    // 1e-6 absolute tolerance covers the tiny displacement during the
-    // single integration step (atoms move ~ a·dt²/2 ~ 1e-10 Å with
-    // initial force ≈ 0 at r=σ).
+    // 1e-6 absolute tolerance covers the displacement during the single
+    // step: ΔE ≈ F·Δr = 4 · 4e-10 ≈ 1.6e-9.
     EXPECT_NEAR(frame.meta.get(ATV::kEnergy), expected, 1e-6)
         << "PairLJCut at r≈σ should yield −V_shift = " << expected;
 }

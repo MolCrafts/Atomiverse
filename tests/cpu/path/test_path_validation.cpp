@@ -5,13 +5,9 @@
 /// Mirrors `include/atomiverse/cpu/path/path_driver.h` (`cpu::PathDriver`).
 /// Spec: `.claude/specs/esmm-contract-02-validation-walks` — ac-002 / ac-004.
 ///
-/// `HF` is a pure polymorphic tag (`cpu/component/hf.h`), **not** a Component:
-/// a concrete Gaussian method is a `Driver<scf::Phase> + HF` and binds as a
-/// nested driver NODE. `PathDriver::validate_components` walks components only
-/// (`for_each_pending`, which skips every node), so a band whose force source
-/// is a nested method cannot build — while MD / Evaluate / Minimize / Hessian
-/// already accept exactly that shape through the node-aware
-/// `for_each_pending_kind(comp_fn, driver_fn)` walk.
+/// `HF` is a pure polymorphic tag (`cpu/component/hf.h`), **not** a Component.
+/// `on(phase).add` copies `provides_force` onto the slot, so a band whose
+/// force source is a nested method is visible to `for_each_pending`.
 ///
 /// Scope is **recognition**, which is what `validate_components` does and where
 /// `build()` calls it. Whether the recognised node then actually *runs* per

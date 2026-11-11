@@ -4,8 +4,8 @@ The compiled `atomiverse` binary is a **LAMMPS-shaped CLI**. Native input
 needs no Python:
 
 ```bash
-atomiverse -in examples/in.lj
-atomiverse -in examples/in.lj -log log.atv
+atomiverse -in examples/cli/in.lj
+atomiverse -in examples/cli/in.lj -log log.atv
 ```
 
 Python scripts (after a native wheel / `python -m atomiverse install`):
@@ -75,9 +75,10 @@ environment.
 Two routes; both need MPI at build time:
 
 ```bash
-# 1. In the wheel (opt-in — an MPI + libpython-linked binary is bound to
-#    the environment it was built in; it is NOT manylinux-distributable):
-ATV_BUILD_LAUNCHER=ON pip install .        # from python/
+# 1. In the native wheel (opt-in — an MPI + libpython-linked binary is
+#    bound to the environment it was built in; it is NOT distributable):
+python -m atomiverse config md --mpi -D ATV_BUILD_LAUNCHER=ON --src <checkout>
+python -m atomiverse compile && python -m atomiverse install
 # -> the real ELF lands in <env>/bin/atomiverse (no console-script shim)
 
 # 2. Plain CMake:

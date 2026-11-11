@@ -21,14 +21,15 @@
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
+using ATV::cpu::gpw::make_multigrid;
 using ATV::cpu::gpw::MultiGrid;
 using ATV::cpu::gpw::UniformGrid;
-using ATV::cpu::gpw::make_multigrid;
+using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
 using ATV::cpu::gpw::internal::CplxMatrix;
+using ATV::cpu::gpw::internal::integrate_potential_k;
 using ATV::cpu::gpw::internal::KPoint;
 using ATV::cpu::gpw::internal::KpointBasisGrid;
-using ATV::cpu::gpw::internal::build_kpoint_basis_grid;
-using ATV::cpu::gpw::internal::integrate_potential_k;
+using ATV::cuda::gpw::internal::KpointBasisDevice;
 using ATV::cuda::gpw::internal::KpointIntegrateDevice;
 
 namespace {
@@ -39,17 +40,17 @@ void check_cuda(cudaError_t e, const char* what) {
     ASSERT_EQ(e, cudaSuccess) << what << ": " << cudaGetErrorString(e);
 }
 
-std::vector<ATV::cpu::gpw::GpwAtom> h2_atoms() {
+std::vector<ATV::cpu::gpw::internal::GpwAtom> h2_atoms() {
     const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
     const double rA[3] = {5.5, 6.0, 6.0};
     const double rB[3] = {6.5, 6.0, 6.0};
-    return {ATV::cpu::gpw::GpwAtom(rA, basis, pot, 1),
-            ATV::cpu::gpw::GpwAtom(rB, basis, pot, 1)};
+    return {ATV::cpu::gpw::internal::GpwAtom(rA, basis, pot, 1),
+            ATV::cpu::gpw::internal::GpwAtom(rB, basis, pot, 1)};
 }
 
-std::vector<GridBasisFunction>
-flatten_basis_local(const std::vector<ATV::cpu::gpw::GpwAtom>& atoms) {
+std::vector<GridBasisFunction> flatten_basis_local(
+    const std::vector<ATV::cpu::gpw::internal::GpwAtom>& atoms) {
     std::vector<GridBasisFunction> basis;
     for (const auto& a : atoms)
         for (const auto& bf : a.basis)
@@ -95,7 +96,8 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
     std::vector<double> V(static_cast<std::size_t>(npts));
     for (long g = 0; g < npts; ++g) {
         const double t = static_cast<double>(g) / static_cast<double>(npts);
-        V[static_cast<std::size_t>(g)] = 0.1 + 0.05 * std::sin(6.283185307179586 * t);
+        V[static_cast<std::size_t>(g)] =
+            0.1 + 0.05 * std::sin(6.283185307179586 * t);
     }
 
     double* d_V = nullptr;
@@ -106,11 +108,9 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
                           cudaMemcpyHostToDevice),
                "H2D V");
 
+    const KpointBasisDevice device_basis(nullptr, kbg);
     KpointIntegrateDevice kint;
-    kint.build(/*stream=*/nullptr, nb, npts, nk);
-    for (int ik = 0; ik < nk; ++ik)
-        kint.upload_chi(ik, kbg.chi[static_cast<std::size_t>(ik)].data());
-    check_cuda(cudaDeviceSynchronize(), "sync chi");
+    kint.build(device_basis);
 
     // Host twin tol: tree reduction vs host chunked fold — not bit-identical.
     constexpr double kAbsTol = 5.0e-9;
@@ -134,8 +134,7 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
                 max_rel = std::max(max_rel, a / den);
             }
         }
-        EXPECT_LE(max_abs, kAbsTol)
-            << "ik=" << ik << " max|ΔV|=" << max_abs;
+        EXPECT_LE(max_abs, kAbsTol) << "ik=" << ik << " max|ΔV|=" << max_abs;
         EXPECT_LE(max_rel, kRelTol)
             << "ik=" << ik << " max relative=" << max_rel;
         // Hermitian residual (device should preserve Hermiticity to ~tol).
@@ -152,9 +151,11 @@ TEST(CudaGpwKpointIntegrate, MatchesHostIntegratePotentialK) {
     cudaFree(d_V);
 }
 
-TEST(CudaGpwKpointIntegrate, EmptyReject) {
-    KpointIntegrateDevice kint;
-    EXPECT_THROW(kint.build(nullptr, 0, 10, 1), std::invalid_argument);
-    EXPECT_THROW(kint.build(nullptr, 2, 0, 1), std::invalid_argument);
-    EXPECT_THROW(kint.build(nullptr, 2, 10, 0), std::invalid_argument);
+TEST(CudaGpwKpointIntegrate, EmptyBasisReject) {
+    ATV::cpu::gpw::internal::KpointBasisGrid kbg;
+    EXPECT_THROW(KpointBasisDevice(nullptr, kbg), std::invalid_argument);
+    kbg.nb = 2;
+    kbg.npts = 10;
+    kbg.chi.resize(1);
+    EXPECT_THROW(KpointBasisDevice(nullptr, kbg), std::invalid_argument);
 }

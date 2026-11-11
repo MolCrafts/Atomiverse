@@ -1,5 +1,5 @@
 /// @file tests/cpu/test_task_codec.cpp
-/// @brief TaskSpec v5 typed-payload and exact-wire contract tests.
+/// @brief TaskSpec typed-payload and exact-wire contract tests.
 
 #include <gtest/gtest.h>
 
@@ -20,13 +20,14 @@ using namespace ATV::cpu::task;
 
 namespace {
 
-constexpr std::size_t kVersionOffset = 4;
-constexpr std::size_t kTaskKindOffset = 8;
-constexpr std::size_t kFirstComponentIdOffset = 13;
-constexpr std::size_t kFirstPhaseOffset = 16;
+// MD / Minimize: magic 4 + kind 1 + units style 1 + entry count 4.
+constexpr std::size_t kTaskKindOffset = 4;
+constexpr std::size_t kUnitsOffset = 5;
+constexpr std::size_t kFirstComponentIdOffset = 10;
+constexpr std::size_t kFirstPhaseOffset = 13;
 // SinglePoint carries no entry-count word: its single component ID follows
-// the task-kind byte directly (magic 4 + version 4 + kind 1).
-constexpr std::size_t kSinglePointComponentIdOffset = 9;
+// the task-kind byte directly (magic 4 + kind 1).
+constexpr std::size_t kSinglePointComponentIdOffset = 5;
 
 template <typename T>
 void write_scalar(std::vector<std::byte>& bytes, std::size_t offset, T value) {
@@ -81,7 +82,23 @@ TaskSpec make_md_spec() {
     // them. α is spelled identically on `CoulLongParams` and
     // `KSpacePmeParams`: an unmatched α is a driver-level build error, so
     // the wire mirror has to carry the number twice, exactly.
-    entries.push_back(MDComponentEntry{PairCoulCutParams{6.0}, std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PairCoulCutParams{6.0, 0.0, 0.0, 0.8333333333333334, 14.39914},
+        std::nullopt});
+    // The per-type LJ table form, special weights and shift flag.
+    entries.push_back(MDComponentEntry{
+        PairLJCutParams{
+            0.0,
+            0.0,
+            6.0,
+            0.0,
+            0.0,
+            0.5,
+            {{0, 0, 0.0104, 3.4}, {0, 1, 0.005, 3.0}, {1, 1, 0.002, 2.6}},
+            {},
+            false,
+            false},
+        std::nullopt});
     entries.push_back(MDComponentEntry{CoulLongParams{0.5833333333333334, 6.0},
                                        std::nullopt});
     entries.push_back(MDComponentEntry{
@@ -99,14 +116,13 @@ TaskSpec make_md_spec() {
     // categorical (`std::nullopt`) evaluator slot exactly like the pair
     // styles above and gives BOMD from a launcher payload. The byte layout
     // is the one `SinglePointTask` already writes (i32 charge, i32
-    // multiplicity, i32 max_iter, f64 density_tol, f64 energy_tol) — the
-    // widening is append-only, so `kWireVersion` stays 4.
-    entries.push_back(MDComponentEntry{
-        AM1EvaluatorParams{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
+    // multiplicity, i32 max_iter, f64 density_tol, f64 energy_tol).
+    entries.push_back(
+        MDComponentEntry{AM1Params{-1, 2, 50, 1e-6, 1e-8}, std::nullopt});
     // Plane-wave DFT as an MD force source (py-pw-forces): like AM1 above it
     // rides the categorical (`std::nullopt`) evaluator slot, giving
     // plane-wave BOMD from a launcher payload. Wire ID 20 with a fresh
-    // payload, so `kWireVersion` stays 4 (append-only).
+    // payload.
     //
     // Fifteen fields — the widest mirror on the wire — so every one is
     // spelled with a NON-DEFAULT value (the NPT house rule): a codec that
@@ -118,30 +134,26 @@ TaskSpec make_md_spec() {
     //   * `smearing = 2` is Methfessel-Paxton (`Smearing::none == 0` is the
     //     default), and `mp_order = 2` is the order that only that arm
     //     reads — both enums cross the wire as i32.
-    // `upf_path` stays empty on purpose: it is mutually exclusive with
-    // `gth_name`, so "both non-default" is not a legal payload. Emptiness is
-    // a value the string codec has to survive too (zero-length prefix).
-    entries.push_back(
-        MDComponentEntry{PwEvaluatorParams{/*upf_path=*/"",
-                                           /*gth_name=*/"GTH-PBE-q4",
-                                           /*ecut_ry=*/4.0,
-                                           /*k_mesh=*/2,
-                                           /*tol=*/1e-4,
-                                           /*max_iter=*/3,
-                                           /*mix_beta=*/0.5,
-                                           /*pulay_depth=*/3,
-                                           /*xc=*/0,
-                                           /*spin_polarized=*/true,
-                                           /*multiplicity=*/2,
-                                           /*smearing=*/2,
-                                           /*degauss=*/0.05,
-                                           /*mp_order=*/2,
-                                           /*extra_bands=*/6},
-                         std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PWParams{/*potentials=*/{{14, PWPotentialFormat::gth, "GTH-PBE-q4"},
+                                 {8, PWPotentialFormat::upf, "O.upf"}},
+                 /*ecut_ry=*/4.0,
+                 /*k_mesh=*/2,
+                 /*tol=*/1e-4,
+                 /*max_iter=*/3,
+                 /*mix_beta=*/0.5,
+                 /*pulay_depth=*/3,
+                 /*xc=*/0,
+                 /*spin_polarized=*/true,
+                 /*multiplicity=*/2,
+                 /*smearing=*/2,
+                 /*degauss=*/0.05,
+                 /*mp_order=*/2,
+                 /*extra_bands=*/6},
+        std::nullopt});
     // ── The widened real-space catalogue (py-pair-styles) ────────────────
     //
-    // Nine appended IDs (27-35) with fresh payloads, so `kWireVersion` stays
-    // 5: no existing byte layout moves. All nine ride the categorical
+    // Nine appended IDs (27-35) with fresh payloads. All nine ride the categorical
     // (`std::nullopt`) evaluator slot — the slot is plural, so a pair style
     // JOINS `PairLJCut` above rather than replacing it, and the three bonded
     // styles join it the way `BondHarmonic` already does.
@@ -171,9 +183,8 @@ TaskSpec make_md_spec() {
     // layout. The single-type C++ constructor stays expressible as one-row
     // vectors — that is what the materializer parity test uses.
     //
-    // TWO rows, keyed by the atomic numbers a real frame carries in
-    // `kAtom_type` (Na = 11, Cl = 17 — the Z-keying reality, not 0/1): a
-    // Na-Cl row and a Cl-Cl row. `type_i` and `type_j` therefore differ from
+    // TWO rows, keyed by force-field types used as-is in `kAtom_type`
+    // (11 and 17, deliberately not 0/1): a Na-Cl row and a Cl-Cl row. `type_i` and `type_j` therefore differ from
     // each other AND row to row, so a codec that swapped the two integer
     // vectors, or wrote one row twice, cannot survive the roundtrip. Five
     // parallel double vectors on top of that is the widest parallel-vector
@@ -232,7 +243,45 @@ TaskSpec make_md_spec() {
         ImproperHarmonicParams{/*K=*/{0.4, 0.9},
                                /*chi0=*/{1.5707963267948966, 0.2}},
         std::nullopt});
-    return TaskSpec(MDTask{std::move(entries), 7});
+    // The per-type `PairLJCut` mirror (rows with and without a per-pair
+    // cutoff, plus r^-4 rows) and the fused `PairLJCutCoulLong` (ID 36) with
+    // every field off its default.
+    PairLJCutParams typed{0.0, 0.0, 9.5, 0.0, 0.5, 0.75};
+    typed.coeffs = {{1, 1, 0.011, 3.1, 7.25}, {2, 2, 0.042, 4.2}};
+    typed.r4 = {{1, 2, 0.061, 2.4, 6.5}};
+    typed.tail = true;
+    entries.push_back(MDComponentEntry{typed, std::nullopt});
+    PairLJCutCoulLongParams fused{{{0, 0, 0.013, 3.3, 8.5}, {0, 1, 0.02, 3.6}},
+                                  0.31,
+                                  9.25,
+                                  0.1,
+                                  0.2,
+                                  0.3,
+                                  0.4,
+                                  0.6,
+                                  0.7,
+                                  false,
+                                  {{0, 1, 0.07, 2.6, 5.5}},
+                                  /*tail=*/true};
+    entries.push_back(MDComponentEntry{fused, std::nullopt});
+    // `AngleCosineParams` — one K [eV] run, two distinct types; and
+    // `FixEfieldParams` — three distinct field components [V/Å], bound
+    // explicitly so its phase/order also roundtrips.
+    entries.push_back(
+        MDComponentEntry{AngleCosineParams{/*K=*/{0.0258, 1.5}}, std::nullopt});
+    entries.push_back(
+        MDComponentEntry{FixEfieldParams{/*Ex=*/0.01, /*Ey=*/-0.02, /*Ez=*/0.3},
+                         MDBinding{ATV::md::Phase::post_force, 100}});
+    // `MrecRecorderParams` — every field off its default so a swapped or
+    // dropped field cannot roundtrip by accident.
+    entries.push_back(MDComponentEntry{
+        MrecRecorderParams{"run/traj.mrec", /*every=*/25, /*flush_every=*/9,
+                           /*durable=*/false},
+        std::nullopt});
+    // The driver's capture budget exceeds 2^32 so a narrowed wire field
+    // cannot roundtrip either.
+    return TaskSpec(MDTask{std::move(entries), 7,
+                           /*capture_buffer_bytes=*/5'000'000'017ULL});
 }
 
 TaskSpec make_minimize_spec() {
@@ -318,7 +367,7 @@ void expect_runtime_error(const std::vector<std::byte>& bytes,
 
 TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairLJCut), 0u);
-    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::AM1Evaluator), 9u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::AM1), 9u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::LBFGS), 10u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixLangevin), 11u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixCSVR), 12u);
@@ -330,9 +379,9 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CoulLong), 17u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::KSpacePME), 18u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::XyzRecorder), 19u);
-    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PWEvaluator), 20u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PW), 40u);
     // The full CPU minimize domain (py-minimize-full): six optimizer mirrors
-    // appended after `PWEvaluator`, in the spec's declared order. The VALUE
+    // appended after `PW`, in the spec's declared order. The VALUE
     // is what crosses the wire, so these six numbers are frozen the moment
     // they ship — a renumbering is a decoder change, not a refactor.
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::CG), 21u);
@@ -382,6 +431,20 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::BondFene), 33u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::DihedralCharmm), 34u);
     EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::ImproperHarmonic), 35u);
+    // Coarse-grained polymer-electrolyte pair, appended after 36.
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::AngleCosine), 37u);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::FixEfield), 38u);
+    EXPECT_EQ(component_id(MDComponentParams{AngleCosineParams{}}),
+              ComponentId::AngleCosine);
+    EXPECT_EQ(component_id(MDComponentParams{FixEfieldParams{}}),
+              ComponentId::FixEfield);
+    EXPECT_STREQ(component_name(ComponentId::AngleCosine), "AngleCosine");
+    EXPECT_STREQ(component_name(ComponentId::FixEfield), "FixEfield");
+    // The molrec trajectory sink, appended after 38.
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::MrecRecorder), 39u);
+    EXPECT_EQ(component_id(MDComponentParams{MrecRecorderParams{}}),
+              ComponentId::MrecRecorder);
+    EXPECT_STREQ(component_name(ComponentId::MrecRecorder), "MrecRecorder");
     // …and the variant→ID map for each, for the reason the cell relaxers
     // above already demonstrate: `PairMorseParams` and `PairBuckParams` are
     // both four doubles, `PairYukawaParams` is three, and the three bonded
@@ -406,6 +469,9 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
               ComponentId::DihedralCharmm);
     EXPECT_EQ(component_id(MDComponentParams{ImproperHarmonicParams{}}),
               ComponentId::ImproperHarmonic);
+    EXPECT_EQ(component_id(MDComponentParams{PairLJCutCoulLongParams{}}),
+              ComponentId::PairLJCutCoulLong);
+    EXPECT_EQ(static_cast<std::uint16_t>(ComponentId::PairLJCutCoulLong), 36u);
     // The three electrostatic params are structurally similar (doubles, and
     // two of them lead with α), so pin the variant→ID map as well as the
     // numbers: a swapped arm is otherwise invisible on the wire.
@@ -420,29 +486,32 @@ TEST(TaskCodec, ComponentIdsAreExplicitAndStable) {
     // arm would otherwise decode a filename out of a Thermo frequency.
     EXPECT_EQ(component_id(MDComponentParams{XyzRecorderParams{}}),
               ComponentId::XyzRecorder);
-    // One params struct, one ID, two legal homes: `AM1EvaluatorParams` now
+    // One params struct, one ID, two legal homes: `AM1Params` now
     // sits in BOTH the MD and the SinglePoint payload, and both must map to
     // the same wire ID 9 — a second ID for the MD arm would make the same
     // component decode differently depending on the task that carries it.
-    EXPECT_EQ(component_id(MDComponentParams{AM1EvaluatorParams{}}),
-              ComponentId::AM1Evaluator);
-    // `PwEvaluatorParams` is the second payload that LEADS with a string
+    EXPECT_EQ(component_id(MDComponentParams{AM1Params{}}), ComponentId::AM1);
+    // `PWParams` is the second payload that LEADS with a string
     // (`XyzRecorderParams` was the first), so pin its variant→ID map too: a
     // swapped arm would decode a trajectory filename as a pseudopotential
     // name and vice versa, which the length-prefixed string codec cannot
     // notice on its own.
-    EXPECT_EQ(component_id(MDComponentParams{PwEvaluatorParams{}}),
-              ComponentId::PWEvaluator);
+    EXPECT_EQ(component_id(MDComponentParams{PWParams{}}), ComponentId::PW);
 }
 
-// v5: `MinimizeTask::convergence` stopped being a bare `ForceConvergedParams`
-// blob and became a criterion VARIANT (Force / Pressure / Stress), so the
-// Minimize payload now ends in a `u16` criterion id plus that criterion's own
-// fields. A v4 payload's five bare doubles would decode as an id followed by
-// garbage — the NPT precedent: a LAYOUT change is a bump, an appended
-// component ID with a fresh payload is not. The exact-match version gate in
-// `unpack` is what makes the break loud instead of silent.
-TEST(TaskCodec, WireVersionIsFive) { EXPECT_EQ(TaskSpec::kWireVersion, 5u); }
+TEST(TaskCodec, TypedPairLJCutMirrorSelectsOneConstructor) {
+    PairLJCutParams single{0.0104, 3.4, 6.0};
+    EXPECT_FALSE(single.typed());
+    PairLJCutParams table{0.0, 0.0, 6.0};
+    table.coeffs = {{0, 0, 0.0104, 3.4}};
+    EXPECT_TRUE(table.typed());
+    PairLJCutParams both = table;
+    both.epsilon = 0.0104;
+    EXPECT_THROW(both.typed(), std::invalid_argument);
+    PairLJCutParams r4_only = single;
+    r4_only.r4 = {{0, 0, 0.05, 2.5, 6.0}};
+    EXPECT_THROW(r4_only.typed(), std::invalid_argument);
+}
 
 TEST(TaskCodec, MdRoundtripIsFieldExact) {
     const TaskSpec spec = make_md_spec();
@@ -453,7 +522,7 @@ TEST(TaskCodec, MdRoundtripIsFieldExact) {
 }
 
 TEST(TaskCodec, SinglePointRoundtripIsFieldExact) {
-    AM1EvaluatorParams p{-1, 2, 50, 1e-6, 1e-8};
+    AM1Params p{-1, 2, 50, 1e-6, 1e-8};
     const TaskSpec spec(SinglePointTask{p});
     const auto bytes = pack(spec);
     const TaskSpec back = unpack(bytes.data(), bytes.size());
@@ -519,13 +588,23 @@ TEST(TaskCodec, MinimizeCriterionRoundtripCoversEveryAlternative) {
     }
 }
 
-TEST(TaskCodec, VersionTwoAndUnknownVersionsAreRejected) {
+TEST(TaskCodec, UnitsStyleRoundTripsAndUnknownStylesAreRejected) {
+    for (const auto style : {units::Style::lj, units::Style::real,
+                             units::Style::metal, units::Style::nano}) {
+        MDTask md{{}, 3};
+        md.units = style;
+        const auto md_bytes = pack(TaskSpec(md));
+        EXPECT_EQ(static_cast<units::Style>(md_bytes[kUnitsOffset]), style);
+        EXPECT_EQ(unpack(md_bytes.data(), md_bytes.size()).md().units, style);
+        MinimizeTask min{{}, 3, {}};
+        min.units = style;
+        const auto min_bytes = pack(TaskSpec(min));
+        EXPECT_EQ(unpack(min_bytes.data(), min_bytes.size()).minimize().units,
+                  style);
+    }
     auto bytes = pack(make_md_spec());
-    write_scalar<std::uint32_t>(bytes, kVersionOffset, 2);
-    expect_runtime_error(bytes, "version 2");
-    bytes = pack(make_md_spec());
-    write_scalar<std::uint32_t>(bytes, kVersionOffset, 99);
-    expect_runtime_error(bytes, "version 99");
+    bytes[kUnitsOffset] = std::byte{8};
+    expect_runtime_error(bytes, "unknown units style 8");
 }
 
 TEST(TaskCodec, UnknownTaskAndComponentIdsAreRejected) {
@@ -547,7 +626,7 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
     // CG is Minimize-only, so an MD payload naming it is refused by NAME,
     // not by a bare "unknown component". One representative is enough — the
     // six share the `read_md_params` default arm — and CG is the one whose
-    // three-double neighbour on the MD side (`PairCoulCut` is one double,
+    // three-double neighbour on the MD side (`PairCoulCut` is five doubles,
     // `CoulLong` two) would otherwise decode as plausible numbers.
     md_bytes = pack(make_md_spec());
     write_scalar<std::uint16_t>(md_bytes, kFirstComponentIdOffset,
@@ -566,9 +645,8 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
     // rebuilding a Minimize payload that AM1 is SinglePoint-only, which is
     // no longer true.
     auto min_am1_bytes = pack(make_minimize_spec());
-    write_scalar<std::uint16_t>(
-        min_am1_bytes, kFirstComponentIdOffset,
-        static_cast<std::uint16_t>(ComponentId::AM1Evaluator));
+    write_scalar<std::uint16_t>(min_am1_bytes, kFirstComponentIdOffset,
+                                static_cast<std::uint16_t>(ComponentId::AM1));
     expect_runtime_error(min_am1_bytes,
                          "belongs to MD/SinglePoint, not Minimize");
 
@@ -576,7 +654,7 @@ TEST(TaskCodec, CrossKindComponentsNameSourceAndTarget) {
     // component and it is AM1. Widening AM1 into MD must not widen the
     // SinglePoint payload into an anything-goes slot — any other ID there is
     // still refused, naming where that component does belong.
-    auto sp_bytes = pack(TaskSpec(SinglePointTask{AM1EvaluatorParams{}}));
+    auto sp_bytes = pack(TaskSpec(SinglePointTask{AM1Params{}}));
     write_scalar<std::uint16_t>(
         sp_bytes, kSinglePointComponentIdOffset,
         static_cast<std::uint16_t>(ComponentId::VelocityVerlet));
@@ -592,7 +670,7 @@ TEST(TaskCodec, EachPhaseSlotIsCheckedAgainstItsOwnDomain) {
 }
 
 TEST(TaskCodec, InvalidBudgetsLbfgsAndTolerancesFailBeforePacking) {
-    EXPECT_THROW(TaskSpec(MDTask{{}, 0}), std::invalid_argument);
+    EXPECT_THROW(TaskSpec(MDTask{{}, -1}), std::invalid_argument);
     EXPECT_THROW(TaskSpec(MinimizeTask{{}, -1, {}}), std::invalid_argument);
 
     MinimizeTask bad_lbfgs{
@@ -672,3 +750,17 @@ TEST(TaskCodec, EmptyMdAndMinimizePayloadsRemainCodecLevelCitizens) {
 }
 
 } // namespace
+
+TEST(TaskCodec, ZeroAndWideBudgetsRoundTrip) {
+    for (std::int64_t budget : {std::int64_t{0}, std::int64_t{1} << 40}) {
+        const TaskSpec md(MDTask{{}, budget});
+        const TaskSpec min(MinimizeTask{{}, budget, {}});
+        const auto md_bytes = pack(md);
+        const auto min_bytes = pack(min);
+        EXPECT_EQ(unpack(md_bytes.data(), md_bytes.size()).md().n_steps,
+                  budget);
+        EXPECT_EQ(
+            unpack(min_bytes.data(), min_bytes.size()).minimize().max_iter,
+            budget);
+    }
+}

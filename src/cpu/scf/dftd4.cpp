@@ -1006,8 +1006,7 @@ double disp3_atm(const std::vector<int>& Z,
                                 const double dang =
                                     0.375 * (dP_de - 2.5 * P / e) / r5
                                     - 1.5 / (e * r3);
-                                const double dfdmp =
-                                    fdmp * fdmp * u * alp / e;
+                                const double dfdmp = fdmp * fdmp * u * alp / e;
                                 return G * (dang * fdmp + ang * dfdmp);
                             };
                             const double dij = dE_dr2(dP_dx, x);
@@ -1100,13 +1099,18 @@ double ref_c6(const std::vector<std::array<double, kD4NFreq>>& ai,
 /// @brief Analytic D4 energy + forces: two-body (BJ + CN_d4 chain + EEQ
 ///        charge adjoint) plus optional ATM (`s9 ≠ 0`: explicit triple
 ///        geometry + neutral-C6 CN chain; q = 0 ⇒ no EEQ adjoint on that leg).
+///        With `q_fixed` the atomic charges are taken as given (no EEQ, no
+///        adjoint): forces are then −∂E/∂R at fixed q and `dEdq_out`
+///        receives ∂E/∂q_A.
 void dftd4_grad(const std::vector<int>& Z,
                 const std::vector<std::array<double, 3>>& pos,
                 const double cell[3], bool periodic, double s6, double s8,
                 double a1, double a2, double ga, double gc, double wf,
                 double charge, double cn_cut, double disp2_cut, double s9,
                 double disp3_cut, double& energy,
-                std::vector<std::array<double, 3>>& forces) {
+                std::vector<std::array<double, 3>>& forces,
+                const std::vector<double>* q_fixed = nullptr,
+                std::vector<double>* dEdq_out = nullptr) {
     const int n = static_cast<int>(Z.size());
     forces.assign(static_cast<std::size_t>(n), {0.0, 0.0, 0.0});
     energy = 0.0;
@@ -1118,16 +1122,22 @@ void dftd4_grad(const std::vector<int>& Z,
     std::vector<std::vector<DCN>> dcn_d4;
     cn_d4(Z, pos, cell, periodic, cn_cut, cn_d, &dcn_d4);
 
-    // ---- EEQ charges + matrix for adjoint ----
+    // ---- EEQ charges + matrix for adjoint (or the caller's charges) ----
     std::vector<double> A, rhs, cn_eeq_v;
     std::vector<std::vector<DCN>> dcn_eeq;
-    build_eeq_system(Z, pos, cell, periodic, charge, A, rhs, cn_eeq_v,
-                     &dcn_eeq);
     std::vector<double> sol;
-    solve_linear(A, rhs, n + 1, sol);
     std::vector<double> q(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        q[static_cast<std::size_t>(i)] = sol[static_cast<std::size_t>(i)];
+    if (q_fixed) {
+        if (static_cast<int>(q_fixed->size()) != n)
+            throw std::runtime_error("D4: fixed charges size mismatch");
+        q = *q_fixed;
+    } else {
+        build_eeq_system(Z, pos, cell, periodic, charge, A, rhs, cn_eeq_v,
+                         &dcn_eeq);
+        solve_linear(A, rhs, n + 1, sol);
+        for (int i = 0; i < n; ++i)
+            q[static_cast<std::size_t>(i)] = sol[static_cast<std::size_t>(i)];
+    }
 
     // ---- Reference polarizabilities (unique Z) ----
     std::vector<int> uniq = Z;
@@ -1411,9 +1421,9 @@ void dftd4_grad(const std::vector<int>& Z,
                     [static_cast<std::size_t>(ir)] = z0;
                 gw0[static_cast<std::size_t>(iat)]
                    [static_cast<std::size_t>(ir)] =
-                    gwk[static_cast<std::size_t>(iat)]
-                       [static_cast<std::size_t>(ir)]
-                    * z0;
+                       gwk[static_cast<std::size_t>(iat)]
+                          [static_cast<std::size_t>(ir)]
+                       * z0;
             }
         }
 
@@ -1503,6 +1513,11 @@ void dftd4_grad(const std::vector<int>& Z,
 
     // CN_d4 forces (two-body chain + ATM neutral-C6 chain)
     apply_cn_forces(dEdCN_d4, dcn_d4, forces);
+    if (q_fixed) {
+        if (dEdq_out)
+            *dEdq_out = dEdq;
+        return;
+    }
 
     // ---- EEQ adjoint: M λ = (∂E/∂q, 0); force from λᵀ (∂rhs − ∂M sol) ----
     const int ndim = n + 1;
@@ -1682,6 +1697,30 @@ D4Result dftd4(const std::vector<int>& Z,
     return res;
 }
 
+D4Result dftd4_fixed_charges(const std::vector<int>& Z,
+                             const std::vector<std::array<double, 3>>& pos_bohr,
+                             const std::vector<double>& q, double s6, double s8,
+                             double a1, double a2, double s9,
+                             std::vector<double>& dEdq) {
+    constexpr double kGa = 3.0, kGc = 2.0, kWf = 6.0;
+    constexpr double kCnCut = 30.0, kDisp2Cut = 60.0, kDisp3Cut = 40.0;
+    const int n = static_cast<int>(Z.size());
+    D4Result res;
+    res.forces.assign(static_cast<std::size_t>(n), {0.0, 0.0, 0.0});
+    dEdq.assign(static_cast<std::size_t>(n), 0.0);
+    if (n <= 0)
+        return res;
+    if (static_cast<int>(pos_bohr.size()) != n)
+        throw std::runtime_error("D4: Z and pos size mismatch");
+    for (int z : Z)
+        require_z(z);
+    const double cell[3] = {0.0, 0.0, 0.0};
+    dftd4_grad(Z, pos_bohr, cell, /*periodic=*/false, s6, s8, a1, a2, kGa, kGc,
+               kWf, 0.0, kCnCut, kDisp2Cut, s9, kDisp3Cut, res.energy,
+               res.forces, &q, &dEdq);
+    return res;
+}
+
 namespace {
 
 /// @brief The isolated molecular D4 evaluation shared by energy() and forces().
@@ -1702,7 +1741,7 @@ D4Result evaluate_d4(const Frame& frame, const D4& m, bool want_forces) {
     if (n <= 0)
         return res;
 
-    const auto type = frame.span(kAtom_type);
+    const auto type = frame.span(kAtom_atomic_number);
     const auto x = frame.span(kAtom_x);
     const auto y = frame.span(kAtom_y);
     const auto z = frame.span(kAtom_z);

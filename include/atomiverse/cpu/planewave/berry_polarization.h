@@ -1,7 +1,7 @@
 /// @file cpu/planewave/berry_polarization.h
 /// @brief Berry-phase (King–Smith–Vanderbilt) formal polarization (CPU PW).
 ///
-/// After a self-consistent density from `cpu::pw::PW` members, occupied
+/// After a self-consistent density from `cpu::pw::PW`, occupied
 /// Bloch states are diagonalized non-self-consistently on strings of
 /// k-points along each reciprocal lattice vector and the electronic
 /// polarization is the string-averaged Berry phase
@@ -19,11 +19,8 @@
 /// bag, no factories.
 ///
 /// @code
-///   cpu::pw::PW pw;
-///   pw.upf_path = "Si.upf";
-///   pw.ecut_ry = 15.0;
-///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::LSDA;
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf")}, /*ecut_ry=*/15.0,
+///                  /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///   // optional collinear: pw.spin_polarized = true; pw.multiplicity = 1;
 ///
 ///   cpu::pw::BerryPolarization berry;   // members: k_perp, k_string

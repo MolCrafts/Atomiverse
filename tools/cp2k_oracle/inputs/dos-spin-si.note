@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Character / wall twin for `regressions/pw/dos-spin-si`. **Not** an absolute
+Character / wall twin for `regressions/pw/bands-dos`. **Not** an absolute
 DOS pin: CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses ONCV
 UPF. Record CP2K version, wall, and occupied-state integral character when
 a binary is available. Never launch CP2K from ctest.
@@ -74,7 +74,7 @@ a binary is available. Never launch CP2K from ctest.
 
 ## Pins written to REFERENCE.md
 
-See `regressions/pw/dos-spin-si/REFERENCE.md`. Scientific pins: SCF
+See `regressions/pw/bands-dos/REFERENCE.md`. Scientific pins: SCF
 converges with \(M=0\); \(\int^{E_\mathrm{vbm}} D(E)\,dE \approx 8\);
 open gap on the denser DOS mesh. Absolute \(D(E)\) not comparable across
 ONCV-PW vs GTH-GPW.

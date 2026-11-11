@@ -9,6 +9,7 @@
 /// `special_bonds 0 0 0` the bonded pairs are skipped and the remaining
 /// LJ contribution comes only from chain-internal 1-5+ neighbours.
 
+#include "periodic_neighbor_fixture.h"
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -64,7 +65,8 @@ cpu::Frame make_all_trans_alkane(int n_carbons, double box_len) {
 
 double evaluate_lj_only(cpu::Frame& frame, double eps, double sig,
                         double cutoff, double s12, double s13, double s14) {
-    cpu::Context ctx;
+    test::PeriodicNeighborFixture fixture(frame, 1.3 * cutoff);
+    auto& ctx = fixture.context;
     cpu::BuildContext bctx{ctx, frame};
     cpu::LaunchContext lctx{ctx, frame, 0, 0};
 
@@ -76,7 +78,7 @@ double evaluate_lj_only(cpu::Frame& frame, double eps, double sig,
     lj.set_special_bonds(s12, s13, s14);
     lj.build(bctx);
 
-    const int n = frame.nlocal();
+    const int n = frame.n_total();
     for (int i = 0; i < n; ++i) {
         frame.span(ATV::kAtom_fx)[i] = 0;
         frame.span(ATV::kAtom_fy)[i] = 0;
@@ -84,6 +86,7 @@ double evaluate_lj_only(cpu::Frame& frame, double eps, double sig,
     }
     frame.meta.get(ATV::kEnergy) = 0;
     lj.launch(lctx);
+    ctx.md.comm->reverse_comm(lctx);
     lj.destroy({ctx, frame});
     return frame.meta.get(ATV::kEnergy);
 }

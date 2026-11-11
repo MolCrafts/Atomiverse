@@ -40,7 +40,7 @@ Command: `fix q all qeq/point 1 10.0 1.0e-10 500 param.qeq` with
 An independent dense solve of `(η_i δ_ij + 1/r_ij) q = −χ + λ` reproduced every
 printed digit of the LAMMPS dump before pinning.
 
-## Pins (hard-coded in `regressions/md/qeq-fluctuating-charge/`)
+## Pins (hard-coded in `regressions/md/polarizable/`)
 
 - q(C, id 1)  = **0.046279970820 e**
 - q(O, id 2)  = **−0.230795571743 e**

@@ -1,6 +1,6 @@
 # OpenMOPAC offline twin — RM1 / water / heat of formation
 
-Twin for `regressions/semiempirical/rm1-water-mopac-energy`.
+Twin for `regressions/semiempirical/rm1`.
 
 > **Offline only. ctest never executes these decks.** No `mopac` binary exists
 > on the Atomiverse build host; every number the regression checks is

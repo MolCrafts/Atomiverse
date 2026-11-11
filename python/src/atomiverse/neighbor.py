@@ -6,7 +6,9 @@ Canonical deep path: ``atomiverse.neighbor.NeighborList``; top-level
 ``atomiverse.NeighborList`` is the same class.
 """
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, require_domain
+
+require_domain(__name__, "potentials")
 
 #: Cell-list neighbor list — ``cpu::md::NeighborList<>(cutoff [Å], skin [Å])``.
 NeighborList = _cpp.NeighborList

@@ -26,9 +26,9 @@ cpu::Frame make_h2o() {
     f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_z)[1] = -0.5860;
     f.span(kAtom_z)[2] = -0.5860;
-    f.span(kAtom_type)[0] = 8;
-    f.span(kAtom_type)[1] = 1;
-    f.span(kAtom_type)[2] = 1;
+    f.span(kAtom_atomic_number)[0] = 8;
+    f.span(kAtom_atomic_number)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 1;
     f.span(kAtom_mass)[0] = 15.999;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_mass)[2] = 1.008;
@@ -40,8 +40,7 @@ cpu::Frame make_h2o() {
 
 TEST(EvaluateDriver, EnergyOnlyEvaluatorAcceptedByEvaluate) {
     auto frame = make_h2o();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.with_gradient(false);
 
     cpu::Evaluate eval;
@@ -56,14 +55,12 @@ TEST(EvaluateDriver, EnergyOnlyEvaluatorAcceptedByEvaluate) {
 TEST(EvaluateDriver, MatchesDirectRHFOnH2O) {
     auto frame = make_h2o();
 
-    cpu::scf::RHF direct;
-    direct.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF direct{cpu::scf::BasisSet::STO3G};
     direct.with_gradient(false);
     direct.run(frame);
     const double e_direct = direct.energy(); // [Hartree]
 
-    cpu::scf::RHF via_eval;
-    via_eval.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF via_eval{cpu::scf::BasisSet::STO3G};
     via_eval.with_gradient(false);
     cpu::single_point(frame, via_eval);
 
@@ -72,8 +69,7 @@ TEST(EvaluateDriver, MatchesDirectRHFOnH2O) {
 
 TEST(EvaluateDriver, SinglePointHelper) {
     auto frame = make_h2o();
-    cpu::scf::RHF rhf;
-    rhf.basis = cpu::scf::BasisSet::STO3G;
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
     rhf.with_gradient(false);
     cpu::single_point(frame, rhf);
     EXPECT_TRUE(rhf.converged());

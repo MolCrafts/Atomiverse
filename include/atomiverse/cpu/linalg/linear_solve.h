@@ -47,7 +47,19 @@ template <typename MatVec>
 RealVector solve_pcg(MatVec&& matvec, const RealVector& diag,
                      const RealVector& b, double tol, int max_iter) {
     const std::size_t n = b.size();
+    if (diag.size() != n || !(tol > 0.0) || !std::isfinite(tol) || max_iter < 0)
+        throw std::invalid_argument(
+            "solve_pcg: invalid diagonal size, tolerance or iteration budget");
+    bool zero_rhs = true;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!(diag(i) > 0.0) || !std::isfinite(diag(i)) || !std::isfinite(b(i)))
+            throw std::invalid_argument(
+                "solve_pcg: finite RHS and positive finite diagonal required");
+        zero_rhs = zero_rhs && b(i) == 0.0;
+    }
     RealVector x = xt::zeros<double>({n});
+    if (zero_rhs)
+        return x;
     RealVector r = b; // r0 = b - A·0 = b
     RealVector z = xt::zeros<double>({n});
     RealVector p = xt::zeros<double>({n});
@@ -65,10 +77,16 @@ RealVector solve_pcg(MatVec&& matvec, const RealVector& diag,
 
     for (int iter = 0; iter < max_iter; ++iter) {
         RealVector Ap = matvec(p);
+        if (Ap.size() != n)
+            throw std::runtime_error(
+                "solve_pcg: matvec returned an incorrect size");
 
         double pAp = 0.0;
         for (std::size_t i = 0; i < n; ++i)
             pAp += p(i) * Ap(i);
+        if (!(pAp > 0.0) || !std::isfinite(pAp) || !std::isfinite(rz))
+            throw std::runtime_error(
+                "solve_pcg: nonpositive or nonfinite curvature");
         const double alpha = rz / pAp;
 
         double r_norm_sq = 0.0;

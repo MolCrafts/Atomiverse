@@ -28,7 +28,6 @@
 #include <omp.h>
 #endif
 
-
 using namespace ATV;
 using namespace ATV::cpu::scf;
 
@@ -46,9 +45,9 @@ cpu::Frame make_water() {
     f.span(ATV::kAtom_x)[2] = -0.7572;
     f.span(ATV::kAtom_y)[2] = 0.5859;
     f.span(ATV::kAtom_z)[2] = 0.0;
-    f.span(ATV::kAtom_type)[0] = 8;
-    f.span(ATV::kAtom_type)[1] = 1;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.span(ATV::kAtom_mass)[0] = 15.999;
     f.span(ATV::kAtom_mass)[1] = 1.008;
     f.span(ATV::kAtom_mass)[2] = 1.008;
@@ -65,8 +64,8 @@ cpu::Frame make_co() {
     f.span(ATV::kAtom_x)[1] = 1.128;
     f.span(ATV::kAtom_y)[1] = 0.0;
     f.span(ATV::kAtom_z)[1] = 0.0;
-    f.span(ATV::kAtom_type)[0] = 6;
-    f.span(ATV::kAtom_type)[1] = 8;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[1] = 8;
     f.span(ATV::kAtom_mass)[0] = 12.011;
     f.span(ATV::kAtom_mass)[1] = 15.999;
     f.box = ATV::cpu::Box::cubic(100.0);
@@ -180,8 +179,9 @@ void compare_tensors(const xt::xtensor<double, 4>& a,
 // catches gross algebraic errors in rys_eri_block.
 TEST(RysEri, MatchesMcMurchieDavidson_H2O) {
     auto frame = make_water();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                       /*need_eri=*/true};
+    auto pack = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*need_eri=*/true};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
     auto eri_rys = build_eri_via_rys(sp);
@@ -190,14 +190,14 @@ TEST(RysEri, MatchesMcMurchieDavidson_H2O) {
 
 TEST(RysEri, MatchesMcMurchieDavidson_CO) {
     auto frame = make_co();
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                       /*need_eri=*/true};
+    auto pack = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*need_eri=*/true};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
     auto eri_rys = build_eri_via_rys(sp);
     compare_tensors(pack.ERI, eri_rys, 5e-7, "CO rys vs native M-D");
 }
-
 
 // ── thread_local ERI-reuse determinism guard (spec scf-review-06, ac-005) ─
 //
@@ -214,8 +214,9 @@ TEST(RysEri, MatchesMcMurchieDavidson_CO) {
 TEST(RysEri, ThreadLocalReuseDeterminism_DShell) {
     auto frame = make_water();
     // 6-31G* places a Cartesian d-shell on oxygen.
-    auto pack = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::Pople631Gs, 0,
-                                       /*need_eri=*/false};
+    auto pack = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::Pople631Gs, 0,
+        /*need_eri=*/false};
     auto sp = ShellBlockPairList{pack, 1e-14};
 
     const int nb = static_cast<int>(sp.blocks.size());
@@ -274,6 +275,223 @@ TEST(RysEri, ThreadLocalReuseDeterminism_DShell) {
                 << "thread " << t << " element " << e
                 << " differs from the serial rys_eri_block value "
                    "(thread_local scratch bleed)";
+}
+
+// The scalar MD path is independent of the production Rys block dispatcher.
+// Large separations exercise its asymptotic branch and translation stability.
+TEST(RysEri, WidelySeparatedSpQuartetsMatchScalarMD) {
+    auto one = make_water();
+    cpu::Frame frame(6);
+    for (int a = 0; a < 6; ++a) {
+        const int i = a % 3;
+        frame.span(kAtom_atomic_number)[a] = one.span(kAtom_atomic_number)[i];
+        frame.span(kAtom_x)[a] = one.span(kAtom_x)[i] + (a >= 3 ? 28.0 : 0.0);
+        frame.span(kAtom_y)[a] = one.span(kAtom_y)[i];
+        frame.span(kAtom_z)[a] = one.span(kAtom_z)[i];
+    }
+    frame.box = cpu::Box::cubic(100.0);
+    cpu::scf::internal::IntegralWorkspace pack{frame, BasisSet::STO3G, 0,
+                                               false};
+    const auto dense = build_eri_via_rys(ShellBlockPairList{pack, 1e-14});
+    double worst = 0.0, got = 0.0, want = 0.0;
+    int at[4]{};
+    const int n = pack.n_basis;
+    for (int a = 0; a < n; ++a)
+        for (int b = 0; b < n; ++b)
+            for (int c = 0; c < n; ++c)
+                for (int d = 0; d < n; ++d) {
+                    const double ref =
+                        native::eri(pack.shells[a], pack.shells[b],
+                                    pack.shells[c], pack.shells[d]);
+                    const double err = std::abs(dense(a, b, c, d) - ref);
+                    if (err > worst) {
+                        worst = err;
+                        got = dense(a, b, c, d);
+                        want = ref;
+                        at[0] = a;
+                        at[1] = b;
+                        at[2] = c;
+                        at[3] = d;
+                    }
+                }
+    EXPECT_LT(worst, 2e-11)
+        << "quartet=" << at[0] << ',' << at[1] << ',' << at[2] << ',' << at[3]
+        << " Rys=" << got << " MD=" << want;
+}
+
+TEST(RysEri, SinglePAccumulatesInAllShellOrders) {
+    auto frame = make_water();
+    frame.span(kAtom_z)[1] = 0.4;
+    frame.span(kAtom_z)[2] = -0.3;
+    const internal::IntegralWorkspace pack{frame, BasisSet::STO3G, 0, false};
+    const ShellBlockPairList pairs{pack, 1e-14};
+    const native::ShellBlock* p = nullptr;
+    std::vector<const native::ShellBlock*> s;
+    for (const auto& block : pairs.blocks) {
+        if (block.l == 0)
+            s.push_back(&block);
+        else if (block.l == 1)
+            p = &block;
+    }
+    ASSERT_NE(p, nullptr);
+    ASSERT_GE(s.size(), 3u);
+
+    const native::ShellBlock* orders[][4] = {
+        {p, s[0], s[1], s[2]},
+        {s[0], p, s[1], s[2]},
+        {s[1], s[2], p, s[0]},
+        {s[1], s[2], s[0], p},
+    };
+    const double initial[] = {0.25, -0.5, 0.75};
+    for (const auto& order : orders) {
+        double result[] = {initial[0], initial[1], initial[2]};
+        native::rys_eri_block(*order[0], *order[1], *order[2], *order[3],
+                              result);
+        for (int axis = 0; axis < 3; ++axis) {
+            const auto shell =
+                [&](const native::ShellBlock& block) -> const native::Shell& {
+                return pack.shells[block.ao_start + (block.l == 1 ? axis : 0)];
+            };
+            const double ref = native::eri(shell(*order[0]), shell(*order[1]),
+                                           shell(*order[2]), shell(*order[3]));
+            EXPECT_NEAR(result[axis], initial[axis] + ref, 2e-11);
+        }
+    }
+}
+
+TEST(RysEri, MixedAngularPairsAccumulateInAllShellOrders) {
+    auto frame = make_water();
+    frame.span(kAtom_z)[1] = 0.4;
+    frame.span(kAtom_z)[2] = -0.3;
+    const internal::IntegralWorkspace pack{frame, BasisSet::Def2SVP, 0, false};
+    const ShellBlockPairList pairs{pack, 1e-14};
+    const auto find_shell = [&](int l, int side) {
+        return std::find_if(pairs.blocks.begin(), pairs.blocks.end(),
+                            [=](const native::ShellBlock& block) {
+                                const double x = block.center[0];
+                                return block.l == l
+                                       && ((x > 0) - (x < 0)) == side;
+                            });
+    };
+    const auto d = find_shell(2, 0);
+    const auto p_bra = find_shell(1, 1);
+    const auto s_bra = find_shell(0, 1);
+    const auto p_ket = find_shell(1, 0);
+    const auto s_ket = find_shell(0, -1);
+    ASSERT_NE(d, pairs.blocks.end());
+    ASSERT_NE(p_bra, pairs.blocks.end());
+    ASSERT_NE(s_bra, pairs.blocks.end());
+    ASSERT_NE(p_ket, pairs.blocks.end());
+    ASSERT_NE(s_ket, pairs.blocks.end());
+
+    const native::ShellBlock* quartets[][4] = {
+        {&*d, &*s_bra, &*p_ket, &*s_ket},
+        {&*d, &*p_bra, &*p_ket, &*s_ket},
+        {&*d, &*d, &*d, &*p_bra},
+        {&*d, &*d, &*d, &*d},
+        {&*s_bra, &*s_ket, &*p_bra, &*p_ket},
+        {&*p_bra, &*s_ket, &*p_ket, &*s_bra},
+        {&*p_bra, &*s_ket, &*p_bra, &*p_ket},
+        {&*p_bra, &*p_ket, &*s_bra, &*s_ket},
+        {&*p_bra, &*p_ket, &*p_ket, &*s_bra},
+    };
+    for (const auto& shells : quartets) {
+        const auto& A = *shells[0];
+        const auto& B = *shells[1];
+        const auto& C = *shells[2];
+        const auto& D = *shells[3];
+        SCOPED_TRACE(testing::Message() << A.l << B.l << '|' << C.l << D.l);
+        const int na = A.n_cart, nb = B.n_cart, nc = C.n_cart, nd = D.n_cart;
+        std::vector<double> reference;
+        reference.reserve(na * nb * nc * nd);
+        for (int a = 0; a < na; ++a)
+            for (int b = 0; b < nb; ++b)
+                for (int c = 0; c < nc; ++c)
+                    for (int d = 0; d < nd; ++d)
+                        reference.push_back(
+                            native::eri(pack.shells[A.ao_start + a],
+                                        pack.shells[B.ao_start + b],
+                                        pack.shells[C.ao_start + c],
+                                        pack.shells[D.ao_start + d]));
+
+        for (bool swap_ab : {false, true}) {
+            for (bool swap_cd : {false, true}) {
+                SCOPED_TRACE(testing::Message() << "swap_ab=" << swap_ab
+                                                << " swap_cd=" << swap_cd);
+                const int out_nb = swap_ab ? na : nb;
+                const int out_nc = swap_cd ? nd : nc;
+                const int out_nd = swap_cd ? nc : nd;
+                std::vector<double> result(reference.size());
+                for (std::size_t i = 0; i < result.size(); ++i)
+                    result[i] = 0.25 + i / 1024.0;
+
+                for (int count : {1, 2}) {
+                    native::rys_eri_block(swap_ab ? B : A, swap_ab ? A : B,
+                                          swap_cd ? D : C, swap_cd ? C : D,
+                                          result.data());
+                    for (int a = 0; a < na; ++a)
+                        for (int b = 0; b < nb; ++b)
+                            for (int c = 0; c < nc; ++c)
+                                for (int d = 0; d < nd; ++d) {
+                                    const int ref =
+                                        ((a * nb + b) * nc + c) * nd + d;
+                                    const int i = swap_ab ? b : a;
+                                    const int j = swap_ab ? a : b;
+                                    const int k = swap_cd ? d : c;
+                                    const int l = swap_cd ? c : d;
+                                    const int out =
+                                        ((i * out_nb + j) * out_nc + k) * out_nd
+                                        + l;
+                                    EXPECT_NEAR(result[out],
+                                                0.25 + out / 1024.0
+                                                    + count * reference[ref],
+                                                2e-11);
+                                }
+                }
+            }
+        }
+    }
+}
+
+TEST(RysEri, UncachedHighAngularOffsetsMatchScalarReference) {
+    const double alpha = 1.2;
+    const double coeff = 0.8;
+    const native::ShellBlock fa{1, &alpha, &coeff, {0.1, 0.2, -0.3}, 3, 10, 0};
+    const native::ShellBlock fb{1, &alpha, &coeff, {0.6, 0.3, 0.4}, 3, 10, 0};
+    const native::ShellBlock fc{1, &alpha, &coeff, {0.8, -0.4, 0.1}, 3, 10, 0};
+    const native::ShellBlock fd{1, &alpha, &coeff, {-0.2, 0.1, 0.5}, 3, 10, 0};
+    auto sa = fa;
+    sa.l = 0;
+    sa.n_cart = n_cart_of(sa.l);
+    auto gb = fb;
+    gb.l = 4;
+    gb.n_cart = n_cart_of(gb.l);
+
+    const auto component = [](const native::ShellBlock& block, int cart) {
+        return native::Shell{
+            block.n_prim, block.alpha,
+            block.coeff,  {block.center[0], block.center[1], block.center[2]},
+            block.l,      cart};
+    };
+    const native::ShellBlock* quartets[][2] = {{&sa, &gb}, {&fa, &fb}};
+    for (const auto& bra : quartets) {
+        const auto& A = *bra[0];
+        const auto& B = *bra[1];
+        SCOPED_TRACE(testing::Message() << A.l << B.l << "|33");
+        const int na = A.n_cart, nb = B.n_cart, nc = fc.n_cart, nd = fd.n_cart;
+        std::vector<double> out(na * nb * nc * nd, 0.125);
+        native::rys_eri_block(A, B, fc, fd, out.data());
+        for (int a : {0, na / 2, na - 1})
+            for (int b : {0, nb / 2, nb - 1})
+                for (int c : {0, nc / 2, nc - 1})
+                    for (int d : {0, nd / 2, nd - 1}) {
+                        const auto ref =
+                            native::eri(component(A, a), component(B, b),
+                                        component(fc, c), component(fd, d));
+                        EXPECT_NEAR(out[((a * nb + b) * nc + c) * nd + d],
+                                    0.125 + ref, 2e-11);
+                    }
+    }
 }
 
 #endif // ATV_HAS_HF

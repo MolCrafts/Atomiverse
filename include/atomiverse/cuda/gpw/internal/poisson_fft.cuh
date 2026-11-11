@@ -22,15 +22,11 @@ struct GpwGridDesc {
     double L[3] = {0, 0, 0}; ///< box lengths [Bohr].
 
     /// @brief Total real-space points.
-    long npts() const {
-        return static_cast<long>(n[0]) * n[1] * n[2];
-    }
+    long npts() const { return static_cast<long>(n[0]) * n[1] * n[2]; }
     /// @brief Hermitian half-complex length along the fast axis.
     int n2c() const { return n[2] / 2 + 1; }
     /// @brief Half-complex buffer length = n0 * n1 * n2c.
-    long ncplx() const {
-        return static_cast<long>(n[0]) * n[1] * n2c();
-    }
+    long ncplx() const { return static_cast<long>(n[0]) * n[1] * n2c(); }
     /// @brief Integration weight w = V_cell / npts [Bohr³].
     double weight() const {
         return (L[0] * L[1] * L[2]) / static_cast<double>(npts());
@@ -54,9 +50,10 @@ class PoissonFftDevice {
     cufftHandle r2c_ = 0;
     cufftHandle c2r_ = 0;
     cudaStream_t stream_ = nullptr;
-    cufftDoubleComplex* d_cbuf_ = nullptr; ///< half-complex work (r2c out / c2r in)
+    cufftDoubleComplex* d_cbuf_ =
+        nullptr; ///< half-complex work (r2c out / c2r in)
     cufftDoubleComplex* d_c_scratch_ = nullptr; ///< preserves c2r input
-    double* d_e_scratch_ = nullptr;        ///< single-slot Hartree energy
+    double* d_e_scratch_ = nullptr;             ///< single-slot Hartree energy
 
   public:
     /// @brief Build cuFFT plans + scratch for grid shape / cell.
@@ -76,8 +73,7 @@ class PoissonFftDevice {
     /// @param d_e_hartree Optional device scalar (1 double) for e_H [Hartree];
     ///        if null, energy is written only to the internal scratch and may
     ///        be read via `last_e_hartree_device()`.
-    void solve(const double* d_rho, double* d_v,
-               double* d_e_hartree = nullptr);
+    void solve(const double* d_rho, double* d_v, double* d_e_hartree = nullptr);
 
     /// @brief Device pointer to last computed e_hartree (owned by this object).
     const double* last_e_hartree_device() const { return d_e_scratch_; }

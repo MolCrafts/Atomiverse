@@ -3,7 +3,7 @@
 ! CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses ONCV UPF.
 ! Geometry matches the regression twin (a = 5.43 A, 2-atom fcc primitive).
 ! BAND_STRUCTURE print is for offline inspection of indirect Si character.
-! See regressions/pw/bands-dos-si/REFERENCE.md.
+! See regressions/pw/bands-dos/REFERENCE.md.
 
 &GLOBAL
   PROJECT si_bands_dos_wall

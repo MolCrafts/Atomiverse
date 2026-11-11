@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/scf/dftd4.h"
 #include "atomiverse/cpu/semiempirical/basis_data/gfn2_xtb_tables.h"
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
+#include "atomiverse/cpu/semiempirical/scc_method.h"
 
 namespace ATV {
 namespace cpu {
@@ -28,7 +29,9 @@ using basis_data::kGfn2AesDmp5;
 using basis_data::kGfn2AesKexp;
 using basis_data::kGfn2AesRmax;
 using basis_data::kGfn2AesShift;
-using basis_data::kGfn2CnK;
+using basis_data::kGfn2CnKa;
+using basis_data::kGfn2CnKb;
+using basis_data::kGfn2CnShift;
 using basis_data::kGfn2D4A1;
 using basis_data::kGfn2D4A2;
 using basis_data::kGfn2D4S6;
@@ -57,6 +60,9 @@ const Gfn2ElementRow& element_row(int z) {
         "GFN2: unsupported element Z=" + std::to_string(z)
         + " (static tables cover H/C/N/O; other Z is a later deepen)");
 }
+
+// Radius of the H⁰ distance polynomial Π(R) [Bohr].
+double rpoly_of(const Gfn2ElementRow& e) { return e.rpoly * kBohr; }
 
 int n_ao_of(const Gfn2ElementRow& e) {
     int n = 0;
@@ -174,9 +180,7 @@ void traceless_quad(const double Q[6], double T[6]) {
 
 void origin_shift_quad(const double Q[6], const double D[3], const double* R,
                        double s, double tq[6]) {
-    // tblite shift_operator / physical ⟨(r−R)(r−R)⟩. Minus-RRS (xtb
-    // mmompop with opab4-signed Q plugged into unsigned ATV Q) breaks
-    // SCC (residual stuck 7e-6, ΔE ~ 0.67 eV).
+    // Traceless 3/2-form of ⟨(r−R)⊗(r−R)⟩ from origin-0 integrals.
     double qs[6];
     qs[0] = Q[0] - 2.0 * R[0] * D[0] + R[0] * R[0] * s;
     qs[1] = Q[1] - R[0] * D[1] - R[1] * D[0] + R[0] * R[1] * s;
@@ -247,21 +251,32 @@ double k_shell(int li, int lj) {
     return 0.5 * (kGfn2Ks + kGfn2Kp);
 }
 
-double cn_d3(double r, double r0) {
+// GFN2 coordination number CN' (Bannwarth et al. 2019): double-exponential
+// counting f(R) = [1 + e^{-k_a(R0/R - 1)}]^{-1} [1 + e^{-k_b((R0+R_s)/R - 1)}]^{-1}
+// with R0 = 4/3 (R_A^cov + R_B^cov) [Bohr], k_a = 10, k_b = 20, R_s = 2 Bohr.
+double cn_count(double r, double r0) {
     if (r < 1e-12)
         return 0;
-    // DFT-D3 counting (xtb covCN); r0 = rcov_i+rcov_j [Bohr], k=16, 4/3.
     const double rco = (4.0 / 3.0) * r0;
-    return 1.0 / (1.0 + std::exp(-kGfn2CnK * (rco / r - 1.0)));
+    const double fa = 1.0 / (1.0 + std::exp(-kGfn2CnKa * (rco / r - 1.0)));
+    const double fb =
+        1.0 / (1.0 + std::exp(-kGfn2CnKb * ((rco + kGfn2CnShift) / r - 1.0)));
+    return fa * fb;
 }
 
-double dcn_d3_dr(double r, double r0) {
+double dcn_count_dr(double r, double r0) {
     if (r < 1e-12)
         return 0;
     const double rco = (4.0 / 3.0) * r0;
-    const double e = std::exp(-kGfn2CnK * (rco / r - 1.0));
-    const double den = 1.0 + e;
-    return -e / (den * den) * kGfn2CnK * rco / (r * r);
+    const double ea = std::exp(-kGfn2CnKa * (rco / r - 1.0));
+    const double eb = std::exp(-kGfn2CnKb * ((rco + kGfn2CnShift) / r - 1.0));
+    const double fa = 1.0 / (1.0 + ea);
+    const double fb = 1.0 / (1.0 + eb);
+    // df/dr = -e k R0' / r^2 / (1+e)^2 for each factor.
+    const double dfa = -fa * fa * ea * kGfn2CnKa * rco / (r * r);
+    const double dfb =
+        -fb * fb * eb * kGfn2CnKb * (rco + kGfn2CnShift) / (r * r);
+    return dfa * fb + fa * dfb;
 }
 
 using Grad3 = std::array<double, 3>;
@@ -361,61 +376,30 @@ void primitive_sd_grad(double a, const double A[3], int la, double b,
     }
     const int ci = (la == 0) ? 0 : (la - 1);
     const int cj = (lb == 0) ? 0 : (lb - 1);
-    const double dAi0 = (la == 1) ? (P[ci] - A[ci]) : 1.0;
-    const double dAj0 = (lb == 1) ? (P[cj] - B[cj]) : 1.0;
+    const double dAi0 = (la > 0) ? (P[ci] - A[ci]) : 1.0;
+    const double dAj0 = (lb > 0) ? (P[cj] - B[cj]) : 1.0;
     for (int k = 0; k < 3; ++k) {
         double t = P[k] * dAi0 * dAj0;
-        if (la == 1 && lb == 1 && ci == cj)
+        if (la > 0 && lb > 0 && ci == cj)
             t += P[k] * inv2g;
-        if (la == 1 && ci == k)
+        if (la > 0 && ci == k)
             t += inv2g * dAj0;
-        if (lb == 1 && cj == k)
+        if (lb > 0 && cj == k)
             t += inv2g * dAi0;
         D[k] = S00 * t;
         for (int m = 0; m < 3; ++m) {
             const double ddAi =
-                (la == 1) ? (dP(ci, m) - ((m == ci) ? 1.0 : 0.0)) : 0.0;
-            const double ddAj = (lb == 1) ? dP(cj, m) : 0.0;
+                (la > 0) ? (dP(ci, m) - ((m == ci) ? 1.0 : 0.0)) : 0.0;
+            const double ddAj = (lb > 0) ? dP(cj, m) : 0.0;
             double dt = dP(k, m) * dAi0 * dAj0 + P[k] * ddAi * dAj0
                         + P[k] * dAi0 * ddAj;
-            if (la == 1 && lb == 1 && ci == cj)
+            if (la > 0 && lb > 0 && ci == cj)
                 dt += dP(k, m) * inv2g;
-            if (la == 1 && ci == k)
+            if (la > 0 && ci == k)
                 dt += inv2g * ddAj;
-            if (lb == 1 && cj == k)
+            if (lb > 0 && cj == k)
                 dt += inv2g * ddAi;
             dD_dA[k][m] = dS00[m] * t + S00 * dt;
-        }
-    }
-}
-
-void shell_sd_grad(const Shell& si, const double Ai[3], int ui, const Shell& sj,
-                   const double Aj[3], int vj, double& s, double ds_dAi[3],
-                   double D[3], double dD_dAi[3][3]) {
-    s = 0;
-    ds_dAi[0] = ds_dAi[1] = ds_dAi[2] = 0;
-    D[0] = D[1] = D[2] = 0;
-    for (int k = 0; k < 3; ++k)
-        for (int m = 0; m < 3; ++m)
-            dD_dAi[k][m] = 0;
-    const int Li = (si.l == 0) ? 0 : (ui + 1);
-    const int Lj = (sj.l == 0) ? 0 : (vj + 1);
-    for (int p = 0; p < si.n_prim; ++p) {
-        for (int q = 0; q < sj.n_prim; ++q) {
-            double sp = 0;
-            double dsp[3];
-            double Dp[3];
-            double dDp[3][3];
-            primitive_sd_grad(si.alpha[p], Ai, Li, sj.alpha[q], Aj, Lj, sp, dsp,
-                              Dp, dDp);
-            const double c = si.coeff[p] * sj.coeff[q];
-            s += c * sp;
-            for (int k = 0; k < 3; ++k) {
-                ds_dAi[k] += c * dsp[k];
-                D[k] += c * Dp[k];
-                for (int m = 0; m < 3; ++m)
-                    dD_dAi[k][m] += c * dDp[k][m];
-            }
         }
     }
 }
@@ -501,14 +485,14 @@ void primitive_sdq_grad(double a, const double A[3], int la, double b,
         P[k] = (a * A[k] + b * B[k]) / gamma;
     const int ci = (la == 0) ? 0 : (la - 1);
     const int cj = (lb == 0) ? 0 : (lb - 1);
-    const double dAi0 = (la == 1) ? (P[ci] - A[ci]) : 1.0;
-    const double dAj0 = (lb == 1) ? (P[cj] - B[cj]) : 1.0;
+    const double dAi0 = (la > 0) ? (P[ci] - A[ci]) : 1.0;
+    const double dAj0 = (lb > 0) ? (P[cj] - B[cj]) : 1.0;
     double ddAi0[3] = {0, 0, 0};
     double ddAj0[3] = {0, 0, 0};
     for (int m = 0; m < 3; ++m) {
-        if (la == 1)
+        if (la > 0)
             ddAi0[m] = ((m == ci) ? a_over_g : 0.0) - ((m == ci) ? 1.0 : 0.0);
-        if (lb == 1)
+        if (lb > 0)
             ddAj0[m] = (m == cj) ? a_over_g : 0.0;
     }
     static constexpr int kPack[6][2] = {{0, 0}, {0, 1}, {1, 1},
@@ -633,9 +617,9 @@ struct SolveOut {
 };
 
 SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
-                    double mix_beta, bool want_grad) {
+                    double mix_beta, bool want_grad, Runtime* host = nullptr) {
     const int n_at = f.nlocal();
-    const int* type = f.span(kAtom_type).data();
+    const int* type = f.span(kAtom_atomic_number).data();
     const StorageReal* xA = f.span(kAtom_x).data();
     const StorageReal* yA = f.span(kAtom_y).data();
     const StorageReal* zA = f.span(kAtom_z).data();
@@ -710,7 +694,7 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
             const double r = std::sqrt(dx * dx + dy * dy + dz * dz) * kBohr;
             const double r0 =
                 rca + el[static_cast<std::size_t>(b)]->rcov * kBohr;
-            cn[static_cast<std::size_t>(a)] += cn_d3(r, r0);
+            cn[static_cast<std::size_t>(a)] += cn_count(r, r0);
         }
     }
 
@@ -760,10 +744,14 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                 r2 += d * d;
             }
             const double r = std::sqrt(r2);
-            const double radi = el[static_cast<std::size_t>(a)]->rcov * kBohr;
-            const double radj = el[static_cast<std::size_t>(b)]->rcov * kBohr;
+            // Π(R) = Π_l (1 + k_poly,l (R / (R_A + R_B))^{1/2}).
             const double rr =
-                (r > 1e-12) ? std::sqrt(std::sqrt(r2 / (radi + radj))) : 0.0;
+                (r > 1e-12)
+                    ? std::sqrt(
+                          r
+                          / (rpoly_of(*el[static_cast<std::size_t>(a)])
+                             + rpoly_of(*el[static_cast<std::size_t>(b)])))
+                    : 0.0;
             const double shpi =
                 1.0
                 + el[static_cast<std::size_t>(a)]->shpoly[si.l == 0 ? 0 : 1]
@@ -856,632 +844,485 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
         return e;
     };
 
-    auto d4_energy = [&]() {
-        std::vector<int> Z(static_cast<std::size_t>(n_at));
-        std::vector<std::array<double, 3>> pos(static_cast<std::size_t>(n_at));
-        for (int a = 0; a < n_at; ++a) {
-            Z[static_cast<std::size_t>(a)] = type[a];
-            pos[static_cast<std::size_t>(a)] = xyz[static_cast<std::size_t>(a)];
-        }
-        const double cell[3] = {20.0 * kBohr, 20.0 * kBohr, 20.0 * kBohr};
-        return scf::dftd4_energy(Z, pos, cell, /*periodic=*/false, kGfn2D4S6,
-                                 kGfn2D4S8, kGfn2D4A1, kGfn2D4A2, 3.0, 2.0, 6.0,
-                                 static_cast<double>(charge), 30.0, 60.0,
-                                 kGfn2D4S9, 40.0);
+    // -----------------------------------------------------------------
+    // Anisotropic electrostatics (AES) and anisotropic XC (AXC) of
+    // GFN2-xTB (Bannwarth, Ehlert, Grimme, JCTC 15, 1652 (2019)).
+    //
+    // Cumulative atomic multipoles of the density P (Mulliken split; the
+    // operator is centred on the bra atom A of κ):
+    //   q_A = −Σ_{l∈A} Δn_l,   Δn_l = Σ_{κ∈l} (PS)_κκ − n⁰_l
+    //   μ_A = −Σ_{κ∈A} Σ_ν P_κν ⟨κ|r − R_A|ν⟩
+    //   Θ_A = −Σ_{κ∈A} Σ_ν P_κν ⟨κ|3/2 (r−R_A)⊗(r−R_A) − ½|r−R_A|²|ν⟩
+    // Pair energy, R = R_A − R_B, g_n = f_n(R)/R^n:
+    //   E_AB = g3 (q_A μ_B − q_B μ_A)·R
+    //        + g5 [q_A R·Θ_B·R + q_B R·Θ_A·R + (μ_A·μ_B) R² − 3(μ_A·R)(μ_B·R)]
+    //   f_n = 1 / (1 + 6 (R0_AB/R)^{a_n}),  R0_AB = ½ (R0_A + R0_B),
+    //   R0_A = R_A^mp + (R_max − R_A^mp) / (1 + exp(−k (CN_A − N_A^v − Δ)))
+    // AXC: Σ_A f^μ_A |μ_A|² + f^Θ_A Θ_A:Θ_A.
+    // Θ is stored packed (xx, xy, yy, xz, yz, zz); derivatives with
+    // respect to the packed components carry the factor 2 of the
+    // symmetric off-diagonal pair.
+    // -----------------------------------------------------------------
+    const std::size_t nat = static_cast<std::size_t>(n_at);
+    auto U = [](int i) { return static_cast<std::size_t>(i); };
+
+    std::vector<double> r0(nat), dr0dcn(nat);
+    for (int a = 0; a < n_at; ++a) {
+        const auto& ea = *el[U(a)];
+        const double ex =
+            std::exp(-kGfn2AesKexp * (cn[U(a)] - ea.mpvcn - kGfn2AesShift));
+        r0[U(a)] = ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + ex);
+        dr0dcn[U(a)] = (kGfn2AesRmax - ea.mprad) * kGfn2AesKexp * ex
+                       / ((1.0 + ex) * (1.0 + ex));
+    }
+
+    struct Moments {
+        std::vector<double> q;                 // physical charge [e]
+        std::vector<std::array<double, 3>> mu; // [e·Bohr]
+        std::vector<std::array<double, 6>> th; // packed [e·Bohr²]
+    };
+    auto rthr = [](const std::array<double, 6>& t, const double v[3]) {
+        return t[0] * v[0] * v[0] + 2.0 * t[1] * v[0] * v[1]
+               + t[2] * v[1] * v[1] + 2.0 * t[3] * v[0] * v[2]
+               + 2.0 * t[4] * v[1] * v[2] + t[5] * v[2] * v[2];
+    };
+    auto thv = [](const std::array<double, 6>& t, const double v[3],
+                  double o[3]) {
+        o[0] = t[0] * v[0] + t[1] * v[1] + t[3] * v[2];
+        o[1] = t[1] * v[0] + t[2] * v[1] + t[4] * v[2];
+        o[2] = t[3] * v[0] + t[4] * v[1] + t[5] * v[2];
+    };
+    auto dot3 = [](const double* x, const double* y) {
+        return x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+    };
+    // f_n(R) and its partial derivatives in R and R0.
+    auto damp = [](double r, double rr0, double an, double& fn, double& dfdr,
+                   double& dfdr0) {
+        const double xa = std::pow(rr0 / r, an);
+        fn = 1.0 / (1.0 + 6.0 * xa);
+        dfdr = 6.0 * an * fn * fn * xa / r;
+        dfdr0 = -6.0 * an * fn * fn * xa / rr0;
     };
 
-    std::vector<double> qsh(static_cast<std::size_t>(n_sh), 0.0);
-    std::vector<double> qsh_out(static_cast<std::size_t>(n_sh), 0.0);
-    std::vector<double> qat(static_cast<std::size_t>(n_at), 0.0);
-    std::vector<std::array<double, 3>> dipat(static_cast<std::size_t>(n_at));
-    std::vector<std::array<double, 6>> quadat(static_cast<std::size_t>(n_at));
-    internal::ChargeMixer mixer(mix_beta, 6);
-    linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealMatrix Cmat = xt::zeros<double>({n_ao, n_ao});
-    linalg::RealVector eps_mo = xt::zeros<double>({n_ao});
-    std::vector<double> vsh(static_cast<std::size_t>(n_sh), 0.0);
-    SolveOut out;
-    bool converged = false;
-
-    auto aes_energy = [&]() {
+    // E_AES + E_AXC and its partial derivatives in the multipoles.
+    auto aes_eval = [&](const Moments& m, std::vector<double>& vq,
+                        std::vector<std::array<double, 3>>& vmu,
+                        std::vector<std::array<double, 6>>& vth) {
+        vq.assign(nat, 0.0);
+        vmu.assign(nat, std::array<double, 3>{0, 0, 0});
+        vth.assign(nat, std::array<double, 6>{0, 0, 0, 0, 0, 0});
         double e = 0;
         for (int a = 0; a < n_at; ++a) {
-            const auto& ea = *el[static_cast<std::size_t>(a)];
-            const double* ra = xyz[static_cast<std::size_t>(a)].data();
-            // AXC (dipole + packed quadrupole; off-diag scale 2, tblite)
-            const auto& mu = dipat[static_cast<std::size_t>(a)];
-            const auto& th = quadat[static_cast<std::size_t>(a)];
-            e += ea.dkernel * (mu[0] * mu[0] + mu[1] * mu[1] + mu[2] * mu[2]);
-            e +=
-                ea.qkernel
-                * (th[0] * th[0] + 2.0 * th[1] * th[1] + th[2] * th[2]
-                   + 2.0 * th[3] * th[3] + 2.0 * th[4] * th[4] + th[5] * th[5]);
-            const double arg =
-                cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
-            const double t1 = std::exp(-kGfn2AesKexp * arg);
-            // p_rad / rmax in the GFN2 set are Bohr.
-            const double radA =
-                ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
-            for (int b = 0; b < n_at; ++b) {
-                if (a == b)
-                    continue;
-                const auto& eb = *el[static_cast<std::size_t>(b)];
-                const double* rb = xyz[static_cast<std::size_t>(b)].data();
-                double vec[3] = {ra[0] - rb[0], ra[1] - rb[1], ra[2] - rb[2]};
-                const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
-                                            + vec[2] * vec[2]);
-                if (r1 < 1e-12)
-                    continue;
-                const double argb =
-                    cn[static_cast<std::size_t>(b)] - eb.mpvcn - kGfn2AesShift;
-                const double t1b = std::exp(-kGfn2AesKexp * argb);
-                const double radB =
-                    eb.mprad + (kGfn2AesRmax - eb.mprad) / (1.0 + t1b);
-                const double g1 = 1.0 / r1;
-                const double g3 = g1 * g1 * g1;
-                const double g5 = g3 * g1 * g1;
-                const double rr = 0.5 * (radA + radB) * g1;
-                const double fdmp3 =
-                    1.0 / (1.0 + 6.0 * std::pow(rr, kGfn2AesDmp3));
-                const double fdmp5 =
-                    1.0 / (1.0 + 6.0 * std::pow(rr, kGfn2AesDmp5));
-                const auto& mua = dipat[static_cast<std::size_t>(a)];
-                const auto& mub = dipat[static_cast<std::size_t>(b)];
-                const auto& tha = quadat[static_cast<std::size_t>(a)];
-                const double qb = -qat[static_cast<std::size_t>(b)];
-                // tblite get_energy: vd = amat_sd q; E += μ·vd  (ordered i≠j)
-                const double sd =
-                    (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2]) * g3
-                    * fdmp3;
-                e += qb * sd;
-                const double mdot =
-                    mua[0] * mub[0] + mua[1] * mub[1] + mua[2] * mub[2];
-                const double mrv =
-                    (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2])
-                    * (mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2]);
-                // ½ μ T μ with T filled for every ordered pair
-                e += 0.5 * (mdot * g3 * fdmp5 - 3.0 * mrv * g5 * fdmp5);
-                // Charge–quadrupole. Dipole CAMM is +½P(D−RS); that operator
-                // is odd in R so the foothold sign already matches xtb AES.
-                // Quadrupole is even in R, so the contraction follows xtb
-                // mmompop (−P·Q). /3 converts the 3/2-traceless packed Θ:rr
-                // into the GFN2 0d kernel (xtb aniso_electro gab5).
-                const double sq =
-                    -(tha[0] * vec[0] * vec[0] + 2.0 * tha[1] * vec[0] * vec[1]
-                      + tha[2] * vec[1] * vec[1]
-                      + 2.0 * tha[3] * vec[0] * vec[2]
-                      + 2.0 * tha[4] * vec[1] * vec[2]
-                      + tha[5] * vec[2] * vec[2])
-                    * g5 * fdmp5 / 3.0;
-                e += qb * sq;
+            const auto& ea = *el[U(a)];
+            const auto& mu = m.mu[U(a)];
+            const auto& t = m.th[U(a)];
+            e += ea.dkernel * dot3(mu.data(), mu.data());
+            e += ea.qkernel
+                 * (t[0] * t[0] + 2.0 * t[1] * t[1] + t[2] * t[2]
+                    + 2.0 * t[3] * t[3] + 2.0 * t[4] * t[4] + t[5] * t[5]);
+            for (int k = 0; k < 3; ++k)
+                vmu[U(a)][U(k)] += 2.0 * ea.dkernel * mu[U(k)];
+            const double tq[6] = {2.0, 4.0, 2.0, 4.0, 4.0, 2.0};
+            for (int k = 0; k < 6; ++k)
+                vth[U(a)][U(k)] += tq[k] * ea.qkernel * t[U(k)];
+        }
+        for (int a = 0; a < n_at; ++a) {
+            for (int b = 0; b < a; ++b) {
+                const double R[3] = {xyz[U(a)][0] - xyz[U(b)][0],
+                                     xyz[U(a)][1] - xyz[U(b)][1],
+                                     xyz[U(a)][2] - xyz[U(b)][2]};
+                const double r2 = dot3(R, R);
+                const double r = std::sqrt(r2);
+                const double rr0 = 0.5 * (r0[U(a)] + r0[U(b)]);
+                double f3, f5, d1, d2;
+                damp(r, rr0, kGfn2AesDmp3, f3, d1, d2);
+                damp(r, rr0, kGfn2AesDmp5, f5, d1, d2);
+                const double g3 = f3 / (r2 * r);
+                const double g5 = f5 / (r2 * r2 * r);
+                const auto& ma = m.mu[U(a)];
+                const auto& mb = m.mu[U(b)];
+                const double qa = m.q[U(a)];
+                const double qb = m.q[U(b)];
+                const double mar = dot3(ma.data(), R);
+                const double mbr = dot3(mb.data(), R);
+                const double ta = rthr(m.th[U(a)], R);
+                const double tb = rthr(m.th[U(b)], R);
+                const double mab = dot3(ma.data(), mb.data());
+                e +=
+                    g3 * (qa * mbr - qb * mar)
+                    + g5 * ((qa * tb + qb * ta) + (mab * r2 - 3.0 * mar * mbr));
+                vq[U(a)] += g3 * mbr + g5 * tb;
+                vq[U(b)] += -g3 * mar + g5 * ta;
+                for (int k = 0; k < 3; ++k) {
+                    vmu[U(a)][U(k)] +=
+                        -g3 * qb * R[k]
+                        + g5 * (mb[U(k)] * r2 - 3.0 * R[k] * mbr);
+                    vmu[U(b)][U(k)] +=
+                        g3 * qa * R[k]
+                        + g5 * (ma[U(k)] * r2 - 3.0 * R[k] * mar);
+                }
+                const double rr[6] = {R[0] * R[0],       2.0 * R[0] * R[1],
+                                      R[1] * R[1],       2.0 * R[0] * R[2],
+                                      2.0 * R[1] * R[2], R[2] * R[2]};
+                for (int k = 0; k < 6; ++k) {
+                    vth[U(a)][U(k)] += g5 * qb * rr[k];
+                    vth[U(b)][U(k)] += g5 * qa * rr[k];
+                }
             }
         }
         return e;
     };
 
-    auto fill_aes_pot = [&](std::vector<double>& vat, std::vector<Grad3>& vdp,
-                            std::vector<std::array<double, 6>>& vqp) {
-        vat.assign(static_cast<std::size_t>(n_at), 0.0);
-        vdp.assign(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
-        vqp.assign(static_cast<std::size_t>(n_at),
-                   std::array<double, 6>{0, 0, 0, 0, 0, 0});
-        for (int a = 0; a < n_at; ++a) {
-            const auto& ea = *el[static_cast<std::size_t>(a)];
-            const auto& mua = dipat[static_cast<std::size_t>(a)];
-            const auto& tha = quadat[static_cast<std::size_t>(a)];
-            vdp[static_cast<std::size_t>(a)] = {2.0 * ea.dkernel * mua[0],
-                                                2.0 * ea.dkernel * mua[1],
-                                                2.0 * ea.dkernel * mua[2]};
-            vqp[static_cast<std::size_t>(a)] = {
-                2.0 * ea.qkernel * tha[0], 4.0 * ea.qkernel * tha[1],
-                2.0 * ea.qkernel * tha[2], 4.0 * ea.qkernel * tha[3],
-                4.0 * ea.qkernel * tha[4], 2.0 * ea.qkernel * tha[5]};
-            const double* ra = xyz[static_cast<std::size_t>(a)].data();
-            const double arg =
-                cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
-            const double t1 = std::exp(-kGfn2AesKexp * arg);
-            const double radA =
-                ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
-            for (int b = 0; b < n_at; ++b) {
-                if (a == b)
-                    continue;
-                const auto& eb = *el[static_cast<std::size_t>(b)];
-                const double* rb = xyz[static_cast<std::size_t>(b)].data();
-                const auto& mub = dipat[static_cast<std::size_t>(b)];
-                const double qb = -qat[static_cast<std::size_t>(b)];
-                double vec[3] = {ra[0] - rb[0], ra[1] - rb[1], ra[2] - rb[2]};
-                const double r1 = std::sqrt(vec[0] * vec[0] + vec[1] * vec[1]
-                                            + vec[2] * vec[2]);
-                if (r1 < 1e-12)
-                    continue;
-                const double argb =
-                    cn[static_cast<std::size_t>(b)] - eb.mpvcn - kGfn2AesShift;
-                const double t1b = std::exp(-kGfn2AesKexp * argb);
-                const double radB =
-                    eb.mprad + (kGfn2AesRmax - eb.mprad) / (1.0 + t1b);
-                const double g1 = 1.0 / r1;
-                const double g3 = g1 * g1 * g1;
-                const double g5 = g3 * g1 * g1;
-                const double rrd = 0.5 * (radA + radB) * g1;
-                const double fdmp3 =
-                    1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp3));
-                const double fdmp5 =
-                    1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp5));
-                const double sd =
-                    (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2]) * g3
-                    * fdmp3;
+    // Integrals with the operator origin on the bra atom:
+    //   dA(k,κ,ν) = ⟨κ|r_k − R_A|ν⟩,  tA(k,κ,ν) = traceless Θ about R_A.
+    std::vector<double> dA(static_cast<std::size_t>(3 * n_ao * n_ao), 0.0);
+    std::vector<double> tA(static_cast<std::size_t>(6 * n_ao * n_ao), 0.0);
+    auto DA = [&](int k, int mu, int nu) -> double& {
+        return dA[static_cast<std::size_t>((k * n_ao + mu) * n_ao + nu)];
+    };
+    auto TA = [&](int k, int mu, int nu) -> double& {
+        return tA[static_cast<std::size_t>((k * n_ao + mu) * n_ao + nu)];
+    };
+    for (int mu = 0; mu < n_ao; ++mu) {
+        const double* Ra = xyz[U(ao_atom[U(mu)])].data();
+        for (int nu = 0; nu < n_ao; ++nu) {
+            const double s = S(mu, nu);
+            const double d0[3] = {D(0, mu, nu), D(1, mu, nu), D(2, mu, nu)};
+            const double q0[6] = {Q(0, mu, nu), Q(1, mu, nu), Q(2, mu, nu),
+                                  Q(3, mu, nu), Q(4, mu, nu), Q(5, mu, nu)};
+            for (int k = 0; k < 3; ++k)
+                DA(k, mu, nu) = d0[k] - Ra[k] * s;
+            double tq[6];
+            origin_shift_quad(q0, d0, Ra, s, tq);
+            for (int k = 0; k < 6; ++k)
+                TA(k, mu, nu) = tq[k];
+        }
+    }
+
+    // Shell populations Δn and multipoles of a density.
+    auto moments_of = [&](const linalg::RealMatrix& Pm, std::vector<double>& dn,
+                          Moments& m) {
+        dn.assign(U(n_sh), 0.0);
+        m.q.assign(nat, 0.0);
+        m.mu.assign(nat, std::array<double, 3>{0, 0, 0});
+        m.th.assign(nat, std::array<double, 6>{0, 0, 0, 0, 0, 0});
+        for (int mu = 0; mu < n_ao; ++mu) {
+            const int a = ao_atom[U(mu)];
+            double pop = 0;
+            for (int nu = 0; nu < n_ao; ++nu) {
+                const double p = Pm(mu, nu);
+                pop += p * S(mu, nu);
                 for (int k = 0; k < 3; ++k)
-                    vdp[static_cast<std::size_t>(a)]
-                       [static_cast<std::size_t>(k)] +=
-                        qb * vec[k] * g3 * fdmp3;
-                vat[static_cast<std::size_t>(b)] += -sd;
-                const double mub_r =
-                    mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2];
-                for (int k = 0; k < 3; ++k)
-                    vdp[static_cast<std::size_t>(a)]
-                       [static_cast<std::size_t>(k)] +=
-                        mub[k] * g3 * fdmp5 - 3.0 * vec[k] * mub_r * g5 * fdmp5;
-                const double rrq =
-                    tha[0] * vec[0] * vec[0] + 2.0 * tha[1] * vec[0] * vec[1]
-                    + tha[2] * vec[1] * vec[1] + 2.0 * tha[3] * vec[0] * vec[2]
-                    + 2.0 * tha[4] * vec[1] * vec[2] + tha[5] * vec[2] * vec[2];
-                const double sq = -rrq * g5 * fdmp5 / 3.0;
-                const double facq = qb * (-g5 * fdmp5 / 3.0);
-                auto& vqa = vqp[static_cast<std::size_t>(a)];
-                vqa[0] += facq * vec[0] * vec[0];
-                vqa[1] += facq * 2.0 * vec[0] * vec[1];
-                vqa[2] += facq * vec[1] * vec[1];
-                vqa[3] += facq * 2.0 * vec[0] * vec[2];
-                vqa[4] += facq * 2.0 * vec[1] * vec[2];
-                vqa[5] += facq * vec[2] * vec[2];
-                vat[static_cast<std::size_t>(b)] += -sq;
+                    m.mu[U(a)][U(k)] -= p * DA(k, mu, nu);
+                for (int k = 0; k < 6; ++k)
+                    m.th[U(a)][U(k)] -= p * TA(k, mu, nu);
             }
+            dn[U(ao_shell[U(mu)])] += pop;
+        }
+        for (int ish = 0; ish < n_sh; ++ish) {
+            dn[U(ish)] -= n0sh[U(ish)];
+            m.q[U(shells[U(ish)].atom)] -= dn[U(ish)];
         }
     };
 
-    std::vector<double> vat(static_cast<std::size_t>(n_at), 0.0);
-    std::vector<Grad3> vdp(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
-    std::vector<std::array<double, 6>> vqp(
-        static_cast<std::size_t>(n_at),
-        std::array<double, 6>{0, 0, 0, 0, 0, 0});
+    // Self-consistent D4 (GFN2): C6 scaled by the SCC charges q_A.
+    std::vector<int> Z(nat);
+    for (int a = 0; a < n_at; ++a)
+        Z[U(a)] = type[a];
+    auto d4_of = [&](const Moments& m, std::vector<double>& dEdq) {
+        return scf::dftd4_fixed_charges(Z, xyz, m.q, kGfn2D4S6, kGfn2D4S8,
+                                        kGfn2D4A1, kGfn2D4A2, kGfn2D4S9, dEdq);
+    };
 
-    for (int it = 0; it < max_scc; ++it) {
-        fill_aes_pot(vat, vdp, vqp);
+    // Shell potential ∂E/∂Δn_l of the isotropic terms.
+    auto shell_potential = [&](const std::vector<double>& dn,
+                               const std::vector<double>& vq,
+                               std::vector<double>& v) {
+        v.assign(U(n_sh), 0.0);
         for (int ish = 0; ish < n_sh; ++ish) {
             double s = 0;
             for (int jsh = 0; jsh < n_sh; ++jsh)
-                s += gamma[static_cast<std::size_t>(ish) * n_sh
-                           + static_cast<std::size_t>(jsh)]
-                     * qsh[static_cast<std::size_t>(jsh)];
-            s += gam3[static_cast<std::size_t>(ish)]
-                 * qsh[static_cast<std::size_t>(ish)]
-                 * qsh[static_cast<std::size_t>(ish)];
-            const int a = shells[static_cast<std::size_t>(ish)].atom;
-            vsh[static_cast<std::size_t>(ish)] =
-                s + vat[static_cast<std::size_t>(a)];
+                s += gamma[U(ish) * U(n_sh) + U(jsh)] * dn[U(jsh)];
+            // E3 = ⅓ Σ Γ_l q_l³ in the shell charge q_l = −Δn_l.
+            s -= gam3[U(ish)] * dn[U(ish)] * dn[U(ish)];
+            // q_A = −Σ Δn_l ⇒ ∂E/∂Δn_l = −∂E/∂q_A (AES + D4).
+            s -= vq[U(shells[U(ish)].atom)];
+            v[U(ish)] = s;
         }
+    };
+
+    const std::size_t nmix = U(n_sh) + 9 * nat;
+    auto pack = [&](const std::vector<double>& dn, const Moments& m) {
+        std::vector<double> x(nmix);
+        for (int i = 0; i < n_sh; ++i)
+            x[U(i)] = dn[U(i)];
+        for (int a = 0; a < n_at; ++a) {
+            for (int k = 0; k < 3; ++k)
+                x[U(n_sh) + 3 * U(a) + U(k)] = m.mu[U(a)][U(k)];
+            for (int k = 0; k < 6; ++k)
+                x[U(n_sh) + 3 * nat + 6 * U(a) + U(k)] = m.th[U(a)][U(k)];
+        }
+        return x;
+    };
+    auto unpack = [&](const std::vector<double>& x, std::vector<double>& dn,
+                      Moments& m) {
+        dn.assign(x.begin(), x.begin() + n_sh);
+        m.q.assign(nat, 0.0);
+        m.mu.assign(nat, std::array<double, 3>{0, 0, 0});
+        m.th.assign(nat, std::array<double, 6>{0, 0, 0, 0, 0, 0});
+        for (int ish = 0; ish < n_sh; ++ish)
+            m.q[U(shells[U(ish)].atom)] -= dn[U(ish)];
+        for (int a = 0; a < n_at; ++a) {
+            for (int k = 0; k < 3; ++k)
+                m.mu[U(a)][U(k)] = x[U(n_sh) + 3 * U(a) + U(k)];
+            for (int k = 0; k < 6; ++k)
+                m.th[U(a)][U(k)] = x[U(n_sh) + 3 * nat + 6 * U(a) + U(k)];
+        }
+    };
+
+    // Fock matrix F = ∂E/∂P (symmetrised) for given potentials.
+    auto build_fock = [&](const std::vector<double>& vsh,
+                          const std::vector<std::array<double, 3>>& vmu,
+                          const std::vector<std::array<double, 6>>& vth) {
         linalg::RealMatrix H = H0;
         for (int mu = 0; mu < n_ao; ++mu) {
-            const int ish = ao_shell[static_cast<std::size_t>(mu)];
-            const int a = ao_atom[static_cast<std::size_t>(mu)];
-            const double* Ra = xyz[static_cast<std::size_t>(a)].data();
+            const int a = ao_atom[U(mu)];
+            const double va = vsh[U(ao_shell[U(mu)])];
             for (int nu = 0; nu < n_ao; ++nu) {
-                const int jsh = ao_shell[static_cast<std::size_t>(nu)];
-                const int b = ao_atom[static_cast<std::size_t>(nu)];
-                const double* Rb = xyz[static_cast<std::size_t>(b)].data();
-                const double sij = S(mu, nu);
-                H(mu, nu) += 0.5 * sij
-                             * (vsh[static_cast<std::size_t>(ish)]
-                                + vsh[static_cast<std::size_t>(jsh)]);
-                for (int k = 0; k < 3; ++k) {
-                    const double d = D(k, mu, nu);
-                    H(mu, nu) += 0.5
-                                 * (vdp[static_cast<std::size_t>(a)]
-                                       [static_cast<std::size_t>(k)]
-                                        * (d - Ra[k] * sij)
-                                    + vdp[static_cast<std::size_t>(b)]
-                                         [static_cast<std::size_t>(k)]
-                                          * (d - Rb[k] * sij));
-                }
-                {
-                    const double q0[6] = {Q(0, mu, nu), Q(1, mu, nu),
-                                          Q(2, mu, nu), Q(3, mu, nu),
-                                          Q(4, mu, nu), Q(5, mu, nu)};
-                    const double d0[3] = {D(0, mu, nu), D(1, mu, nu),
-                                          D(2, mu, nu)};
-                    double tqA[6];
-                    origin_shift_quad(q0, d0, Ra, sij, tqA);
-                    const auto& va = vqp[static_cast<std::size_t>(a)];
-                    for (int k = 0; k < 6; ++k)
-                        H(mu, nu) +=
-                            0.5 * va[static_cast<std::size_t>(k)] * tqA[k];
-                    double tqB[6];
-                    origin_shift_quad(q0, d0, Rb, sij, tqB);
-                    const auto& vb = vqp[static_cast<std::size_t>(b)];
-                    for (int k = 0; k < 6; ++k)
-                        H(mu, nu) +=
-                            0.5 * vb[static_cast<std::size_t>(k)] * tqB[k];
-                }
+                const int b = ao_atom[U(nu)];
+                double h = 0.5 * S(mu, nu) * (va + vsh[U(ao_shell[U(nu)])]);
+                double m = 0;
+                for (int k = 0; k < 3; ++k)
+                    m += vmu[U(a)][U(k)] * DA(k, mu, nu)
+                         + vmu[U(b)][U(k)] * DA(k, nu, mu);
+                for (int k = 0; k < 6; ++k)
+                    m += vth[U(a)][U(k)] * TA(k, mu, nu)
+                         + vth[U(b)][U(k)] * TA(k, nu, mu);
+                H(mu, nu) += h - 0.5 * m;
             }
         }
-        auto sol = linalg::diagonalize_fock_generalized(H, S);
-        eps_mo = sol.first;
-        Cmat = sol.second;
-        const auto& C = Cmat;
-        P = xt::zeros<double>({n_ao, n_ao});
-        for (int o = 0; o < n_occ; ++o)
-            for (int mu = 0; mu < n_ao; ++mu)
-                for (int nu = 0; nu < n_ao; ++nu)
-                    P(mu, nu) += 2.0 * C(mu, o) * C(nu, o);
+        return H;
+    };
 
-        const linalg::RealMatrix PS = xt::linalg::dot(P, S);
-        for (int a = 0; a < n_at; ++a) {
-            qat[static_cast<std::size_t>(a)] = 0;
-            dipat[static_cast<std::size_t>(a)] = {0, 0, 0};
-            quadat[static_cast<std::size_t>(a)] = {0, 0, 0, 0, 0, 0};
-            const auto& e = *el[static_cast<std::size_t>(a)];
-            const int is0 = sh0[static_cast<std::size_t>(a)];
-            for (int s = 0; s < e.n_shell; ++s) {
-                const int ish = is0 + s;
-                const Shell& sh = shells[static_cast<std::size_t>(ish)];
-                const int nao = 2 * sh.l + 1;
-                double pop = 0;
-                for (int u = 0; u < nao; ++u)
-                    pop += PS(sh.ao0 + u, sh.ao0 + u);
-                // Electron excess Δn = pop − n0 (DFTB/xTB SCC). Mulliken
-                // charge written to Frame is −Δn.
-                qsh_out[static_cast<std::size_t>(ish)] =
-                    pop - n0sh[static_cast<std::size_t>(ish)];
-                qat[static_cast<std::size_t>(a)] +=
-                    qsh_out[static_cast<std::size_t>(ish)];
-            }
-            const double* Ra = xyz[static_cast<std::size_t>(a)].data();
-            const int ia = ao0[static_cast<std::size_t>(a)];
-            const int na = n_ao_of(e);
-            // xtb mmompop: bra on A (same Mulliken split as the dipole).
-            // Two-centre origin-shifted Θ is kept on s-only H.
-            for (int u = 0; u < na; ++u) {
-                for (int b2 = 0; b2 < n_at; ++b2) {
-                    const int ib = ao0[static_cast<std::size_t>(b2)];
-                    const int nb = n_ao_of(*el[static_cast<std::size_t>(b2)]);
-                    for (int v = 0; v < nb; ++v) {
-                        const double p = P(ia + u, ib + v);
-                        const double s = S(ia + u, ib + v);
-                        for (int k = 0; k < 3; ++k)
-                            dipat[static_cast<std::size_t>(a)]
-                                 [static_cast<std::size_t>(k)] +=
-                                0.5 * p * (D(k, ia + u, ib + v) - Ra[k] * s);
-                        const double q0[6] = {
-                            Q(0, ia + u, ib + v), Q(1, ia + u, ib + v),
-                            Q(2, ia + u, ib + v), Q(3, ia + u, ib + v),
-                            Q(4, ia + u, ib + v), Q(5, ia + u, ib + v)};
-                        const double d0[3] = {D(0, ia + u, ib + v),
-                                              D(1, ia + u, ib + v),
-                                              D(2, ia + u, ib + v)};
-                        double tq[6];
-                        origin_shift_quad(q0, d0, Ra, s, tq);
-                        for (int k = 0; k < 6; ++k)
-                            quadat[static_cast<std::size_t>(a)]
-                                  [static_cast<std::size_t>(k)] +=
-                                0.5 * p * tq[k];
-                    }
-                }
-            }
-        }
-        double residual = 0;
-        for (int ish = 0; ish < n_sh; ++ish)
-            residual = std::max(residual,
-                                std::abs(qsh_out[static_cast<std::size_t>(ish)]
-                                         - qsh[static_cast<std::size_t>(ish)]));
-        out.residual = residual;
-        out.iterations = it + 1;
-        if (residual < scc_tol) {
-            qsh = qsh_out;
-            converged = true;
-            break;
-        }
-        qsh = mixer.next(qsh, qsh_out);
-    }
-    if (!converged)
+    internal::ChargeMixer mixer(mix_beta, 6);
+    linalg::RealMatrix P = xt::zeros<double>({n_ao, n_ao});
+    linalg::RealMatrix Cmat = xt::zeros<double>({n_ao, n_ao});
+    linalg::RealVector eps_mo = xt::zeros<double>({n_ao});
+    std::vector<double> dn_in(U(n_sh), 0.0), dn(U(n_sh), 0.0), vsh;
+    Moments mom_in, mom;
+    std::vector<double> vq;
+    std::vector<std::array<double, 3>> vmu;
+    std::vector<std::array<double, 6>> vth;
+    unpack(std::vector<double>(nmix, 0.0), dn_in, mom_in);
+    std::vector<double> x_in(nmix, 0.0);
+    SolveOut out;
+    linalg::RealMatrix H;
+    std::vector<double> x_out;
+    // Accept is empty: on the converging iteration `moments_of` already stored
+    // the new moments in `dn` / `mom`. Mixing that iterate would move the pin.
+    SccDriver scc;
+    const SccOutcome outcome = scc.solve(
+        host, max_scc, scc_tol,
+        [&] {
+            unpack(x_in, dn_in, mom_in);
+            aes_eval(mom_in, vq, vmu, vth);
+            std::vector<double> dEdq_d4;
+            d4_of(mom_in, dEdq_d4);
+            for (int a = 0; a < n_at; ++a)
+                vq[U(a)] += dEdq_d4[U(a)];
+            shell_potential(dn_in, vq, vsh);
+            H = build_fock(vsh, vmu, vth);
+        },
+        [&] {
+            auto sol = linalg::diagonalize_fock_generalized(H, S);
+            eps_mo = sol.first;
+            Cmat = sol.second;
+            P = xt::zeros<double>({n_ao, n_ao});
+            for (int o = 0; o < n_occ; ++o)
+                for (int mu = 0; mu < n_ao; ++mu)
+                    for (int nu = 0; nu < n_ao; ++nu)
+                        P(mu, nu) += 2.0 * Cmat(mu, o) * Cmat(nu, o);
+            moments_of(P, dn, mom);
+            x_out = pack(dn, mom);
+        },
+        [&] {
+            double residual = 0;
+            for (std::size_t i = 0; i < nmix; ++i)
+                residual = std::max(residual, std::abs(x_out[i] - x_in[i]));
+            out.residual = residual;
+            scc.set_residual(residual);
+        },
+        [&] {}, [&] { x_in = mixer.next(x_in, x_out); });
+    out.iterations = outcome.iterations;
+    out.residual = outcome.residual;
+    if (!outcome.converged)
         throw std::runtime_error("GFN2: SCC did not converge in max_scc="
                                  + std::to_string(max_scc)
                                  + " (residual=" + std::to_string(out.residual)
                                  + "); increase max_scc or lower mix_beta");
 
+    // Energy and potentials of the converged density.
+    const double e_aes = aes_eval(mom, vq, vmu, vth);
+    std::vector<double> dEdq_d4;
+    const scf::D4Result d4 = d4_of(mom, dEdq_d4);
+    for (int a = 0; a < n_at; ++a)
+        vq[U(a)] += dEdq_d4[U(a)];
+    shell_potential(dn, vq, vsh);
     double e_h0 = 0;
     for (int mu = 0; mu < n_ao; ++mu)
         for (int nu = 0; nu < n_ao; ++nu)
             e_h0 += P(mu, nu) * H0(mu, nu);
     double e_ies = 0;
-    for (int ish = 0; ish < n_sh; ++ish)
-        for (int jsh = 0; jsh < n_sh; ++jsh)
-            e_ies += 0.5 * qsh[static_cast<std::size_t>(ish)]
-                     * gamma[static_cast<std::size_t>(ish) * n_sh
-                             + static_cast<std::size_t>(jsh)]
-                     * qsh[static_cast<std::size_t>(jsh)];
     double e3 = 0;
     for (int ish = 0; ish < n_sh; ++ish) {
-        const double q = qsh[static_cast<std::size_t>(ish)];
-        e3 += q * q * q * gam3[static_cast<std::size_t>(ish)] / 3.0;
+        for (int jsh = 0; jsh < n_sh; ++jsh)
+            e_ies += 0.5 * dn[U(ish)] * gamma[U(ish) * U(n_sh) + U(jsh)]
+                     * dn[U(jsh)];
+        e3 -= dn[U(ish)] * dn[U(ish)] * dn[U(ish)] * gam3[U(ish)] / 3.0;
     }
     const double e_rep = repulsion();
-    const double e_aes = aes_energy();
 
-    std::vector<int> Z(static_cast<std::size_t>(n_at));
-    for (int a = 0; a < n_at; ++a)
-        Z[static_cast<std::size_t>(a)] = type[a];
-    const double cell[3] = {20.0 * kBohr, 20.0 * kBohr, 20.0 * kBohr};
-    scf::D4Result d4;
-    double e_d4 = 0;
-    if (want_grad) {
-        d4 = scf::dftd4(Z, xyz, cell, /*periodic=*/false, kGfn2D4S6, kGfn2D4S8,
-                        kGfn2D4A1, kGfn2D4A2, 3.0, 2.0, 6.0,
-                        static_cast<double>(charge), 30.0, 60.0, kGfn2D4S9,
-                        40.0);
-        e_d4 = d4.energy;
-    } else {
-        e_d4 = d4_energy();
-    }
+    const double e_d4 = d4.energy;
 
     out.energy_eh = e_h0 + e_ies + e3 + e_rep + e_d4 + e_aes;
-    out.dq.assign(static_cast<std::size_t>(n_at), 0.0);
-    for (int a = 0; a < n_at; ++a)
-        out.dq[static_cast<std::size_t>(a)] = -qat[static_cast<std::size_t>(a)];
-    // Energy pieces stay on the existing kernels; gradient is additive.
+    out.dq = mom.q;
 
     if (!want_grad)
         return out;
 
-    // Converged CAMM → AES potential for quadrupole (and dipole) chains.
-    fill_aes_pot(vat, vdp, vqp);
-
+    // ---------------------------------------------------------------
+    // Nuclear gradient. The SCC energy is stationary in P (F = ∂E/∂P),
+    // so dE/dR = ∂E/∂R|_P − Tr(W ∂S/∂R), W = Σ_occ 2 ε_i c_i c_iᵀ.
+    // ---------------------------------------------------------------
     linalg::RealMatrix W = xt::zeros<double>({n_ao, n_ao});
     for (int o = 0; o < n_occ; ++o) {
         const double wfac = 2.0 * eps_mo(o);
-        for (int mu = 0; mu < n_ao; ++mu) {
-            const double cmu = Cmat(mu, o);
+        for (int mu = 0; mu < n_ao; ++mu)
             for (int nu = 0; nu < n_ao; ++nu)
-                W(mu, nu) += wfac * cmu * Cmat(nu, o);
-        }
+                W(mu, nu) += wfac * Cmat(mu, o) * Cmat(nu, o);
     }
 
-    // ∂E_AES/∂μ including AXC (frozen kernel radii). Used for CAMM chains.
-    std::vector<Grad3> vd(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
+    std::vector<Grad3> g(nat, Grad3{0, 0, 0});
+    std::vector<double> dEdcn(nat, 0.0);
+    std::vector<Grad3> dcndr(nat * nat, Grad3{0, 0, 0});
     for (int a = 0; a < n_at; ++a) {
-        const auto& ea = *el[static_cast<std::size_t>(a)];
-        const auto& mua = dipat[static_cast<std::size_t>(a)];
-        vd[static_cast<std::size_t>(a)] = {2.0 * ea.dkernel * mua[0],
-                                           2.0 * ea.dkernel * mua[1],
-                                           2.0 * ea.dkernel * mua[2]};
-        const double* ra = xyz[static_cast<std::size_t>(a)].data();
-        const double arg =
-            cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
-        const double t1 = std::exp(-kGfn2AesKexp * arg);
-        const double radA = ea.mprad + (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
-        for (int b = 0; b < n_at; ++b) {
-            if (a == b)
-                continue;
-            const auto& eb = *el[static_cast<std::size_t>(b)];
-            const double* rb = xyz[static_cast<std::size_t>(b)].data();
-            const auto& mub = dipat[static_cast<std::size_t>(b)];
-            const double qb = -qat[static_cast<std::size_t>(b)];
-            double vec[3] = {ra[0] - rb[0], ra[1] - rb[1], ra[2] - rb[2]};
-            const double r1 =
-                std::sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
-            if (r1 < 1e-12)
-                continue;
-            const double argb =
-                cn[static_cast<std::size_t>(b)] - eb.mpvcn - kGfn2AesShift;
-            const double t1b = std::exp(-kGfn2AesKexp * argb);
-            const double radB =
-                eb.mprad + (kGfn2AesRmax - eb.mprad) / (1.0 + t1b);
-            const double g1 = 1.0 / r1;
-            const double g3 = g1 * g1 * g1;
-            const double g5 = g3 * g1 * g1;
-            const double rrd = 0.5 * (radA + radB) * g1;
-            const double fdmp3 =
-                1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp3));
-            const double fdmp5 =
-                1.0 / (1.0 + 6.0 * std::pow(rrd, kGfn2AesDmp5));
-            for (int k = 0; k < 3; ++k)
-                vd[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
-                    qb * vec[k] * g3 * fdmp3;
-            const double mrv =
-                (mua[0] * vec[0] + mua[1] * vec[1] + mua[2] * vec[2])
-                * (mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2]);
-            (void)mrv;
-            // Ordered a≠b: E_dd = ½ (μa·μb g3 − 3 (μa·r)(μb·r) g5) fdmp5
-            // both directions ⇒ vd_a += μb g3 fdmp5 − 3 r (μb·r) g5 fdmp5.
-            const double mub_r =
-                mub[0] * vec[0] + mub[1] * vec[1] + mub[2] * vec[2];
-            for (int k = 0; k < 3; ++k)
-                vd[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
-                    mub[k] * g3 * fdmp5 - 3.0 * vec[k] * mub_r * g5 * fdmp5;
-        }
-    }
-
-    std::vector<Grad3> g(static_cast<std::size_t>(n_at), Grad3{0, 0, 0});
-    std::vector<double> dEdcn(static_cast<std::size_t>(n_at), 0.0);
-    std::vector<Grad3> dcndr(static_cast<std::size_t>(n_at)
-                                 * static_cast<std::size_t>(n_at),
-                             Grad3{0, 0, 0});
-
-    for (int a = 0; a < n_at; ++a) {
-        const double rca = el[static_cast<std::size_t>(a)]->rcov * kBohr;
+        const double rca = el[U(a)]->rcov * kBohr;
         for (int b = 0; b < a; ++b) {
-            const double rcb = el[static_cast<std::size_t>(b)]->rcov * kBohr;
+            const double rcb = el[U(b)]->rcov * kBohr;
             double dx = static_cast<double>(xA[a] - xA[b]);
             double dy = static_cast<double>(yA[a] - yA[b]);
             double dz = static_cast<double>(zA[a] - zA[b]);
             f.box.min_image(dx, dy, dz);
-            const double dxb = dx * kBohr;
-            const double dyb = dy * kBohr;
-            const double dzb = dz * kBohr;
-            const double r = std::sqrt(dxb * dxb + dyb * dyb + dzb * dzb);
+            const double dv[3] = {dx * kBohr, dy * kBohr, dz * kBohr};
+            const double r = std::sqrt(dot3(dv, dv));
             if (r < 1e-12)
                 continue;
-            const double r0 = rca + rcb;
-            const double dc = dcn_d3_dr(r, r0);
-            const double invr = 1.0 / r;
-            const double dvec[3] = {dxb * invr * dc, dyb * invr * dc,
-                                    dzb * invr * dc};
-            // CN_a and CN_b each pick up this pair.
+            const double dc = dcn_count_dr(r, rca + rcb) / r;
+            // ∂CN_c/∂R_moved stored at dcndr[moved * n_at + c].
             for (int k = 0; k < 3; ++k) {
-                dcndr[static_cast<std::size_t>(a * n_at + a)]
-                     [static_cast<std::size_t>(k)] += dvec[k];
-                dcndr[static_cast<std::size_t>(b * n_at + a)]
-                     [static_cast<std::size_t>(k)] -= dvec[k];
-                dcndr[static_cast<std::size_t>(a * n_at + b)]
-                     [static_cast<std::size_t>(k)] += dvec[k];
-                dcndr[static_cast<std::size_t>(b * n_at + b)]
-                     [static_cast<std::size_t>(k)] -= dvec[k];
+                dcndr[U(a) * nat + U(a)][U(k)] += dv[k] * dc;
+                dcndr[U(b) * nat + U(a)][U(k)] -= dv[k] * dc;
+                dcndr[U(a) * nat + U(b)][U(k)] += dv[k] * dc;
+                dcndr[U(b) * nat + U(b)][U(k)] -= dv[k] * dc;
             }
         }
     }
 
-    // On-site CN: diagonal AO populations of each shell (tblite).
-    for (int a = 0; a < n_at; ++a) {
-        const auto& e = *el[static_cast<std::size_t>(a)];
-        const int is0 = sh0[static_cast<std::size_t>(a)];
-        for (int s = 0; s < e.n_shell; ++s) {
-            const int ish = is0 + s;
-            const Shell& sh = shells[static_cast<std::size_t>(ish)];
-            const double dsedcn = -e.kcn[s] * kGfn2EvToEh;
-            const int nao = 2 * sh.l + 1;
-            double pop = 0;
-            for (int u = 0; u < nao; ++u)
-                pop += P(sh.ao0 + u, sh.ao0 + u);
-            dEdcn[static_cast<std::size_t>(a)] += dsedcn * pop;
-        }
+    // On-site self-energy CN shift: Σ_{κ∈l} P_κκ ∂h_l/∂CN.
+    for (int ish = 0; ish < n_sh; ++ish) {
+        const Shell& sh = shells[U(ish)];
+        const auto& e = *el[U(sh.atom)];
+        const int s = ish - sh0[U(sh.atom)];
+        double pop = 0;
+        for (int u = 0; u < 2 * sh.l + 1; ++u)
+            pop += P(sh.ao0 + u, sh.ao0 + u);
+        dEdcn[U(sh.atom)] += -e.kcn[s] * kGfn2EvToEh * pop;
     }
 
     for (int a = 0; a < n_at; ++a) {
-        const auto& ea = *el[static_cast<std::size_t>(a)];
-        const double* Ai = xyz[static_cast<std::size_t>(a)].data();
-        const int is0 = sh0[static_cast<std::size_t>(a)];
+        const auto& ea = *el[U(a)];
+        const double* Ai = xyz[U(a)].data();
+        const int is0 = sh0[U(a)];
         for (int b = 0; b < a; ++b) {
-            const auto& eb = *el[static_cast<std::size_t>(b)];
-            const double* Aj = xyz[static_cast<std::size_t>(b)].data();
-            const int js0 = sh0[static_cast<std::size_t>(b)];
-            double vec[3] = {Ai[0] - Aj[0], Ai[1] - Aj[1], Ai[2] - Aj[2]};
-            const double r2 =
-                vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2];
+            const auto& eb = *el[U(b)];
+            const double* Aj = xyz[U(b)].data();
+            const int js0 = sh0[U(b)];
+            const double vec[3] = {Ai[0] - Aj[0], Ai[1] - Aj[1], Ai[2] - Aj[2]};
+            const double r2 = dot3(vec, vec);
             if (r2 < 1e-16)
                 continue;
             const double r = std::sqrt(r2);
-            const double radi = ea.rcov * kBohr;
-            const double radj = eb.rcov * kBohr;
-            const double rr = std::sqrt(std::sqrt(r2 / (radi + radj)));
+            const double rr = std::sqrt(r / (rpoly_of(ea) + rpoly_of(eb)));
             const double den = ea.en - eb.en;
             const double enp = 1.0 + kGfn2Enscale * den * den;
 
             Grad3 dG{0, 0, 0};
             double dcni = 0;
             double dcnj = 0;
-
-            const int nsh_a = ea.n_shell;
-            const int nsh_b = eb.n_shell;
-            for (int sa = 0; sa < nsh_a; ++sa) {
+            for (int sa = 0; sa < ea.n_shell; ++sa) {
                 const int ish = is0 + sa;
-                const Shell& si = shells[static_cast<std::size_t>(ish)];
-                const double shpi = 1.0 + ea.shpoly[si.l == 0 ? 0 : 1] * rr;
-                const int nai = 2 * si.l + 1;
-                for (int sb = 0; sb < nsh_b; ++sb) {
+                const Shell& si = shells[U(ish)];
+                const double kpi = ea.shpoly[si.l == 0 ? 0 : 1];
+                const double shpi = 1.0 + kpi * rr;
+                for (int sb = 0; sb < eb.n_shell; ++sb) {
                     const int jsh = js0 + sb;
-                    const Shell& sj = shells[static_cast<std::size_t>(jsh)];
-                    const double shpj = 1.0 + eb.shpoly[sj.l == 0 ? 0 : 1] * rr;
+                    const Shell& sj = shells[U(jsh)];
+                    const double kpj = eb.shpoly[sj.l == 0 ? 0 : 1];
+                    const double shpj = 1.0 + kpj * rr;
                     const double shpoly = shpi * shpj;
-                    const double zi = si.zeta;
-                    const double zj = sj.zeta;
-                    const double zij = std::pow(
-                        2.0 * std::sqrt(zi * zj) / (zi + zj), kGfn2Wexp);
-                    const double hsc = zij * k_shell(si.l, sj.l) * enp;
-                    const double hs = hsc * shpoly;
+                    const double zij =
+                        std::pow(2.0 * std::sqrt(si.zeta * sj.zeta)
+                                     / (si.zeta + sj.zeta),
+                                 kGfn2Wexp);
+                    const double hs = zij * k_shell(si.l, sj.l) * enp * shpoly;
                     const double hij =
-                        0.5
-                        * (selfe[static_cast<std::size_t>(ish)]
-                           + selfe[static_cast<std::size_t>(jsh)])
-                        * hs;
-                    const double dshpoly =
-                        (shpi * eb.shpoly[sj.l == 0 ? 0 : 1]
-                         + shpj * ea.shpoly[si.l == 0 ? 0 : 1])
-                        * 0.5 * rr / r2;
-                    const double dsv[3] = {dshpoly / shpoly * vec[0],
-                                           dshpoly / shpoly * vec[1],
-                                           dshpoly / shpoly * vec[2]};
+                        0.5 * (selfe[U(ish)] + selfe[U(jsh)]) * hs;
+                    // ∇_a ln Π = (k_i shpj + k_j shpi) (½ rr / r) / Π · R/r.
+                    const double dlnpi =
+                        (kpi * shpj + kpj * shpi) * 0.5 * rr / (r * r * shpoly);
                     const double dsed_i = -ea.kcn[sa] * kGfn2EvToEh * hs;
                     const double dsed_j = -eb.kcn[sb] * kGfn2EvToEh * hs;
-                    const double vscale =
-                        0.5
-                        * (vsh[static_cast<std::size_t>(ish)]
-                           + vsh[static_cast<std::size_t>(jsh)]);
-                    const double fscale = hij + vscale;
-                    const int naj = 2 * sj.l + 1;
-                    for (int u = 0; u < nai; ++u) {
+                    const double vscale = 0.5 * (vsh[U(ish)] + vsh[U(jsh)]);
+                    for (int u = 0; u < 2 * si.l + 1; ++u) {
                         const int mu = si.ao0 + u;
-                        for (int v = 0; v < naj; ++v) {
+                        for (int v = 0; v < 2 * sj.l + 1; ++v) {
                             const int nu = sj.ao0 + v;
-                            double sij = 0;
-                            double ds[3];
-                            double Dip[3];
-                            double dDip[3][3];
-                            double Qint[6];
-                            double dQint[6][3];
+                            double sij = 0, ds[3], Dip[3], dDip[3][3], Qint[6],
+                                   dQint[6][3];
                             shell_sdq_grad(si, Ai, u, sj, Aj, v, sij, ds, Dip,
                                            dDip, Qint, dQint);
                             const double pij = P(mu, nu);
-                            const double hpij = pij * hij;
                             const double sval =
-                                2.0 * (pij * fscale - W(mu, nu));
-                            double dRa[3][3] = {
+                                2.0 * (pij * (hij + vscale) - W(mu, nu));
+                            const double dRa[3][3] = {
                                 {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
-                            double dRb[3][3] = {
+                            const double dRb[3][3] = {
                                 {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
-                            double tqA[6];
-                            double dtqA[6][3] = {};
-                            double tqB[6];
-                            double dtqB[6][3] = {};
+                            double tq[6], dtqA[6][3], dtqB[6][3];
                             origin_shift_quad_grad(Qint, dQint, Dip, dDip, Ai,
-                                                   dRa, sij, ds, tqA, dtqA);
+                                                   dRa, sij, ds, tq, dtqA);
                             origin_shift_quad_grad(Qint, dQint, Dip, dDip, Aj,
-                                                   dRb, sij, ds, tqB, dtqB);
-                            (void)tqA;
-                            (void)tqB;
-                            const auto& vqa = vqp[static_cast<std::size_t>(a)];
-                            const auto& vqb = vqp[static_cast<std::size_t>(b)];
+                                                   dRb, sij, ds, tq, dtqB);
                             for (int k = 0; k < 3; ++k) {
-                                dG[static_cast<std::size_t>(k)] +=
-                                    sval * ds[k] + 2.0 * hpij * sij * dsv[k];
-                                // Frozen-P CAMM dipole: μ = ½ P (D − R S).
-                                double dmu_a = 0;
-                                double dmu_b = 0;
+                                double gk =
+                                    sval * ds[k]
+                                    + 2.0 * pij * hij * sij * dlnpi * vec[k];
+                                // μ_a ∋ −P d(a), μ_b ∋ −P d(b); d(X)=D−R_X S.
+                                double dm = 0;
                                 for (int al = 0; al < 3; ++al) {
-                                    const double dD = dDip[al][k];
-                                    const double dmuA =
-                                        0.5 * pij
-                                        * (dD - ((al == k) ? sij : 0.0)
-                                           - Ai[al] * ds[k]);
-                                    const double dmuB =
-                                        0.5 * pij * (dD - Aj[al] * ds[k]);
-                                    dmu_a += vd[static_cast<std::size_t>(a)]
-                                               [static_cast<std::size_t>(al)]
-                                             * dmuA;
-                                    dmu_b += vd[static_cast<std::size_t>(b)]
-                                               [static_cast<std::size_t>(al)]
-                                             * dmuB;
+                                    const double dDa = dDip[al][k]
+                                                       - ((al == k) ? sij : 0.0)
+                                                       - Ai[al] * ds[k];
+                                    const double dDb =
+                                        dDip[al][k] - Aj[al] * ds[k];
+                                    dm += vmu[U(a)][U(al)] * dDa
+                                          + vmu[U(b)][U(al)] * dDb;
                                 }
-                                dG[static_cast<std::size_t>(k)] +=
-                                    dmu_a + dmu_b;
-                                // Frozen-P CAMM quadrupole (xtb mmompop),
-                                // including two-centre Θ on H.
-                                double dth = 0;
                                 for (int c = 0; c < 6; ++c)
-                                    dth += 0.5 * pij
-                                           * (vqa[static_cast<std::size_t>(c)]
-                                                  * dtqA[c][k]
-                                              + vqb[static_cast<std::size_t>(c)]
-                                                    * dtqB[c][k]);
-                                dG[static_cast<std::size_t>(k)] += dth;
+                                    dm += vth[U(a)][U(c)] * dtqA[c][k]
+                                          + vth[U(b)][U(c)] * dtqB[c][k];
+                                gk -= pij * dm;
+                                dG[U(k)] += gk;
                             }
                             dcni += dsed_i * pij * sij;
                             dcnj += dsed_j * pij * sij;
@@ -1490,194 +1331,94 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
                 }
             }
 
-            // IES: Σ_{ish on a, jsh on b} q_i q_j dγ/dR_a
             double dEies_dr = 0;
-            for (int sa = 0; sa < nsh_a; ++sa) {
-                const int ish = is0 + sa;
-                for (int sb = 0; sb < nsh_b; ++sb) {
-                    const int jsh = js0 + sb;
-                    dEies_dr +=
-                        qsh[static_cast<std::size_t>(ish)]
-                        * qsh[static_cast<std::size_t>(jsh)]
-                        * dgamma_dr(r, hardness[static_cast<std::size_t>(ish)],
-                                    hardness[static_cast<std::size_t>(jsh)]);
-                }
-            }
-            const double invr = 1.0 / r;
-            for (int k = 0; k < 3; ++k)
-                dG[static_cast<std::size_t>(k)] += dEies_dr * vec[k] * invr;
-
-            // Repulsion
+            for (int sa = 0; sa < ea.n_shell; ++sa)
+                for (int sb = 0; sb < eb.n_shell; ++sb)
+                    dEies_dr += dn[U(is0 + sa)] * dn[U(js0 + sb)]
+                                * dgamma_dr(r, hardness[U(is0 + sa)],
+                                            hardness[U(js0 + sb)]);
             const double kexp =
                 (ea.z > 2 || eb.z > 2) ? kGfn2Kexp : kGfn2KexpLight;
             const double al = std::sqrt(ea.alpha_rep * eb.alpha_rep);
-            const double zf = ea.zeff * eb.zeff;
-            const double erep =
-                zf * std::exp(-al * std::pow(r, kexp)) / std::pow(r, kGfn2Rexp);
+            const double erep = ea.zeff * eb.zeff
+                                * std::exp(-al * std::pow(r, kexp))
+                                / std::pow(r, kGfn2Rexp);
             const double dErep_dr =
                 erep * (-al * kexp * std::pow(r, kexp - 1.0) - kGfn2Rexp / r);
             for (int k = 0; k < 3; ++k)
-                dG[static_cast<std::size_t>(k)] += dErep_dr * vec[k] * invr;
+                dG[U(k)] += (dEies_dr + dErep_dr) * vec[k] / r;
 
-            dEdcn[static_cast<std::size_t>(a)] += dcni;
-            dEdcn[static_cast<std::size_t>(b)] += dcnj;
+            dEdcn[U(a)] += dcni;
+            dEdcn[U(b)] += dcnj;
             for (int k = 0; k < 3; ++k) {
-                g[static_cast<std::size_t>(a)][static_cast<std::size_t>(k)] +=
-                    dG[static_cast<std::size_t>(k)];
-                g[static_cast<std::size_t>(b)][static_cast<std::size_t>(k)] -=
-                    dG[static_cast<std::size_t>(k)];
+                g[U(a)][U(k)] += dG[U(k)];
+                g[U(b)][U(k)] -= dG[U(k)];
             }
         }
     }
 
-    for (int moved = 0; moved < n_at; ++moved) {
+    // Explicit AES geometry dependence at frozen multipoles.
+    {
         for (int a = 0; a < n_at; ++a) {
-            const auto& dcn = dcndr[static_cast<std::size_t>(moved * n_at + a)];
-            const double dcnE = dEdcn[static_cast<std::size_t>(a)];
-            for (int k = 0; k < 3; ++k)
-                g[static_cast<std::size_t>(moved)]
-                 [static_cast<std::size_t>(k)] +=
-                    dcn[static_cast<std::size_t>(k)] * dcnE;
-        }
-    }
-
-    // AES kernel at frozen CAMM (tblite get_multipole_gradient_0d).
-    std::vector<double> mrad(static_cast<std::size_t>(n_at));
-    std::vector<double> dmrdcn(static_cast<std::size_t>(n_at));
-    std::vector<double> dEdrad(static_cast<std::size_t>(n_at), 0.0);
-    for (int a = 0; a < n_at; ++a) {
-        const auto& ea = *el[static_cast<std::size_t>(a)];
-        const double arg =
-            cn[static_cast<std::size_t>(a)] - ea.mpvcn - kGfn2AesShift;
-        const double t1 = std::exp(-kGfn2AesKexp * arg);
-        const double t2 = (kGfn2AesRmax - ea.mprad) / (1.0 + t1);
-        mrad[static_cast<std::size_t>(a)] = ea.mprad + t2;
-        dmrdcn[static_cast<std::size_t>(a)] =
-            -t2 * kGfn2AesKexp * t1 / (1.0 + t1);
-    }
-    for (int iat = 0; iat < n_at; ++iat) {
-        const double* ri = xyz[static_cast<std::size_t>(iat)].data();
-        const auto& mui = dipat[static_cast<std::size_t>(iat)];
-        const auto& thi = quadat[static_cast<std::size_t>(iat)];
-        const double qi = -qat[static_cast<std::size_t>(iat)]; // Mulliken
-        for (int jat = 0; jat < iat; ++jat) {
-            const double* rj = xyz[static_cast<std::size_t>(jat)].data();
-            const auto& muj = dipat[static_cast<std::size_t>(jat)];
-            const auto& thj = quadat[static_cast<std::size_t>(jat)];
-            const double qj = -qat[static_cast<std::size_t>(jat)];
-            double vec[3] = {rj[0] - ri[0], rj[1] - ri[1], rj[2] - ri[2]};
-            const double r1 =
-                std::sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]);
-            if (r1 < 1e-12)
-                continue;
-            const double r2 = r1 * r1;
-            const double g1 = 1.0 / r1;
-            const double g3 = g1 * g1 * g1;
-            const double g5 = g3 * g1 * g1;
-            const double g7 = g5 * g1 * g1;
-            const double rr = 0.5
-                              * (mrad[static_cast<std::size_t>(iat)]
-                                 + mrad[static_cast<std::size_t>(jat)]);
-            const double fdmp3 =
-                1.0 / (1.0 + 6.0 * std::pow(rr * g1, kGfn2AesDmp3));
-            const double ddmp3 =
-                -3.0 * g5 * fdmp3 - kGfn2AesDmp3 * fdmp3 * (fdmp3 - 1.0) * g5;
-            const double fdmp5 =
-                1.0 / (1.0 + 6.0 * std::pow(rr * g1, kGfn2AesDmp5));
-            const double ddmp5 =
-                -5.0 * fdmp5 - kGfn2AesDmp5 * (fdmp5 * fdmp5 - fdmp5);
-
-            const double dpiqj =
-                (mui[0] * vec[0] + mui[1] * vec[1] + mui[2] * vec[2]) * qj;
-            const double qidpj =
-                (muj[0] * vec[0] + muj[1] * vec[1] + muj[2] * vec[2]) * qi;
-            const double fddr_cd = 3.0 * (dpiqj - qidpj) * kGfn2AesDmp3 * fdmp3
-                                   * g3 * (fdmp3 / rr)
-                                   * std::pow(rr * g1, kGfn2AesDmp3);
-            Grad3 dG{0, 0, 0};
-            for (int k = 0; k < 3; ++k)
-                dG[static_cast<std::size_t>(k)] =
-                    -ddmp3 * vec[k] * (dpiqj - qidpj)
-                    + fdmp3 * g3 * (qi * muj[k] - qj * mui[k]);
-
-            const double dpidpj =
-                mui[0] * muj[0] + mui[1] * muj[1] + mui[2] * muj[2];
-            const double dpiv =
-                mui[0] * vec[0] + mui[1] * vec[1] + mui[2] * vec[2];
-            const double dpjv =
-                muj[0] * vec[0] + muj[1] * vec[1] + muj[2] * vec[2];
-            const double edd = dpidpj * r2 - 3.0 * dpjv * dpiv;
-            const double fddr_dd = 3.0 * edd * kGfn2AesDmp5 * fdmp5 * g5
-                                   * (fdmp5 / rr)
-                                   * std::pow(rr * g1, kGfn2AesDmp5);
-            for (int k = 0; k < 3; ++k)
-                dG[static_cast<std::size_t>(k)] +=
-                    -2.0 * fdmp5 * g5 * dpidpj * vec[k]
-                    + 3.0 * fdmp5 * g5 * (dpiv * muj[k] + dpjv * mui[k])
-                    - edd * ddmp5 * g7 * vec[k];
-
-            // Charge–quadrupole: ATV energy uses −Θ:rr g5 fdmp5 / 3.
-            const double eq =
-                2.0 * (qj * thi[1] + thj[1] * qi) * vec[0] * vec[1]
-                + 2.0 * (qj * thi[3] + thj[3] * qi) * vec[0] * vec[2]
-                + 2.0 * (qj * thi[4] + thj[4] * qi) * vec[1] * vec[2]
-                + (qj * thi[0] + thj[0] * qi) * vec[0] * vec[0]
-                + (qj * thi[2] + thj[2] * qi) * vec[1] * vec[1]
-                + (qj * thi[5] + thj[5] * qi) * vec[2] * vec[2];
-            const double eq_atv = -eq / 3.0;
-            const double fddr_cq = eq_atv * 3.0 * kGfn2AesDmp5 * fdmp5 * g5
-                                   * fdmp5 / rr
-                                   * std::pow(rr * g1, kGfn2AesDmp5);
-            auto qvec = [](const std::array<double, 6>& th, const double v[3],
-                           double out[3]) {
-                out[0] = v[0] * th[0] + v[1] * th[1] + v[2] * th[3];
-                out[1] = v[0] * th[1] + v[1] * th[2] + v[2] * th[4];
-                out[2] = v[0] * th[3] + v[1] * th[4] + v[2] * th[5];
-            };
-            double tvi[3], tvj[3];
-            qvec(thi, vec, tvi);
-            qvec(thj, vec, tvj);
-            for (int k = 0; k < 3; ++k)
-                dG[static_cast<std::size_t>(k)] +=
-                    (-eq_atv * ddmp5 * g7 * vec[k]
-                     - 2.0 * fdmp5 * g5 * qi * tvj[k] / 3.0
-                     - 2.0 * fdmp5 * g5 * qj * tvi[k] / 3.0);
-
-            const double fddr = fddr_cd + fddr_dd + fddr_cq;
-            dEdrad[static_cast<std::size_t>(iat)] += fddr;
-            dEdrad[static_cast<std::size_t>(jat)] += fddr;
-            for (int k = 0; k < 3; ++k) {
-                g[static_cast<std::size_t>(iat)][static_cast<std::size_t>(k)] +=
-                    dG[static_cast<std::size_t>(k)];
-                g[static_cast<std::size_t>(jat)][static_cast<std::size_t>(k)] -=
-                    dG[static_cast<std::size_t>(k)];
+            for (int b = 0; b < a; ++b) {
+                const double R[3] = {xyz[U(a)][0] - xyz[U(b)][0],
+                                     xyz[U(a)][1] - xyz[U(b)][1],
+                                     xyz[U(a)][2] - xyz[U(b)][2]};
+                const double r2 = dot3(R, R);
+                const double r = std::sqrt(r2);
+                const double rr0 = 0.5 * (r0[U(a)] + r0[U(b)]);
+                double f3, df3, df3r0, f5, df5, df5r0;
+                damp(r, rr0, kGfn2AesDmp3, f3, df3, df3r0);
+                damp(r, rr0, kGfn2AesDmp5, f5, df5, df5r0);
+                const double r3 = r2 * r;
+                const double r5 = r3 * r2;
+                const double g3 = f3 / r3;
+                const double g5 = f5 / r5;
+                const double dg3 = (df3 - 3.0 * f3 / r) / r3; // ∂g3/∂R
+                const double dg5 = (df5 - 5.0 * f5 / r) / r5;
+                const auto& ma = mom.mu[U(a)];
+                const auto& mb = mom.mu[U(b)];
+                const double qa = mom.q[U(a)];
+                const double qb = mom.q[U(b)];
+                double w[3];
+                for (int k = 0; k < 3; ++k)
+                    w[k] = qa * mb[U(k)] - qb * ma[U(k)];
+                const double e3p = dot3(w, R);
+                double ta[3], tb[3];
+                thv(mom.th[U(a)], R, ta);
+                thv(mom.th[U(b)], R, tb);
+                const double mar = dot3(ma.data(), R);
+                const double mbr = dot3(mb.data(), R);
+                const double mab = dot3(ma.data(), mb.data());
+                const double e5p = (qa * dot3(tb, R) + qb * dot3(ta, R))
+                                   + (mab * r2 - 3.0 * mar * mbr);
+                for (int k = 0; k < 3; ++k) {
+                    const double gk =
+                        e3p * dg3 * R[k] / r + g3 * w[k] + e5p * dg5 * R[k] / r
+                        + g5
+                              * (2.0 * (qa * tb[k] + qb * ta[k])
+                                 + (2.0 * mab * R[k] - 3.0 * ma[U(k)] * mbr
+                                    - 3.0 * mb[U(k)] * mar));
+                    g[U(a)][U(k)] += gk;
+                    g[U(b)][U(k)] -= gk;
+                }
+                const double dEdr0 =
+                    0.5 * (e3p * df3r0 / r3 + e5p * df5r0 / r5);
+                dEdcn[U(a)] += dEdr0 * dr0dcn[U(a)];
+                dEdcn[U(b)] += dEdr0 * dr0dcn[U(b)];
             }
         }
     }
-    std::vector<double> dEdcn_aes(static_cast<std::size_t>(n_at), 0.0);
+
+    for (int moved = 0; moved < n_at; ++moved)
+        for (int c = 0; c < n_at; ++c)
+            for (int k = 0; k < 3; ++k)
+                g[U(moved)][U(k)] +=
+                    dcndr[U(moved) * nat + U(c)][U(k)] * dEdcn[U(c)];
+
     for (int a = 0; a < n_at; ++a)
-        dEdcn_aes[static_cast<std::size_t>(a)] =
-            dEdrad[static_cast<std::size_t>(a)]
-            * dmrdcn[static_cast<std::size_t>(a)];
-    for (int moved = 0; moved < n_at; ++moved) {
-        for (int a = 0; a < n_at; ++a) {
-            const auto& dcn = dcndr[static_cast<std::size_t>(moved * n_at + a)];
-            const double dcnE = dEdcn_aes[static_cast<std::size_t>(a)];
-            for (int k = 0; k < 3; ++k)
-                g[static_cast<std::size_t>(moved)]
-                 [static_cast<std::size_t>(k)] +=
-                    dcn[static_cast<std::size_t>(k)] * dcnE;
-        }
-    }
-
-    for (int a = 0; a < n_at; ++a) {
-        g[static_cast<std::size_t>(a)][0] -=
-            d4.forces[static_cast<std::size_t>(a)][0];
-        g[static_cast<std::size_t>(a)][1] -=
-            d4.forces[static_cast<std::size_t>(a)][1];
-        g[static_cast<std::size_t>(a)][2] -=
-            d4.forces[static_cast<std::size_t>(a)][2];
-    }
+        for (int k = 0; k < 3; ++k)
+            g[U(a)][U(k)] -= d4.forces[U(a)][U(k)];
 
     out.grad = std::move(g);
     return out;
@@ -1695,7 +1436,8 @@ void GFN2::launch(const LaunchContext& ctx) {
         throw std::invalid_argument("GFN2: mix_beta must be in (0, 1]");
 
     const bool do_f = with_forces && ctx.forces_requested;
-    const auto out = solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f);
+    const auto out = solve_gfn2(f, charge, scc_tol, max_scc, mix_beta, do_f,
+                                ctx.runtime.exec.runtime);
     energy_ = out.energy_eh * units::kHartreeInEv;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;

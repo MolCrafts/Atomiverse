@@ -13,6 +13,7 @@
 #include "atomiverse/cuda/component/hf.cuh"
 #include "atomiverse/cuda/component/integrator.cuh"
 #include "atomiverse/cuda/component/optimizer.cuh"
+#include "atomiverse/cuda/driver/driver_node.h"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
 #include "atomiverse/cuda/minimize/minimize.cuh"
@@ -51,10 +52,16 @@ class StubProbeForce : public ATV::cuda::Component {
     void launch(const ATV::cuda::LaunchContext&) override {}
 };
 
-class StubHFMethod : public ATV::cuda::Component, public ATV::cuda::HF {
+// An HF method is a nestable loop node carrying the HF tag (the shape of
+// cuda::scf::RHF); registration copies the tag's provides_* onto its slot.
+class StubHFMethod : public ATV::cuda::DriverNode, public ATV::cuda::HF {
   public:
-    std::string name() const override { return "stub_hf_method"; }
-    void launch(const ATV::cuda::LaunchContext&) override {}
+    void build_on(ATV::cuda::Context&, ATV::cuda::Frame&) override {}
+    int run_nested_erased(ATV::cuda::Context&, ATV::cuda::Frame&,
+                          int) override {
+        return 0;
+    }
+    void destroy_on(ATV::cuda::Context&, ATV::cuda::Frame&) override {}
 };
 
 } // namespace

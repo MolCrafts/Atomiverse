@@ -142,7 +142,7 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
     }
 
     const double rc2 = cutoff * cutoff;
-    const double k = units::coulomb;
+    const double k = ctx.runtime.units.qqrd2e();
 
     // Permanent field E^perm [e/Å²] (Gaussian electrostatics, damped).
     std::vector<double> e_perm(static_cast<std::size_t>(3 * n), 0.0);
@@ -258,6 +258,8 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
     }
     e_pol_ = k * e;
     f.meta.get(kEnergy) += e_pol_;
+    // Polarization is a pair term (LAMMPS `epair`, as in pair amoeba).
+    f.meta.get(kEnergyPair) += e_pol_;
 
     // Hellmann–Feynman forces at fixed μ:
     //   F_i = q_i E_i^μ + (μ_i · ∇) E_i^{q+μ}
@@ -355,18 +357,22 @@ void PimInducedDipole::launch(const LaunchContext& ctx) {
         }
 
         // Convert Gaussian force (e²/Å²) → eV/Å
-        fx[i] += k * fix;
-        fy[i] += k * fiy;
-        fz[i] += k * fiz;
+        if (ctx.forces_requested) {
+            fx[i] += k * fix;
+            fy[i] += k * fiy;
+            fz[i] += k * fiz;
+        }
     }
 
     // Convert Gaussian virial (e²/Å) → eV, publish to the shared stress meta.
-    f.meta.get(kStress)[0] += k * v_xx;
-    f.meta.get(kStress)[1] += k * v_yy;
-    f.meta.get(kStress)[2] += k * v_zz;
-    f.meta.get(kStress)[3] += k * v_xy;
-    f.meta.get(kStress)[4] += k * v_xz;
-    f.meta.get(kStress)[5] += k * v_yz;
+    if (ctx.stress_requested) {
+        f.meta.get(kStress)[0] += k * v_xx;
+        f.meta.get(kStress)[1] += k * v_yy;
+        f.meta.get(kStress)[2] += k * v_zz;
+        f.meta.get(kStress)[3] += k * v_xy;
+        f.meta.get(kStress)[4] += k * v_xz;
+        f.meta.get(kStress)[5] += k * v_yz;
+    }
 }
 
 } // namespace cpu

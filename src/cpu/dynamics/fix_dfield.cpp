@@ -50,8 +50,8 @@ void FixDfield::launch(const cpu::LaunchContext& ctx) {
     const double Pz = (V > 0.0) ? Pz_sum / V : 0.0;
 
     // Maxwell field along z: foothold E ≡ D, feedback E = D - 4π k_e P.
-    // 4π k_e converts P [e/Å²] into [V/Å]; k_e = units::coulomb.
-    const double four_pi_k = 4.0 * units::pi * units::coulomb;
+    // 4π k_e converts P [charge/area] into a field; k_e = the run's qqrd2e.
+    const double four_pi_k = 4.0 * units::pi * ctx.runtime.units.qqrd2e();
     const double Ez = polarization_feedback ? Dz - four_pi_k * Pz : Dz;
 
     // Pass 2 — forces + field-coupling energy.
@@ -77,7 +77,7 @@ void FixDfield::launch(const cpu::LaunchContext& ctx) {
     if (polarization_feedback) {
         // Constant-D electric enthalpy U_D = V (D_z - 4π k_e P_z)² / (8π k_e)
         // so F_iz = -∂U_D/∂z_i = q_i E_z exactly (KE + U_D is conserved).
-        U += V * Ez * Ez / (8.0 * units::pi * units::coulomb);
+        U += V * Ez * Ez / (8.0 * units::pi * ctx.runtime.units.qqrd2e());
     }
     last_u_ = U;
     last_Pz_ = Pz;

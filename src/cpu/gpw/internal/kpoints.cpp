@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -13,16 +14,13 @@
 #include <xtensor/generators/xbuilder.hpp>
 
 #include "atomiverse/cpu/device/chunked_range.h"
+#include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
 #include "atomiverse/cpu/gpw/internal/gth_integrals.h" // Prim, gth_projector_overlap
 #include "atomiverse/cpu/gpw/internal/one_electron.h" // prim_overlap, prim_kinetic
 #include "atomiverse/cpu/linalg/orbital_tangent.h" // c_mul, c_dagger_mul (zgemm)
 
 #ifdef _OPENMP
 #include <omp.h>
-#endif
-
-#ifdef ATV_HAS_MPI
-#include <mpi.h>
 #endif
 
 namespace ATV {
@@ -56,29 +54,6 @@ struct PhaseTables {
         }
     }
 };
-
-// Max Gaussian-product prefactor over the primitive pairs of (mu, nu) with
-// min-image displacement — the same pair screen as the Γ build
-// (`pair_overlap_bound` in gpw_solver.cpp): below the screen the WHOLE
-// (i, j) element is negligible for every k (|phase| = 1).
-double pair_bound(const GridBasisFunction& mu, const GridBasisFunction& nu,
-                  const double L[3]) {
-    double best = 0.0;
-    for (const auto& p : mu)
-        for (const auto& q : nu) {
-            const double a = p.alpha, b = q.alpha;
-            double d2 = 0.0;
-            for (int d = 0; d < 3; ++d) {
-                double e = p.center[d] - q.center[d];
-                if (L[d] > 0.0)
-                    e -= L[d] * std::nearbyint(e / L[d]);
-                d2 += e * e;
-            }
-            best = std::max(best, std::abs(p.coeff * q.coeff)
-                                      * std::exp(-a * b / (a + b) * d2));
-        }
-    return best;
-}
 
 // Re Tr(A B) for row-major complex matrices (no conjugation — the physical
 // traces Tr(P T) pair a Hermitian density with a Hermitian operator).
@@ -153,6 +128,287 @@ std::vector<KPoint> monkhorst_pack(const int mesh[3], bool time_reversal) {
     return folded;
 }
 
+/// Energy-weighted density \(W = \mathrm{occ}\sum_o \varepsilon_o c_o c_o^\dagger\).
+CplxMatrix energy_weighted_from_occ(const std::vector<Cplx>& C_occ,
+                                    const std::vector<double>& eps, int nb,
+                                    int n_occ, double occ) {
+    if (C_occ.size() != static_cast<std::size_t>(nb) * n_occ
+        || eps.size() < static_cast<std::size_t>(n_occ))
+        throw std::invalid_argument("GPW Bloch occupied orbitals and energies "
+                                    "do not match the AO basis");
+    CplxMatrix W = xt::zeros<Cplx>({nb, nb});
+    if (n_occ <= 0)
+        return W;
+    for (int o = 0; o < n_occ; ++o) {
+        const double w = occ * eps[static_cast<std::size_t>(o)];
+        for (int i = 0; i < nb; ++i) {
+            const Cplx ci = w
+                            * C_occ[static_cast<std::size_t>(i) * n_occ
+                                    + static_cast<std::size_t>(o)];
+            for (int j = 0; j < nb; ++j)
+                W(i, j) += ci
+                           * std::conj(C_occ[static_cast<std::size_t>(j) * n_occ
+                                             + static_cast<std::size_t>(o)]);
+        }
+    }
+    return W;
+}
+
+/// Energy-weighted density from full Bloch MOs + fractional occupations
+/// \(W=\sum_b f_b\varepsilon_b c_b c_b^\dagger\).
+CplxMatrix energy_weighted_from_frac(const CplxMatrix& C,
+                                     const std::vector<double>& eps,
+                                     const std::vector<double>& f) {
+    const int nb = static_cast<int>(C.shape(0));
+    const int m = static_cast<int>(C.shape(1));
+    const int nfill = std::min(
+        m, std::min(static_cast<int>(eps.size()), static_cast<int>(f.size())));
+    CplxMatrix W = xt::zeros<Cplx>({nb, nb});
+    for (int o = 0; o < nfill; ++o) {
+        const double fo = f[static_cast<std::size_t>(o)];
+        if (!(std::abs(fo) > 1e-14))
+            continue;
+        const double w = fo * eps[static_cast<std::size_t>(o)];
+        for (int i = 0; i < nb; ++i) {
+            const Cplx ci = w * C(i, o);
+            for (int j = 0; j < nb; ++j)
+                W(i, j) += ci * std::conj(C(j, o));
+        }
+    }
+    return W;
+}
+
+void validate_k_sampling(const int mesh[3],
+                         std::span<const std::array<double, 3>> points,
+                         std::span<const double> weights) {
+    for (int d = 0; d < 3; ++d)
+        if (mesh[d] < 1)
+            throw std::invalid_argument(
+                "GPW: k_mesh subdivisions must be >= 1");
+    if (points.size() != weights.size())
+        throw std::invalid_argument(
+            "GPW: k_points and k_point_weights must have the same length");
+    double sum = 0;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        for (double coordinate : points[i])
+            if (!std::isfinite(coordinate))
+                throw std::invalid_argument("GPW: k_points must be finite");
+        if (!(weights[i] > 0))
+            throw std::invalid_argument(
+                "GPW: explicit k-point weights must be > 0");
+        sum += weights[i];
+    }
+    if (!points.empty() && std::abs(sum - 1.0) > 1e-8)
+        throw std::invalid_argument(
+            "GPW: explicit k-point weights must sum to 1");
+}
+
+std::vector<KPoint>
+sample_kpoints(const int mesh[3], bool time_reversal,
+               std::span<const std::array<double, 3>> points,
+               std::span<const double> weights) {
+    validate_k_sampling(mesh, points, weights);
+    if (points.empty())
+        return monkhorst_pack(mesh, time_reversal);
+    std::vector<KPoint> sampled;
+    sampled.reserve(points.size());
+    for (std::size_t i = 0; i < points.size(); ++i)
+        sampled.push_back(
+            {{points[i][0], points[i][1], points[i][2]}, weights[i]});
+    return sampled;
+}
+
+std::vector<std::vector<std::complex<double>>>
+build_fourier_overlap_links(const std::vector<GridBasisFunction>& basis,
+                            const std::vector<double>& radii, const double L[3],
+                            const int m[3], double screen,
+                            std::span<const FourierOverlapLink> links) {
+    const int nb = static_cast<int>(basis.size());
+    if (radii.size() != basis.size())
+        throw std::invalid_argument(
+            "Fourier overlap: basis/radius shape mismatch");
+    if (!(screen >= 0.0) || !std::isfinite(screen))
+        throw std::invalid_argument(
+            "Fourier overlap: screen must be finite and nonnegative");
+    for (int d = 0; d < 3; ++d)
+        if (!(L[d] > 0.0) || !std::isfinite(L[d]) || m[d] < 0)
+            throw std::invalid_argument(
+                "Fourier overlap: invalid periodic cell/image extent");
+    for (const double radius : radii)
+        if (!(radius >= 0.0) || !std::isfinite(radius))
+            throw std::invalid_argument(
+                "Fourier overlap: radius must be finite and nonnegative");
+
+    std::vector<std::vector<std::size_t>> groups;
+    for (std::size_t link = 0; link < links.size(); ++link) {
+        for (int d = 0; d < 3; ++d)
+            if (!std::isfinite(links[link].ket_frac[d])
+                || !std::isfinite(links[link].q_bohr[d]))
+                throw std::invalid_argument(
+                    "Fourier overlap: link vectors must be finite");
+        std::size_t group = 0;
+        for (; group < groups.size(); ++group)
+            if (links[link].q_bohr == links[groups[group][0]].q_bohr)
+                break;
+        if (group == groups.size())
+            groups.emplace_back();
+        groups[group].push_back(link);
+    }
+
+    // Full dot-product phases match the individual-link convention. These
+    // depend only on the integer image and ket k, not on the Gaussian pair.
+    const std::size_t n_images = static_cast<std::size_t>(2 * m[0] + 1)
+                                 * static_cast<std::size_t>(2 * m[1] + 1)
+                                 * static_cast<std::size_t>(2 * m[2] + 1);
+    std::vector<std::vector<Cplx>> phases(links.size(),
+                                          std::vector<Cplx>(n_images));
+    std::size_t image = 0;
+    for (int tx = -m[0]; tx <= m[0]; ++tx)
+        for (int ty = -m[1]; ty <= m[1]; ++ty)
+            for (int tz = -m[2]; tz <= m[2]; ++tz, ++image)
+                for (std::size_t link = 0; link < links.size(); ++link) {
+                    const auto& k = links[link].ket_frac;
+                    const double arg =
+                        kTwoPi * (k[0] * tx + k[1] * ty + k[2] * tz);
+                    phases[link][image] = {std::cos(arg), std::sin(arg)};
+                }
+    std::vector<std::vector<Cplx>> operators(
+        links.size(), std::vector<Cplx>(static_cast<std::size_t>(nb) * nb));
+    const int n_groups = static_cast<int>(groups.size());
+    std::vector<std::exception_ptr> row_errors(
+        static_cast<std::size_t>(n_groups) * nb);
+#pragma omp parallel for collapse(2) schedule(dynamic, 1)
+    for (int group = 0; group < n_groups; ++group)
+        for (int i = 0; i < nb; ++i) {
+            try {
+                const auto& a = basis[static_cast<std::size_t>(i)];
+                if (a.empty())
+                    continue;
+                const auto& group_links =
+                    groups[static_cast<std::size_t>(group)];
+                const auto& q_bohr = links[group_links[0]].q_bohr;
+                for (int j = 0; j < nb; ++j) {
+                    const auto& b = basis[static_cast<std::size_t>(j)];
+                    if (b.empty() || pair_overlap_bound(a, b, L, true) < screen)
+                        continue;
+                    const double reach = radii[static_cast<std::size_t>(i)]
+                                         + radii[static_cast<std::size_t>(j)];
+                    const double reach2 = reach * reach;
+                    const double* ac = a[0].center;
+                    const double* bc = b[0].center;
+                    const std::size_t element =
+                        static_cast<std::size_t>(i) * nb + j;
+                    std::size_t image = 0;
+                    for (int tx = -m[0]; tx <= m[0]; ++tx)
+                        for (int ty = -m[1]; ty <= m[1]; ++ty)
+                            for (int tz = -m[2]; tz <= m[2]; ++tz, ++image) {
+                                const double T[3] = {tx * L[0], ty * L[1],
+                                                     tz * L[2]};
+                                const double dx = ac[0] - bc[0] - T[0];
+                                const double dy = ac[1] - bc[1] - T[1];
+                                const double dz = ac[2] - bc[2] - T[2];
+                                if (dx * dx + dy * dy + dz * dz > reach2)
+                                    continue;
+                                Cplx local{0.0, 0.0};
+                                for (const auto& pa : a)
+                                    for (const auto& pb : b) {
+                                        GridPrimitive shifted = pb;
+                                        shifted.center[0] += T[0];
+                                        shifted.center[1] += T[1];
+                                        shifted.center[2] += T[2];
+                                        local += prim_overlap_fourier(
+                                            pa, shifted, q_bohr.data());
+                                    }
+                                for (const std::size_t link : group_links)
+                                    operators[link][element] +=
+                                        phases[link][image] * local;
+                            }
+                }
+            } catch (...) {
+                row_errors[static_cast<std::size_t>(group) * nb + i] =
+                    std::current_exception();
+            }
+        }
+    for (const auto& error : row_errors)
+        if (error)
+            std::rethrow_exception(error);
+    return operators;
+}
+
+std::vector<std::vector<Cplx>>
+build_bloch_cell_phases(std::span<const KPoint> kpoints,
+                        std::span<const std::array<int, 3>> cells) {
+    std::vector<std::vector<Cplx>> phases(kpoints.size(),
+                                          std::vector<Cplx>(cells.size()));
+    for (std::size_t k = 0; k < kpoints.size(); ++k) {
+        const auto& point = kpoints[k];
+        for (std::size_t c = 0; c < cells.size(); ++c) {
+            const auto& t = cells[c];
+            const double angle = -kTwoPi
+                                 * (point.frac[0] * t[0] + point.frac[1] * t[1]
+                                    + point.frac[2] * t[2]);
+            phases[k][c] = Cplx(std::cos(angle), std::sin(angle));
+        }
+    }
+    return phases;
+}
+
+std::vector<std::vector<double>>
+build_bloch_density_stack(const GpwGeometry& geometry,
+                          std::span<const CplxMatrix> density,
+                          std::size_t first_k, std::size_t stride) {
+    const auto& kpoints = geometry.kpoints;
+    const auto& phases = geometry.bloch_cell_phases;
+    if (stride == 0 || density.size() != kpoints.size()
+        || phases.size() != kpoints.size())
+        throw std::invalid_argument(
+            "GPW Bloch density stack requires the assembled k points");
+    const auto nb = static_cast<std::size_t>(geometry.ao.nb());
+    std::vector<std::vector<double>> D(geometry.products.cells.size(),
+                                       std::vector<double>(nb * nb, 0.0));
+    for (std::size_t k = first_k; k < kpoints.size(); k += stride)
+        accumulate_bloch_density_stack(density[k], kpoints[k].weight, phases[k],
+                                       D);
+    return D;
+}
+
+CplxMatrix
+phase_bloch_potential(const GpwGeometry& geometry,
+                      const std::vector<std::vector<double>>& potential,
+                      int ik) {
+    const int nb = geometry.ao.nb();
+    CplxMatrix V = xt::zeros<Cplx>({nb, nb});
+    const auto& phases =
+        geometry.bloch_cell_phases[static_cast<std::size_t>(ik)];
+    for (std::size_t c = 0; c < phases.size(); ++c) {
+        const auto phase = std::conj(phases[c]);
+        const auto& Vc = potential[c];
+        for (std::size_t e = 0; e < V.size(); ++e)
+            V.data()[e] += phase * Vc[e];
+    }
+    return V;
+}
+
+void accumulate_bloch_density_stack(
+    const CplxMatrix& P, double weight,
+    std::span<const std::complex<double>> phases,
+    std::vector<std::vector<double>>& density_stack) {
+    if (P.shape()[0] != P.shape()[1] || phases.size() != density_stack.size())
+        throw std::invalid_argument("Bloch density stack: incompatible shapes");
+    for (const auto& cell : density_stack)
+        if (cell.size() != P.size())
+            throw std::invalid_argument(
+                "Bloch density stack: incompatible cell matrix size");
+    const auto* values = P.data();
+    for (std::size_t c = 0; c < density_stack.size(); ++c) {
+        const auto phase = phases[c];
+        for (std::size_t e = 0; e < P.size(); ++e)
+            density_stack[c][e] += weight
+                                   * (values[e].real() * phase.real()
+                                      - values[e].imag() * phase.imag());
+    }
+}
+
 void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                              const std::vector<double>& radii,
                              const double L[3], const int m[3], double screen,
@@ -176,8 +432,8 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
         double T[3];
     };
     std::vector<Img> imgs(static_cast<std::size_t>(nimg));
-    std::vector<Cplx> phase_ik(static_cast<std::size_t>(nk) *
-                               static_cast<std::size_t>(nimg));
+    std::vector<Cplx> phase_ik(static_cast<std::size_t>(nk)
+                               * static_cast<std::size_t>(nimg));
     int ii = 0;
     for (int tx = -m[0]; tx <= m[0]; ++tx)
         for (int ty = -m[1]; ty <= m[1]; ++ty)
@@ -189,8 +445,8 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                 imgs[static_cast<std::size_t>(ii)].T[1] = ty * L[1];
                 imgs[static_cast<std::size_t>(ii)].T[2] = tz * L[2];
                 for (int ik = 0; ik < nk; ++ik) {
-                    phase_ik[static_cast<std::size_t>(ik) *
-                                 static_cast<std::size_t>(nimg)
+                    phase_ik[static_cast<std::size_t>(ik)
+                                 * static_cast<std::size_t>(nimg)
                              + static_cast<std::size_t>(ii)] =
                         ph.ax[0][static_cast<std::size_t>(ik)]
                              [static_cast<std::size_t>(tx + m[0])]
@@ -201,7 +457,7 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
                 }
             }
 
-// Upper-triangle pair list for load-balanced OMP (row-parallel left the
+    // Upper-triangle pair list for load-balanced OMP (row-parallel left the
     // last rows starved; dynamic pair chunks match CP2K pair tasks better).
     const long npairs = static_cast<long>(nb) * (static_cast<long>(nb) + 1) / 2;
 #pragma omp parallel for schedule(dynamic, 8)
@@ -221,7 +477,7 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
         const GridBasisFunction& b = basis[static_cast<std::size_t>(j)];
         if (a.empty() || b.empty())
             continue;
-        if (pair_bound(a, b, L) < screen)
+        if (pair_overlap_bound(a, b, L, true) < screen)
             continue;
         const double reach = radii[static_cast<std::size_t>(i)]
                              + radii[static_cast<std::size_t>(j)];
@@ -248,10 +504,9 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
             double s_im = 0.0, t_im = 0.0;
             contracted_ST_shift(a, b, img.T, s_im, t_im);
             for (int ik = 0; ik < nk; ++ik) {
-                const Cplx phase =
-                    phase_ik[static_cast<std::size_t>(ik) *
-                                 static_cast<std::size_t>(nimg)
-                             + static_cast<std::size_t>(im)];
+                const Cplx phase = phase_ik[static_cast<std::size_t>(ik)
+                                                * static_cast<std::size_t>(nimg)
+                                            + static_cast<std::size_t>(im)];
                 s_acc[static_cast<std::size_t>(ik)] += phase * s_im;
                 t_acc[static_cast<std::size_t>(ik)] += phase * t_im;
             }
@@ -271,6 +526,161 @@ void build_overlap_kinetic_k(const std::vector<GridBasisFunction>& basis,
     }
 }
 
+namespace {
+
+struct BlochProjectors {
+    int slots;
+    std::vector<int> offsets;
+    std::vector<std::vector<Cplx>> overlaps;
+    std::vector<char> active;
+};
+
+BlochProjectors bloch_projectors(
+    const std::vector<GridBasisFunction>& basis,
+    const std::vector<double>& radii, const GpwAtom& at, const double L[3],
+    const int mimg[3], double proj_eps, int nk, const PhaseTables& ph,
+    const std::vector<std::array<GridBasisFunction, 3>>* derivatives = nullptr,
+    int axis = 0) {
+    const int nb = static_cast<int>(basis.size());
+    double rmax_ch = 0.0;
+    for (const auto& ch : at.nonlocal)
+        rmax_ch = std::max(rmax_ch, ch.r);
+    const double proj_reach = rmax_ch * proj_eps;
+    // Flat slot layout over (channel, m, iproj).
+    int nslot = 0;
+    std::vector<int> choff(at.nonlocal.size());
+    for (std::size_t c = 0; c < at.nonlocal.size(); ++c) {
+        choff[c] = nslot;
+        nslot += (2 * at.nonlocal[c].l + 1) * at.nonlocal[c].nproj;
+    }
+    const double* A = at.pos;
+    // O_mu^k[slot] = <chi_mu^k | p_A> = sum_T e^{-i k T} <phi_mu(.-T)|p_A>.
+    // per-k, per-basis slot vectors (complex); (nb x nslot) per k.
+    std::vector<std::vector<Cplx>> O(
+        static_cast<std::size_t>(nk),
+        std::vector<Cplx>(static_cast<std::size_t>(nb) * nslot, Cplx(0, 0)));
+    std::vector<char> any(static_cast<std::size_t>(nb), 0);
+
+#pragma omp parallel for schedule(dynamic, 4)
+    for (int mu = 0; mu < nb; ++mu) {
+        const auto index = static_cast<std::size_t>(mu);
+        const auto& bf = basis[index];
+        if (bf.empty())
+            continue;
+        const auto& primitives = derivatives ? (*derivatives)[index][axis] : bf;
+        const double reach = radii[static_cast<std::size_t>(mu)] + proj_reach;
+        const double reach2 = reach * reach;
+        std::vector<double> o_im(static_cast<std::size_t>(nslot));
+        bool got = false;
+        for (int tx = -mimg[0]; tx <= mimg[0]; ++tx)
+            for (int ty = -mimg[1]; ty <= mimg[1]; ++ty)
+                for (int tz = -mimg[2]; tz <= mimg[2]; ++tz) {
+                    const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
+                    const double dx = bf[0].center[0] + T[0] - A[0];
+                    const double dy = bf[0].center[1] + T[1] - A[1];
+                    const double dz = bf[0].center[2] + T[2] - A[2];
+                    if (dx * dx + dy * dy + dz * dz > reach2)
+                        continue;
+                    std::fill(o_im.begin(), o_im.end(), 0.0);
+                    bool nz = false;
+                    for (const auto& p : primitives) {
+                        if (p.coeff == 0.0)
+                            continue;
+                        Prim g;
+                        g.alpha = p.alpha;
+                        g.center[0] = p.center[0] + T[0];
+                        g.center[1] = p.center[1] + T[1];
+                        g.center[2] = p.center[2] + T[2];
+                        g.l[0] = p.l[0];
+                        g.l[1] = p.l[1];
+                        g.l[2] = p.l[2];
+                        for (std::size_t c = 0; c < at.nonlocal.size(); ++c) {
+                            const auto& ch = at.nonlocal[c];
+                            const int nm = 2 * ch.l + 1;
+                            for (int mm = 0; mm < nm; ++mm)
+                                for (int ip = 0; ip < ch.nproj; ++ip) {
+                                    const double v =
+                                        p.coeff
+                                        * gth_projector_overlap(
+                                            g, A, ch.l, ip + 1, ch.r, mm);
+                                    if (v != 0.0) {
+                                        o_im[static_cast<std::size_t>(
+                                            choff[c] + mm * ch.nproj + ip)] +=
+                                            v;
+                                        nz = true;
+                                    }
+                                }
+                        }
+                    }
+                    if (!nz)
+                        continue;
+                    got = true;
+                    for (int ik = 0; ik < nk; ++ik) {
+                        // Slot gather with the PLAIN phase e^{+2πi κ·t}:
+                        // summing the projector images T″ collapses the
+                        // double Bloch sum to V_nl^k(μν) = Σ_A O_μ h
+                        // conj(O_ν) with O_μ = Σ_u e^{−iku}⟨φ_μ(·−u)|p⟩;
+                        // storing O′ = conj(O) here lets the assembly
+                        // below keep the ⟨bra|·|ket⟩ shape
+                        // conj(O′_μ)·h·O′_ν ≡ O_μ·h·conj(O_ν). Putting
+                        // the conjugate on the gather instead (the naive
+                        // ⟨χ_μ|p_A⟩ reading) evaluates V_nl at −k — it
+                        // stays Hermitian and Γ/zone-boundary exact, but
+                        // broke the supercell folding identity by 2 Ha at
+                        // κ = ±1/4 (caught by acceptance gate A2).
+                        const Cplx phase =
+                            ph.ax[0][static_cast<std::size_t>(ik)]
+                                 [static_cast<std::size_t>(tx + mimg[0])]
+                            * ph.ax[1][static_cast<std::size_t>(ik)]
+                                   [static_cast<std::size_t>(ty + mimg[1])]
+                            * ph.ax[2][static_cast<std::size_t>(ik)]
+                                   [static_cast<std::size_t>(tz + mimg[2])];
+                        Cplx* dst = O[static_cast<std::size_t>(ik)].data()
+                                    + static_cast<std::size_t>(mu) * nslot;
+                        for (int t = 0; t < nslot; ++t)
+                            dst[t] += phase * o_im[static_cast<std::size_t>(t)];
+                    }
+                }
+        if (got)
+            any[static_cast<std::size_t>(mu)] = 1;
+    }
+
+    return {nslot, std::move(choff), std::move(O), std::move(any)};
+}
+
+std::vector<Cplx> couple_projectors(const GpwAtom& at,
+                                    const BlochProjectors& projectors, int ik) {
+    const auto& Ok = projectors.overlaps[static_cast<std::size_t>(ik)];
+    const auto& choff = projectors.offsets;
+    const auto& any = projectors.active;
+    const int nslot = projectors.slots;
+    const int nb = static_cast<int>(any.size());
+    std::vector<Cplx> hO(Ok.size(), Cplx(0, 0));
+    for (int mu = 0; mu < nb; ++mu) {
+        if (!any[static_cast<std::size_t>(mu)])
+            continue;
+        const Cplx* src = Ok.data() + static_cast<std::size_t>(mu) * nslot;
+        Cplx* dst = hO.data() + static_cast<std::size_t>(mu) * nslot;
+        for (std::size_t c = 0; c < at.nonlocal.size(); ++c) {
+            const auto& ch = at.nonlocal[c];
+            const int nm = 2 * ch.l + 1;
+            for (int mm = 0; mm < nm; ++mm) {
+                const int base = choff[c] + mm * ch.nproj;
+                for (int p1 = 0; p1 < ch.nproj; ++p1) {
+                    Cplx s(0, 0);
+                    for (int p2 = 0; p2 < ch.nproj; ++p2)
+                        s += ch.hij(p1, p2)
+                             * src[static_cast<std::size_t>(base + p2)];
+                    dst[static_cast<std::size_t>(base + p1)] = s;
+                }
+            }
+        }
+    }
+    return hO;
+}
+
+} // namespace
+
 void add_nonlocal_kb_k(std::vector<CplxMatrix>& V_k,
                        const std::vector<GridBasisFunction>& basis,
                        const std::vector<GpwAtom>& atoms,
@@ -285,138 +695,13 @@ void add_nonlocal_kb_k(std::vector<CplxMatrix>& V_k,
     for (const auto& at : atoms) {
         if (at.nonlocal.empty())
             continue;
-        double rmax_ch = 0.0;
-        for (const auto& ch : at.nonlocal)
-            rmax_ch = std::max(rmax_ch, ch.r);
-        const double proj_reach = rmax_ch * proj_eps;
-        // Flat slot layout over (channel, m, iproj).
-        int nslot = 0;
-        std::vector<int> choff(at.nonlocal.size());
-        for (std::size_t c = 0; c < at.nonlocal.size(); ++c) {
-            choff[c] = nslot;
-            nslot += (2 * at.nonlocal[c].l + 1) * at.nonlocal[c].nproj;
-        }
-        const double* A = at.pos;
-        // O_mu^k[slot] = <chi_mu^k | p_A> = sum_T e^{-i k T} <phi_mu(.-T)|p_A>.
-        // per-k, per-basis slot vectors (complex); (nb x nslot) per k.
-        std::vector<std::vector<Cplx>> O(
-            static_cast<std::size_t>(nk),
-            std::vector<Cplx>(static_cast<std::size_t>(nb) * nslot,
-                              Cplx(0, 0)));
-        std::vector<char> any(static_cast<std::size_t>(nb), 0);
-
-#pragma omp parallel for schedule(dynamic, 4)
-        for (int mu = 0; mu < nb; ++mu) {
-            const GridBasisFunction& bf = basis[static_cast<std::size_t>(mu)];
-            if (bf.empty())
-                continue;
-            const double reach =
-                radii[static_cast<std::size_t>(mu)] + proj_reach;
-            const double reach2 = reach * reach;
-            std::vector<double> o_im(static_cast<std::size_t>(nslot));
-            bool got = false;
-            for (int tx = -mimg[0]; tx <= mimg[0]; ++tx)
-                for (int ty = -mimg[1]; ty <= mimg[1]; ++ty)
-                    for (int tz = -mimg[2]; tz <= mimg[2]; ++tz) {
-                        const double T[3] = {tx * L[0], ty * L[1], tz * L[2]};
-                        const double dx = bf[0].center[0] + T[0] - A[0];
-                        const double dy = bf[0].center[1] + T[1] - A[1];
-                        const double dz = bf[0].center[2] + T[2] - A[2];
-                        if (dx * dx + dy * dy + dz * dz > reach2)
-                            continue;
-                        std::fill(o_im.begin(), o_im.end(), 0.0);
-                        bool nz = false;
-                        for (const auto& p : bf) {
-                            if (p.coeff == 0.0)
-                                continue;
-                            Prim g;
-                            g.alpha = p.alpha;
-                            g.center[0] = p.center[0] + T[0];
-                            g.center[1] = p.center[1] + T[1];
-                            g.center[2] = p.center[2] + T[2];
-                            g.l[0] = p.l[0];
-                            g.l[1] = p.l[1];
-                            g.l[2] = p.l[2];
-                            for (std::size_t c = 0; c < at.nonlocal.size();
-                                 ++c) {
-                                const auto& ch = at.nonlocal[c];
-                                const int nm = 2 * ch.l + 1;
-                                for (int mm = 0; mm < nm; ++mm)
-                                    for (int ip = 0; ip < ch.nproj; ++ip) {
-                                        const double v =
-                                            p.coeff
-                                            * gth_projector_overlap(
-                                                g, A, ch.l, ip + 1, ch.r, mm);
-                                        if (v != 0.0) {
-                                            o_im[static_cast<std::size_t>(
-                                                choff[c] + mm * ch.nproj
-                                                + ip)] += v;
-                                            nz = true;
-                                        }
-                                    }
-                            }
-                        }
-                        if (!nz)
-                            continue;
-                        got = true;
-                        for (int ik = 0; ik < nk; ++ik) {
-                            // Slot gather with the PLAIN phase e^{+2πi κ·t}:
-                            // summing the projector images T″ collapses the
-                            // double Bloch sum to V_nl^k(μν) = Σ_A O_μ h
-                            // conj(O_ν) with O_μ = Σ_u e^{−iku}⟨φ_μ(·−u)|p⟩;
-                            // storing O′ = conj(O) here lets the assembly
-                            // below keep the ⟨bra|·|ket⟩ shape
-                            // conj(O′_μ)·h·O′_ν ≡ O_μ·h·conj(O_ν). Putting
-                            // the conjugate on the gather instead (the naive
-                            // ⟨χ_μ|p_A⟩ reading) evaluates V_nl at −k — it
-                            // stays Hermitian and Γ/zone-boundary exact, but
-                            // broke the supercell folding identity by 2 Ha at
-                            // κ = ±1/4 (caught by acceptance gate A2).
-                            const Cplx phase =
-                                ph.ax[0][static_cast<std::size_t>(ik)]
-                                     [static_cast<std::size_t>(tx + mimg[0])]
-                                * ph.ax[1][static_cast<std::size_t>(ik)]
-                                       [static_cast<std::size_t>(ty + mimg[1])]
-                                * ph.ax[2][static_cast<std::size_t>(ik)]
-                                       [static_cast<std::size_t>(tz + mimg[2])];
-                            Cplx* dst = O[static_cast<std::size_t>(ik)].data()
-                                        + static_cast<std::size_t>(mu) * nslot;
-                            for (int t = 0; t < nslot; ++t)
-                                dst[t] +=
-                                    phase * o_im[static_cast<std::size_t>(t)];
-                        }
-                    }
-            if (got)
-                any[static_cast<std::size_t>(mu)] = 1;
-        }
-
-        // hO[slot] = sum_j h_ij O[j] within each (channel, m); then
-        // V_nl^k(mu, nu) += conj(O_mu) . hO_nu.
+        const auto projectors =
+            bloch_projectors(basis, radii, at, L, mimg, proj_eps, nk, ph);
+        const int nslot = projectors.slots;
+        const auto& any = projectors.active;
         for (int ik = 0; ik < nk; ++ik) {
-            const std::vector<Cplx>& Ok = O[static_cast<std::size_t>(ik)];
-            std::vector<Cplx> hO(static_cast<std::size_t>(nb) * nslot,
-                                 Cplx(0, 0));
-            for (int mu = 0; mu < nb; ++mu) {
-                if (!any[static_cast<std::size_t>(mu)])
-                    continue;
-                const Cplx* src =
-                    Ok.data() + static_cast<std::size_t>(mu) * nslot;
-                Cplx* dst = hO.data() + static_cast<std::size_t>(mu) * nslot;
-                for (std::size_t c = 0; c < at.nonlocal.size(); ++c) {
-                    const auto& ch = at.nonlocal[c];
-                    const int nm = 2 * ch.l + 1;
-                    for (int mm = 0; mm < nm; ++mm) {
-                        const int base = choff[c] + mm * ch.nproj;
-                        for (int p1 = 0; p1 < ch.nproj; ++p1) {
-                            Cplx s(0, 0);
-                            for (int p2 = 0; p2 < ch.nproj; ++p2)
-                                s += ch.hij(p1, p2)
-                                     * src[static_cast<std::size_t>(base + p2)];
-                            dst[static_cast<std::size_t>(base + p1)] = s;
-                        }
-                    }
-                }
-            }
+            const auto& Ok = projectors.overlaps[static_cast<std::size_t>(ik)];
+            const auto hO = couple_projectors(at, projectors, ik);
             CplxMatrix& V = V_k[static_cast<std::size_t>(ik)];
 #pragma omp parallel for schedule(static)
             for (int mu = 0; mu < nb; ++mu) {
@@ -434,6 +719,62 @@ void add_nonlocal_kb_k(std::vector<CplxMatrix>& V_k,
                         s += std::conj(o1[t]) * h2[t];
                     V(mu, nu) += s;
                 }
+            }
+        }
+    }
+}
+
+void add_nonlocal_kb_k_forces(
+    const GpwGeometry& geometry,
+    const std::vector<std::array<GridBasisFunction, 3>>& derivatives,
+    std::span<const int> owner, const std::vector<CplxMatrix>& density,
+    double screen, std::vector<std::array<double, 3>>& force) {
+    const auto& ao = geometry.ao;
+    const auto& kpts = geometry.kpoints;
+    const auto* cell = geometry.cell.data();
+    const int nk = static_cast<int>(kpts.size());
+    const PhaseTables ph(kpts, ao.mimg);
+    const double proj_eps = std::sqrt(2.0 * std::log(1.0 / screen));
+    for (std::size_t A = 0; A < geometry.atoms.size(); ++A) {
+        const auto& at = geometry.atoms[A];
+        if (at.nonlocal.empty())
+            continue;
+        const auto projectors = bloch_projectors(ao.basis, ao.radii, at, cell,
+                                                 ao.mimg, proj_eps, nk, ph);
+        const auto nslot = static_cast<std::size_t>(projectors.slots);
+        std::vector<std::vector<Cplx>> coupled(static_cast<std::size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik)
+            coupled[static_cast<std::size_t>(ik)] =
+                couple_projectors(at, projectors, ik);
+        for (int axis = 0; axis < 3; ++axis) {
+            // Differentiate exactly the AO images used for the SCF projector.
+            const auto deriv =
+                bloch_projectors(ao.basis, ao.radii, at, cell, ao.mimg,
+                                 proj_eps, nk, ph, &derivatives, axis);
+            for (int mu = 0; mu < ao.nb(); ++mu) {
+                const auto u = static_cast<std::size_t>(mu);
+                const auto atom = static_cast<std::size_t>(owner[u]);
+                if (atom == A || !deriv.active[u])
+                    continue;
+                double gradient = 0;
+                for (std::size_t k = 0; k < kpts.size(); ++k) {
+                    const auto* dO = deriv.overlaps[k].data() + u * nslot;
+                    for (int nu = 0; nu < ao.nb(); ++nu) {
+                        const auto v = static_cast<std::size_t>(nu);
+                        if (!projectors.active[v])
+                            continue;
+                        const auto* hO = coupled[k].data() + v * nslot;
+                        Cplx dV = 0;
+                        for (std::size_t slot = 0; slot < nslot; ++slot)
+                            dV += std::conj(dO[slot]) * hO[slot];
+                        gradient +=
+                            2 * kpts[k].weight
+                            * std::real(std::conj(density[k](mu, nu)) * dV);
+                    }
+                }
+                // Translating the projector reverses the AO-center derivative.
+                force[atom][axis] -= gradient;
+                force[A][axis] += gradient;
             }
         }
     }
@@ -572,20 +913,33 @@ void collocate_density_k(const KpointBasisGrid& kbg, int ik,
 #pragma omp parallel
     {
         std::vector<Cplx> y(static_cast<std::size_t>(nb));
+        std::vector<int> active(static_cast<std::size_t>(nb));
 #pragma omp for schedule(static)
         for (long g = 0; g < npts; ++g) {
             const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
-            // rho_k(g) = sum_uv P_uv v_u conj(v_v) = sum_u v_u (P conj(v))_u.
-            for (int u = 0; u < nb; ++u) {
+            int nactive = 0;
+            for (int u = 0; u < nb; ++u)
+                if (v[u] != Cplx(0, 0))
+                    active[static_cast<std::size_t>(nactive++)] = u;
+            // rho_k(g) = sum_uv P_uv v_u conj(v_v). Exactly zero basis
+            // values contribute nothing for finite inputs. This temporary
+            // view retains ascending AO indices and the original sums; it
+            // introduces no screening threshold or persistent representation.
+            for (int au = 0; au < nactive; ++au) {
+                const int u = active[static_cast<std::size_t>(au)];
                 Cplx s(0, 0);
                 const Cplx* Pu = &P_k(u, 0);
-                for (int w = 0; w < nb; ++w)
+                for (int aw = 0; aw < nactive; ++aw) {
+                    const int w = active[static_cast<std::size_t>(aw)];
                     s += Pu[w] * std::conj(v[w]);
+                }
                 y[static_cast<std::size_t>(u)] = s;
             }
             double acc = 0.0;
-            for (int u = 0; u < nb; ++u)
+            for (int au = 0; au < nactive; ++au) {
+                const int u = active[static_cast<std::size_t>(au)];
                 acc += (v[u] * y[static_cast<std::size_t>(u)]).real();
+            }
             rho[static_cast<std::size_t>(g)] += wk * acc;
         }
     }
@@ -612,17 +966,25 @@ CplxMatrix integrate_potential_k(const KpointBasisGrid& kbg, int ik,
 #pragma omp parallel for schedule(dynamic, 1)
     for (long c = 0; c < nc; ++c) {
         Cplx* Vloc = &part[static_cast<std::size_t>(c) * nn];
+        std::vector<int> active(static_cast<std::size_t>(nb));
         const long glo = range.begin(c), ghi = range.end(c);
         for (long g = glo; g < ghi; ++g) {
             const double vg = w * V_r[static_cast<std::size_t>(g)];
             if (vg == 0.0)
                 continue;
             const Cplx* v = chi.data() + static_cast<std::size_t>(g) * nb;
-            for (int u = 0; u < nb; ++u) {
+            int nactive = 0;
+            for (int u = 0; u < nb; ++u)
+                if (v[u] != Cplx(0, 0))
+                    active[static_cast<std::size_t>(nactive++)] = u;
+            for (int au = 0; au < nactive; ++au) {
+                const int u = active[static_cast<std::size_t>(au)];
                 const Cplx cu = vg * std::conj(v[u]);
                 Cplx* row = Vloc + static_cast<std::size_t>(u) * nb;
-                for (int t = 0; t < nb; ++t)
+                for (int at = 0; at < nactive; ++at) {
+                    const int t = active[static_cast<std::size_t>(at)];
                     row[t] += cu * v[t];
+                }
             }
         }
     }
@@ -673,11 +1035,18 @@ std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth) {
     // Dense complex products go through BLAS zgemm (linalg::c_mul /
     // linalg::c_dagger_mul, same row-major CplxMatrix type).
-    const CplxMatrix Hp = linalg::c_dagger_mul(orth.X, linalg::c_mul(H_k, orth.X));
+    const CplxMatrix Hp =
+        linalg::c_dagger_mul(orth.X, linalg::c_mul(H_k, orth.X));
     std::vector<double> eps;
     CplxMatrix Cp;
     linalg::eigh_hermitian(Hp, eps, Cp);
     return {std::move(eps), linalg::c_mul(orth.X, Cp)};
+}
+
+std::pair<std::vector<double>, CplxMatrix>
+natural_orbitals_k(const CplxMatrix& P_k, const CplxMatrix& S_k,
+                   const KOrth& orth) {
+    return diagonalize_k(linalg::c_mul(S_k, linalg::c_mul(P_k, S_k)), orth);
 }
 
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
@@ -725,29 +1094,19 @@ std::vector<CplxMatrix> KDiis::step(const std::vector<CplxMatrix>& H,
             B(i, j) = val;
             B(j, i) = val;
         }
-#ifdef ATV_HAS_MPI
-    // Multi-rank k-RR: each rank only filled local e^k in the history; sum the
-    // m×m Pulay block so every rank solves the same B system (serial-identical
-    // DIIS coefficients). Lagrange row/col is set after the reduction.
-    {
-        int initialized = 0;
-        MPI_Initialized(&initialized);
-        int nprocs = 1;
-        if (initialized)
-            MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-        if (initialized && nprocs > 1) {
-            std::vector<double> pack(static_cast<std::size_t>(m * m), 0.0);
-            for (int i = 0; i < m; ++i)
-                for (int j = 0; j < m; ++j)
-                    pack[static_cast<std::size_t>(i * m + j)] = B(i, j);
-            MPI_Allreduce(MPI_IN_PLACE, pack.data(), m * m, MPI_DOUBLE, MPI_SUM,
-                          MPI_COMM_WORLD);
-            for (int i = 0; i < m; ++i)
-                for (int j = 0; j < m; ++j)
-                    B(i, j) = pack[static_cast<std::size_t>(i * m + j)];
-        }
+    // The caller owns the distribution and supplies its matching reduction.
+    // Only the residual block is reduced, never the Lagrange row/column.
+    if (sum_) {
+        std::vector<double> pack(static_cast<std::size_t>(m * m));
+        for (int i = 0; i < m; ++i)
+            for (int j = 0; j < m; ++j)
+                pack[static_cast<std::size_t>(i * m + j)] = B(i, j);
+        sum_(pack.data(), m * m);
+        for (int i = 0; i < m; ++i)
+            for (int j = 0; j < m; ++j)
+                B(i, j) = pack[static_cast<std::size_t>(i * m + j)];
     }
-#endif
+
     for (int i = 0; i < m; ++i) {
         B(m, i) = -1.0;
         B(i, m) = -1.0;

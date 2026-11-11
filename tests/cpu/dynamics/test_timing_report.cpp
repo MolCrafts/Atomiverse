@@ -62,6 +62,22 @@ TEST(TimerRegistry, RecordRollupReset) {
     EXPECT_DOUBLE_EQ(r.rollup_by_category()[StepTiming::Pair].total_s, 2.0);
 }
 
+TEST(TimerRegistry, RebindingPreservesIdentityAndSamples) {
+    TimerRegistry registry;
+    const int original = registry.register_op({"lj", 3, 0, ""});
+    registry.record(original, 1.25);
+    for (int i = 0; i < 100; ++i)
+        EXPECT_EQ(registry.register_op({"lj", 3, 0, ""}), original);
+    ASSERT_EQ(registry.keys().size(), 1u);
+    EXPECT_DOUBLE_EQ(registry.per_component()[original].total_s, 1.25);
+    EXPECT_EQ(registry.per_component()[original].calls, 1u);
+    EXPECT_NE(registry.register_op({"lj", 4, 0, ""}), original);
+    EXPECT_NE(registry.register_op({"lj", 3, 1, ""}), original);
+    EXPECT_NE(registry.register_op({"lj", 3, 0, "inner"}), original);
+    EXPECT_NE(registry.register_op({"other", 3, 0, ""}), original);
+    EXPECT_EQ(registry.keys().size(), 5u);
+}
+
 TEST(TimerRegistry, ScopedTimerRecordsOnlyWhenEnabled) {
     TimerRegistry off;
     {

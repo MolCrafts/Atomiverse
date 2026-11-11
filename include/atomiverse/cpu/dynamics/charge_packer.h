@@ -27,7 +27,13 @@ namespace cpu {
 class ChargePacker : public ForwardPacker {
   public:
     /// @param frame Frame whose `kAtom_charge` column [e] is packed.
-    explicit ChargePacker(cpu::Frame& frame) : frame_(frame) {}
+    ///
+    /// The column is resolved once here, not per swap: a forward pass calls
+    /// pack/unpack once per swap, and with explicit periodic images a small
+    /// cell has many swaps, each lookup counting against the launching
+    /// component's Frame resolution budget.
+    explicit ChargePacker(cpu::Frame& frame)
+        : q_(frame.span(kAtom_charge).data()) {}
 
     /// @brief One double per atom (charge [e]).
     /// @return 1.
@@ -44,10 +50,9 @@ class ChargePacker : public ForwardPacker {
                           const int* pbc) override {
         (void)pbc_flag;
         (void)pbc;
-        const auto q = frame_.span(kAtom_charge);
         int m = 0;
         for (int i = 0; i < n; ++i)
-            buf[m++] = static_cast<double>(q[list[i]]);
+            buf[m++] = static_cast<double>(q_[list[i]]);
         return m;
     }
 
@@ -56,10 +61,9 @@ class ChargePacker : public ForwardPacker {
     /// @param first First destination row index.
     /// @param buf Packed charges [e].
     void unpack_forward_comm(int n, int first, const double* buf) override {
-        auto q = frame_.span(kAtom_charge);
         int m = 0;
         for (int i = 0; i < n; ++i)
-            q[first + i] = static_cast<StorageReal>(buf[m++]);
+            q_[first + i] = static_cast<StorageReal>(buf[m++]);
     }
 
     /// @brief Post `Comm::forward_comm(ChargePacker)` when a communicator
@@ -73,7 +77,7 @@ class ChargePacker : public ForwardPacker {
     }
 
   private:
-    cpu::Frame& frame_;
+    StorageReal* q_; ///< kAtom_charge [e]; capacity is fixed for the pass
 };
 
 } // namespace cpu

@@ -17,4 +17,11 @@ from atomiverse._binding import _cpp
 #: ``improper_style harmonic``).
 Harmonic = _cpp.ImproperHarmonic
 
-__all__ = ["Harmonic"]
+#: Amber/GAFF improper V = K(1 + d cos(n phi)), d = ±1 —
+#: ``cpu::ImproperCvff(K [eV] per type, d per type, n per type)`` (LAMMPS
+#: ``improper_style cvff``). phi is the torsion angle of the improper 4-tuple
+#: in its frame order; Amber puts the central atom third. Local runs only —
+#: not carried by the MPI task wire.
+Cvff = _cpp.ImproperCvff
+
+__all__ = ["Harmonic", "Cvff"]

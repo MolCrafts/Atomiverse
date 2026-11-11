@@ -5,6 +5,10 @@
 /// Ref: Miyamoto & Kollman, J. Comput. Chem. 13, 952 (1992).
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -58,8 +62,18 @@ namespace md {
 /// which is iterative and general.
 class FixSettle : public Constraint,
                   public ConstraintProvider,
-                  public ForwardPacker {
+                  public ForwardPacker,
+                  public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixSettle: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @param dt Timestep [fs] (for velocity stage).
     /// @param d_oh O–H distance [Å] (TIP3P default 0.9572).
     /// @param d_hh H–H distance [Å] (TIP3P default 1.5139).
@@ -92,7 +106,7 @@ class FixSettle : public Constraint,
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
-    /// @brief LAMMPS RATTLE/SHAKE packer mode. XSHAKE applies \(p_d L_d\) [Å].
+    /// @brief LAMMPS RATTLE/SHAKE packer mode. XSHAKE adds the lattice translation H·pbc [Å].
     enum class CommMode { XSHAKE, VP, V };
 
     /// @brief Select the packer mode.
@@ -103,7 +117,8 @@ class FixSettle : public Constraint,
     /// @return 3.
     int comm_forward() const override { return 3; }
 
-    /// @brief Pack sendlist rows. XSHAKE applies \(p_d L_d\) [Å]; VP/V do not.
+    /// @brief Pack sendlist rows. XSHAKE adds the image's lattice translation
+    ///        `H·pbc` [Å] (general triclinic cells); VP/V do not.
     /// @param n Number of local rows in `list` [dimensionless].
     /// @param list Local row indices to pack.
     /// @param buf Output buffer.
@@ -140,6 +155,9 @@ class FixSettle : public Constraint,
     std::vector<double> ref_;
     CommMode comm_mode_ = CommMode::XSHAKE;
     cpu::Frame* frame_ = nullptr;
+    /// Frame and `Frame::row_revision()` the cached rows were resolved on.
+    const cpu::Frame* rows_frame_ = nullptr;
+    std::uint64_t rows_revision_ = 0;
 };
 
 } // namespace md

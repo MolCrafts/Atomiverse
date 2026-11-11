@@ -4,9 +4,9 @@
 /// Thin Frame/MPI wrapper over `ATV::longrange::EwaldSum`. Adds, on top of the
 /// real-space `CoulLong` contribution:
 ///
-///   E_recip = units::coulomb · (2π/V) Σ_{k≠0} exp(−k²/4α²)/k² · |S(k)|²
-///   E_self  = −units::coulomb · (α/√π) Σ_i q_i²
-///   E_corr  = −units::coulomb · π/(2 V α²) · (Σ_i q_i)²      (net-charge term)
+///   E_recip = qqrd2e · (2π/V) Σ_{k≠0} exp(−k²/4α²)/k² · |S(k)|²
+///   E_self  = −qqrd2e · (α/√π) Σ_i q_i²
+///   E_corr  = −qqrd2e · π/(2 V α²) · (Σ_i q_i)²      (net-charge term)
 ///
 /// **Distributed (MPI) operation.** Each rank forms the partial structure
 /// factor over its owned atoms, the complex S(k) is `MPI_Allreduce`-summed

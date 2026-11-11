@@ -25,7 +25,7 @@ TEST(ClassicalNonbonded, TwoAtomShiftedLj) {
     cpu::multiscale::internal::ClassicalNonbonded nb{{{1, 1, eps, sigma}},
                                                      cutoff};
     f.meta.get(kEnergy) = 0;
-    const double e = nb.launch(f, {}, /*forces=*/false);
+    const double e = nb.launch(f, {}, /*forces=*/false, /*qqrd2e=*/1.0);
     const double s6 = std::pow(sigma / r, 6.0);
     const double s6c = std::pow(sigma / cutoff, 6.0);
     const double e_expect =
@@ -45,8 +45,8 @@ TEST(ClassicalNonbonded, ModelSubsetExcludesOuter) {
     }
     f.box = cpu::Box::cubic(50);
     cpu::multiscale::internal::ClassicalNonbonded nb{{{1, 1, 0.01, 3.4}}, 12.0};
-    const double e_full = nb.launch(f, {}, false);
-    const double e_model = nb.launch(f, {0, 1}, false);
+    const double e_full = nb.launch(f, {}, false, 1.0);
+    const double e_model = nb.launch(f, {0, 1}, false, 1.0);
     // More pairs at longer range deepen the (shifted) attractive well.
     EXPECT_LT(e_full, e_model);
     EXPECT_TRUE(std::isfinite(e_model));

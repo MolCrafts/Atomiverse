@@ -194,7 +194,7 @@ class Column {
                                  ColumnBuffer<AccReal, ColDType::Acc>,
                                  ColumnBuffer<TagInt, ColDType::Tag>,
                                  ColumnBuffer<int, ColDType::Int>,
-                                 ColumnBuffer<std::int8_t, ColDType::Int8>>;
+                                 ColumnBuffer<ImageInt, ColDType::Image>>;
 
     Column() = default;
     Column(ColumnSpec spec, int rows);

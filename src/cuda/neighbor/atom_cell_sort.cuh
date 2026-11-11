@@ -7,7 +7,9 @@
 /// ([0, n_local)) of a `cuda::Frame` by their neighbor-grid cell index — the
 /// SAME cell convention `atom cell_of convention` uses to bin atoms for the
 /// per-atom Verlet build — permuting EVERY per-atom array consistently:
-///   - LJ SoA:  x y z vx vy vz fx fy fz mass charge type tag image
+///   - LJ SoA:  x y z [x_corr y_corr z_corr] vx vy vz fx fy fz mass charge
+///              type tag image (correction columns only when non-null, i.e.
+///              `kPositionCorrection`; every column keeps its contract type)
 ///   - bonded SoA (multi-GPU per-atom topology, partners as GLOBAL tags):
 ///       num_bond bond_atom bond_type
 ///       num_angle angle_atom angle_type
@@ -26,9 +28,8 @@
 ///
 /// The bonded SoA pointers may be null (single-GPU `to_cuda` leaves them
 /// null); they are skipped when null. Ghosts ([n_local, n_all)) are never
-/// touched — caller cell-sorts BEFORE the halo is built.
-///
-/// This is a standalone primitive: it has NO call site in `multi_gpu.cu` yet.
+/// touched — caller (`MultiGpu::reneighbor`) cell-sorts BEFORE the halo is
+/// built.
 
 #include "nlist_memory.cuh"
 
@@ -42,8 +43,8 @@ namespace ATV::cuda::md::nlist {
 
 /// @brief Scratch buffers owned across cell-sort calls (resized on demand).
 ///
-/// Owns the cub radix-sort temp plus the key/index ping-pong arrays and a
-/// single real_t/int64 staging buffer reused to gather each per-atom column.
+/// Owns the cub radix-sort temp plus the key/index ping-pong arrays and one
+/// staging buffer per per-atom element type, reused to gather each column.
 struct AtomCellSortBuffers {
     DeviceVector<int> cell_key;     ///< [n] cell index per owned atom.
     DeviceVector<int> cell_key_out; ///< [n] sorted keys (cub output).
@@ -52,10 +53,14 @@ struct AtomCellSortBuffers {
     DeviceVector<int> inverse;      ///< [n] inverse permutation (optional).
     DeviceVector<char> sort_temp;   ///< cub temp storage.
 
-    DeviceVector<real_t> stage_r;         ///< staging for one real_t column.
+    /// Staging for one pos_t (== force_t) column: coordinates, corrections,
+    /// charge.
+    DeviceVector<pos_t> stage_pos;
+    DeviceVector<mixed_t> stage_mixed;    ///< staging for velocities and mass.
+    DeviceVector<fixed_t> stage_fixed;    ///< staging for fixed-point forces.
     DeviceVector<std::int64_t> stage_i64; ///< staging for one int64 column.
     DeviceVector<int> stage_i;            ///< staging for one int column.
-    DeviceVector<std::int8_t> stage_i8;   ///< staging for the image column.
+    DeviceVector<ImageInt> stage_image;   ///< staging for the image column.
 
     void resize(int n) {
         cell_key.resize(n);
@@ -66,9 +71,11 @@ struct AtomCellSortBuffers {
         // Widest per-atom column is the int64 bonded arrays at stride 3*MD;
         // size the i64 stage to the largest and reuse for the narrower ones.
         // Caller sizes the bonded stages explicitly via resize_bonded().
-        stage_r.resize(n);
+        stage_pos.resize(n);
+        stage_mixed.resize(n);
+        stage_fixed.resize(n);
         stage_i.resize(n);
-        stage_i8.resize(static_cast<std::size_t>(n) * 3);
+        stage_image.resize(static_cast<std::size_t>(n) * 3);
     }
 
     /// Size the int64 staging to hold the widest bonded column (n * max_cols).
@@ -81,20 +88,22 @@ struct AtomCellSortBuffers {
 
 /// @brief Cell-sort the owned atoms of `frame` in place.
 ///
-/// Computes a cell key per owned atom from (x,y,z) using the orthorhombic
-/// grid (Lx,Ly,Lz, dims dx*dy*dz) — identical to nlist_direct.cu's `cell_of`
-/// — cub-radix-sorts row indices by key into `buf.perm_out`, then gathers
+/// Computes a cell key per owned atom from the primary (x,y,z) using the
+/// orthorhombic grid (Lx,Ly,Lz, dims dx*dy*dz) — identical to nlist_direct.cu's
+/// `cell_of`, with the edge lengths narrowed once to force_t —
+/// cub-radix-sorts row indices by key into `buf.perm_out`, then gathers
 /// every (non-null) per-atom array through `perm_out` and writes it back so
 /// row k holds what was row `perm_out[k]`. `buf.inverse` is filled so a
 /// subsequent `apply_inverse_permutation` restores the original order.
 ///
 /// @param frame    device Frame (mutated in place, rows [0, n_local) only).
-/// @param Lx,Ly,Lz orthorhombic box edge lengths [Angstrom].
+/// @param Lx,Ly,Lz orthorhombic box edge lengths [Angstrom], geometry
+///                 precision (narrowed to force_t for the key math).
 /// @param dx,dy,dz neighbor-grid cell counts per axis.
 /// @param periodic wrap positions into [0,L) before binning.
 /// @param buf      scratch holder (resized as needed).
 /// @param stream   CUDA stream.
-void cell_sort_owned(Frame& frame, real_t Lx, real_t Ly, real_t Lz, int dx,
+void cell_sort_owned(Frame& frame, geom_t Lx, geom_t Ly, geom_t Lz, int dx,
                      int dy, int dz, bool periodic, AtomCellSortBuffers& buf,
                      cudaStream_t stream = 0);
 

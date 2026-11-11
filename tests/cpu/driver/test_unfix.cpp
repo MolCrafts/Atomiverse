@@ -87,6 +87,50 @@ TEST(TestDriverUnfix, UnknownNameThrowsHowTo) {
     }
 }
 
+TEST(TestDriverUnfix, MultipleBindingsOfOneObjectAreNotAmbiguous) {
+    ATV::cpu::md::MD md;
+    StubIntegrator integ;
+    StubProbeForce force;
+    CountedObs obs;
+    md.on(ATV::md::Phase::initial_integrate).add_ref(integ);
+    md.on(ATV::md::Phase::force).add_ref(force);
+    md.on(ATV::md::Phase::post_force).add_ref(obs);
+    md.on(ATV::md::Phase::end_of_step).add_ref(obs);
+    md.build();
+    EXPECT_NO_THROW(md.unfix("counted_obs"));
+    EXPECT_FALSE(md.is_mounted(ATV::PluginIdentity{&obs}));
+    for (const auto& slot : md.plan().slots)
+        for (const auto& op : slot.ops)
+            EXPECT_NE(op.component, &obs);
+}
+
+TEST(TestDriverUnfix, LiveObjectCanAcquireAnotherPhaseWithoutRebuilding) {
+    auto frame = make_trivial_frame();
+    StubIntegrator integ;
+    StubProbeForce force;
+    CountedObs obs;
+    class LiveMD : public ATV::cpu::md::MD {
+      public:
+        using ATV::cpu::md::MD::begin_run_;
+        using ATV::cpu::md::MD::flush_live_;
+    } md;
+    md.on(ATV::md::Phase::initial_integrate).add_ref(integ);
+    md.on(ATV::md::Phase::force).add_ref(force);
+    md.on(ATV::md::Phase::end_of_step).add_ref(obs);
+    md.build();
+    md.begin_run_(frame);
+    md.on(ATV::md::Phase::post_force).add_ref(obs);
+    md.begin_run_(frame);
+    int bindings = 0;
+    for (const auto& slot : md.plan().slots)
+        for (const auto& op : slot.ops)
+            bindings += op.component == &obs;
+    EXPECT_EQ(bindings, 2);
+    EXPECT_EQ(obs.builds, 1);
+    md.flush_live_();
+    EXPECT_EQ(obs.destroys, 1);
+}
+
 TEST(TestDriverUnfix, LastForceSourceThrowsAfterUnmount) {
     ATV::cpu::md::MD md;
     StubIntegrator integ;
@@ -139,5 +183,71 @@ TEST(TestDriverUnfix, UnfixFromLaunchThrows) {
     md.on(ATV::md::Phase::end_of_step).add_ref(unfixer);
     md.build();
     auto frame = make_trivial_frame();
-    EXPECT_THROW(md.run(frame, 1), std::runtime_error);
+    EXPECT_THROW(md.run(frame, 1), std::logic_error);
+    EXPECT_TRUE(md.is_mounted(ATV::PluginIdentity{&obs}));
+}
+
+TEST(TestDriverUnfix, FailedRefreshRetriesConstraintPublication) {
+    class LiveMD : public ATV::cpu::md::MD {
+      public:
+        using ATV::cpu::md::MD::begin_run_;
+        using ATV::cpu::md::MD::flush_live_;
+        int dof() const { return this->backend_->context().md.n_dof_global; }
+    } md;
+    class Constraint : public ATV::cpu::Component,
+                       public ATV::cpu::ConstraintProvider {
+      public:
+        std::string name() const override { return "live_constraint"; }
+        void launch(const ATV::cpu::LaunchContext&) override {}
+        const ATV::cpu::ConstraintProvider* as_constraint() const override {
+            return this;
+        }
+        int n_constraints(const ATV::cpu::Context&,
+                          const ATV::cpu::Frame&) const override {
+            return 1;
+        }
+        std::span<const ATV::GhostField> declare_ghosts() const override {
+            static constexpr ATV::GhostField invalid[] = {
+                ATV::GhostField::read_stable("missing", ATV::ColDType::Storage,
+                                             1, "live_constraint")};
+            return fail ? std::span<const ATV::GhostField>(invalid)
+                        : std::span<const ATV::GhostField>{};
+        }
+        bool fail = true;
+    } constraint;
+    auto frame = make_trivial_frame(2);
+    StubIntegrator integrator;
+    StubProbeForce force;
+    md.on(ATV::md::Phase::initial_integrate).add_ref(integrator);
+    md.on(ATV::md::Phase::force).add_ref(force);
+    md.build();
+    md.begin_run_(frame);
+    const int initial = md.dof();
+    md.on(ATV::md::Phase::post_force).add_ref(constraint);
+    // An explicit compile while live must not hide the pending contract refresh.
+    md.build();
+    EXPECT_THROW(md.begin_run_(frame), std::runtime_error);
+    constraint.fail = false;
+    EXPECT_NO_THROW(md.begin_run_(frame));
+    EXPECT_EQ(md.dof(), initial - 1);
+    md.flush_live_();
+}
+
+TEST(TestDriverUnfix, MultipleBindingsOfOneInstanceAreNotAmbiguous) {
+    ATV::cpu::md::MD md;
+    StubIntegrator integ;
+    StubProbeForce force;
+    CountedObs obs;
+    md.on(ATV::md::Phase::initial_integrate).add_ref(integ);
+    md.on(ATV::md::Phase::force).add_ref(force);
+    md.on(ATV::md::Phase::post_force).add_ref(obs);
+    md.on(ATV::md::Phase::end_of_step).add_ref(obs);
+    md.build();
+    auto frame = make_trivial_frame();
+    md.run(frame, 0);
+    EXPECT_EQ(obs.builds, 1);
+    EXPECT_EQ(obs.launches, 0);
+    EXPECT_NO_THROW(md.unfix("counted_obs"));
+    EXPECT_EQ(obs.destroys, 1);
+    EXPECT_FALSE(md.is_mounted(ATV::PluginIdentity{&obs}));
 }

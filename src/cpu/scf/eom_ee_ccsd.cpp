@@ -28,8 +28,6 @@
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/scf/internal/ccsd_pack.h"
 #include "atomiverse/cpu/scf/internal/eom_ccsd_common.h"
-#include "atomiverse/cpu/scf/rhf.h"
-#include "atomiverse/cpu/scf/uhf.h"
 
 namespace ATV {
 namespace cpu {
@@ -318,47 +316,6 @@ std::vector<double> matvec(const EomImds& im, const std::vector<double>& vec) {
     return pack_s4(Hr1, Hr2, no, nv);
 }
 
-/// Majority spin-flip R1 weight (matches PySCF eomsf on high-spin refs).
-/// Layout: occ=[α|β], vir=[α|β]. When n_α ≥ n_β, score the Ms−1 (α→β)
-/// channel; otherwise Ms+1 (β→α). Pure-doubles / opposite-flip / conserving
-/// roots score low.
-double sf_score(const std::vector<double>& vec, int no, int nv, int na, int nb,
-                int nva, int nvb) {
-    T1 r1;
-    T2 r2;
-    unpack_s4(vec, no, nv, r1, r2);
-    double flip_maj = 0.0, flip_min = 0.0, cons = 0.0;
-    // α→α
-    for (int i = 0; i < na; ++i)
-        for (int a = 0; a < nva; ++a)
-            cons += r1(i, a) * r1(i, a);
-    // β→β
-    for (int i = 0; i < nb; ++i)
-        for (int a = 0; a < nvb; ++a)
-            cons += r1(na + i, nva + a) * r1(na + i, nva + a);
-    // α→β (Ms −1)
-    double ab = 0.0;
-    for (int i = 0; i < na; ++i)
-        for (int a = 0; a < nvb; ++a)
-            ab += r1(i, nva + a) * r1(i, nva + a);
-    // β→α (Ms +1)
-    double ba = 0.0;
-    for (int i = 0; i < nb; ++i)
-        for (int a = 0; a < nva; ++a)
-            ba += r1(na + i, a) * r1(na + i, a);
-    if (na >= nb) {
-        flip_maj = ab;
-        flip_min = ba;
-    } else {
-        flip_maj = ba;
-        flip_min = ab;
-    }
-    const double tot = flip_maj + flip_min + cons;
-    if (tot < 1e-14)
-        return -1.0; // pure doubles / null
-    return flip_maj / tot;
-}
-
 /// Closed-shell singlet score: R1 α-block ≈ β-block (Ms=0 singlet).
 /// Spin-orbital layout: occ = [α spatial | β spatial], vir same.
 double singlet_score(const std::vector<double>& vec, int no, int nv,
@@ -610,33 +567,6 @@ EOMCC2Result eom_cc2_energies(const internal::IntegralView& ints,
     return out;
 }
 
-EOMEECCSDResult RHF::eom_ee_ccsd(Frame& frame, int n_states) {
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "RHF::eom_ee_ccsd: SCF reference did not converge — refusing to "
-            "compute EOM-EE-CCSD on a non-stationary determinant (no "
-            "fallback).");
-    return eom_ee_ccsd_energies(integral_view_(), determinant(), energy(),
-                                n_states);
-}
-
-EOMCC2Result RHF::eom_cc2(Frame& frame, int n_states) {
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "RHF::eom_cc2: SCF reference did not converge — refusing to "
-            "compute EOM-CC2 on a non-stationary determinant (no fallback).");
-    return eom_cc2_energies(integral_view_(), determinant(), energy(),
-                            n_states);
-}
-
 EOMSFCCSDResult eom_sf_ccsd_energies(const internal::IntegralView& ints,
                                      const SlaterDeterminant& det,
                                      double e_scf_ha, int n_states, double tol,
@@ -758,21 +688,6 @@ EOMSFCCSDResult eom_sf_ccsd_energies(const internal::IntegralView& ints,
                                 * units::kHartreeInEv);
     out.converged = true;
     return out;
-}
-
-EOMSFCCSDResult UHF::eom_sf_ccsd(Frame& frame, int n_states,
-                                 const SCFInitialGuess* guess) {
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame, guess);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "UHF::eom_sf_ccsd: SCF reference did not converge — refusing to "
-            "compute EOM-SF-CCSD on a non-stationary determinant (no "
-            "fallback).");
-    return eom_sf_ccsd_energies(integral_view_(), determinant(), energy(),
-                                n_states);
 }
 
 } // namespace scf

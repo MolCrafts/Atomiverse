@@ -2,7 +2,7 @@
 /// @brief CPU ImproperHarmonic — V = K(χ − χ₀)².
 
 #include "atomiverse/cpu/potentials/improper_harmonic.h"
-#include "atomiverse/cpu/potentials/dihedral_geom.h"
+#include "atomiverse/core/dihedral_geom.h"
 #include "atomiverse/cpu/potentials/resolve_view.h"
 
 #include <cmath>
@@ -39,7 +39,8 @@ void ImproperHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void ImproperHarmonic::compute(const LaunchContext& ctx) {
@@ -50,7 +51,6 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
 
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int n_force = rv.n_force();
 
     // Same layout as dihedrals: {i1, i2, i3, i4, type}; owner = i2 (central).
     if (cache_.stale(ctx)) {
@@ -76,31 +76,26 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "ImproperHarmonic");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 5;
     if (n_tuples == 0)
         return;
     const int* __restrict tup = cache_.flat.data();
 
-    double energy_total = 0;
-    md::Voigt6 vir;
-
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    scratch_.bind(f);
+    md::ForcePass forces(ctx);
 
-#pragma omp parallel reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = scratch_.begin_thread(tid, n_force);
+    // Each chunk keeps its own energy and virial and stores them once;
+    // ForcePass sums the chunks in order (deterministic per thread count).
+    forces.for_each_chunk(n_tuples, [&](int c, int t_begin, int t_end,
+                                        md::ForceRows tf) {
+        double energy_total = 0;
         md::Voigt6 vir_local;
 
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
+        for (int t = t_begin; t < t_end; ++t) {
             const int i1 = tup[5 * t + 0];
             const int i2 = tup[5 * t + 1];
             const int i3 = tup[5 * t + 2];
@@ -139,33 +134,35 @@ void ImproperHarmonic::compute(const LaunchContext& ctx) {
                                                f2y, f2z, f3x, f3y, f3z, f4x,
                                                f4y, f4z);
 
-            tf.fx[i1] += f1x;
-            tf.fy[i1] += f1y;
-            tf.fz[i1] += f1z;
-            tf.fx[i2] += f2x;
-            tf.fy[i2] += f2y;
-            tf.fz[i2] += f2z;
-            tf.fx[i3] += f3x;
-            tf.fy[i3] += f3y;
-            tf.fz[i3] += f3z;
-            tf.fx[i4] += f4x;
-            tf.fy[i4] += f4y;
-            tf.fz[i4] += f4z;
+            if (ctx.forces_requested) {
+                tf.fx[i1] += f1x;
+                tf.fy[i1] += f1y;
+                tf.fz[i1] += f1z;
+                tf.fx[i2] += f2x;
+                tf.fy[i2] += f2y;
+                tf.fz[i2] += f2z;
+                tf.fx[i3] += f3x;
+                tf.fy[i3] += f3y;
+                tf.fz[i3] += f3z;
+                tf.fx[i4] += f4x;
+                tf.fy[i4] += f4y;
+                tf.fz[i4] += f4z;
+            }
 
             vir_local.add_pair(-g.b1x, -g.b1y, -g.b1z, f1x, f1y, f1z);
             vir_local.add_pair(g.b2x, g.b2y, g.b2z, f3x + f4x, f3y + f4y,
                                f3z + f4z);
             vir_local.add_pair(g.b3x, g.b3y, g.b3z, f4x, f4y, f4z);
         }
-#pragma omp critical
-        vir += vir_local;
-    }
-
-    scratch_.reduce_into(n_force);
+        forces.store(c, energy_total, vir_local);
+    });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyImproper) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }
@@ -174,7 +171,6 @@ void ImproperHarmonic::destroy(const DestroyContext& /*ctx*/) {
     drops_.report("ImproperHarmonic");
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
 }
 
 } // namespace cpu

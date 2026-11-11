@@ -3,21 +3,29 @@
 
 #include "atomiverse/cpu/semiempirical/nddo_overlap.h"
 
+#include "atomiverse/cpu/semiempirical/internal/nddo_derivative.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 namespace {
+using internal::abs;
+using internal::exp;
+using internal::pow;
+using internal::sqrt;
+using std::abs;
+using std::exp;
+using std::pow;
+using std::sqrt;
 
 constexpr double kA0 = 0.529177210903;
 constexpr double kOverlapCutoff2 = 225.0;
 constexpr double kH1Cutoff2 = 1.0e4;
-constexpr double kSqrt3 = 1.7320508075688772935;
 constexpr double kInvSqrt3 = 0.57735026918962576451;
 
 constexpr double kFact[] = {
@@ -45,15 +53,16 @@ int parity_sign(int n) noexcept { return (n % 2 == 0) ? 1 : -1; }
 
 double parity_two(int n) noexcept { return (n % 2 == 0) ? 0.0 : 2.0; }
 
-const AM1Parameter& require_am1_parameter(int z) {
-    const auto* p = am1_parameter(z);
+const ATV::semiempirical::AM1Parameter& require_am1_parameter(int z) {
+    const auto* p = ATV::semiempirical::am1_parameter(z);
     if (p == nullptr) {
         throw std::runtime_error("AM1 parameters unavailable for overlap atom");
     }
     return *p;
 }
 
-int principal_for(const AM1Parameter& p, int shell) noexcept {
+int principal_for(const ATV::semiempirical::AM1Parameter& p,
+                  int shell) noexcept {
     if (shell == 1)
         return p.principal_s;
     if (shell == 2)
@@ -61,7 +70,7 @@ int principal_for(const AM1Parameter& p, int shell) noexcept {
     return p.principal_d;
 }
 
-double zeta_for(const AM1Parameter& p, int shell) noexcept {
+double zeta_for(const ATV::semiempirical::AM1Parameter& p, int shell) noexcept {
     if (shell == 1)
         return p.zs;
     if (shell == 2)
@@ -69,31 +78,32 @@ double zeta_for(const AM1Parameter& p, int shell) noexcept {
     return std::max(p.zd, 0.3);
 }
 
-bool use_diat2(int z, const AM1Parameter& p) noexcept {
+bool use_diat2(int z, const ATV::semiempirical::AM1Parameter& p) noexcept {
     return z <= 17 && z != 2 && z != 10 && p.n_orbitals < 5;
 }
 
+template <class Scalar>
 struct OverlapSetState {
     int isp = 1;
     int ips = 2;
-    double sa = 0.0;
-    double sb = 0.0;
-    std::array<double, 8> a{};
-    std::array<double, 8> b{};
+    Scalar sa = 0.0;
+    Scalar sb = 0.0;
+    std::array<Scalar, 8> a{};
+    std::array<Scalar, 8> b{};
 
-    void aintgs(double x, int k) {
-        const double c = std::exp(-x);
+    void aintgs(Scalar x, int k) {
+        const Scalar c = exp(-x);
         a[1] = c / x;
         for (int i = 1; i <= k; ++i) {
             a[static_cast<std::size_t>(i + 1)] =
-                (a[static_cast<std::size_t>(i)] * static_cast<double>(i) + c)
+                (a[static_cast<std::size_t>(i)] * static_cast<Scalar>(i) + c)
                 / x;
         }
     }
 
-    void bintgs(double x, int k) {
+    void bintgs(Scalar x, int k) {
         const int io = 0;
-        const double absx = std::abs(x);
+        const Scalar absx = abs(x);
         int last = 0;
         bool use_series = false;
         if (absx <= 3.0) {
@@ -118,7 +128,7 @@ struct OverlapSetState {
             } else {
                 for (int i = io; i <= k; ++i) {
                     b[static_cast<std::size_t>(i + 1)] =
-                        parity_two(i + 1) / static_cast<double>(i + 1);
+                        parity_two(i + 1) / static_cast<Scalar>(i + 1);
                 }
                 return;
             }
@@ -126,29 +136,29 @@ struct OverlapSetState {
 
         if (use_series) {
             for (int i = io; i <= k; ++i) {
-                double y = 0.0;
+                Scalar y = 0.0;
                 for (int m = io; m <= last; ++m) {
-                    const double xf = (m == 0) ? 1.0 : kFact[m];
-                    y += std::pow(-x, m) * parity_two(m + i + 1)
-                         / (xf * static_cast<double>(m + i + 1));
+                    const Scalar xf = (m == 0) ? 1.0 : kFact[m];
+                    y += pow(-x, m) * parity_two(m + i + 1)
+                         / (xf * static_cast<Scalar>(m + i + 1));
                 }
                 b[static_cast<std::size_t>(i + 1)] = y;
             }
             return;
         }
 
-        const double expx = std::exp(x);
-        const double expmx = 1.0 / expx;
+        const Scalar expx = exp(x);
+        const Scalar expmx = 1.0 / expx;
         b[1] = (expx - expmx) / x;
         for (int i = 1; i <= k; ++i) {
             b[static_cast<std::size_t>(i + 1)] =
-                (static_cast<double>(i) * b[static_cast<std::size_t>(i)]
-                 + static_cast<double>(parity_sign(i)) * expx - expmx)
+                (static_cast<Scalar>(i) * b[static_cast<std::size_t>(i)]
+                 + static_cast<Scalar>(parity_sign(i)) * expx - expmx)
                 / x;
         }
     }
 
-    void set(double s1, double s2, int z_a, int z_b, double rab, int ii) {
+    void set(Scalar s1, Scalar s2, int z_a, int z_b, Scalar rab, int ii) {
         if (z_a <= z_b) {
             isp = 1;
             ips = 2;
@@ -163,19 +173,20 @@ struct OverlapSetState {
         int j = ii + 2;
         if (ii > 3)
             --j;
-        const double alpha = 0.5 * rab * (sa + sb);
-        const double beta = 0.5 * rab * (sb - sa);
+        const Scalar alpha = 0.5 * rab * (sa + sb);
+        const Scalar beta = 0.5 * rab * (sb - sa);
         const int jcall = j - 1;
         aintgs(alpha, jcall);
         bintgs(beta, jcall);
     }
 };
 
-std::array<double, 13> bfn(double x) {
+template <class Scalar>
+std::array<Scalar, 13> bfn(Scalar x) {
     constexpr int k = 12;
     constexpr int io = 0;
-    std::array<double, 13> bf{};
-    const double absx = std::abs(x);
+    std::array<Scalar, 13> bf{};
+    const Scalar absx = abs(x);
     int last = 0;
     bool use_series = false;
     if (absx <= 3.0) {
@@ -194,7 +205,7 @@ std::array<double, 13> bfn(double x) {
         } else {
             for (int i = io; i <= k; ++i) {
                 bf[static_cast<std::size_t>(i)] =
-                    parity_two(i + 1) / static_cast<double>(i + 1);
+                    parity_two(i + 1) / static_cast<Scalar>(i + 1);
             }
             return bf;
         }
@@ -202,31 +213,32 @@ std::array<double, 13> bfn(double x) {
 
     if (use_series) {
         for (int i = io; i <= k; ++i) {
-            double y = 0.0;
+            Scalar y = 0.0;
             for (int m = io; m <= last; ++m) {
-                const double xf = (m == 0) ? 1.0 : kFact[m];
-                y += std::pow(-x, m) * parity_two(m + i + 1)
-                     / (xf * static_cast<double>(m + i + 1));
+                const Scalar xf = (m == 0) ? 1.0 : kFact[m];
+                y += pow(-x, m) * parity_two(m + i + 1)
+                     / (xf * static_cast<Scalar>(m + i + 1));
             }
             bf[static_cast<std::size_t>(i)] = y;
         }
         return bf;
     }
 
-    const double expx = std::exp(x);
-    const double expmx = 1.0 / expx;
+    const Scalar expx = exp(x);
+    const Scalar expmx = 1.0 / expx;
     bf[0] = (expx - expmx) / x;
     for (int i = 1; i <= k; ++i) {
         bf[static_cast<std::size_t>(i)] =
-            (static_cast<double>(i) * bf[static_cast<std::size_t>(i - 1)]
-             + static_cast<double>(parity_sign(i)) * expx - expmx)
+            (static_cast<Scalar>(i) * bf[static_cast<std::size_t>(i - 1)]
+             + static_cast<Scalar>(parity_sign(i)) * expx - expmx)
             / x;
     }
     return bf;
 }
 
-double ss_overlap(int na, int nb, int la1, int lb1, int m1, double ua,
-                  double ub, double r_angstrom) {
+template <class Scalar>
+Scalar ss_overlap(int na, int nb, int la1, int lb1, int m1, Scalar ua,
+                  Scalar ub, Scalar r_angstrom) {
     static const double aff[3][3][3] = {
         {{1.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}},
         {{1.0, 0.0, 0.0}, {0.70710678118654752440, 0.0, 0.0}, {0.0, 0.0, 0.0}},
@@ -250,21 +262,21 @@ double ss_overlap(int na, int nb, int la1, int lb1, int m1, double ua,
     const int m = m1 - 1;
     const int lb = lb1 - 1;
     const int la = la1 - 1;
-    const double r = r_angstrom / kA0;
-    const double p = (ua + ub) * r * 0.5;
-    const double beta = (ua - ub) * r * 0.5;
-    const double quo = 1.0 / p;
+    const Scalar r = r_angstrom / kA0;
+    const Scalar p = (ua + ub) * r * 0.5;
+    const Scalar beta = (ua - ub) * r * 0.5;
+    const Scalar quo = 1.0 / p;
 
-    std::array<double, 20> af{};
-    af[0] = quo * std::exp(-p);
+    std::array<Scalar, 20> af{};
+    af[0] = quo * exp(-p);
     for (int n = 1; n <= 19; ++n) {
         af[static_cast<std::size_t>(n)] =
-            static_cast<double>(n) * quo * af[static_cast<std::size_t>(n - 1)]
+            static_cast<Scalar>(n) * quo * af[static_cast<std::size_t>(n - 1)]
             + af[0];
     }
     const auto bf = bfn(beta);
 
-    double sum = 0.0;
+    Scalar sum = 0.0;
     const int lam1 = la - m;
     const int lbm1 = lb - m;
     for (int i = 0; i <= lam1; i += 2) {
@@ -273,7 +285,7 @@ double ss_overlap(int na, int nb, int la1, int lb1, int m1, double ua,
         for (int j = 0; j <= lbm1; j += 2) {
             const int ib = nb + j - lb;
             const int id = lb - j - m;
-            double sum1 = 0.0;
+            Scalar sum1 = 0.0;
             const int iab = ia + ib;
             for (int k1 = 0; k1 <= ia; ++k1) {
                 for (int k2 = 0; k2 <= ib; ++k2) {
@@ -286,7 +298,7 @@ double ss_overlap(int na, int nb, int la1, int lb1, int m1, double ua,
                                     const int ibf = k1 + k2 + k3 + k4 + 2 * k6;
                                     sum1 += bi[id][k4] * bi[ic][k3] * bi[ib][k2]
                                             * bi[ia][k1] * bi[m][k5] * bi[m][k6]
-                                            * static_cast<double>(parity_sign(
+                                            * static_cast<Scalar>(parity_sign(
                                                 m + k2 + k4 + k5 + k6))
                                             * af[static_cast<std::size_t>(iaf)]
                                             * bf[static_cast<std::size_t>(ibf)];
@@ -300,24 +312,43 @@ double ss_overlap(int na, int nb, int la1, int lb1, int m1, double ua,
         }
     }
 
-    return sum * std::pow(r, na + nb + 1) * std::pow(ua, na) * std::pow(ub, nb)
-           * 0.5
-           * std::sqrt(ua * ub / (kFact[na + na] * kFact[nb + nb])
-                       * static_cast<double>((la + la + 1) * (lb + lb + 1)));
+    return sum * pow(r, na + nb + 1) * pow(ua, na) * pow(ub, nb) * 0.5
+           * sqrt(ua * ub / (kFact[na + na] * kFact[nb + nb])
+                  * static_cast<Scalar>((la + la + 1) * (lb + lb + 1)));
 }
 
-void coe(double x2, double y2, double z2, int norbi, int norbj,
-         std::array<double, 76>& c, double& r) {
+template <class Scalar>
+void coe(Scalar x2, Scalar y2, Scalar z2, int norbi, int norbj,
+         std::array<Scalar, 76>& c, Scalar& r) {
+    if (std::max(norbi, norbj) <= 4) {
+        r = sqrt(x2 * x2 + y2 * y2 + z2 * z2);
+        c.fill(0.0);
+        c[37] = 1.0;
+        if (r == 0.0)
+            return;
+        const auto axes =
+            internal::nddo_pair_axes(std::array<Scalar, 3>{x2, y2, z2});
+        c[41] = axes[0][0];
+        c[35] = axes[0][1];
+        c[38] = axes[0][2];
+        c[56] = axes[1][0];
+        c[50] = axes[1][1];
+        c[53] = axes[1][2];
+        c[26] = axes[2][0];
+        c[20] = axes[2][1];
+        c[23] = axes[2][2];
+        return;
+    }
     constexpr double rt34 = 0.86602540378444;
     constexpr double rt13 = 0.57735026918963;
-    double xy = x2 * x2 + y2 * y2;
-    r = std::sqrt(xy + z2 * z2);
-    xy = std::sqrt(xy);
+    Scalar xy = x2 * x2 + y2 * y2;
+    r = sqrt(xy + z2 * z2);
+    xy = sqrt(xy);
 
-    double ca = 0.0;
-    double cb = 0.0;
-    double sa = 0.0;
-    double sb = 0.0;
+    Scalar ca = 0.0;
+    Scalar cb = 0.0;
+    Scalar sa = 0.0;
+    Scalar sb = 0.0;
     if (xy >= 1.0e-10) {
         ca = x2 / xy;
         cb = z2 / r;
@@ -353,10 +384,10 @@ void coe(double x2, double y2, double z2, int norbi, int norbj,
     if (nij < 5) {
         return;
     }
-    const double c2a = 2.0 * ca * ca - 1.0;
-    const double c2b = 2.0 * cb * cb - 1.0;
-    const double s2a = 2.0 * sa * ca;
-    const double s2b = 2.0 * sb * cb;
+    const Scalar c2a = 2.0 * ca * ca - 1.0;
+    const Scalar c2b = 2.0 * cb * cb - 1.0;
+    const Scalar s2a = 2.0 * sa * ca;
+    const Scalar s2b = 2.0 * sb * cb;
     c[75] = c2a * cb * cb + 0.5 * c2a * sb * sb;
     c[60] = 0.5 * c2a * s2b;
     c[45] = rt34 * c2a * sb * sb;
@@ -382,14 +413,16 @@ void coe(double x2, double y2, double z2, int norbi, int norbj,
     c[3] = c2a * cb;
 }
 
-double coeff(const std::array<double, 76>& c, int shell, int ml_slot,
+template <class Scalar>
+Scalar coeff(const std::array<Scalar, 76>& c, int shell, int ml_slot,
              int component) {
     return c[static_cast<std::size_t>(shell + 3 * (ml_slot - 1)
                                       + 15 * (component - 1))];
 }
 
-void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
-           double epb, double s[4][4][4]) {
+template <class Scalar>
+void diat2(int z_a, Scalar esa, Scalar epa, Scalar r12, int z_b, Scalar esb,
+           Scalar epb, Scalar s[4][4][4]) {
     static const int inmb[18] = {0, 1, 0, 2, 2, 3, 4,  5,  6,
                                  7, 0, 8, 8, 8, 9, 10, 11, 12};
     static const int iii[79] = {0, 1, 2, 4, 2, 4, 4, 2, 4, 4, 4, 2, 4, 4, 4, 4,
@@ -402,8 +435,8 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
     const int jmin = std::min(inmb[z_a], inmb[z_b]);
     const int nbond = (jmax * (jmax - 1)) / 2 + jmin;
     const int ii = iii[nbond];
-    const double rab = r12 / kA0;
-    OverlapSetState st;
+    const Scalar rab = r12 / kA0;
+    OverlapSetState<Scalar> st;
 
     auto zero_s = [&]() {
         for (int i = 0; i < 4; ++i)
@@ -416,13 +449,13 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
     switch (ii) {
     default:
         st.set(esa, esb, z_a, z_b, rab, ii);
-        s[1][1][1] = 0.25 * std::sqrt(std::pow(st.sa * st.sb * rab * rab, 3))
+        s[1][1][1] = 0.25 * sqrt(pow(st.sa * st.sb * rab * rab, 3))
                      * (st.a[3] * st.b[1] - st.b[3] * st.a[1]);
         return;
     case 2: {
         st.set(esa, esb, z_a, z_b, rab, ii);
-        double rab4 = std::pow(rab, 4) * 0.125;
-        double w = std::sqrt(std::pow(st.sa, 3) * std::pow(st.sb, 5)) * rab4;
+        Scalar rab4 = pow(rab, 4) * 0.125;
+        Scalar w = sqrt(pow(st.sa, 3) * pow(st.sb, 5)) * rab4;
         s[1][1][1] = w * kInvSqrt3
                      * (st.a[4] * st.b[1] - st.b[4] * st.a[1]
                         + st.a[3] * st.b[2] - st.b[3] * st.a[2]);
@@ -430,7 +463,7 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
             st.set(epa, esb, z_a, z_b, rab, ii);
         if (z_b > 1)
             st.set(esa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa, 3) * std::pow(st.sb, 5)) * rab4;
+        w = sqrt(pow(st.sa, 3) * pow(st.sb, 5)) * rab4;
         s[st.isp][st.ips][1] = w
                                * (st.a[3] * st.b[1] - st.b[3] * st.a[1]
                                   + st.a[4] * st.b[2] - st.b[4] * st.a[2]);
@@ -438,9 +471,8 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
     }
     case 3: {
         st.set(esa, esb, z_a, z_b, rab, ii);
-        double rab4 = std::pow(rab, 5) * 0.0625;
-        double w =
-            std::sqrt(std::pow(st.sa, 3) * std::pow(st.sb, 7) / 22.5) * rab4;
+        Scalar rab4 = pow(rab, 5) * 0.0625;
+        Scalar w = sqrt(pow(st.sa, 3) * pow(st.sb, 7) / 22.5) * rab4;
         s[1][1][1] = w
                      * (st.a[5] * st.b[1] - st.b[5] * st.a[1]
                         + (st.a[4] * st.b[2] - st.b[4] * st.a[2]) * 2.0);
@@ -448,7 +480,7 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
             st.set(epa, esb, z_a, z_b, rab, ii);
         if (z_b > 1)
             st.set(esa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa, 3) * std::pow(st.sb, 7) / 7.5) * rab4;
+        w = sqrt(pow(st.sa, 3) * pow(st.sb, 7) / 7.5) * rab4;
         s[st.isp][st.ips][1] =
             w
             * (st.a[4] * (st.b[1] + st.b[3]) - st.b[4] * (st.a[1] + st.a[3])
@@ -457,8 +489,8 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
     }
     case 4: {
         st.set(esa, esb, z_a, z_b, rab, ii);
-        double rab4 = std::pow(rab, 5) * 0.0625;
-        double w = std::sqrt(std::pow(st.sa * st.sb, 5)) * rab4;
+        Scalar rab4 = pow(rab, 5) * 0.0625;
+        Scalar w = sqrt(pow(st.sa * st.sb, 5)) * rab4;
         s[1][1][1] =
             w
             * (st.a[5] * st.b[1] + st.b[5] * st.a[1] - 2.0 * st.a[3] * st.b[3])
@@ -466,21 +498,21 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
         st.set(esa, epb, z_a, z_b, rab, ii);
         if (z_a > z_b)
             st.set(epa, esb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa * st.sb, 5)) * rab4;
-        double d =
+        w = sqrt(pow(st.sa * st.sb, 5)) * rab4;
+        Scalar d =
             st.a[4] * (st.b[1] - st.b[3]) - st.a[2] * (st.b[3] - st.b[5]);
-        double e =
+        Scalar e =
             st.b[4] * (st.a[1] - st.a[3]) - st.b[2] * (st.a[3] - st.a[5]);
         s[st.isp][st.ips][1] = w * kInvSqrt3 * (d + e);
         st.set(epa, esb, z_a, z_b, rab, ii);
         if (z_a > z_b)
             st.set(esa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa * st.sb, 5)) * rab4;
+        w = sqrt(pow(st.sa * st.sb, 5)) * rab4;
         d = st.a[4] * (st.b[1] - st.b[3]) - st.a[2] * (st.b[3] - st.b[5]);
         e = st.b[4] * (st.a[1] - st.a[3]) - st.b[2] * (st.a[3] - st.a[5]);
         s[st.ips][st.isp][1] = w * kInvSqrt3 * (d - e);
         st.set(epa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa * st.sb, 5)) * rab4;
+        w = sqrt(pow(st.sa * st.sb, 5)) * rab4;
         s[2][2][1] =
             -w
             * (st.b[3] * (st.a[5] + st.a[1]) - st.a[3] * (st.b[5] + st.b[1]));
@@ -492,8 +524,8 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
     }
     case 5: {
         st.set(esa, esb, z_a, z_b, rab, ii);
-        double rab6 = std::pow(rab, 6) * 0.03125 / std::sqrt(7.5);
-        double w = std::sqrt(std::pow(st.sa, 5) * std::pow(st.sb, 7)) * rab6;
+        Scalar rab6 = pow(rab, 6) * 0.03125 / sqrt(7.5);
+        Scalar w = sqrt(pow(st.sa, 5) * pow(st.sb, 7)) * rab6;
         s[1][1][1] = w
                      * (st.a[6] * st.b[1] + st.a[5] * st.b[2]
                         - 2.0 * (st.a[4] * st.b[3] + st.a[3] * st.b[4])
@@ -502,7 +534,7 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
         st.set(esa, epb, z_a, z_b, rab, ii);
         if (z_a > z_b)
             st.set(epa, esb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa, 5) * std::pow(st.sb, 7)) * rab6;
+        w = sqrt(pow(st.sa, 5) * pow(st.sb, 7)) * rab6;
         s[st.isp][st.ips][1] =
             w * kInvSqrt3
             * (st.a[6] * st.b[2] + st.a[5] * st.b[1]
@@ -511,14 +543,14 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
         st.set(epa, esb, z_a, z_b, rab, ii);
         if (z_a > z_b)
             st.set(esa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa, 5) * std::pow(st.sb, 7)) * rab6;
+        w = sqrt(pow(st.sa, 5) * pow(st.sb, 7)) * rab6;
         s[st.ips][st.isp][1] = -w * kInvSqrt3
                                * (st.a[5] * (2.0 * st.b[3] - st.b[1])
                                   - st.b[5] * (2.0 * st.a[3] - st.a[1])
                                   - st.a[2] * (st.b[6] - 2.0 * st.b[4])
                                   + st.b[2] * (st.a[6] - 2.0 * st.a[4]));
         st.set(epa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa, 5) * std::pow(st.sb, 7)) * rab6;
+        w = sqrt(pow(st.sa, 5) * pow(st.sb, 7)) * rab6;
         s[2][2][1] =
             -w
             * (st.b[4] * (st.a[1] + st.a[5]) - st.a[4] * (st.b[1] + st.b[5])
@@ -533,8 +565,8 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
     }
     case 6: {
         st.set(esa, esb, z_a, z_b, rab, ii);
-        double rab4 = std::pow(rab, 7) / 480.0;
-        double w = std::sqrt(std::pow(st.sa * st.sb, 7)) * rab4;
+        Scalar rab4 = pow(rab, 7) / 480.0;
+        Scalar w = sqrt(pow(st.sa * st.sb, 7)) * rab4;
         s[1][1][1] =
             w
             * (st.a[7] * st.b[1] - 3.0 * (st.a[5] * st.b[3] - st.a[3] * st.b[5])
@@ -543,31 +575,31 @@ void diat2(int z_a, double esa, double epa, double r12, int z_b, double esb,
         st.set(esa, epb, z_a, z_b, rab, ii);
         if (z_a > z_b)
             st.set(epa, esb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa * st.sb, 7)) * rab4;
-        double d = st.a[6] * (st.b[1] - st.b[3])
+        w = sqrt(pow(st.sa * st.sb, 7)) * rab4;
+        Scalar d = st.a[6] * (st.b[1] - st.b[3])
                    - 2.0 * st.a[4] * (st.b[3] - st.b[5])
                    + st.a[2] * (st.b[5] - st.b[7]);
-        double e = st.b[6] * (st.a[1] - st.a[3])
+        Scalar e = st.b[6] * (st.a[1] - st.a[3])
                    - 2.0 * st.b[4] * (st.a[3] - st.a[5])
                    + st.b[2] * (st.a[5] - st.a[7]);
         s[st.isp][st.ips][1] = w * kInvSqrt3 * (d - e);
         st.set(epa, esb, z_a, z_b, rab, ii);
         if (z_a > z_b)
             st.set(esa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa * st.sb, 7)) * rab4;
+        w = sqrt(pow(st.sa * st.sb, 7)) * rab4;
         d = st.a[6] * (st.b[1] - st.b[3]) - 2.0 * st.a[4] * (st.b[3] - st.b[5])
             + st.a[2] * (st.b[5] - st.b[7]);
         e = st.b[6] * (st.a[1] - st.a[3]) - 2.0 * st.b[4] * (st.a[3] - st.a[5])
             + st.b[2] * (st.a[5] - st.a[7]);
         s[st.ips][st.isp][1] = -w * kInvSqrt3 * ((-d) - e);
         st.set(epa, epb, z_a, z_b, rab, ii);
-        w = std::sqrt(std::pow(st.sa * st.sb, 7)) * rab4;
+        w = sqrt(pow(st.sa * st.sb, 7)) * rab4;
         d = st.a[3] * (st.b[7] + st.b[3] + st.b[3])
             - st.a[5] * (st.b[1] + st.b[5] + st.b[5]) - st.b[5] * st.a[1]
             + st.a[7] * st.b[3];
         s[2][2][1] = -w * d;
         d = st.a[7] * (st.b[1] - st.b[3]) + st.b[7] * (st.a[1] - st.a[3]);
-        const double e2 = st.a[5] * (st.b[5] - st.b[3] - st.b[1])
+        const Scalar e2 = st.a[5] * (st.b[5] - st.b[3] - st.b[1])
                           + st.b[5] * (st.a[5] - st.a[3] - st.a[1])
                           + 2.0 * st.a[3] * st.b[3];
         s[2][2][2] = 0.5 * w * (d + e2);
@@ -594,12 +626,19 @@ double& NDDOLocalMatrix9::at(int row, int col) {
                   + static_cast<std::size_t>(col)];
 }
 
-NDDOLocalMatrix9 diatomic_overlap(const AM1Parameter& pi,
-                                  const AM1Parameter& pj,
-                                  const std::array<double, 3>& x_j_minus_i) {
+namespace {
+template <class Scalar>
+struct LocalMatrix {
+    std::array<Scalar, 81> values{};
+    Scalar& at(int i, int j) { return values[i * 9 + j]; }
+};
+template <class Scalar>
+LocalMatrix<Scalar> overlap_block(const ATV::semiempirical::AM1Parameter& pi,
+                                  const ATV::semiempirical::AM1Parameter& pj,
+                                  const std::array<Scalar, 3>& x_j_minus_i) {
 
-    NDDOLocalMatrix9 out;
-    const double r2 = x_j_minus_i[0] * x_j_minus_i[0]
+    LocalMatrix<Scalar> out;
+    const Scalar r2 = x_j_minus_i[0] * x_j_minus_i[0]
                       + x_j_minus_i[1] * x_j_minus_i[1]
                       + x_j_minus_i[2] * x_j_minus_i[2];
     if (pi.principal_s == 0 || pj.principal_s == 0 || r2 >= kOverlapCutoff2
@@ -607,23 +646,23 @@ NDDOLocalMatrix9 diatomic_overlap(const AM1Parameter& pi,
         return out;
     }
 
-    std::array<double, 76> c{};
-    double r = 0.0;
+    std::array<Scalar, 76> c{};
+    Scalar r = 0.0;
     coe(x_j_minus_i[0], x_j_minus_i[1], x_j_minus_i[2], pi.n_orbitals,
         pj.n_orbitals, c, r);
     if (r < 0.001) {
         return out;
     }
 
-    double s[4][4][4] = {};
+    Scalar s[4][4][4] = {};
     const int ia = std::min(pi.principal_s + 1, 3);
     int ib_shell_max = std::min(pj.principal_s + 1, 3);
     const int a = ia - 1;
     const int b = ib_shell_max - 1;
 
     if (use_diat2(pi.atomic_number, pi) && use_diat2(pj.atomic_number, pj)) {
-        diat2(pi.atomic_number, pi.zs, pi.zp, r, pj.atomic_number, pj.zs, pj.zp,
-              s);
+        diat2<Scalar>(pi.atomic_number, pi.zs, pi.zp, r, pj.atomic_number,
+                      pj.zs, pj.zp, s);
     } else {
         const int newk = std::min(a, b);
         const int nk1 = newk + 1;
@@ -641,8 +680,8 @@ NDDOLocalMatrix9 diatomic_overlap(const AM1Parameter& pi,
                     const int p_i = std::max(pq1, iss);
                     const int p_j = std::max(pq2, jss);
                     s[i][j][k] =
-                        ss_overlap(p_i, p_j, iss, jss, kss, zeta_for(pi, i),
-                                   zeta_for(pj, j), r);
+                        ss_overlap<Scalar>(p_i, p_j, iss, jss, kss,
+                                           zeta_for(pi, i), zeta_for(pj, j), r);
                 }
             }
         }
@@ -659,8 +698,8 @@ NDDOLocalMatrix9 diatomic_overlap(const AM1Parameter& pi,
         const int kmin = 4 - i;
         const int kmax = 2 + i;
         for (int j = 1; j <= ib_shell_max; ++j) {
-            double aa = 1.0;
-            double bb = 1.0;
+            Scalar aa = 1.0;
+            Scalar bb = 1.0;
             if (j == 2) {
                 aa = -1.0;
             } else if (j == 3) {
@@ -691,10 +730,18 @@ NDDOLocalMatrix9 diatomic_overlap(const AM1Parameter& pi,
     return out;
 }
 
-NDDOLocalMatrix9 one_electron_two_center(const AM1Parameter& pi,
-                                         const AM1Parameter& pj,
-                                         const std::array<double, 3>& x_i,
-                                         const std::array<double, 3>& x_j) {
+} // namespace
+NDDOLocalMatrix9 diatomic_overlap(const ATV::semiempirical::AM1Parameter& pi,
+                                  const ATV::semiempirical::AM1Parameter& pj,
+                                  const std::array<double, 3>& delta) {
+    return {overlap_block(pi, pj, delta).values};
+}
+
+NDDOLocalMatrix9
+one_electron_two_center(const ATV::semiempirical::AM1Parameter& pi,
+                        const ATV::semiempirical::AM1Parameter& pj,
+                        const std::array<double, 3>& x_i,
+                        const std::array<double, 3>& x_j) {
     const std::array<double, 3> delta = {x_j[0] - x_i[0], x_j[1] - x_i[1],
                                          x_j[2] - x_i[2]};
     const double r2 =
@@ -724,6 +771,28 @@ NDDOLocalMatrix9 one_electron_two_center(const AM1Parameter& pi,
         }
     }
     return smat;
+}
+
+std::array<NDDOLocalMatrix9, 3> internal::one_electron_two_center_derivative(
+    const ATV::semiempirical::AM1Parameter& pi,
+    const ATV::semiempirical::AM1Parameter& pj, const std::array<double, 3>& xi,
+    const std::array<double, 3>& xj) {
+    std::array<NDDODerivative, 3> delta;
+    for (int d = 0; d < 3; ++d) {
+        delta[d] = xj[d] - xi[d];
+        delta[d].gradient[d] = -1.0;
+    }
+    const auto block = overlap_block(pi, pj, delta);
+    std::array<NDDOLocalMatrix9, 3> out{};
+    for (int i = 0; i < pi.n_orbitals; ++i)
+        for (int j = 0; j < pj.n_orbitals; ++j) {
+            const double bi = i == 0 ? pi.betas : (i < 4 ? pi.betap : pi.betad);
+            const double bj = j == 0 ? pj.betas : (j < 4 ? pj.betap : pj.betad);
+            for (int d = 0; d < 3; ++d)
+                out[d].at(i, j) =
+                    block.values[i * 9 + j].gradient[d] * 0.5 * (bi + bj);
+        }
+    return out;
 }
 
 NDDOLocalMatrix9 diatomic_overlap(int z_i, int z_j,

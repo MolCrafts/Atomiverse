@@ -26,7 +26,7 @@
 /// constructor signatures this file assumes (discrete params, then read refs,
 /// then write refs) are:
 ///
-///   FockStage(bool restricted, bool is_hf, XCType, GridLevel, int n_radial,
+///   FockStage(bool restricted, bool is_hf, xc::XCType, GridLevel, int n_radial,
 ///             int n_angular, double hybrid_alpha_override,
 ///             const MolecularGrid* fixed_grid,
 ///             const internal::IntegralWorkspace& integrals,
@@ -78,6 +78,7 @@
 
 #ifdef ATV_HAS_HF
 
+#include "atomiverse/cpu/linalg/pulay.h"
 #include <cmath>
 #include <cstring>
 #include <iomanip>
@@ -99,10 +100,10 @@
 #include "atomiverse/cpu/scf/basis_set.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
 #include "atomiverse/cpu/scf/grid.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
+#include "atomiverse/cpu/linalg/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/density_builder.h"
-#include "atomiverse/cpu/scf/internal/diis_mixer.h"
 #include "atomiverse/cpu/scf/internal/dual_convergence_check.h"
 #include "atomiverse/cpu/scf/internal/eigen_solver.h"
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
@@ -120,12 +121,12 @@
 #include "cpu/driver_test_helpers.h"
 
 using namespace ATV;
+using cpu::linalg::diis_error;
+using cpu::linalg::internal::DIISMixer;
 using cpu::scf::RealMatrix;
 using cpu::scf::RealVector;
 using cpu::scf::internal::apply_level_shift;
 using cpu::scf::internal::DensityBuilder;
-using cpu::scf::internal::diis_error;
-using cpu::scf::internal::DIISMixer;
 using cpu::scf::internal::DualConvergenceCheck;
 using cpu::scf::internal::EigenSolver;
 using cpu::scf::internal::FockResult;
@@ -190,8 +191,8 @@ cpu::Frame make_h2_frame() {
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
     f.span(kAtom_z)[1] = 0.0;
-    f.span(kAtom_type)[0] = 1; // Z = 1
-    f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[0] = 1; // Z = 1
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_mass)[0] = 1.008;
     f.span(kAtom_mass)[1] = 1.008;
     f.span(kAtom_tag)[0] = 1;
@@ -337,14 +338,14 @@ TEST(FockStage, ReproducesHamiltonianBuilderRestrictedHF) {
     hb.prepare(ints, /*is_hf=*/true, cpu::scf::GridLevel::SG0,
                /*n_radial=*/50, /*n_angular=*/110, /*fixed_grid=*/nullptr);
     FockResult ref = hb.step(ints, /*restricted=*/true, /*is_hf=*/true,
-                             cpu::scf::XCType::LSDA,
+                             cpu::xc::XCType::LSDA,
                              /*hybrid_alpha_override=*/-1.0, P, P);
 
     // Under test: the config-free discrete FockStage on the same P.
     RealMatrix F_a, F_b, J;
     double e_xc = -123.0, e_exact = -123.0, int_na = -123.0, int_nb = -123.0;
     cpu::scf::FockStage fock(
-        /*restricted=*/true, /*is_hf=*/true, cpu::scf::XCType::LSDA,
+        /*restricted=*/true, /*is_hf=*/true, cpu::xc::XCType::LSDA,
         cpu::scf::GridLevel::SG0, /*n_radial=*/50, /*n_angular=*/110,
         /*hybrid_alpha_override=*/-1.0, /*fixed_grid=*/nullptr, ints, P, P, F_a,
         F_b, J, e_xc, e_exact, int_na, int_nb);
@@ -381,13 +382,13 @@ TEST(FockStage, ReproducesHamiltonianBuilderRestrictedKS) {
     hb.prepare(ints, /*is_hf=*/false, cpu::scf::GridLevel::SG0,
                /*n_radial=*/50, /*n_angular=*/110, /*fixed_grid=*/nullptr);
     FockResult ref = hb.step(ints, /*restricted=*/true, /*is_hf=*/false,
-                             cpu::scf::XCType::LSDA,
+                             cpu::xc::XCType::LSDA,
                              /*hybrid_alpha_override=*/-1.0, P, P);
 
     RealMatrix F_a, F_b, J;
     double e_xc = 0, e_exact = 0, int_na = 0, int_nb = 0;
     cpu::scf::FockStage fock(
-        /*restricted=*/true, /*is_hf=*/false, cpu::scf::XCType::LSDA,
+        /*restricted=*/true, /*is_hf=*/false, cpu::xc::XCType::LSDA,
         cpu::scf::GridLevel::SG0, /*n_radial=*/50, /*n_angular=*/110,
         /*hybrid_alpha_override=*/-1.0, /*fixed_grid=*/nullptr, ints, P, P, F_a,
         F_b, J, e_xc, e_exact, int_na, int_nb);
@@ -418,7 +419,7 @@ TEST(FockStage, BindsFockPhaseAndGuardsWithCtxAt) {
     RealMatrix F_b, J;
     double e_xc = 0, e_exact = 0, int_na = 0, int_nb = 0;
     cpu::scf::FockStage fock(
-        true, true, cpu::scf::XCType::LSDA, cpu::scf::GridLevel::SG0, 50, 110,
+        true, true, cpu::xc::XCType::LSDA, cpu::scf::GridLevel::SG0, 50, 110,
         -1.0, nullptr, ints, P, P, F_a, F_b, J, e_xc, e_exact, int_na, int_nb);
 
     // default_bindings() declares exactly the fock phase, via make_binding.
@@ -474,7 +475,7 @@ TEST(MixStage, ReproducesDiisErrorAndExtrapolationRestricted) {
         auto lc = at_stage(rt, fr, scf::Phase::mix, iter);
         mix.launch(lc);
 
-        RealMatrix err_ref = diis_error(F_seq[iter], P, S, X);
+        RealMatrix err_ref = ATV::cpu::linalg::diis_error(F_seq[iter], P, S, X);
         RealMatrix F_ref = oracle_diis.step(F_seq[iter], err_ref);
 
         EXPECT_TRUE(MatBitEqual(err_a, err_ref)) << "iter " << iter;
@@ -511,8 +512,10 @@ TEST(MixStage, ReproducesDiisErrorAndExtrapolationUnrestricted) {
         auto lc = at_stage(rt, fr, scf::Phase::mix, iter);
         mix.launch(lc);
 
-        RealMatrix ea_ref = diis_error(Fa_seq[iter], Pa, S, X);
-        RealMatrix eb_ref = diis_error(Fb_seq[iter], Pb, S, X);
+        RealMatrix ea_ref =
+            ATV::cpu::linalg::diis_error(Fa_seq[iter], Pa, S, X);
+        RealMatrix eb_ref =
+            ATV::cpu::linalg::diis_error(Fb_seq[iter], Pb, S, X);
         auto [Fa_ref, Fb_ref] =
             oracle_diis.step(Fa_seq[iter], ea_ref, Fb_seq[iter], eb_ref);
 
@@ -546,7 +549,7 @@ TEST(MixStage, AppliesLevelShiftRestrictedWhenAboveThreshold) {
     mix.launch(lc);
 
     // Oracle: no DIIS, then F' = F + λ(S − S·D_occ·S) with D_occ = 0.5·P.
-    RealMatrix err_ref = diis_error(F_in, P, S, X);
+    RealMatrix err_ref = ATV::cpu::linalg::diis_error(F_in, P, S, X);
     RealMatrix D_occ = 0.5 * P;
     RealMatrix F_ref = apply_level_shift(F_in, S, D_occ, lambda);
 

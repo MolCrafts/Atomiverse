@@ -1,0 +1,97 @@
+1789/1836 Testing: gpw/wannier
+1789/1836 Test: gpw/wannier
+Command: "/tmp/atv-xc-build/regressions/atv_regressions" "--case" "gpw/wannier"
+Directory: /tmp/atv-xc-build/regressions
+"gpw/wannier" start time: Oct 25 20:15 CET
+Output:
+----------------------------------------------------------
+
+=== gpw/wannier :: periodic-wannier-gpw ===
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  1 ms
+[gpw setup] local_pp_grid  0 ms
+[gpw setup k] ST_k           569 ms
+[gpw setup k] Vnl_k          95 ms
+[gpw setup k] orth_k         6 ms
+[gpw setup k] kbg_build      945 ms
+[2026-10-25 20:16:00.920] [info] CPU runtime initialized: 8 threads
+[2026-10-25 20:16:00.921] [info] all components built
+[gpw prof k] collocate=110 poisson=0 xc=86 integrate=101 ms (ngrid=19584 nk=8 mg=0 build=1)
+[gpw prof k] collocate=111 poisson=0 xc=1 integrate=101 ms (ngrid=19584 nk=8 mg=0 build=2)
+[gpw prof k] collocate=111 poisson=0 xc=1 integrate=115 ms (ngrid=19584 nk=8 mg=0 build=3)
+[gpw prof k] collocate=119 poisson=0 xc=1 integrate=118 ms (ngrid=19584 nk=8 mg=0 build=4)
+[gpw prof k] collocate=140 poisson=0 xc=1 integrate=115 ms (ngrid=19584 nk=8 mg=0 build=5)
+[gpw prof k] collocate=116 poisson=0 xc=1 integrate=114 ms (ngrid=19584 nk=8 mg=0 build=6)
+[gpw wannier] AO-links=48 nk=8 nbas=52 elapsed=4574 ms
+[gpw wannier] spin=0 occupied=8 localization=27 ms
+SCF E=-15.769934 Ha  n_wann=8  iters=1  conv=0
+Omega_init=107.635397  Omega=11.498950  [Ang^2]
+  center[0] = (+2.88585, +0.00846, +0.68162)  Omega=1.18688
+  center[1] = (+0.95418, -0.01001, +0.68226)  Omega=1.76076
+  center[2] = (+0.01616, +2.87832, +4.75439)  Omega=1.51181
+  center[3] = (-0.00087, +0.96186, +4.75668)  Omega=1.56724
+  center[4] = (+1.92338, +0.94684, +2.03629)  Omega=0.81662
+  center[5] = (+1.93398, +2.89688, +2.03357)  Omega=1.64531
+  center[6] = (+0.94392, +1.90887, +3.39785)  Omega=1.73264
+  center[7] = (+2.88845, +1.91794, +3.37990)  Omega=1.27768
+  midpoint[0] = (+2.87969, +0.00000, +0.67875)
+  midpoint[1] = (+0.95990, +0.00000, +0.67875)
+  midpoint[2] = (+0.00000, +2.87969, +4.75125)
+  midpoint[3] = (+0.00000, +0.95990, +4.75125)
+  midpoint[4] = (+1.91979, +0.95990, +2.03625)
+  midpoint[5] = (+1.91979, +2.87969, +2.03625)
+  midpoint[6] = (+0.95990, +1.91979, +3.39375)
+  midpoint[7] = (+2.87969, +1.91979, +3.39375)
+max assigned min-image distance to bond midpoints: 0.02245 Ang (tol 0.90)
+spread ratio Omega/Omega_init = 0.1068 (want < 0.50)
+WARN: MV loop did not flag converged; centers still pin (accepting for foothold)
+Whole section got=7.889850 want<=60 seconds
+PASS: GPW multi-k MLWF Si BCT (dmax=0.02245 Ang, spread ratio=0.1068)
+
+=== gpw/wannier :: periodic-wannier-gpw-uks ===
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  2 ms
+[gpw setup] local_pp_grid  0 ms
+[2026-10-25 20:16:09.036] [info] CPU runtime initialized: 8 threads
+[2026-10-25 20:16:09.036] [info] all components built
+[gpw wannier] AO-links=48 nk=8 nbas=52 elapsed=3971 ms
+[gpw wannier] spin=0 occupied=8 localization=25 ms
+[gpw wannier] spin=1 occupied=8 localization=21 ms
+SCF E=-15.76993360 Ha  n_up=8 n_dn=8 n_wann=16  iters=1  conv=0
+Omega_init=215.275987  Omega=22.416108  [Ang^2]
+ATV wall (SCF+MLWF) = 9.887 s
+|E - CP2K| = 2.306724e-05 Ha (tol 2.0e-03)
+  spin0 center[0] = (+2.89291, +0.01100, +0.67721)
+  spin0 center[1] = (+0.94970, -0.00778, +0.68238)
+  spin0 center[2] = (+0.00299, +2.87116, +4.74453)
+  spin0 center[3] = (-0.00746, +0.96213, +4.75464)
+  spin0 center[4] = (+1.92683, +0.96724, +2.04299)
+  spin0 center[5] = (+1.90956, +2.87832, +2.03441)
+  spin0 center[6] = (+0.95155, +1.91717, +3.39259)
+  spin0 center[7] = (+2.89194, +1.91765, +3.40007)
+spin 0: max mid-image→midpoint = 0.01726 Ang (tol 0.90); Omega_spin≈11.20805
+  spin1 center[0] = (+2.89291, +0.01100, +0.67721)
+  spin1 center[1] = (+0.94970, -0.00778, +0.68238)
+  spin1 center[2] = (+0.00299, +2.87116, +4.74453)
+  spin1 center[3] = (-0.00746, +0.96213, +4.75464)
+  spin1 center[4] = (+1.92683, +0.96724, +2.04299)
+  spin1 center[5] = (+1.90956, +2.87832, +2.03441)
+  spin1 center[6] = (+0.95155, +1.91717, +3.39259)
+  spin1 center[7] = (+2.89194, +1.91765, +3.40007)
+spin 1: max mid-image→midpoint = 0.01726 Ang (tol 0.90); Omega_spin≈11.20805
+spread ratio Omega/Omega_init = 0.1041 (want < 0.50)
+WARN: MV loop did not flag converged; centers still pin (accepting for product pin)
+Whole section got=9.886750 want<=60 seconds
+PASS: collinear UKS multi-k GPW MLWF Si BCT (M=0, n_up=n_dn=8, dmax pin, spread ratio=0.1041, wall=9.89s)
+
+=== gpw/wannier summary ===
+  PASS     7.9 s  periodic-wannier-gpw
+  PASS     9.9 s  periodic-wannier-gpw-uks
+0/2 sections failed
+<end of output>
+Test time =  17.80 sec
+----------------------------------------------------------
+Test Passed.
+"gpw/wannier" end time: Oct 25 20:16 CET
+"gpw/wannier" time elapsed: 00:00:17
+----------------------------------------------------------

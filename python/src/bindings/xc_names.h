@@ -5,18 +5,17 @@
 /// An *exchange-correlation functional* is the recipe a density-functional
 /// method uses to supply everything its non-interacting reference system
 /// leaves out; it is named by a string on the Python surface and by
-/// `cpu::scf::XCType` in C++. Two bindings now need that mapping — the
-/// Gaussian SCF methods (`RKS(functional=...)`, `UKS`) and the plane-wave
-/// method (`PW.xc`) — so the table lives here rather than being spelled twice
+/// `cpu::xc::XCType` in C++. Two bindings now need that mapping — the
+/// Gaussian SCF methods (`RKS(xc=...)`, `UKS`) and the plane-wave method
+/// (`PW(xc=...)`) — so the table lives here rather than being spelled twice
 /// and drifting.
 ///
 /// Both directions come off ONE table, which is the point: a name that
 /// `xc_from_name` accepts is exactly the name `xc_name` gives back, so the
-/// round-trip a Python property promises (`pw.xc = "LSDA"` then `pw.xc ==
-/// "LSDA"`) cannot be broken by editing one list and forgetting the other.
-/// The Gaussian SCF binding uses only the forward direction — `functional=`
-/// is a constructor argument there, never read back — while `PW.xc` is a
-/// read-write property and needs both.
+/// round-trip a Python property promises (`PW(..., xc="LSDA")` then
+/// `pw.xc == "LSDA"`) cannot be broken by editing one list and forgetting the
+/// other. Every binding takes `xc=` as a constructor argument and reads it
+/// back through a read-only property, so both directions are used.
 ///
 /// No-fallback rule: an unsupported name raises `std::invalid_argument`
 /// (Python `ValueError`) listing every supported one. Silently substituting a
@@ -28,7 +27,7 @@
 /// enum it maps to belongs to those domains.
 #pragma once
 
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 #include <stdexcept>
 #include <string>
@@ -37,18 +36,19 @@
 /// @brief Supported functional names and the enumerators they resolve to.
 ///
 /// Order is the table's published order and is what the diagnostics list.
-inline constexpr std::pair<const char*, ATV::cpu::scf::XCType> kXCNames[] = {
-    {"LSDA", ATV::cpu::scf::XCType::LSDA},
-    {"PBE", ATV::cpu::scf::XCType::PBE},
-    {"PBEsol", ATV::cpu::scf::XCType::PBEsol},
-    {"RevPBE", ATV::cpu::scf::XCType::RevPBE},
-    {"RPBE", ATV::cpu::scf::XCType::RPBE},
-    {"BLYP", ATV::cpu::scf::XCType::BLYP},
-    {"OptB88VdW", ATV::cpu::scf::XCType::OptB88VdW},
-    {"B3LYP", ATV::cpu::scf::XCType::B3LYP},
-    {"PBE0", ATV::cpu::scf::XCType::PBE0},
-    {"B2PLYP", ATV::cpu::scf::XCType::B2PLYP},
-    {"CAMB3LYP", ATV::cpu::scf::XCType::CAMB3LYP},
+inline constexpr std::pair<const char*, ATV::cpu::xc::XCType> kXCNames[] = {
+    {"LSDA", ATV::cpu::xc::XCType::LSDA},
+    {"PBE", ATV::cpu::xc::XCType::PBE},
+    {"PBEsol", ATV::cpu::xc::XCType::PBEsol},
+    {"RevPBE", ATV::cpu::xc::XCType::RevPBE},
+    {"RPBE", ATV::cpu::xc::XCType::RPBE},
+    {"BLYP", ATV::cpu::xc::XCType::BLYP},
+    {"OptB88VdW", ATV::cpu::xc::XCType::OptB88VdW},
+    {"B3LYP", ATV::cpu::xc::XCType::B3LYP},
+    {"PBE0", ATV::cpu::xc::XCType::PBE0},
+    {"B2PLYP", ATV::cpu::xc::XCType::B2PLYP},
+    {"CAMB3LYP", ATV::cpu::xc::XCType::CAMB3LYP},
+    {"PADE", ATV::cpu::xc::XCType::PADE},
 };
 
 /// @brief Functional name → `XCType`.
@@ -56,7 +56,7 @@ inline constexpr std::pair<const char*, ATV::cpu::scf::XCType> kXCNames[] = {
 /// @return The matching enumerator.
 /// @throws std::invalid_argument (Python `ValueError`) on an unsupported
 ///         name, listing every supported functional — no fallback.
-inline ATV::cpu::scf::XCType xc_from_name(const std::string& name) {
+inline ATV::cpu::xc::XCType xc_from_name(const std::string& name) {
     std::string supported;
     for (const auto& [key, value] : kXCNames) {
         if (name == key)
@@ -76,7 +76,7 @@ inline ATV::cpu::scf::XCType xc_from_name(const std::string& name) {
 ///         table — that is a binding left behind by a new functional, not a
 ///         user error, and silently returning "unknown" would make the
 ///         property round-trip lie.
-inline std::string xc_name(ATV::cpu::scf::XCType xc) {
+inline std::string xc_name(ATV::cpu::xc::XCType xc) {
     for (const auto& [key, value] : kXCNames)
         if (xc == value)
             return key;

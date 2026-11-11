@@ -36,7 +36,7 @@ namespace gpw {
 /// @param periodic Apply the minimum image convention to r - R_A.
 /// @return V_loc^SR sampled on every grid point [Hartree], length grid.npts().
 std::vector<double> local_pp_grid(const UniformGrid& grid,
-                                  const std::vector<GpwAtom>& atoms,
+                                  const std::vector<internal::GpwAtom>& atoms,
                                   bool periodic);
 
 /// @brief Add the Hellmann-Feynman force of the grid-collocated local PP.
@@ -53,8 +53,8 @@ std::vector<double> local_pp_grid(const UniformGrid& grid,
 /// @param rho      Electron density on the grid [e/Bohr³], length grid.npts().
 /// @param forces   Accumulator, one 3-vector per atom [Hartree/Bohr]; added to.
 void add_local_pp_hf_forces(const UniformGrid& grid,
-                            const std::vector<GpwAtom>& atoms, bool periodic,
-                            const std::vector<double>& rho,
+                            const std::vector<internal::GpwAtom>& atoms,
+                            bool periodic, const std::vector<double>& rho,
                             std::vector<std::array<double, 3>>& forces);
 
 } // namespace gpw

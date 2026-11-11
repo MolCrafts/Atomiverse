@@ -27,8 +27,8 @@ namespace md {
 /// provides natural damping of the innermost thermostat-momentum
 /// oscillation that a single-chain integrator cannot absorb, which is
 /// what keeps an over-compressed start-state (large `P_target − P_int`)
-/// from producing the 8000 K-then-freeze ringing the debug_amorphous
-/// harness exhibited under length-1 chains.
+/// from producing the 8000 K-then-freeze ringing an amorphous-polyethylene
+/// LAMMPS comparison exhibited under length-1 chains.
 ///
 /// Algorithm (Tuckerman 2006, *J. Phys. A* 39, 5629; Shinoda 2004,
 /// *Phys. Rev. B* 69, 134103):
@@ -177,7 +177,7 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     /// @brief Construct MTK NPT integrator (parameters assigned immediately).
     /// @param T_target Target temperature [K] (also ramp start).
     /// @param tau_T Thermostat coupling time [fs] (LAMMPS Tdamp).
-    /// @param P_target Target pressure [eV/Å³] (LAMMPS sign, positive compressive).
+    /// @param P_target Target pressure [style pressure] (LAMMPS sign, positive compressive).
     /// @param tau_P Barostat coupling time [fs] (LAMMPS Pdamp).
     /// @param dt Timestep [fs].
     /// @param drag Empirical NHC drag (LAMMPS drag); 0 disables.
@@ -260,9 +260,14 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
                 ATV::make_binding(ATV::md::Phase::end_of_step, -40)};
     }
     void build(const cpu::BuildContext& ctx) override;
+    void initialize_forces(const cpu::LaunchContext& ctx) override {
+        if (ctx.at(ATV::md::Phase::end_of_step))
+            KE_global_ = ctx.frame.meta.get(kKinetic);
+    }
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:
+    double nktv2p_ = 1.0; ///< The run's nktv2p (pressure → energy/volume).
     // Configuration
     double T_target_; ///< Ramp start temperature [K] (LAMMPS `t_start`).
     double T_stop_;   ///< Ramp end temperature [K] (LAMMPS `t_stop`).
@@ -296,8 +301,10 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     double pdrag_factor_ = 1.0;
 
     // Derived in build()
+    BigInt n_atoms_global_ = 0;
     int n_dof_ = 0;           ///< 3N - 3 (COM removed)
-    double kT_ = 0.0;         ///< kB · T_target [eV]
+    double kT_ = 0.0;         ///< boltz · T_target [energy]
+    double boltz_ = 1.0;      ///< The run's boltz, cached at build().
     std::vector<double> Q_t_; ///< Atom-NHC masses per chain link [eV·fs²]
     std::vector<double> Q_b_; ///< Baro-NHC masses per chain link [eV·fs²]
     double W_ = 0.0;          ///< Barostat mass [eV·fs²]
@@ -328,7 +335,7 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     /// @brief Interpolate the live thermostat setpoint for `step`,
     ///        mirroring LAMMPS `fix_nh.cpp::compute_temp_target()`.
     ///        Updates `T_live_` and `kT_`.
-    void compute_temp_target(int step);
+    void compute_temp_target(BigInt step);
     void nhc_atoms_half(const cpu::LaunchContext& ctx, double half_dt);
     void nhc_baro_half(double half_dt);
     void update_eps_dot(const cpu::LaunchContext& ctx, double half_dt);

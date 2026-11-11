@@ -58,12 +58,12 @@
 using namespace ATV;
 using cpu::scf::BasisSet;
 using cpu::scf::EcpPotential;
-using cpu::scf::internal::IntegralWorkspace;
 using cpu::scf::basis_data::AtomEcp;
 using cpu::scf::basis_data::EcpChannel;
 using cpu::scf::basis_data::EcpGaussianTerm;
 using cpu::scf::internal::EcpCenter;
 using cpu::scf::internal::EcpIntegrals;
+using cpu::scf::internal::IntegralWorkspace;
 
 namespace {
 
@@ -104,11 +104,11 @@ void add_shell(std::vector<cpu::scf::native::Shell>& shells,
 
 cpu::Frame i2_frame() {
     cpu::Frame f(2);
-    f.span(kAtom_type)[0] = 53;
+    f.span(kAtom_atomic_number)[0] = 53;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
-    f.span(kAtom_type)[1] = 53;
+    f.span(kAtom_atomic_number)[1] = 53;
     f.span(kAtom_x)[1] = 0.0;
     f.span(kAtom_y)[1] = 0.0;
     f.span(kAtom_z)[1] = 2.666;
@@ -320,7 +320,8 @@ TEST(EcpIntegrals_, UMatrixPinnedVsPyscfSyntheticFChannel) {
 TEST(EcpIntegralWorkspace, I2ValenceWiring) {
     const auto frame = i2_frame();
     const cpu::scf::internal::IntegralWorkspace ae{frame, BasisSet::Def2SVP};
-    const cpu::scf::internal::IntegralWorkspace ve{frame, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace ve{frame, BasisSet::Def2SVP, 0,
+                                                   false, "def2-ECP"};
 
     // Electron and AO bookkeeping: 2 * (53 - 28) = 50 valence electrons.
     EXPECT_EQ(ae.n_electrons, 106);
@@ -358,22 +359,23 @@ TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
     // H2O: every atom is all-electron in def2-ECP — the pack must be
     // identical to the empty-ecp path (per-element table, no global switch).
     cpu::Frame h2o(3);
-    h2o.span(kAtom_type)[0] = 8;
+    h2o.span(kAtom_atomic_number)[0] = 8;
     h2o.span(kAtom_x)[0] = 0.0;
     h2o.span(kAtom_y)[0] = 0.0;
     h2o.span(kAtom_z)[0] = 0.1173;
-    h2o.span(kAtom_type)[1] = 1;
+    h2o.span(kAtom_atomic_number)[1] = 1;
     h2o.span(kAtom_x)[1] = 0.0;
     h2o.span(kAtom_y)[1] = 0.7572;
     h2o.span(kAtom_z)[1] = -0.4692;
-    h2o.span(kAtom_type)[2] = 1;
+    h2o.span(kAtom_atomic_number)[2] = 1;
     h2o.span(kAtom_x)[2] = 0.0;
     h2o.span(kAtom_y)[2] = -0.7572;
     h2o.span(kAtom_z)[2] = -0.4692;
     h2o.box = cpu::Box::cubic(20.0);
 
     const cpu::scf::internal::IntegralWorkspace plain{h2o, BasisSet::Def2SVP};
-    const cpu::scf::internal::IntegralWorkspace named{h2o, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace named{h2o, BasisSet::Def2SVP, 0,
+                                                      false, "def2-ECP"};
     EXPECT_FALSE(named.has_ecp);
     EXPECT_EQ(named.n_electrons, plain.n_electrons);
     EXPECT_EQ(named.V_nuc, plain.V_nuc);
@@ -384,7 +386,8 @@ TEST(EcpIntegralWorkspace, LightMoleculeUnchangedAndUnknownNameThrows) {
                               std::abs(plain.Hcore(i, j) - named.Hcore(i, j)));
     EXPECT_EQ(max_dH, 0.0);
 
-    EXPECT_THROW(cpu::scf::internal::IntegralWorkspace(h2o, BasisSet::Def2SVP, 0, false, "no-such"),
+    EXPECT_THROW(cpu::scf::internal::IntegralWorkspace(h2o, BasisSet::Def2SVP,
+                                                       0, false, "no-such"),
                  std::runtime_error);
 }
 
@@ -394,8 +397,7 @@ TEST(EcpX2cGate, ThrowsForEcpElement) {
     // I2 + x2c + def2-ECP: throws before any SCF work, naming the element.
     // (e2e-in-tests wave-2: no multi-iter all-electron run under tests/.)
     auto frame = i2_frame();
-    cpu::scf::RHF rhf;
-    rhf.basis = BasisSet::Def2SVP;
+    cpu::scf::RHF rhf{BasisSet::Def2SVP};
     rhf.ecp = "def2-ECP";
     rhf.x2c = true;
     try {

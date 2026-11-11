@@ -1,4 +1,4 @@
-# CP2K twin sketch for regressions/dynamics/xl-bomd-uks (offline oracle —
+# CP2K twin sketch for regressions/dynamics/xl-bomd (offline oracle —
 # never run at ctest/regression time). O2 triplet NVE Quickstep UKS;
 # EXTRAPOLATION ASPC is CP2K's MD density-guess analogue of ATV XL-BOMD.
 # NOTE (2026-07-26): no cp2k binary on the worker host — unexecuted sketch.

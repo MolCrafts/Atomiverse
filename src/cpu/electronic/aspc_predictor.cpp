@@ -1,19 +1,60 @@
 /// @file src/cpu/electronic/aspc_predictor.cpp
 /// @brief ASPC predictor-corrector implementation.
 ///
-/// Lagrange extrapolation coefficients for order K:
-///   omega_k = product_{j=0..K, j!=k} (K+1-j)/(k-j)
-/// evaluated at the prediction point (K+1 steps ahead of the oldest point).
+/// Order K predicts from the K+2 newest snapshots with Kolafa's weights
+/// (`kolafa_aspc_weights(K+2)`) and blends the corrector result with
+/// (K+2)/(2K+3).
 ///
-/// Reference: Kolafa, J. Comput. Chem. 25, 335 (2004), Eq. 7-11
+/// Reference: Kolafa, J. Comput. Chem. 25, 335 (2004); CP2K
+///            qs_wf_history_methods.F (wfi_aspc_nr)
 
 #include "atomiverse/cpu/electronic/aspc_predictor.h"
+
+#include <limits>
 
 #include <stdexcept>
 
 namespace ATV {
 namespace cpu {
 namespace electronic {
+
+namespace {
+
+/// @brief Exact binomial coefficient C(n, k); 0 when k is outside [0, n].
+unsigned long long binomial(int n, int k) {
+    if (k < 0 || k > n)
+        return 0ULL;
+    if (k > n - k)
+        k = n - k;
+    unsigned long long r = 1ULL;
+    for (int i = 1; i <= k; ++i) {
+        const auto num = static_cast<unsigned long long>(n - k + i);
+        if (r > std::numeric_limits<unsigned long long>::max() / num)
+            throw std::overflow_error("kolafa_aspc_weights: order too large");
+        r = r * num / static_cast<unsigned long long>(i); // exact at each step
+    }
+    return r;
+}
+
+} // namespace
+
+std::vector<double> kolafa_aspc_weights(int n_vectors) {
+    if (n_vectors < 1)
+        throw std::invalid_argument(
+            "kolafa_aspc_weights: n_vectors must be >= 1");
+    const int n = n_vectors;
+    // One division per weight keeps exact rationals bit-identical
+    // (e.g. 792/252 == 22/7 for the six-vector MetalWalls row).
+    const double denom = static_cast<double>(binomial(2 * n - 2, n - 1));
+    std::vector<double> w(static_cast<std::size_t>(n));
+    for (int j = 1; j <= n; ++j) {
+        const double sign = (j % 2 == 1) ? 1.0 : -1.0;
+        w[static_cast<std::size_t>(j - 1)] =
+            sign * static_cast<double>(j)
+            * static_cast<double>(binomial(2 * n, n - j)) / denom;
+    }
+    return w;
+}
 
 ASPCPredictor::ASPCPredictor(int order) : K_(order) {
     if (K_ < 0)
@@ -22,41 +63,24 @@ ASPCPredictor::ASPCPredictor(int order) : K_(order) {
 }
 
 void ASPCPredictor::compute_coefficients() {
-    // Lagrange extrapolation coefficients for predicting at point (K+1)
-    // given history at points 0, 1, ..., K (newest = K).
-    //
-    // omega_k = product_{j=0..K, j!=k} ((K+1) - j) / (k - j)
-    omega_.resize(K_ + 1);
-    for (int k = 0; k <= K_; ++k) {
-        double num = 1, den = 1;
-        for (int j = 0; j <= K_; ++j) {
-            if (j == k)
-                continue;
-            num *= (K_ + 1) - j;
-            den *= k - j;
-        }
-        omega_[k] = num / den;
-    }
+    omega_ = kolafa_aspc_weights(K_ + 2); // B_1 (newest) … B_{K+2}
 }
 
 void ASPCPredictor::record(const xt::xtensor<double, 2>& P_scf) {
     history_.push_back(P_scf);
-    // Keep at most K+2 entries (K+1 for prediction + 1 spare)
     while (static_cast<int>(history_.size()) > K_ + 2)
         history_.pop_front();
 }
 
 bool ASPCPredictor::predict(xt::xtensor<double, 2>& P_predicted) const {
-    // Need at least K+1 history points
-    if (static_cast<int>(history_.size()) < K_ + 1)
+    const int n = K_ + 2;
+    if (static_cast<int>(history_.size()) < n)
         return false;
-
-    int offset = static_cast<int>(history_.size()) - (K_ + 1);
+    const int newest = static_cast<int>(history_.size()) - 1;
     P_predicted = xt::zeros_like(history_.back());
-
-    for (int k = 0; k <= K_; ++k)
-        P_predicted += omega_[k] * history_[offset + k];
-
+    for (int j = 1; j <= n; ++j)
+        P_predicted += omega_[static_cast<std::size_t>(j - 1)]
+                       * history_[static_cast<std::size_t>(newest - (j - 1))];
     return true;
 }
 
@@ -83,17 +107,7 @@ ASPCPredictorCplx::ASPCPredictorCplx(int order) : K_(order) {
 }
 
 void ASPCPredictorCplx::compute_coefficients() {
-    omega_.resize(static_cast<std::size_t>(K_) + 1);
-    for (int k = 0; k <= K_; ++k) {
-        double num = 1, den = 1;
-        for (int j = 0; j <= K_; ++j) {
-            if (j == k)
-                continue;
-            num *= (K_ + 1) - j;
-            den *= k - j;
-        }
-        omega_[static_cast<std::size_t>(k)] = num / den;
-    }
+    omega_ = kolafa_aspc_weights(K_ + 2); // B_1 (newest) … B_{K+2}
 }
 
 void ASPCPredictorCplx::record(const linalg::CplxMatrix& P_scf) {
@@ -103,16 +117,15 @@ void ASPCPredictorCplx::record(const linalg::CplxMatrix& P_scf) {
 }
 
 bool ASPCPredictorCplx::predict(linalg::CplxMatrix& P_predicted) const {
-    if (static_cast<int>(history_.size()) < K_ + 1)
+    const int n = K_ + 2;
+    if (static_cast<int>(history_.size()) < n)
         return false;
-
-    const int offset = static_cast<int>(history_.size()) - (K_ + 1);
+    const int newest = static_cast<int>(history_.size()) - 1;
     using Cplx = std::complex<double>;
     P_predicted = xt::zeros_like(history_.back());
-    for (int k = 0; k <= K_; ++k)
-        P_predicted +=
-            Cplx(omega_[static_cast<std::size_t>(k)])
-            * history_[static_cast<std::size_t>(offset + k)];
+    for (int j = 1; j <= n; ++j)
+        P_predicted += Cplx(omega_[static_cast<std::size_t>(j - 1)])
+                       * history_[static_cast<std::size_t>(newest - (j - 1))];
     return true;
 }
 

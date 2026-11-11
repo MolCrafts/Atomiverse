@@ -1,9 +1,9 @@
-! CP2K twin for regressions/gpw/gpw-multigrid-kpoints — Monkhorst-Pack k-point
+! CP2K twin for regressions/gpw/rks — Monkhorst-Pack k-point
 ! GPW RKS on diamond Si (bct 4-atom cell) with REL_CUTOFF multigrid product
 ! collocation: NGRIDS 4 (CP2K default), REL_CUTOFF 60 Ry. Identical physics to
 ! tools/cp2k_oracle/inputs/gpw-kpoints-si.inp except the &MGRID multigrid.
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
-! Pin: total energy [Ha] -> regressions/gpw/gpw-multigrid-kpoints/REFERENCE.md.
+! Pin: total energy [Ha] -> regressions/gpw/rks/REFERENCE.md.
 &GLOBAL
   PROJECT si_kpoints_mg
   RUN_TYPE ENERGY

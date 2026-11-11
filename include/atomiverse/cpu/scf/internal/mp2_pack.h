@@ -11,8 +11,12 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
+namespace internal {
+class ExactJK;
+}
+
 /// @brief Closed-shell canonical MP2 energy from a converged reference.
-/// @param ints     Integral pack with the ERI tensor materialized.
+/// @param ints     Integral pack with the ERI tensor or shells for a dense fallback.
 /// @param det      Converged closed-shell reference determinant (MO
 ///                 coefficients, orbital energies, electron counts).
 /// @param e_scf_ha Converged SCF total energy [Hartree] (reported as the
@@ -24,11 +28,14 @@ namespace scf {
 ///                 1.2 = SCS-MP2). Dimensionless.
 /// @param ss_scale Same-spin scale \(c_{\mathrm{SS}}\) (1 = plain MP2;
 ///                 1/3 = SCS-MP2). Dimensionless.
+/// @param cached_jk Optional RHF cache for the same geometry and AO basis.
 /// @return MP2 correlation and total energies [Hartree]; unscaled OS/SS on
 ///         `e_corr_os` / `e_corr_ss`.
-MP2Result mp2_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha, int n_frozen = 0, double os_scale = 1.0,
-                     double ss_scale = 1.0);
+MP2Result mp2_energy(const internal::IntegralView& ints,
+                     const SlaterDeterminant& det, double e_scf_ha,
+                     int n_frozen = 0, double os_scale = 1.0,
+                     double ss_scale = 1.0,
+                     const internal::ExactJK* cached_jk = nullptr);
 
 /// @brief Unrestricted canonical MP2 (UMP2) on a UHF/UKS-style reference.
 ///
@@ -56,9 +63,9 @@ MP2Result mp2_energy(const internal::IntegralView& ints, const SlaterDeterminant
 /// @param os_scale Opposite-spin scale (dimensionless).
 /// @param ss_scale Same-spin scale (dimensionless).
 /// @return UMP2 correlation and total energies [Hartree].
-MP2Result ump2_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                      double e_scf_ha, double os_scale = 1.0,
-                      double ss_scale = 1.0);
+MP2Result ump2_energy(const internal::IntegralView& ints,
+                      const SlaterDeterminant& det, double e_scf_ha,
+                      double os_scale = 1.0, double ss_scale = 1.0);
 
 /// @brief ROHF-MP2 (PySCF convention): UMP2 on ROHF spatial MOs with
 ///        semi-canonical spin-Fock diagonal orbital energies
@@ -77,10 +84,10 @@ MP2Result ump2_energy(const internal::IntegralView& ints, const SlaterDeterminan
 /// @param os_scale Opposite-spin scale (dimensionless).
 /// @param ss_scale Same-spin scale (dimensionless).
 /// @return ROMP2 correlation and total energies [Hartree].
-MP2Result romp2_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                       const RealMatrix& F_alpha, const RealMatrix& F_beta,
-                       double e_scf_ha, double os_scale = 1.0,
-                       double ss_scale = 1.0);
+MP2Result romp2_energy(const internal::IntegralView& ints,
+                       const SlaterDeterminant& det, const RealMatrix& F_alpha,
+                       const RealMatrix& F_beta, double e_scf_ha,
+                       double os_scale = 1.0, double ss_scale = 1.0);
 
 /// @brief Closed-shell RI-MP2 correlation energy via Coulomb-metric density
 ///        fitting (same `DensityFitting` workspace as SCF RI-J/JK). Does not
@@ -100,9 +107,10 @@ MP2Result romp2_energy(const internal::IntegralView& ints, const SlaterDetermina
 /// @param os_scale Opposite-spin scale (dimensionless; default 1).
 /// @param ss_scale Same-spin scale (dimensionless; default 1).
 /// @return MP2Result with RI (ia|jb)≈Σ_P B_ia^P B_jb^P [Hartree].
-MP2Result ri_mp2_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                        double e_scf_ha, AuxBasis aux, int n_frozen = 0,
-                        double os_scale = 1.0, double ss_scale = 1.0);
+MP2Result ri_mp2_energy(const internal::IntegralView& ints,
+                        const SlaterDeterminant& det, double e_scf_ha,
+                        AuxBasis aux, int n_frozen = 0, double os_scale = 1.0,
+                        double ss_scale = 1.0);
 
 } // namespace scf
 } // namespace cpu

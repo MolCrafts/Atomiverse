@@ -20,10 +20,70 @@ vanishes there on its own.
 
 from atomiverse._binding import _cpp
 
-#: Lennard-Jones 12-6 — ``cpu::PairLJCut(epsilon [eV], sigma [Å], cutoff [Å])``.
+#: One Lennard-Jones type-pair row — ``ATV::LJTypeCoeff(type_i, type_j,
+#: epsilon [eV], sigma [Å], cutoff=None [Å])``, LAMMPS ``pair_coeff i j eps
+#: sigma [cut_lj]``. Types are the frame's per-atom type values. An unset
+#: ``cutoff`` on a listed row is the style's global cutoff.
+LJTypeCoeff = _cpp.LJTypeCoeff
+
+#: One force-shifted r⁻⁴ attraction row — ``ATV::R4TypeCoeff(type_i, type_j,
+#: strength [eV], sigma [Å], cutoff [Å])``:
+#: U(r) = −S [ (σ/r)⁴ − (σ/r_c)⁴ + 4 (σ/r_c)⁴ (r/r_c − 1) ] for r < r_c,
+#: else 0, so U and F both vanish at r_c. S > 0 attracts (e.g. a Li⁺–ether
+#: oxygen solvation well in a coarse-grained polymer electrolyte). An
+#: ATV-native term with no LAMMPS style; a pair without a row has none.
+R4TypeCoeff = _cpp.R4TypeCoeff
+
+#: Lennard-Jones 12-6, shifted to zero at each pair's cutoff by default — two
+#: forms:
+#:
+#: * ``LJCut(epsilon [eV], sigma [Å], cutoff [Å], s12=1, s13=1, s14=1,
+#:   energy_shift=True)`` — one ε/σ for every pair
+#:   (``cpu::PairLJCut(epsilon, sigma, cutoff)``);
+#: * ``LJCut(coeffs, cutoff [Å], s12=1, s13=1, s14=1, energy_shift=True)`` —
+#:   a list of
+#:   :data:`LJTypeCoeff` rows (``cpu::PairLJCut(coeffs, cutoff)`` /
+#:   ``cuda::PairLJCut``). Completed with LAMMPS ``init_one`` semantics: an
+#:   unlisted pair mixes Lorentz–Berthelot (geometric ε, arithmetic σ) and
+#:   takes the arithmetic mean of the two diagonal cutoffs; a listed row
+#:   overrides; a type with no diagonal row has no LJ site. ``cutoff`` is the
+#:   default for rows that name none; the neighbor list must cover the
+#:   largest per-pair cutoff.
+#:
+#: ``s12``, ``s13``, ``s14`` are the 1-2 / 1-3 / 1-4 weights (fractional
+#: weights such as Amber 0/0/½ on both backends; on CUDA a fractional weight
+#: needs a single GPU). ``energy_shift`` is LAMMPS ``pair_modify shift``
+#: (``False`` is CPU-only). Chainable setters (each returns the object):
+#: ``.set_r4_attraction([R4TypeCoeff, ...])`` (per-type form only) adds the
+#: r⁻⁴ term in the same pair walk, scaled by the same weight;
+#: ``.set_type_coeff(LJTypeCoeff)`` (per-type form only) adds or overrides
+#: one row; ``.set_tail_correction(on)`` adds the LAMMPS ``pair_modify tail
+#: yes`` energy and pressure (default off). The task codec stores every
+#: field.
 LJCut = _cpp.PairLJCut
 
-#: Truncated Coulomb — ``cpu::PairCoulCut(cutoff [Å])``. The bare
+#: Fused typed Lennard-Jones + Ewald real-space Coulomb — LAMMPS
+#: ``pair_style lj/cut/coul/long`` — ``cpu::PairLJCutCoulLong(coeffs, alpha
+#: [1/Å], cutoff [Å])`` / ``cuda::PairLJCutCoulLong`` with identical
+#: semantics. ``coeffs`` are :data:`LJTypeCoeff` rows completed as for
+#: :data:`LJCut`; Coulomb uses ``cutoff``, each LJ pair its own cutoff. The
+#: real-space half of an Ewald split: install ``KSpacePME`` at the same
+#: ``alpha``, and a per-atom ``charge`` column. Chainable setters (each
+#: returns the object): ``set_special_bonds(lj12, lj13, lj14, c12, c13,
+#: c14)``, ``set_special_bonds_amber()`` (the default: LJ 0/0/½, Coulomb
+#: 0/0/⅚), ``set_energy_shift(on)`` (default on; OpenMM comparisons turn it
+#: off), ``set_r4_attraction(rows)`` (scaled by the LJ special weight),
+#: ``set_type_coeff(row)`` (add or override one :data:`LJTypeCoeff` row),
+#: ``set_tail_correction(on)`` (LAMMPS ``pair_modify tail yes``, each pair at
+#: its own LJ cutoff; default off). On CUDA, a pair whose nearest bond-graph
+#: shell has weights ≠ (1, 1) is an exception evaluated in a sparse pass with
+#: the LAMMPS cutoffs (LJ inside the pair's LJ cutoff, Coulomb correction
+#: inside the Coulomb cutoff).
+LJCutCoulLong = _cpp.PairLJCutCoulLong
+
+#: Truncated Coulomb — ``cpu::PairCoulCut(cutoff [Å], s12=1, s13=1, s14=1,
+#: coulomb=1)`` (the LAMMPS lj qqr2e), with 1-2 / 1-3 / 1-4 weights and the
+#: Coulomb constant a force field states (folded with its dielectric). The bare
 #: ``q_i q_j / r`` sum over the neighbor list, hard-cut at ``cutoff``; needs
 #: no reciprocal-space partner, so it is the whole electrostatic model of
 #: the run that installs it. Needs a ``NeighborList`` built with a cutoff at
@@ -57,8 +117,9 @@ Buck = _cpp.PairBuck
 #: ``Born(type_i, type_j, A [eV], rho [Å], sigma [Å], C [eV·Å⁶], D [eV·Å⁸],
 #: cutoff [Å])`` — the seven sequences are one table seen column-wise and must
 #: share a length, checked when the evaluator is installed rather than here.
-#: The type keys are ATOMIC NUMBERS (the frame's type column comes from molpy
-#: ``atomic_number``), so an Na-Cl row is ``11, 17``. Every interacting pair
+#: The type keys are FORCE-FIELD TYPES: the frame's ``atoms.type_id`` column
+#: (u64), not ``atomic_number`` (the species). A frame without ``type_id``
+#: is refused with a how-to. Every interacting pair
 #: must be listed and unlisted pairs do not interact — Fumi-Tosi parameters
 #: are not Lorentz-Berthelot, so there is no mixing rule to fall back on.
 Born = _cpp.PairBorn
@@ -94,7 +155,10 @@ WCA = _cpp.PairWCA
 Dpd = _cpp.PairDpd
 
 __all__ = [
+    "LJTypeCoeff",
+    "R4TypeCoeff",
     "LJCut",
+    "LJCutCoulLong",
     "CoulCut",
     "Morse",
     "Buck",

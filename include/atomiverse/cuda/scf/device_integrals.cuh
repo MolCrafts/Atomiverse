@@ -65,12 +65,34 @@ void launch_eri(double* ERI, const double* shell_alpha,
 /// @param n_shells Shell count, n_ao AO count, n_prim primitives/shell, natm.
 /// @param stream CUDA stream.
 void launch_1e_integrals_sp(double* S, double* T, double* V,
-                            const double* shell_alpha, const double* shell_coeff,
+                            const double* shell_alpha,
+                            const double* shell_coeff,
                             const double* shell_centers, const int* shell_L,
                             const int* shell_ao_start, const int* ao_shell,
                             const int* ao_cart, const int* atom_Z,
                             const double* atom_pos, int n_shells, int n_ao,
                             int n_prim, int natm, void* stream);
+
+/// @brief Normalize raw MINAO contraction coefficients entirely on device.
+/// @param alpha,coefficient Concatenated primitive tables; coefficients in/out.
+/// @param offset Primitive ranges [n_contractions+1], angular s/p per contraction.
+/// @param bad Nonzero control flag on an invalid self-overlap.
+void launch_normalize_minao_sp(const double* alpha, double* coefficient,
+                               const int* offset, const int* angular,
+                               int n_contractions, int* bad, void* stream);
+
+/// @brief Rectangular target--MINAO overlap B[mu,j], col-major [n_ao,n_minao].
+/// Target uses the live s/p workspace, MINAO uses variable-length contractions
+/// with offsets and atom owners. Positions are device Bohr; no host geometry.
+void launch_overlap_minao_sp(
+    double* B, const double* target_alpha, const double* target_coefficient,
+    const double* target_centers, const int* target_angular,
+    const int* target_ao_shell, const int* target_ao_cart, int n_ao,
+    int target_n_prim, const double* minao_alpha,
+    const double* minao_coefficient, const int* minao_offset,
+    const int* minao_angular, const int* minao_atom, const int* minao_ao_shell,
+    const int* minao_ao_cart, int n_minao, const double* atom_pos,
+    void* stream);
 
 /// @brief ERI for s+p shells (l ≤ 1), AO-indexed n_ao^4 tensor.
 ///
@@ -110,13 +132,11 @@ void launch_boys_f0_test(const double* d_x, double* d_out, int n, void* stream);
 /// @param n_prim Primitives per shell.
 /// @param natm Atom count.
 /// @param stream CUDA stream.
-void launch_rhf_forces_pure_s(double* fx, double* fy, double* fz,
-                              const double* P, const double* W,
-                              const double* shell_alpha,
-                              const double* shell_coeff,
-                              const double* shell_centers, const int* shell_atom,
-                              const int* atom_Z, const double* atom_pos,
-                              int n_ao, int n_prim, int natm, void* stream);
+void launch_rhf_forces_pure_s(
+    double* fx, double* fy, double* fz, const double* P, const double* W,
+    const double* shell_alpha, const double* shell_coeff,
+    const double* shell_centers, const int* shell_atom, const int* atom_Z,
+    const double* atom_pos, int n_ao, int n_prim, int natm, void* stream);
 
 /// @brief s+p (l ≤ 1) RHF analytic nuclear forces on device (Wave 6).
 ///
@@ -129,15 +149,79 @@ void launch_rhf_forces_pure_s(double* fx, double* fy, double* fz,
 /// @param ao_cart Cartesian component within shell [n_ao].
 void launch_rhf_forces_sp(double* fx, double* fy, double* fz, const double* P,
                           const double* W, const double* shell_alpha,
-                          const double* shell_coeff, const double* shell_centers,
-                          const int* shell_atom, const int* shell_L,
-                          const int* ao_shell, const int* ao_cart,
-                          const int* atom_Z, const double* atom_pos, int n_ao,
-                          int n_prim, int natm, void* stream);
+                          const double* shell_coeff,
+                          const double* shell_centers, const int* shell_atom,
+                          const int* shell_L, const int* ao_shell,
+                          const int* ao_cart, const int* atom_Z,
+                          const double* atom_pos, int n_ao, int n_prim,
+                          int natm, void* stream);
 
 /// @brief Build W = 2 Σ_i ε_i C[:,i] C[:,i]ᵀ for i < n_occ (col-major).
-void launch_build_W_rhf(double* W, const double* C, const double* eig,
-                        int n_ao, int n_occ, void* stream);
+void launch_build_W_rhf(double* W, const double* C, const double* eig, int n_ao,
+                        int n_occ, void* stream);
+
+/// @brief Build W^σ = Σ_i ε_i C[:,i] C[:,i]ᵀ (occupation 1, PySCF make_rdm1e).
+void launch_build_W_uhf(double* W, const double* C, const double* eig, int n_ao,
+                        int n_occ, void* stream);
+
+/// @brief s+p UHF analytic forces. Ptot = Pα+Pβ, Wtot = Wα+Wβ.
+///
+/// 2e prefactor is PySCF `grad.uhf.grad_elec`:
+///   ½ Ptot_ij Ptot_kl − ½ (Pα_ik Pα_jl + Pβ_ik Pβ_jl)
+/// on ∂(ij|kl)/∂R. Output is −∂E/∂R [eV/Å].
+void launch_uhf_forces_sp(double* fx, double* fy, double* fz,
+                          const double* Ptot, const double* Wtot,
+                          const double* Pa, const double* Pb,
+                          const double* shell_alpha, const double* shell_coeff,
+                          const double* shell_centers, const int* shell_atom,
+                          const int* shell_L, const int* ao_shell,
+                          const int* ao_cart, const int* atom_Z,
+                          const double* atom_pos, int n_ao, int n_prim,
+                          int natm, void* stream);
+
+/// @brief Fused 1e integrals for Cartesian shells with l ≤ 3.
+///
+/// Ragged contractions: primitive `p` of shell `s` is
+/// `prim_alpha[shell_prim_off[s] + p]`. Coefficients are physically
+/// normalized. One thread per unique AO pair. l ≥ 4 is not evaluated
+/// (the host must throw `launch_eri_g` before this launch).
+///
+/// @param S,T,V Output [n_ao × n_ao, col-major, device].
+/// @param prim_alpha,prim_coeff Flat primitive list [device].
+/// @param shell_nprim,shell_prim_off Per-shell contraction [n_shells].
+/// @param shell_centers [n_shells × 3] Bohr.
+/// @param shell_L Angular momentum per shell (0..3).
+/// @param ao_shell,ao_cart AO → shell and Cartesian component.
+/// @param atom_Z,atom_pos Nuclei [natm], positions in Bohr.
+/// @param n_ao AO count. @param natm Atom count.
+/// @param max_l Highest shell angular momentum in the molecule.
+/// @param stream CUDA stream.
+void launch_1e_integrals_lgt1(double* S, double* T, double* V,
+                              const double* prim_alpha,
+                              const double* prim_coeff, const int* shell_nprim,
+                              const int* shell_prim_off,
+                              const double* shell_centers, const int* shell_L,
+                              const int* ao_shell, const int* ao_cart,
+                              const int* atom_Z, const double* atom_pos,
+                              int n_ao, int natm, int max_l, void* stream);
+
+/// @brief Cartesian ERI tensor for shells with l ≤ 3 (ragged n_prim).
+///
+/// Writes the full n_ao^4 tensor consumed by the RHF G build
+/// (PySCF `get_veff`: J − ½K). Shell quartets with every l ≤ 2 use the
+/// l ≤ 2 McMurchie–Davidson kernels. Quartets that touch l = 3 use the
+/// same recurrence with a stable Boys function (libcint `gamma_inc_like`).
+/// @param ERI [n_ao^4, col-major] device.
+/// @param shell_ao_start First AO of each shell [n_shells].
+/// @param n_shells Shell count. @param n_ao AO count.
+/// @param max_l Highest shell angular momentum in the molecule.
+/// @param stream CUDA stream.
+/// @throws std::invalid_argument when `n_shells` > 256.
+void launch_eri_lgt1(double* ERI, const double* prim_alpha,
+                     const double* prim_coeff, const int* shell_nprim,
+                     const int* shell_prim_off, const double* shell_centers,
+                     const int* shell_L, const int* shell_ao_start,
+                     int n_shells, int n_ao, int max_l, void* stream);
 
 } // namespace scf
 } // namespace cuda

@@ -2,6 +2,10 @@
 /// @brief CPU oscillating (AC) uniform external electric field — LAMMPS variable `fix efield`.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cmath>
 #include <string>
 #include <vector>
@@ -43,8 +47,18 @@ namespace md {
 /// ── Not in scope (see spec `oscillating-efield-md`) ───────────────────
 /// atom-style spatial fields, region keyword, dipole torque, arbitrary
 /// equal-style expression engine beyond AC cosine.
-class FixOscillatingEfield : public cpu::Bias {
+class FixOscillatingEfield : public cpu::Bias, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "FixOscillatingEfield: timestep must be finite and positive");
+        dt = timestep;
+    }
+
     /// @param Ex0 Amplitude of \(E_x\) [V/Å].
     /// @param Ey0 Amplitude of \(E_y\) [V/Å].
     /// @param Ez0 Amplitude of \(E_z\) [V/Å].
@@ -72,18 +86,19 @@ class FixOscillatingEfield : public cpu::Bias {
         return {ATV::make_binding(ATV::md::Phase::post_force, +100)};
     }
 
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
     /// @brief Instantaneous \(E_x(n)\) [V/Å] at MD step \(n\).
-    double field_x(int step) const noexcept {
+    double field_x(BigInt step) const noexcept {
         return Ex0 * std::cos(omega_t(step));
     }
     /// @brief Instantaneous \(E_y(n)\) [V/Å] at MD step \(n\).
-    double field_y(int step) const noexcept {
+    double field_y(BigInt step) const noexcept {
         return Ey0 * std::cos(omega_t(step));
     }
     /// @brief Instantaneous \(E_z(n)\) [V/Å] at MD step \(n\).
-    double field_z(int step) const noexcept {
+    double field_z(BigInt step) const noexcept {
         return Ez0 * std::cos(omega_t(step));
     }
 
@@ -97,7 +112,7 @@ class FixOscillatingEfield : public cpu::Bias {
 
   private:
     /// \(2\pi t/T + \varphi\) with \(t = n\cdot\Delta t\).
-    double omega_t(int step) const noexcept {
+    double omega_t(BigInt step) const noexcept {
         const double t = static_cast<double>(step) * dt;
         return 2.0 * M_PI * t / period + phase;
     }

@@ -6,7 +6,7 @@ Date: 2026-07-29 · Oracle: **MetalWalls git `c8ad175d`** (release branch,
 Verdict: **repinned**. No Atomiverse source was changed; no tolerance widened.
 
 Full numbers, box ladder, unit conversions and the discrepancy analysis live in
-`regressions/md/pim-induced-dipole-bulk/REFERENCE.md`. This file records how to
+`regressions/md/polarizable/REFERENCE.md`. This file records how to
 re-run it and what the traps were.
 
 ## How to re-run

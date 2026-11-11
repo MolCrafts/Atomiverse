@@ -8,10 +8,11 @@ cpu-breadth-03 **ac-009** documentation.
 
 | Layer | Path | Owns |
 |---|---|---|
-| Reciprocal solvers + their math | `include/atomiverse/cpu/longrange/`, `src/cpu/longrange/` | `KSpaceEwald` / `KSpacePME` (complex c2c SPME) / **`KSpacePPPM` (real brick + r2c/c2r, SPME H(m))**, together with `EwaldSum`, the PME B-spline / moduli / influence helpers, and the HE green tables (`pppm_green.h`) |
-| CUDA counterpart | `include/atomiverse/cuda/longrange/`, `src/cuda/longrange/` | the same split on device (cuFFT); single-GPU only |
+| Reciprocal solvers + their math | `longrange`, `src/cpu/longrange/` | `KSpaceEwald` / `KSpacePME` (complex c2c SPME) / **`KSpacePPPM` (real brick + r2c/c2r, Hockney–Eastwood ik G(k), LAMMPS centred stencil)**, together with `EwaldSum` and the PME B-spline / moduli / influence helpers; the PPPM stencil, G(k) and mesh-size laws both backends call are `core/pppm_ik.h` |
+| CUDA counterpart | `longrange`, `src/cuda/longrange/` | the same split on device (cuFFT); single-GPU only |
 | Build flag | `ATV_BUILD_KSPACE` | Gates FFTW3 / mesh reciprocal |
-| Science gate | `tests/cpu/longrange/test_pppm_coul.cpp` | Madelung, Ewald/PME parity, α-independence, FD forces |
+| Science gate | `tests/cpu/longrange/test_pppm_coul.cpp` | Madelung, Ewald/PME parity, α-independence, FD forces, literal LAMMPS reference on odd and even meshes |
+| Accuracy → (α, mesh) | `core/pppm_accuracy.h`, `src/core/pppm_accuracy.cpp` | LAMMPS `PPPM::init` port (`set_grid_global`, `estimate_ik_error`, `acons`, `adjust_gewald`, `final_accuracy`), used by `cpu::KSpacePPPM::from_accuracy`, `cuda::KSpacePPPM::from_accuracy` and Python `KSpacePPPM.from_accuracy`; gate `tests/core/test_pppm_accuracy.cpp` (LAMMPS printouts) |
 
 Electrostatics splits LAMMPS-style: real-space pair styles live in
 `potentials/`, reciprocal solvers **and their math** in each backend's own
@@ -79,6 +80,16 @@ and related unit tests.
 Self-energy partitions over owned atoms; reciprocal energy/net-charge on
 rank 0; `Reduce` all-reduces frame energy/stress.
 
+The brick's ghost extents are LAMMPS `Grid3d::ghost_grid` with
+`set_distance(0.5·skin)`: an owned atom may sit half the neighbor skin outside
+its subdomain until the next exchange. The skin is the active
+`NeighborProvider::validated_skin()`, which the Runtime publishes as
+`Context::md.neighbor_skin` with the provider's views; the extents (and the
+grid plans) are re-derived when the mesh, the processor grid or the skin
+changes, as LAMMPS does at `init`. Drift beyond that throws (LAMMPS "Out of
+range atoms - cannot compute PPPM"). CUDA PPPM runs on one device with a
+replicated mesh and wraps each atom, so it has no such bound.
+
 Halo still only exchanges immediate neighbour ranks — the charged NPT MPI
 fixture uses a box large enough that `cutoff + skin` fits in each subdomain
 (see `test_mpi_pme_nacl_parity`, `test_mpi_pppm_brick_parity`, n=6 rock-salt).
@@ -105,7 +116,7 @@ Cadence: first sort after `nfreq` steps (default 1000), matching LAMMPS
 
 | In scope | Out of scope (explicit) |
 |---|---|
-| Isotropic / orthorhombic NPT | Triclinic / anisotropic NPT |
+| General 3D cell transforms; isotropic / orthorhombic NPT regression | Full tilted-cell KSpace/NPT trajectory validation |
 | Neutral ionic crystals | 1-2/1-3/1-4 reciprocal exclusion correction (link 04) |
 | Serial + multi-rank replicated grid | Distributed FFT PME |
 | Soft core + CoulLong + PME composition | CUDA KSpace (deferred) |
@@ -117,6 +128,6 @@ Cadence: first sort after `nfreq` steps (default 1000), matching LAMMPS
 | Core math | `tests/cpu/longrange/test_ewald_sum.cpp`, `test_pme_math.cpp` |
 | Unit + lifecycle | `tests/cpu/longrange/test_pme_coul.cpp` |
 | 1/2-rank parity | `tests/mpi/test_pme_nacl_parity.cpp` |
-| Literature regression | `regressions/md/npt_pme_nacl/` |
+| Literature regression | `npt_pme_nacl` |
 
 Build with `-DATV_BUILD_KSPACE=ON` (FFTW3). MPI tests also need `-DATV_USE_MPI=ON`.

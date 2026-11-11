@@ -115,39 +115,21 @@ std::complex<double> overlap_det(const internal::GVectorList& bra,
 }
 
 /// String-averaged Berry phase for one spin channel on frozen V_eff.
-double string_phase_for_channel(
-    internal::PWProblem& prob, internal::PWWorkspace& ws,
-    const std::vector<std::array<double, 3>>& kf, int dir, int k_string,
-    int k_perp, int n_occ, double tol, double two_pi) {
+double string_phase_for_channel(const internal::PWKMesh& mesh,
+                                internal::PWWorkspace& ws,
+                                const std::vector<std::array<double, 3>>& kf,
+                                int dir, int k_string, int k_perp, int n_occ,
+                                double tol, double two_pi) {
     using internal::DavidsonSolver;
-
-    std::vector<Vec3> kvec;
-    kvec.reserve(kf.size());
-    for (const auto& f : kf)
-        kvec.push_back({static_cast<AccReal>(f[0]),
-                        static_cast<AccReal>(f[1]),
-                        static_cast<AccReal>(f[2])});
-    // Note: rebuild_k_tables is called by the outer loop once per direction
-    // before spin channels share the same k-mesh tables.
 
     const int n_k = static_cast<int>(kf.size());
     std::vector<std::vector<std::complex<AccReal>>> coef(
         static_cast<std::size_t>(n_k));
     DavidsonSolver davidson(n_occ, AccReal(tol) * AccReal(0.1), 50);
     davidson.prepare(ws);
-    auto* saved_gvec = ws.gvec;
-    const int n_g0 = ws.n_g;
+    const auto saved_point = ws.point();
     for (int ik = 0; ik < n_k; ++ik) {
-        auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        ws.bind(mesh.point(static_cast<std::size_t>(ik)));
 
         davidson.step(ws);
 
@@ -157,8 +139,7 @@ double string_phase_for_channel(
             for (int ig = 0; ig < ws.n_g; ++ig)
                 c[static_cast<std::size_t>(b * ws.n_g + ig)] = ws.wfc(b, ig);
     }
-    ws.gvec = saved_gvec;
-    ws.n_g = n_g0;
+    ws.bind(saved_point);
 
     const int J = k_string;
     const int n_strings = k_perp * k_perp;
@@ -170,11 +151,11 @@ double string_phase_for_channel(
             const int ib = s * J + j;
             const int ik = s * J + (j + 1) % J;
             const int shift = (j == J - 1) ? dir : -1;
-            dets[static_cast<std::size_t>(j)] = overlap_det(
-                prob.gv_k[static_cast<std::size_t>(ib)],
-                coef[static_cast<std::size_t>(ib)],
-                prob.gv_k[static_cast<std::size_t>(ik)],
-                coef[static_cast<std::size_t>(ik)], n_occ, shift);
+            dets[static_cast<std::size_t>(j)] =
+                overlap_det(mesh.gv_k[static_cast<std::size_t>(ib)],
+                            coef[static_cast<std::size_t>(ib)],
+                            mesh.gv_k[static_cast<std::size_t>(ik)],
+                            coef[static_cast<std::size_t>(ik)], n_occ, shift);
         }
         phis.push_back(phase_from_link_dets(dets));
         ATV_DEBUG_CAT("pw", "berry dir={} n_occ={} string={} phi={:+.6f}", dir,
@@ -188,19 +169,19 @@ double string_phase_for_channel(
     return acc / static_cast<double>(n_strings);
 }
 
-void fill_ionic(BerryPolarizationResult& out, const cpu::Frame& frame) {
+void fill_ionic(BerryPolarizationResult& out, const cpu::Frame& frame,
+                const std::vector<AccReal>& ionic_charges) {
     const auto recip = frame.box.recip_cell();
     const StorageReal* __restrict sx = frame.span(kAtom_x);
     const StorageReal* __restrict sy = frame.span(kAtom_y);
     const StorageReal* __restrict sz = frame.span(kAtom_z);
-    const int* __restrict st = frame.span(kAtom_type);
     const double two_pi = 2.0 * units::pi;
     for (int a = 0; a < frame.nlocal(); ++a) {
-        const double zv = static_cast<double>(internal::valence_from_z(st[a]));
+        const double zv = ionic_charges[a];
         for (int d = 0; d < 3; ++d) {
-            double f = (static_cast<double>(recip(d, 0)) * sx[a]
-                        + static_cast<double>(recip(d, 1)) * sy[a]
-                        + static_cast<double>(recip(d, 2)) * sz[a])
+            double f = (static_cast<double>(recip(0, d)) * sx[a]
+                        + static_cast<double>(recip(1, d)) * sy[a]
+                        + static_cast<double>(recip(2, d)) * sz[a])
                        / two_pi;
             f -= std::floor(f);
             out.p_ion_frac[static_cast<std::size_t>(d)] += zv * f;
@@ -221,7 +202,7 @@ void assemble_totals(BerryPolarizationResult& out, const cpu::Frame& frame,
         for (int c = 0; c < 3; ++c)
             out.dipole_e_ang[static_cast<std::size_t>(c)] +=
                 out.p_frac[static_cast<std::size_t>(d)]
-                * static_cast<double>(cell(d, c));
+                * static_cast<double>(cell(c, d));
     }
 }
 
@@ -286,7 +267,7 @@ BerryPolarization::string_kpoints(int dir) const {
 
 BerryPolarizationResult
 BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
-    if (method.smearing != Smearing::none)
+    if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "BerryPolarization::compute: Berry-phase polarization requires "
             "an insulator (no metallic smearing)");
@@ -299,12 +280,14 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
 
     if (!method.spin_polarized) {
         // ── Closed-shell restricted path (spin factor f = 2) ───────────
-        internal::PWProblem prob;
-        const PWResult scf = internal::run_restricted_scf(frame, method, prob);
+        internal::PWSetup prob;
+        internal::PWWorkspace ws;
+        const PWResult scf =
+            internal::run_restricted_scf(frame, method, prob, ws);
         const int n_occ = prob.n_bands;
         out.scf_converged = scf.converged;
         out.energy_ry = scf.energy;
-        fill_ionic(out, frame);
+        fill_ionic(out, frame, prob.ions.ionic_charges);
 
         for (int dir = 0; dir < 3; ++dir) {
             if (!directions[static_cast<std::size_t>(dir)])
@@ -316,11 +299,10 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
                 kvec.push_back({static_cast<AccReal>(f[0]),
                                 static_cast<AccReal>(f[1]),
                                 static_cast<AccReal>(f[2])});
-            internal::rebuild_k_tables(prob, frame, method.upf_path,
-                                       method.gth_name, method.ecut_ry, kvec);
-            const double phase =
-                string_phase_for_channel(prob, prob.ws, kf, dir, k_string,
-                                         k_perp, n_occ, method.tol, two_pi);
+            const auto mesh = internal::make_pw_k_mesh(prob.ions, frame.box,
+                                                       method.ecut_ry, kvec);
+            const double phase = string_phase_for_channel(
+                mesh, ws, kf, dir, k_string, k_perp, n_occ, method.tol, two_pi);
             out.phase_el[static_cast<std::size_t>(dir)] = phase;
             out.p_el_frac[static_cast<std::size_t>(dir)] = 2.0 * phase / two_pi;
             out.computed[static_cast<std::size_t>(dir)] = true;
@@ -330,16 +312,16 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
     }
 
     // ── Collinear spin path (spin factor f = 1 per channel) ────────────
-    internal::PWProblem prob;
+    internal::PWSetup prob;
+    internal::PWWorkspace ws;
     int n_alpha = 0;
     int n_beta = 0;
     const PWResult scf =
-        internal::run_collinear_scf(frame, method, prob, n_alpha, n_beta);
+        internal::run_collinear_scf(frame, method, prob, ws, n_alpha, n_beta);
     out.scf_converged = scf.converged;
     out.energy_ry = scf.energy;
-    fill_ionic(out, frame);
+    fill_ionic(out, frame, prob.ions.ionic_charges);
 
-    internal::PWWorkspace& ws = prob.ws;
     const int ng0 = prob.gv0.count();
     // Freeze V_eff(r) per spin for NSCF strings.
     internal::VeffBuilder veff;
@@ -363,9 +345,8 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
             kvec.push_back({static_cast<AccReal>(f[0]),
                             static_cast<AccReal>(f[1]),
                             static_cast<AccReal>(f[2])});
-        internal::rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry,
-                                   kvec);
+        const auto mesh = internal::make_pw_k_mesh(prob.ions, frame.box,
+                                                   method.ecut_ry, kvec);
 
         double phase_sum = 0.0;
         for (int s = 0; s < 2; ++s) {
@@ -375,7 +356,7 @@ BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
             for (int i = 0; i < ws.nr; ++i)
                 ws.V_eff_r[i] = veff_r[s][static_cast<std::size_t>(i)];
             const double phi_s =
-                string_phase_for_channel(prob, ws, kf, dir, k_string, k_perp,
+                string_phase_for_channel(mesh, ws, kf, dir, k_string, k_perp,
                                          n_occ[s], method.tol, two_pi);
             phase_sum += phi_s;
             ATV_DEBUG_CAT("pw", "berry-spin dir={} spin={} phi={:+.6f}", dir, s,

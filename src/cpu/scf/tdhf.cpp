@@ -1,8 +1,8 @@
 /// @file cpu/scf/tdhf.cpp
-/// @brief TDHFPack (TDA + TDHF/RPA lowest-roots solvers over the link-08
-///        OrbitalHessian A/B kernel) and the RHF::tda()/RHF::tdhf() method
-///        surface (stability pre-check, transition dipoles, oscillator
-///        strengths). @see internal/tdhf_pack.h, tdhf.h.
+/// @brief TDHFPack plus the response objects that are not mean-field
+///        methods: `TDA` (`pyscf.tdscf.rhf.TDA` / `rks.TDA` / `uks.TDA`),
+///        `TDHF` (`pyscf.tdscf.rhf.TDHF`), `TDDFT` (`rks.TDDFT` /
+///        `uks.TDDFT`), `SfTDA` / `SfTDHF`. @see internal/tdhf_pack.h, tdhf.h.
 
 #include "atomiverse/cpu/scf/internal/tdhf_pack.h"
 
@@ -21,18 +21,18 @@
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/scf/basis_eval.h"
 #include "atomiverse/cpu/scf/grid.h"
-#include "atomiverse/cpu/scf/internal/alda_kernel.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/internal/one_electron.h"
 #include "atomiverse/cpu/scf/internal/stability.h"
 #include "atomiverse/cpu/scf/internal/tda_gradient.h"
+#include "atomiverse/cpu/scf/internal/xc_response_kernel.h"
 #include "atomiverse/cpu/scf/rhf.h"
 #include "atomiverse/cpu/scf/rks.h"
 #include "atomiverse/cpu/scf/tdhf.h"
 #include "atomiverse/cpu/scf/uhf.h"
 #include "atomiverse/cpu/scf/uks.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
 #include "atomiverse/cpu/scf/xc_grid_engine.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
@@ -144,6 +144,17 @@ void TDHFPack::check_n_states_(int n_states) const {
             + "] — the rotation space has only n_ov roots (no fallback)");
 }
 
+RealVector TDHFPack::plus_(const RealVector& v) const {
+    RealVector y = hessian_.sigma_plus(v, ch_, alpha_hf_);
+    if (fxc_)
+        y += 2.0 * fxc_->apply(v);
+    return y;
+}
+
+RealVector TDHFPack::minus_(const RealVector& v) const {
+    return hessian_.sigma_minus(v, ch_, alpha_hf_);
+}
+
 TDHFPack::Roots TDHFPack::tda(int n_states) const {
     check_n_states_(n_states);
     return (hessian_.n_ov() <= dense_threshold) ? tda_dense_(n_states)
@@ -157,8 +168,11 @@ TDHFPack::Roots TDHFPack::rpa(int n_states) const {
 }
 
 TDHFPack::Roots TDHFPack::tda_dense_(int n_states) const {
-    const RealMatrix A =
-        0.5 * (hessian_.dense_plus(ch_) + hessian_.dense_minus(ch_));
+    RealMatrix A = 0.5
+                   * (hessian_.dense_plus(ch_, alpha_hf_)
+                      + hessian_.dense_minus(ch_, alpha_hf_));
+    if (fxc_)
+        A += fxc_->dense();
     auto [w, U] = xt::linalg::eigh(A); // ascending
     const std::size_t n = A.shape()[0];
     const std::size_t k = static_cast<std::size_t>(n_states);
@@ -175,8 +189,10 @@ TDHFPack::Roots TDHFPack::tda_dense_(int n_states) const {
 }
 
 TDHFPack::Roots TDHFPack::rpa_dense_(int n_states) const {
-    const RealMatrix Mp = hessian_.dense_plus(ch_);
-    const RealMatrix Mm = hessian_.dense_minus(ch_);
+    RealMatrix Mp = hessian_.dense_plus(ch_, alpha_hf_);
+    if (fxc_)
+        Mp += 2.0 * fxc_->dense();
+    const RealMatrix Mm = hessian_.dense_minus(ch_, alpha_hf_);
     const RealMatrix T = checked_sym_power(Mm, 0.5, kAmBFloor, "TDHFPack::rpa");
     const RealMatrix Ti =
         checked_sym_power(Mm, -0.5, kAmBFloor, "TDHFPack::rpa");
@@ -219,7 +235,7 @@ TDHFPack::Roots TDHFPack::rpa_dense_(int n_states) const {
 TDHFPack::Roots TDHFPack::tda_davidson_(int n_states) const {
     const int n = hessian_.n_ov();
     const int k = n_states;
-    const RealVector diag = hessian_.diagonal_plus(ch_);
+    const RealVector diag = hessian_.diagonal_plus(ch_, alpha_hf_);
     const int max_subspace = std::min(n, std::max(60, 12 * k));
     const int max_iter = 300;
 
@@ -228,8 +244,7 @@ TDHFPack::Roots TDHFPack::tda_davidson_(int n_states) const {
         RealVector b = xt::zeros<double>({static_cast<std::size_t>(n)});
         b(idx) = 1.0;
         V.push_back(b);
-        W.push_back(
-            0.5 * (hessian_.sigma_plus(b, ch_) + hessian_.sigma_minus(b, ch_)));
+        W.push_back(0.5 * (plus_(b) + minus_(b)));
     }
 
     for (int iter = 0; iter < max_iter; ++iter) {
@@ -290,9 +305,7 @@ TDHFPack::Roots TDHFPack::tda_davidson_(int n_states) const {
                 }
                 if (orthonormalize_against(t, V) > 0.0) {
                     V.push_back(t);
-                    W.push_back(0.5
-                                * (hessian_.sigma_plus(t, ch_)
-                                   + hessian_.sigma_minus(t, ch_)));
+                    W.push_back(0.5 * (plus_(t) + minus_(t)));
                     expanded = true;
                 }
             }
@@ -334,7 +347,7 @@ TDHFPack::Roots TDHFPack::rpa_davidson_(int n_states) const {
     // in the m-dimensional subspace only.
     const int n = hessian_.n_ov();
     const int k = n_states;
-    const RealVector diag = hessian_.diagonal_plus(ch_);
+    const RealVector diag = hessian_.diagonal_plus(ch_, alpha_hf_);
     const int max_subspace = std::min(n, std::max(60, 12 * k));
     const int max_iter = 300;
 
@@ -343,8 +356,8 @@ TDHFPack::Roots TDHFPack::rpa_davidson_(int n_states) const {
         RealVector b = xt::zeros<double>({static_cast<std::size_t>(n)});
         b(idx) = 1.0;
         V.push_back(b);
-        Wp.push_back(hessian_.sigma_plus(b, ch_));
-        Wm.push_back(hessian_.sigma_minus(b, ch_));
+        Wp.push_back(plus_(b));
+        Wm.push_back(minus_(b));
     }
 
     for (int iter = 0; iter < max_iter; ++iter) {
@@ -450,8 +463,8 @@ TDHFPack::Roots TDHFPack::rpa_davidson_(int n_states) const {
                     }
                     if (orthonormalize_against(t, V) > 0.0) {
                         V.push_back(t);
-                        Wp.push_back(hessian_.sigma_plus(t, ch_));
-                        Wm.push_back(hessian_.sigma_minus(t, ch_));
+                        Wp.push_back(plus_(t));
+                        Wm.push_back(minus_(t));
                         expanded = true;
                     }
                 }
@@ -494,7 +507,7 @@ TDHFPack::Roots TDHFPack::rpa_davidson_(int n_states) const {
 
 } // namespace internal
 
-// ── RHF method surface: tda() / tdhf() beside stability() ────────────────
+// ── TDA / TDHF / TDDFT / SfTDA (not members of the mean field) ───────────
 
 namespace {
 
@@ -503,96 +516,21 @@ internal::Channel internal_channel(ExcitationChannel ch) {
                                               : internal::Channel::singlet;
 }
 
-/// Semi-local \(f^{\mathrm{xc}}\) kernel via central FD of \(V_{\mathrm{xc}}\)
-/// on the KS grid (closed-shell singlet). Same convention as hybrid TDA /
-/// full LR-TDDFT (PySCF get_ab hybrid path). Returns K such that A and B
-/// both receive K under the adiabatic approximation.
-RealMatrix fxc_kernel_fd(const SlaterDeterminant& det, const internal::IntegralView& pack,
-                         XCType xc, GridLevel grid_level, int n_radial,
-                         int n_angular) {
-    if (!det.restricted())
-        throw std::runtime_error(
-            "fxc_kernel_fd: restricted closed-shell determinant required");
-    if (pack.shells.empty())
-        throw std::runtime_error("fxc_kernel_fd: internal::IntegralWorkspace has no shells");
-
-    using Spin = SlaterDeterminant::Spin;
-    const RealMatrix& C = det.coefficients(Spin::alpha);
-    const RealVector& f = det.occupations(Spin::alpha);
-    const int n_mo = static_cast<int>(C.shape()[1]);
-    std::vector<int> occ, virt;
-    for (int p = 0; p < n_mo; ++p)
-        (f(p) > 0.0 ? occ : virt).push_back(p);
-    const int no = static_cast<int>(occ.size());
-    const int nv = static_cast<int>(virt.size());
-    const std::size_t nov =
-        static_cast<std::size_t>(no) * static_cast<std::size_t>(nv);
-
-    RealMatrix C_work = C;
-    RealMatrix Pa0 = det.density(Spin::alpha);
-    if (pack.spherical()) {
-        const auto& c2s = pack.c2s;
-        C_work = xt::linalg::dot(c2s, C);
-        Pa0 = xt::linalg::dot(
-            c2s, RealMatrix(xt::linalg::dot(Pa0, xt::transpose(c2s))));
-    }
-    const int n_basis = static_cast<int>(C_work.shape()[0]);
-
-    const MolecularGrid grid(pack.atoms.data(),
-                             static_cast<int>(pack.atoms.size()), grid_level,
-                             n_radial, n_angular);
-
-    // Central FD step on the density matrix [a.u.]; 1e-4 matches PySCF
-    // kernel elements to ~1e-9 Ha on H2/STO-3G.
-    constexpr double kEps = 1e-4;
-
-    auto orbital_product = [&](int i_mo, int a_mo) {
-        RealMatrix dm = xt::zeros<double>({static_cast<std::size_t>(n_basis),
-                                           static_cast<std::size_t>(n_basis)});
-        for (int mu = 0; mu < n_basis; ++mu)
-            for (int nu = 0; nu < n_basis; ++nu)
-                dm(mu, nu) = C_work(mu, static_cast<std::size_t>(i_mo))
-                             * C_work(nu, static_cast<std::size_t>(a_mo));
-        return dm;
-    };
-
-    RealMatrix K = xt::zeros<double>({nov, nov});
-    for (int a = 0; a < nv; ++a) {
-        for (int i = 0; i < no; ++i) {
-            const int p = a * no + i;
-            const int i_mo = occ[static_cast<std::size_t>(i)];
-            const int a_mo = virt[static_cast<std::size_t>(a)];
-            const RealMatrix dm = orbital_product(i_mo, a_mo);
-            // Hermitized product P^{ia} = ½(C_i C_aᵀ + C_a C_iᵀ).
-            // Closed-shell singlet: δP_α = δP_β = P^{ia}.
-            RealMatrix dm_sym = 0.5 * (dm + xt::transpose(dm));
-
-            RealMatrix Pa_p = Pa0 + kEps * dm_sym;
-            RealMatrix Pa_m = Pa0 - kEps * dm_sym;
-            const XCGridResult xp =
-                evaluate_xc_batched(grid, pack.shells, n_basis, Pa_p, Pa_p, xc);
-            const XCGridResult xm =
-                evaluate_xc_batched(grid, pack.shells, n_basis, Pa_m, Pa_m, xc);
-
-            RealMatrix dVa = (xp.Vxc_alpha - xm.Vxc_alpha) / (2.0 * kEps);
-
-            for (int b = 0; b < nv; ++b) {
-                for (int j = 0; j < no; ++j) {
-                    const int q = b * no + j;
-                    const int j_mo = occ[static_cast<std::size_t>(j)];
-                    const int b_mo = virt[static_cast<std::size_t>(b)];
-                    const RealMatrix dm_q = orbital_product(j_mo, b_mo);
-                    double axc = 0.0;
-                    for (int mu = 0; mu < n_basis; ++mu)
-                        for (int nu = 0; nu < n_basis; ++nu)
-                            axc += dVa(mu, nu) * dm_q(mu, nu);
-                    K(static_cast<std::size_t>(p),
-                      static_cast<std::size_t>(q)) = axc;
-                }
-            }
-        }
-    }
-    return K;
+/// Exact-exchange fraction of a closed-shell KS reference, after rejecting
+/// functionals whose response kernel is not implemented. Checked before the
+/// SCF-result gate so an unsupported request fails without a reference.
+double rks_response_alpha(const RKS& mf, const char* entry) {
+    if (mf.xc == xc::XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
+    const xc::RshExchangeParams rsh = xc::rsh_exchange_params(mf.xc);
+    if (rsh.beta != 0.0)
+        throw std::invalid_argument(
+            std::string(entry)
+            + ": range-separated exact exchange (erf-attenuated K) has no "
+              "response kernel; refusing to drop it (no fallback)");
+    return (mf.hybrid_alpha_override >= 0.0) ? mf.hybrid_alpha_override
+                                             : rsh.alpha;
 }
 
 /// Dense Hermitian RPA from explicit A, B (Casida full LR-TDDFT). Same
@@ -628,11 +566,11 @@ internal::TDHFPack::Roots rpa_from_ab(const RealMatrix& A, const RealMatrix& B,
         (void)U;
         if (s(0) <= kFloor)
             throw std::runtime_error(
-                "RKS::tddft: (A - B) is not positive definite "
+                "TDDFT<UKS>::run: (A - B) is not positive definite "
                 "(lowest eigenvalue = "
                 + std::to_string(s(0))
                 + " Ha) — Hermitian RPA reduction undefined (no fallback)");
-        return linalg::sym_power(M, p, kFloor, "RKS::tddft");
+        return linalg::sym_power(M, p, kFloor, "TDDFT<UKS>::run");
     };
 
     const RealMatrix T = make_power(Mm, 0.5);
@@ -654,11 +592,11 @@ internal::TDHFPack::Roots rpa_from_ab(const RealMatrix& A, const RealMatrix& B,
     for (std::size_t s = 0; s < k; ++s) {
         if (w2(s) < -kW2Tol)
             throw std::runtime_error(
-                "RKS::tddft: reduced RPA omega^2 = " + std::to_string(w2(s))
-                + " Ha^2 (root " + std::to_string(s)
+                "TDDFT<UKS>::run: reduced RPA omega^2 = "
+                + std::to_string(w2(s)) + " Ha^2 (root " + std::to_string(s)
                 + ") is negative — imaginary excitation energy (no fallback)");
         if (w2(s) <= kW2Tol)
-            throw std::runtime_error("RKS::tddft: reduced RPA omega^2 = "
+            throw std::runtime_error("TDDFT<UKS>::run: reduced RPA omega^2 = "
                                      + std::to_string(w2(s)) + " Ha^2 (root "
                                      + std::to_string(s)
                                      + ") is numerically zero (no fallback)");
@@ -685,7 +623,8 @@ internal::TDHFPack::Roots rpa_from_ab(const RealMatrix& A, const RealMatrix& B,
 /// and f = (2/3)·ω[Ha]·|μ|²; the triplet channel is spin-forbidden (μ = 0,
 /// f = 0). Two callers (tda / tdhf) — second-caller extraction rule.
 ExcitedStatesResult
-excited_states_result(const SlaterDeterminant& det, const internal::IntegralView& pack,
+excited_states_result(const SlaterDeterminant& det,
+                      const internal::IntegralView& pack,
                       const internal::TDHFPack::Roots& roots,
                       ExcitationChannel channel, bool tda_flag) {
     const std::size_t k = roots.omega.size();
@@ -764,12 +703,18 @@ excited_states_result(const SlaterDeterminant& det, const internal::IntegralView
 
 } // namespace
 
-ExcitedStatesResult RHF::tda(int n_states, ExcitationChannel channel) const {
-    if (!has_result())
+template <typename Method>
+TDA<Method>::TDA(const Method& mf) : mf_(&mf) {}
+
+template <typename Method>
+ExcitedStatesResult TDA<Method>::run(int n_states,
+                                     ExcitationChannel channel) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RHF::tda: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+            "TDA::run: no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
     const internal::OrbitalHessian hessian{det, eri};
@@ -778,191 +723,102 @@ ExcitedStatesResult RHF::tda(int n_states, ExcitationChannel channel) const {
                                  /*tda_flag=*/true);
 }
 
-ExcitedStatesResult RKS::tda(int n_states, ExcitationChannel channel) const {
-    if (!has_result())
+template <>
+ExcitedStatesResult TDA<RKS>::run(int n_states,
+                                  ExcitationChannel channel) const {
+    const RKS& mf = *mf_;
+    const double alpha_hf = rks_response_alpha(mf, "TDA<RKS>::run");
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RKS::tda: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+            "TDA::run: no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
     const internal::OrbitalHessian hessian{det, eri};
     const internal::Channel ch = internal_channel(channel);
 
-    // Package dense A-matrix roots into ExcitedStatesResult (shared by the
-    // LSDA ALDA and hybrid f^xc paths).
-    auto package_dense_tda = [&](const RealMatrix& A, bool alda_flag) {
-        auto [w, U] = xt::linalg::eigh(A);
-        const std::size_t n = A.shape()[0];
-        const std::size_t k = static_cast<std::size_t>(n_states);
-        if (n_states < 1 || static_cast<std::size_t>(n_states) > n)
-            throw std::invalid_argument("RKS::tda: n_states outside [1, n_ov]");
-        internal::TDHFPack::Roots roots;
-        roots.omega = xt::zeros<double>({k});
-        roots.X = xt::zeros<double>({k, n});
-        roots.Y = xt::zeros<double>({k, n});
-        for (std::size_t s = 0; s < k; ++s) {
-            roots.omega(s) = w(s);
-            for (std::size_t r = 0; r < n; ++r)
-                roots.X(s, r) = U(r, s);
-        }
-        auto out = excited_states_result(det, pack, roots, channel, true);
-        out.alda = alda_flag;
-        return out;
-    };
-
-    // LSDA: Casida TDA A + full MO-product ALDA f^xc on the KS grid
-    // (Casida 1995; Dreuw & Head-Gordon 2005 DOI 10.1021/cr0505627).
-    // A_ia,jb += 2 (ia|f_xc|jb) (singlet) or (ia|f_xc|jb) (triplet), with
-    // (ia|f_xc|jb) = ∫ φ_i φ_a f_ALDA(n) φ_j φ_b dτ from Dirac-exchange
-    // second derivative on the molecular quadrature.
-    if (xc == XCType::LSDA && hessian.n_ov() <= 512) {
-        RealMatrix A = 0.5 * (hessian.dense_plus(ch) + hessian.dense_minus(ch));
-        const MolecularGrid grid(pack.atoms.data(),
-                                 static_cast<int>(pack.atoms.size()),
-                                 grid_level, n_radial, n_angular);
-        const RealMatrix K =
-            internal::alda_kernel_matrix(det, pack, grid, channel);
-        const double coulomb_spin =
-            (channel == ExcitationChannel::singlet) ? 2.0 : 1.0;
-        const std::size_t n = A.shape()[0];
-        for (std::size_t p = 0; p < n; ++p)
-            for (std::size_t q = 0; q < n; ++q)
-                A(p, q) += coulomb_spin * K(p, q);
-        return package_dense_tda(A, /*alda_flag=*/true);
-    }
-
-    // Global hybrid (B3LYP / PBE0): Casida TDA with exact-exchange fraction
-    // α_hf on A plus the semi-local f^xc kernel from a central finite
-    // difference of V_xc on the KS grid (Dreuw & Head-Gordon 2005;
-    // matches PySCF tdscf.TDA / get_ab hybrid path).
-    //
-    //   ¹A = δε + 2(ia|jb) − α_hf (ij|ab) + A_xc
-    const double alpha_hf = hybrid_exchange_fraction(xc);
-    if (alpha_hf > 0.0 && hessian.n_ov() <= 512
-        && channel == ExcitationChannel::singlet) {
-        RealMatrix A = hessian.dense_A(ch, alpha_hf);
-        const RealMatrix K =
-            fxc_kernel_fd(det, pack, xc, grid_level, n_radial, n_angular);
-        const std::size_t n = A.shape()[0];
-        for (std::size_t p = 0; p < n; ++p)
-            for (std::size_t q = 0; q < n; ++q)
-                A(p, q) += K(p, q);
-        return package_dense_tda(A, /*alda_flag=*/false);
-    }
-
-    // Pure GGA (PBE) and other residual paths: CIS@RKS (HF-like A on KS
-    // orbitals; no semi-local f^xc) — hybrid/ALDA axes are above.
-    // Full LR-TDDFT for pure GGA is RKS::tddft().
-    const internal::TDHFPack tdhf_pack{hessian, ch};
-    auto out =
-        excited_states_result(det, pack, tdhf_pack.tda(n_states), channel,
-                              /*tda_flag=*/true);
-    out.alda = false;
+    // Casida TDA on the KS reference (Hirata & Head-Gordon 1999; Dreuw &
+    // Head-Gordon 2005; pyscf.tdscf.rks.TDA):
+    //   ¹A = δε + 2(ia|jb) − α_hf (ij|ab) + (ia|f_αα+f_αβ|jb)
+    //   ³A = δε            − α_hf (ij|ab) + (ia|f_αα−f_αβ|jb)
+    const MolecularGrid grid =
+        mf.fixed_grid ? *mf.fixed_grid
+                      : MolecularGrid(pack.atoms.data(),
+                                      static_cast<int>(pack.atoms.size()),
+                                      mf.grid_level, mf.n_radial, mf.n_angular);
+    const internal::XcResponseKernel fxc{det, pack, mf.xc, grid, ch};
+    const internal::TDHFPack solver{hessian, ch, alpha_hf, &fxc};
+    auto out = excited_states_result(det, pack, solver.tda(n_states), channel,
+                                     /*tda_flag=*/true);
+    out.alda = mf.xc == xc::XCType::LSDA;
     return out;
 }
 
-ExcitedStatesResult RKS::tddft(int n_states, ExcitationChannel channel) const {
-    if (!has_result())
+template <>
+ExcitedStatesResult TDDFT<RKS>::run(int n_states,
+                                    ExcitationChannel channel) const {
+    const RKS& mf = *mf_;
+    const double alpha_hf = rks_response_alpha(mf, "TDDFT<RKS>::run");
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RKS::tddft: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+            "TDDFT::run: no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
     const internal::OrbitalHessian hessian{det, eri};
     const internal::Channel ch = internal_channel(channel);
 
-    if (n_states < 1 || n_states > hessian.n_ov())
-        throw std::invalid_argument(
-            "RKS::tddft: n_states = " + std::to_string(n_states)
-            + " outside [1, n_ov = " + std::to_string(hessian.n_ov()) + "]");
-    if (hessian.n_ov() > 512)
-        throw std::runtime_error(
-            "RKS::tddft: n_ov = " + std::to_string(hessian.n_ov())
-            + " exceeds dense threshold 512 (no fallback)");
-
-    // Casida A,B with exact-exchange fraction α_hf; pure functionals use α=0.
-    const double alpha_hf = hybrid_exchange_fraction(xc);
-    RealMatrix A = hessian.dense_A(ch, alpha_hf);
-    RealMatrix B = hessian.dense_B(ch, alpha_hf);
-    bool alda_flag = false;
-
-    // Adiabatic f^xc on both A and B (Casida 1995; Dreuw & Head-Gordon 2005).
-    if (xc == XCType::LSDA) {
-        const MolecularGrid grid(pack.atoms.data(),
-                                 static_cast<int>(pack.atoms.size()),
-                                 grid_level, n_radial, n_angular);
-        const RealMatrix K =
-            internal::alda_kernel_matrix(det, pack, grid, channel);
-        const double coulomb_spin =
-            (channel == ExcitationChannel::singlet) ? 2.0 : 1.0;
-        const std::size_t n = A.shape()[0];
-        for (std::size_t p = 0; p < n; ++p)
-            for (std::size_t q = 0; q < n; ++q) {
-                const double v = coulomb_spin * K(p, q);
-                A(p, q) += v;
-                B(p, q) += v;
-            }
-        alda_flag = true;
-    } else if (channel == ExcitationChannel::singlet) {
-        // Pure GGA (PBE/BLYP) and global hybrids: FD of V_xc on the KS grid.
-        const RealMatrix K =
-            fxc_kernel_fd(det, pack, xc, grid_level, n_radial, n_angular);
-        const std::size_t n = A.shape()[0];
-        for (std::size_t p = 0; p < n; ++p)
-            for (std::size_t q = 0; q < n; ++q) {
-                A(p, q) += K(p, q);
-                B(p, q) += K(p, q);
-            }
-    }
-    // Triplet non-LSDA: Coulomb/exchange blocks only (no FD kernel yet).
-
-    const internal::TDHFPack::Roots roots = rpa_from_ab(A, B, n_states);
-    auto out =
-        excited_states_result(det, pack, roots, channel, /*tda_flag=*/false);
-    out.alda = alda_flag;
+    // Full Casida A/B with exact-exchange fraction α_hf and the adiabatic
+    // kernel on both A and B (pyscf.tdscf.rks.TDDFT).
+    const MolecularGrid grid =
+        mf.fixed_grid ? *mf.fixed_grid
+                      : MolecularGrid(pack.atoms.data(),
+                                      static_cast<int>(pack.atoms.size()),
+                                      mf.grid_level, mf.n_radial, mf.n_angular);
+    const internal::XcResponseKernel fxc{det, pack, mf.xc, grid, ch};
+    const internal::TDHFPack solver{hessian, ch, alpha_hf, &fxc};
+    auto out = excited_states_result(det, pack, solver.rpa(n_states), channel,
+                                     /*tda_flag=*/false);
+    out.alda = mf.xc == xc::XCType::LSDA;
     return out;
 }
 
-std::vector<double> RHF::tda_forces(cpu::Frame& frame, int state, double h,
-                                    bool analytic) const {
-    auto make_rhf = [this]() {
-        RHF r;
-        r.basis = this->basis;
-        r.tol = this->tol;
-        r.max_iter = this->max_iter;
-        r.charge = this->charge;
-        return r;
+template <>
+std::vector<double> TDA<RHF>::forces(cpu::Frame& frame, int state, double h,
+                                     bool analytic) const {
+    const RHF& src = *mf_;
+
+    auto make_rhf = [&src]() {
+        return RHF{src.basis, src.charge, src.tol, src.max_iter};
     };
 
     if (analytic) {
         RHF probe = make_rhf();
-        const bool prev = probe.compute_eri;
-        probe.compute_eri = true;
         probe.run(frame);
-        probe.compute_eri = prev;
         if (!probe.converged())
-            throw std::runtime_error("RHF::tda_forces: SCF did not converge");
-        auto es0 = probe.tda(state + 1);
+            throw std::runtime_error("TDA::forces: SCF did not converge");
+        probe.materialize_eri_();
+        auto es0 = TDA<RHF>{probe}.run(state + 1);
         if (state < 0 || state >= static_cast<int>(es0.energy_ev.size()))
-            throw std::invalid_argument("RHF::tda_forces: state out of range");
+            throw std::invalid_argument("TDA::forces: state out of range");
         return internal::tda_analytic_forces(frame, probe.integral_view_(),
                                              probe.determinant(),
                                              probe.energy(), state);
     }
 
     if (!(h > 0.0))
-        throw std::invalid_argument("RHF::tda_forces: h must be > 0");
+        throw std::invalid_argument("TDA::forces: h must be > 0");
     const int n = frame.nlocal();
     {
         RHF probe = make_rhf();
         probe.run(frame);
         if (!probe.converged())
-            throw std::runtime_error("RHF::tda_forces: SCF did not converge");
-        auto es0 = probe.tda(state + 1);
+            throw std::runtime_error("TDA::forces: SCF did not converge");
+        auto es0 = TDA<RHF>{probe}.run(state + 1);
         if (state < 0 || state >= static_cast<int>(es0.energy_ev.size()))
-            throw std::invalid_argument("RHF::tda_forces: state out of range");
+            throw std::invalid_argument("TDA::forces: state out of range");
     }
 
     std::vector<double> F(static_cast<std::size_t>(3 * n), 0.0);
@@ -974,13 +830,15 @@ std::vector<double> RHF::tda_forces(cpu::Frame& frame, int state, double h,
             coords[d][a] = x0 + h;
             RHF rp = make_rhf();
             rp.run(frame);
-            const double Ep =
-                rp.tda(state + 1).energy_ev[static_cast<std::size_t>(state)];
+            const double Ep = TDA<RHF>{rp}
+                                  .run(state + 1)
+                                  .energy_ev[static_cast<std::size_t>(state)];
             coords[d][a] = x0 - h;
             RHF rm = make_rhf();
             rm.run(frame);
-            const double Em =
-                rm.tda(state + 1).energy_ev[static_cast<std::size_t>(state)];
+            const double Em = TDA<RHF>{rm}
+                                  .run(state + 1)
+                                  .energy_ev[static_cast<std::size_t>(state)];
             coords[d][a] = x0;
             F[static_cast<std::size_t>(3 * a + d)] = -(Ep - Em) / (2.0 * h);
         }
@@ -990,11 +848,14 @@ std::vector<double> RHF::tda_forces(cpu::Frame& frame, int state, double h,
     return F;
 }
 
-std::vector<double> RHF::tda_nac_vectors(cpu::Frame& frame, int state_i,
-                                         int state_j) const {
+template <>
+std::vector<double> TDA<RHF>::nac_vectors(cpu::Frame& frame, int state_i,
+                                          int state_j) const {
+    const RHF& src = *mf_;
+
     if (state_i == state_j)
         throw std::invalid_argument(
-            "RHF::tda_nac_vectors: i and j must differ (no fallback)");
+            "TDA::nac_vectors: i and j must differ (no fallback)");
     // d_ij = (F_i − F_j) / (E_j − E_i)  [1/Å] (force eV/Å over energy eV).
     // Antisymmetry: d_ji = −d_ij exactly by construction (same F, E).
     // Phase: only when state_i < state_j, flip so the first large component
@@ -1005,22 +866,18 @@ std::vector<double> RHF::tda_nac_vectors(cpu::Frame& frame, int state_i,
     // Use FD forces for the vector construction so the gap factor and force
     // difference share one consistent oracle (analytic CIS 2-RDM path is
     // still calibrating against FD on H2).
-    auto Flo = tda_forces(frame, lo, 2e-3, /*analytic=*/false);
-    auto Fhi = tda_forces(frame, hi, 2e-3, /*analytic=*/false);
-    RHF r;
-    r.basis = basis;
-    r.tol = tol;
-    r.max_iter = max_iter;
-    r.charge = charge;
+    auto Flo = forces(frame, lo, 2e-3, /*analytic=*/false);
+    auto Fhi = forces(frame, hi, 2e-3, /*analytic=*/false);
+    RHF r{src.basis, src.charge, src.tol, src.max_iter};
     r.run(frame);
     if (!r.converged())
-        throw std::runtime_error("RHF::tda_nac_vectors: SCF did not converge");
-    auto es = r.tda(hi + 1);
+        throw std::runtime_error("TDA::nac_vectors: SCF did not converge");
+    auto es = TDA<RHF>{r}.run(hi + 1);
     const double Elo = es.energy_ev[static_cast<std::size_t>(lo)];
     const double Ehi = es.energy_ev[static_cast<std::size_t>(hi)];
     const double dE = Ehi - Elo;
     if (!(std::fabs(dE) > 1e-12))
-        throw std::runtime_error("RHF::tda_nac_vectors: degenerate roots");
+        throw std::runtime_error("TDA::nac_vectors: degenerate roots");
     std::vector<double> d(Flo.size());
     for (std::size_t k = 0; k < Flo.size(); ++k)
         d[k] = (Flo[k] - Fhi[k]) / dE; // d_lo,hi
@@ -1041,21 +898,27 @@ std::vector<double> RHF::tda_nac_vectors(cpu::Frame& frame, int state_i,
     return d;
 }
 
-double RHF::tda_nac_strength(cpu::Frame& frame, int state_i, int state_j,
-                             double /*h*/) const {
-    auto d = tda_nac_vectors(frame, state_i, state_j);
+template <>
+double TDA<RHF>::nac_strength(cpu::Frame& frame, int state_i, int state_j,
+                              double /*h*/) const {
+
+    auto d = nac_vectors(frame, state_i, state_j);
     double n2 = 0.0;
     for (double v : d)
         n2 += v * v;
     return std::sqrt(n2);
 }
 
-ExcitedStatesResult RHF::tdhf(int n_states, ExcitationChannel channel) const {
-    if (!has_result())
+template <typename Method>
+ExcitedStatesResult TDHF<Method>::run(int n_states,
+                                      ExcitationChannel channel) const {
+    const Method& mf = *mf_;
+
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RHF::tdhf: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+            "TDHF::run: no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
     const internal::OrbitalHessian hessian{det, eri};
@@ -1067,14 +930,15 @@ ExcitedStatesResult RHF::tdhf(int n_states, ExcitationChannel channel) const {
     const double lowest = analysis.lowest(ch);
     if (lowest < -1e-8)
         throw std::runtime_error(
-            std::string("RHF::tdhf: the ")
+            std::string("TDHF::run: the ")
             + (channel == ExcitationChannel::triplet ? "triplet" : "singlet")
             + " (A + B) block of the reference is unstable (lowest "
               "eigenvalue = "
             + std::to_string(lowest)
             + " Ha) — full RPA would give imaginary excitation energies; "
-              "use tda() or reconverge the reference along the instability "
-              "mode (stability().rotated_C) first (no fallback)");
+              "use TDA<RHF>::run or reconverge the reference along the "
+              "instability mode (Stability<RHF>::run().rotated_C) first "
+              "(no fallback)");
 
     const internal::TDHFPack tdhf_pack{hessian, ch};
     return excited_states_result(det, pack, tdhf_pack.rpa(n_states), channel,
@@ -1121,7 +985,7 @@ void split_occ_virt(const RealVector& f, std::vector<int>& occ,
             virt.push_back(p);
         else
             throw std::invalid_argument(
-                "UKS::tda: fractional occupation f[" + std::to_string(p)
+                "TDA::run: fractional occupation f[" + std::to_string(p)
                 + "] = " + std::to_string(fp)
                 + " — open-shell TDA requires integer occupations");
     }
@@ -1167,10 +1031,10 @@ void lsda_fxc_fd(double ra, double rb, double& faa, double& fab, double& fbb) {
     rb = std::max(rb, kFloor);
     const double h_a = std::min(kH, 0.1 * ra);
     const double h_b = std::min(kH, 0.1 * rb);
-    const XCOutput xp = evaluate_xc(XCType::LSDA, ra + h_a, rb);
-    const XCOutput xm = evaluate_xc(XCType::LSDA, ra - h_a, rb);
-    const XCOutput yp = evaluate_xc(XCType::LSDA, ra, rb + h_b);
-    const XCOutput ym = evaluate_xc(XCType::LSDA, ra, rb - h_b);
+    const xc::XCOutput xp = xc::evaluate_xc(xc::XCType::LSDA, ra + h_a, rb);
+    const xc::XCOutput xm = xc::evaluate_xc(xc::XCType::LSDA, ra - h_a, rb);
+    const xc::XCOutput yp = xc::evaluate_xc(xc::XCType::LSDA, ra, rb + h_b);
+    const xc::XCOutput ym = xc::evaluate_xc(xc::XCType::LSDA, ra, rb - h_b);
     faa = (xp.vrho_alpha - xm.vrho_alpha) / (2.0 * h_a);
     fab = (yp.vrho_alpha - ym.vrho_alpha) / (2.0 * h_b);
     fbb = (yp.vrho_beta - ym.vrho_beta) / (2.0 * h_b);
@@ -1318,7 +1182,8 @@ UksLsdaCasidaWork build_uks_lsda_casida_A(const SlaterDeterminant& det,
 
     if (pack.shells.empty())
         throw std::runtime_error(
-            std::string(tag) + ": internal::IntegralWorkspace has no shells (no fallback)");
+            std::string(tag)
+            + ": internal::IntegralWorkspace has no shells (no fallback)");
     const MolecularGrid grid(pack.atoms.data(),
                              static_cast<int>(pack.atoms.size()), grid_level,
                              n_radial, n_angular);
@@ -1550,22 +1415,29 @@ ExcitedStatesResult package_uks_excited(const SlaterDeterminant& det,
 
 } // namespace
 
-ExcitedStatesResult UKS::tda(int n_states) const {
-    if (!has_result())
+template <>
+ExcitedStatesResult TDA<UKS>::run(int n_states, ExcitationChannel) const {
+    const UKS& mf = *mf_;
+    if (mf.xc == xc::XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
+
+    if (!mf.has_result())
         throw std::runtime_error(
-            "UKS::tda: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
+            "TDA::run: no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
     if (det.restricted() || det.generalized())
         throw std::runtime_error(
-            "UKS::tda: requires an unrestricted (UKS) determinant");
-    if (xc != XCType::LSDA)
+            "TDA::run: requires an unrestricted (UKS) determinant");
+    if (mf.xc != xc::XCType::LSDA)
         throw std::runtime_error(
-            "UKS::tda: only LSDA is implemented (pure open-shell ALDA); "
+            "TDA::run: only LSDA is implemented (pure open-shell ALDA); "
             "requested functional is not LSDA (no fallback)");
 
-    const internal::IntegralView pack = integral_view_();
-    const UksLsdaCasidaWork w = build_uks_lsda_casida_A(
-        det, pack, grid_level, n_radial, n_angular, n_states, "UKS::tda");
+    const internal::IntegralView pack = mf.integral_view_();
+    const UksLsdaCasidaWork w =
+        build_uks_lsda_casida_A(det, pack, mf.grid_level, mf.n_radial,
+                                mf.n_angular, n_states, "TDA::run");
 
     auto [evals, U] = xt::linalg::eigh(w.A);
     const std::size_t k = static_cast<std::size_t>(n_states);
@@ -1582,22 +1454,29 @@ ExcitedStatesResult UKS::tda(int n_states) const {
     return package_uks_excited(det, pack, w, roots, /*tda_flag=*/true);
 }
 
-ExcitedStatesResult UKS::tddft(int n_states) const {
-    if (!has_result())
+template <>
+ExcitedStatesResult TDDFT<UKS>::run(int n_states, ExcitationChannel) const {
+    const UKS& mf = *mf_;
+    if (mf.xc == xc::XCType::Custom)
+        throw std::invalid_argument("TDDFT/TDA: custom XC second-derivative "
+                                    "kernels are not implemented");
+
+    if (!mf.has_result())
         throw std::runtime_error(
-            "UKS::tddft: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
+            "TDDFT::run: no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
     if (det.restricted() || det.generalized())
         throw std::runtime_error(
-            "UKS::tddft: requires an unrestricted (UKS) determinant");
-    if (xc != XCType::LSDA)
+            "TDDFT::run: requires an unrestricted (UKS) determinant");
+    if (mf.xc != xc::XCType::LSDA)
         throw std::runtime_error(
-            "UKS::tddft: only LSDA is implemented (pure open-shell ALDA); "
+            "TDDFT::run: only LSDA is implemented (pure open-shell ALDA); "
             "requested functional is not LSDA (no fallback)");
 
-    const internal::IntegralView pack = integral_view_();
-    const UksLsdaCasidaWork w = build_uks_lsda_casida_A(
-        det, pack, grid_level, n_radial, n_angular, n_states, "UKS::tddft");
+    const internal::IntegralView pack = mf.integral_view_();
+    const UksLsdaCasidaWork w =
+        build_uks_lsda_casida_A(det, pack, mf.grid_level, mf.n_radial,
+                                mf.n_angular, n_states, "TDDFT::run");
 
     // Pure LSDA, real MOs: B = Coulomb + fxc = A − diag(ε_a − ε_i).
     RealMatrix B = w.A;
@@ -1609,83 +1488,108 @@ ExcitedStatesResult UKS::tddft(int n_states) const {
     return package_uks_excited(det, pack, w, roots, /*tda_flag=*/false);
 }
 
-ExcitedStatesResult UHF::sf_tda(int n_states) const {
-    if (!has_result())
-        throw std::runtime_error(
-            "UHF::sf_tda: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
+namespace {
+
+struct SfIdx {
+    bool alpha_to_beta = false;
+    int no = 0;
+    int nv = 0;
+    int nov = 0;
+    std::vector<int> occ_a, virt_a, occ_b, virt_b;
+    RealMatrix Ca, Cb;
+    RealVector ea, eb;
+};
+
+template <typename Method>
+SfIdx sf_indices(const Method& mf, int n_states, int nov_cap, const char* entry,
+                 const char* cap_tail) {
+    if (!mf.has_result())
+        throw std::runtime_error(std::string(entry)
+                                 + ": no SCF result — call run(frame) first");
+    const SlaterDeterminant& det = mf.determinant();
     if (det.restricted() || det.generalized())
         throw std::runtime_error(
-            "UHF::sf_tda: requires an unrestricted (UHF) determinant");
+            std::string(entry)
+            + ": requires an unrestricted (UHF) determinant");
 
     using Spin = SlaterDeterminant::Spin;
-    const RealMatrix& Ca = det.coefficients(Spin::alpha);
-    const RealMatrix& Cb = det.coefficients(Spin::beta);
-    const RealVector& ea = det.orbital_energies(Spin::alpha);
-    const RealVector& eb = det.orbital_energies(Spin::beta);
-    const RealVector& fa = det.occupations(Spin::alpha);
-    const RealVector& fb = det.occupations(Spin::beta);
-
-    std::vector<int> occ_a, virt_a, occ_b, virt_b;
-    split_occ_virt(fa, occ_a, virt_a);
-    split_occ_virt(fb, occ_b, virt_b);
-    const int noa = static_cast<int>(occ_a.size());
-    const int nva = static_cast<int>(virt_a.size());
-    const int nob = static_cast<int>(occ_b.size());
-    const int nvb = static_cast<int>(virt_b.size());
-
-    // High-spin convention: flip majority → minority (Ms decreases for
-    // n_alpha ≥ n_beta). Collinear SF-CIS space is one spin-flip block only.
-    const bool alpha_to_beta = (noa >= nob);
-    const int no = alpha_to_beta ? noa : nob;
-    const int nv = alpha_to_beta ? nvb : nva;
-    if (no == 0 || nv == 0)
+    SfIdx s;
+    s.Ca = det.coefficients(Spin::alpha);
+    s.Cb = det.coefficients(Spin::beta);
+    s.ea = det.orbital_energies(Spin::alpha);
+    s.eb = det.orbital_energies(Spin::beta);
+    split_occ_virt(det.occupations(Spin::alpha), s.occ_a, s.virt_a);
+    split_occ_virt(det.occupations(Spin::beta), s.occ_b, s.virt_b);
+    const int noa = static_cast<int>(s.occ_a.size());
+    const int nva = static_cast<int>(s.virt_a.size());
+    const int nob = static_cast<int>(s.occ_b.size());
+    const int nvb = static_cast<int>(s.virt_b.size());
+    s.alpha_to_beta = (noa >= nob);
+    s.no = s.alpha_to_beta ? noa : nob;
+    s.nv = s.alpha_to_beta ? nvb : nva;
+    if (s.no == 0 || s.nv == 0)
         throw std::runtime_error(
-            "UHF::sf_tda: empty SF manifold (need majority occupied and "
-            "minority virtual orbitals — no fallback)");
-    const int nov = no * nv;
-    if (n_states < 1 || n_states > nov)
+            std::string(entry)
+            + ": empty SF manifold (need majority occupied and "
+              "minority virtual orbitals — no fallback)");
+    s.nov = s.no * s.nv;
+    if (n_states < 1 || n_states > s.nov)
         throw std::invalid_argument(
-            "UHF::sf_tda: n_states = " + std::to_string(n_states)
-            + " outside [1, n_ov = " + std::to_string(nov) + "]");
-    if (nov > 512)
-        throw std::runtime_error(
-            "UHF::sf_tda: n_ov = " + std::to_string(nov)
-            + " exceeds dense threshold 512 (no fallback)");
+            std::string(entry) + ": n_states = " + std::to_string(n_states)
+            + " outside [1, n_ov = " + std::to_string(s.nov) + "]");
+    if (s.nov > nov_cap)
+        throw std::runtime_error(std::string(entry) + ": n_ov = "
+                                 + std::to_string(s.nov) + cap_tail);
+    return s;
+}
 
-    const internal::IntegralView pack = integral_view_();
-    const xt::xtensor<double, 4> eri =
-        (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
-
-    RealMatrix Co, Cv;
-    if (alpha_to_beta) {
+void sf_mo_blocks(const SfIdx& s, RealMatrix& Co, RealMatrix& Cv) {
+    if (s.alpha_to_beta) {
         RealMatrix dummy_v, dummy_o;
-        coeff_blocks(Ca, occ_a, virt_a, Co, dummy_v);
-        coeff_blocks(Cb, occ_b, virt_b, dummy_o, Cv);
+        coeff_blocks(s.Ca, s.occ_a, s.virt_a, Co, dummy_v);
+        coeff_blocks(s.Cb, s.occ_b, s.virt_b, dummy_o, Cv);
     } else {
         RealMatrix dummy_v, dummy_o;
-        coeff_blocks(Cb, occ_b, virt_b, Co, dummy_v);
-        coeff_blocks(Ca, occ_a, virt_a, dummy_o, Cv);
+        coeff_blocks(s.Cb, s.occ_b, s.virt_b, Co, dummy_v);
+        coeff_blocks(s.Ca, s.occ_a, s.virt_a, dummy_o, Cv);
     }
+}
 
-    // (ij|ab) with i,j majority-occ, a,b minority-virt — exchange block only.
-    const xt::xtensor<double, 4> ijab = mo_transform_eri(eri, Co, Co, Cv, Cv);
+void symmetrize_matrix(RealMatrix& M) {
+    const int n = static_cast<int>(M.shape()[0]);
+    for (int p = 0; p < n; ++p)
+        for (int q = p + 1; q < n; ++q) {
+            const double avg =
+                0.5
+                * (M(static_cast<std::size_t>(p), static_cast<std::size_t>(q))
+                   + M(static_cast<std::size_t>(q),
+                       static_cast<std::size_t>(p)));
+            M(static_cast<std::size_t>(p), static_cast<std::size_t>(q)) = avg;
+            M(static_cast<std::size_t>(q), static_cast<std::size_t>(p)) = avg;
+        }
+}
 
+RealMatrix sf_cis_A(const SfIdx& s, const xt::xtensor<double, 4>& ijab) {
+    const int no = s.no;
+    const int nv = s.nv;
+    const int nov = s.nov;
     RealMatrix A = xt::zeros<double>(
         {static_cast<std::size_t>(nov), static_cast<std::size_t>(nov)});
     for (int i = 0; i < no; ++i) {
         for (int a = 0; a < nv; ++a) {
             const int p = i * nv + a;
-            const int ii = alpha_to_beta ? occ_a[static_cast<std::size_t>(i)]
-                                         : occ_b[static_cast<std::size_t>(i)];
-            const int aa = alpha_to_beta ? virt_b[static_cast<std::size_t>(a)]
-                                         : virt_a[static_cast<std::size_t>(a)];
-            const double e_virt = alpha_to_beta
-                                      ? eb(static_cast<std::size_t>(aa))
-                                      : ea(static_cast<std::size_t>(aa));
-            const double e_occ = alpha_to_beta
-                                     ? ea(static_cast<std::size_t>(ii))
-                                     : eb(static_cast<std::size_t>(ii));
+            const int ii = s.alpha_to_beta
+                               ? s.occ_a[static_cast<std::size_t>(i)]
+                               : s.occ_b[static_cast<std::size_t>(i)];
+            const int aa = s.alpha_to_beta
+                               ? s.virt_b[static_cast<std::size_t>(a)]
+                               : s.virt_a[static_cast<std::size_t>(a)];
+            const double e_virt = s.alpha_to_beta
+                                      ? s.eb(static_cast<std::size_t>(aa))
+                                      : s.ea(static_cast<std::size_t>(aa));
+            const double e_occ = s.alpha_to_beta
+                                     ? s.ea(static_cast<std::size_t>(ii))
+                                     : s.eb(static_cast<std::size_t>(ii));
             A(static_cast<std::size_t>(p), static_cast<std::size_t>(p)) =
                 e_virt - e_occ;
             for (int j = 0; j < no; ++j) {
@@ -1701,18 +1605,50 @@ ExcitedStatesResult UHF::sf_tda(int n_states) const {
             }
         }
     }
+    symmetrize_matrix(A);
+    return A;
+}
 
-    // Numerical symmetrize then dense Hermitian eigensolve.
-    for (int p = 0; p < nov; ++p)
-        for (int q = p + 1; q < nov; ++q) {
-            const double s =
-                0.5
-                * (A(static_cast<std::size_t>(p), static_cast<std::size_t>(q))
-                   + A(static_cast<std::size_t>(q),
-                       static_cast<std::size_t>(p)));
-            A(static_cast<std::size_t>(p), static_cast<std::size_t>(q)) = s;
-            A(static_cast<std::size_t>(q), static_cast<std::size_t>(p)) = s;
+RealMatrix sf_cis_B(const SfIdx& s, const xt::xtensor<double, 4>& ibaj) {
+    const int no = s.no;
+    const int nv = s.nv;
+    const int nov = s.nov;
+    RealMatrix B = xt::zeros<double>(
+        {static_cast<std::size_t>(nov), static_cast<std::size_t>(nov)});
+    for (int i = 0; i < no; ++i) {
+        for (int a = 0; a < nv; ++a) {
+            const int p = i * nv + a;
+            for (int j = 0; j < no; ++j) {
+                for (int b = 0; b < nv; ++b) {
+                    const int q = j * nv + b;
+                    // B_ia,jb = -(ib|aj)
+                    B(static_cast<std::size_t>(p),
+                      static_cast<std::size_t>(q)) -=
+                        ibaj(static_cast<std::size_t>(i),
+                             static_cast<std::size_t>(b),
+                             static_cast<std::size_t>(a),
+                             static_cast<std::size_t>(j));
+                }
+            }
         }
+    }
+    symmetrize_matrix(B);
+    return B;
+}
+
+} // namespace
+
+template <typename Method>
+ExcitedStatesResult SfTDA<Method>::run(int n_states) const {
+    const Method& mf = *mf_;
+    const SfIdx ix = sf_indices(mf, n_states, /*nov_cap=*/512, "SfTDA::run",
+                                " exceeds dense threshold 512 (no fallback)");
+    const internal::IntegralView pack = mf.integral_view_();
+    const xt::xtensor<double, 4> eri =
+        (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
+    RealMatrix Co, Cv;
+    sf_mo_blocks(ix, Co, Cv);
+    const RealMatrix A = sf_cis_A(ix, mo_transform_eri(eri, Co, Co, Cv, Cv));
 
     auto [w, U] = xt::linalg::eigh(A);
     (void)U;
@@ -1743,7 +1679,7 @@ std::vector<double> sf_rpa_positive_roots_(const RealMatrix& A,
         || static_cast<int>(B.shape()[0]) != nov
         || static_cast<int>(B.shape()[1]) != nov)
         throw std::invalid_argument(
-            "UHF::sf_tddft: A/B must be square and equal size");
+            "SfTDHF::run: A/B must be square and equal size");
     // Non-Hermitian RPA: [[A, B], [-B, -A]] (X;Y) = ω (X;Y). Spectrum is
     // ± pairs when stable; collinear SF may leave (A−B) indefinite so the
     // Hermitian Casida reduction is not used. RealMatrix is column-major, so
@@ -1767,7 +1703,7 @@ std::vector<double> sf_rpa_positive_roots_(const RealMatrix& A,
         }
     }
     RealVector wr, wi;
-    linalg::eig_nonsymmetric(M, wr, wi, nullptr, "UHF::sf_tddft");
+    linalg::eig_nonsymmetric(M, wr, wi, nullptr, "SfTDHF::run");
     std::vector<double> pos;
     pos.reserve(static_cast<std::size_t>(nov));
     for (std::size_t i = 0; i < n; ++i) {
@@ -1780,131 +1716,24 @@ std::vector<double> sf_rpa_positive_roots_(const RealMatrix& A,
 
 } // namespace
 
-ExcitedStatesResult UHF::sf_tddft(int n_states) const {
-    if (!has_result())
-        throw std::runtime_error(
-            "UHF::sf_tddft: no SCF result — call run(frame) first");
-    const SlaterDeterminant& det = determinant();
-    if (det.restricted() || det.generalized())
-        throw std::runtime_error(
-            "UHF::sf_tddft: requires an unrestricted (UHF) determinant");
-
-    using Spin = SlaterDeterminant::Spin;
-    const RealMatrix& Ca = det.coefficients(Spin::alpha);
-    const RealMatrix& Cb = det.coefficients(Spin::beta);
-    const RealVector& ea = det.orbital_energies(Spin::alpha);
-    const RealVector& eb = det.orbital_energies(Spin::beta);
-    const RealVector& fa = det.occupations(Spin::alpha);
-    const RealVector& fb = det.occupations(Spin::beta);
-
-    std::vector<int> occ_a, virt_a, occ_b, virt_b;
-    split_occ_virt(fa, occ_a, virt_a);
-    split_occ_virt(fb, occ_b, virt_b);
-    const int noa = static_cast<int>(occ_a.size());
-    const int nva = static_cast<int>(virt_a.size());
-    const int nob = static_cast<int>(occ_b.size());
-    const int nvb = static_cast<int>(virt_b.size());
-
-    const bool alpha_to_beta = (noa >= nob);
-    const int no = alpha_to_beta ? noa : nob;
-    const int nv = alpha_to_beta ? nvb : nva;
-    if (no == 0 || nv == 0)
-        throw std::runtime_error(
-            "UHF::sf_tddft: empty SF manifold (need majority occupied and "
-            "minority virtual orbitals — no fallback)");
-    const int nov = no * nv;
-    if (n_states < 1 || n_states > nov)
-        throw std::invalid_argument(
-            "UHF::sf_tddft: n_states = " + std::to_string(n_states)
-            + " outside [1, n_ov = " + std::to_string(nov) + "]");
-    // Doubled non-Hermitian space is 2*n_ov; cap so dgeev stays tiny.
-    if (nov > 256)
-        throw std::runtime_error(
-            "UHF::sf_tddft: n_ov = " + std::to_string(nov)
-            + " exceeds dense SF-RPA threshold 256 (no fallback)");
-
-    const internal::IntegralView pack = integral_view_();
+template <typename Method>
+ExcitedStatesResult SfTDHF<Method>::run(int n_states) const {
+    const Method& mf = *mf_;
+    const SfIdx ix =
+        sf_indices(mf, n_states, /*nov_cap=*/256, "SfTDHF::run",
+                   " exceeds dense SF-RPA threshold 256 (no fallback)");
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
-
     RealMatrix Co, Cv;
-    if (alpha_to_beta) {
-        RealMatrix dummy_v, dummy_o;
-        coeff_blocks(Ca, occ_a, virt_a, Co, dummy_v);
-        coeff_blocks(Cb, occ_b, virt_b, dummy_o, Cv);
-    } else {
-        RealMatrix dummy_v, dummy_o;
-        coeff_blocks(Cb, occ_b, virt_b, Co, dummy_v);
-        coeff_blocks(Ca, occ_a, virt_a, dummy_o, Cv);
-    }
-
-    // A: exchange-only SF-CIS block (same as sf_tda).
-    const xt::xtensor<double, 4> ijab = mo_transform_eri(eri, Co, Co, Cv, Cv);
-    // B: exchange de-excitation (ib|aj) — Co,Cv,Cv,Co → [i,b,a,j].
-    const xt::xtensor<double, 4> ibaj = mo_transform_eri(eri, Co, Cv, Cv, Co);
-
-    RealMatrix A = xt::zeros<double>(
-        {static_cast<std::size_t>(nov), static_cast<std::size_t>(nov)});
-    RealMatrix B = xt::zeros<double>(
-        {static_cast<std::size_t>(nov), static_cast<std::size_t>(nov)});
-    for (int i = 0; i < no; ++i) {
-        for (int a = 0; a < nv; ++a) {
-            const int p = i * nv + a;
-            const int ii = alpha_to_beta ? occ_a[static_cast<std::size_t>(i)]
-                                         : occ_b[static_cast<std::size_t>(i)];
-            const int aa = alpha_to_beta ? virt_b[static_cast<std::size_t>(a)]
-                                         : virt_a[static_cast<std::size_t>(a)];
-            const double e_virt = alpha_to_beta
-                                      ? eb(static_cast<std::size_t>(aa))
-                                      : ea(static_cast<std::size_t>(aa));
-            const double e_occ = alpha_to_beta
-                                     ? ea(static_cast<std::size_t>(ii))
-                                     : eb(static_cast<std::size_t>(ii));
-            A(static_cast<std::size_t>(p), static_cast<std::size_t>(p)) =
-                e_virt - e_occ;
-            for (int j = 0; j < no; ++j) {
-                for (int b = 0; b < nv; ++b) {
-                    const int q = j * nv + b;
-                    A(static_cast<std::size_t>(p),
-                      static_cast<std::size_t>(q)) -=
-                        ijab(static_cast<std::size_t>(i),
-                             static_cast<std::size_t>(j),
-                             static_cast<std::size_t>(a),
-                             static_cast<std::size_t>(b));
-                    // B_ia,jb = -(ib|aj)
-                    B(static_cast<std::size_t>(p),
-                      static_cast<std::size_t>(q)) -=
-                        ibaj(static_cast<std::size_t>(i),
-                             static_cast<std::size_t>(b),
-                             static_cast<std::size_t>(a),
-                             static_cast<std::size_t>(j));
-                }
-            }
-        }
-    }
-
-    for (int p = 0; p < nov; ++p)
-        for (int q = p + 1; q < nov; ++q) {
-            const double sa =
-                0.5
-                * (A(static_cast<std::size_t>(p), static_cast<std::size_t>(q))
-                   + A(static_cast<std::size_t>(q),
-                       static_cast<std::size_t>(p)));
-            A(static_cast<std::size_t>(p), static_cast<std::size_t>(q)) = sa;
-            A(static_cast<std::size_t>(q), static_cast<std::size_t>(p)) = sa;
-            const double sb =
-                0.5
-                * (B(static_cast<std::size_t>(p), static_cast<std::size_t>(q))
-                   + B(static_cast<std::size_t>(q),
-                       static_cast<std::size_t>(p)));
-            B(static_cast<std::size_t>(p), static_cast<std::size_t>(q)) = sb;
-            B(static_cast<std::size_t>(q), static_cast<std::size_t>(p)) = sb;
-        }
+    sf_mo_blocks(ix, Co, Cv);
+    const RealMatrix A = sf_cis_A(ix, mo_transform_eri(eri, Co, Co, Cv, Cv));
+    const RealMatrix B = sf_cis_B(ix, mo_transform_eri(eri, Co, Cv, Cv, Co));
 
     const std::vector<double> pos = sf_rpa_positive_roots_(A, B);
     if (static_cast<int>(pos.size()) < n_states)
         throw std::runtime_error(
-            "UHF::sf_tddft: only " + std::to_string(pos.size())
+            "SfTDHF::run: only " + std::to_string(pos.size())
             + " positive real RPA roots (need " + std::to_string(n_states)
             + ") — possible SF-RPA instability or complex spectrum "
               "(no fallback)");
@@ -1921,6 +1750,46 @@ ExcitedStatesResult UHF::sf_tddft(int n_states) const {
         out.energy_ev[s] = pos[s] * units::kHartreeInEv;
     return out;
 }
+
+template <typename Method>
+std::vector<double> TDA<Method>::forces(cpu::Frame&, int, double, bool) const {
+    throw std::logic_error(
+        "TDA::forces: CIS nuclear forces are closed-shell RHF only "
+        "(TDA<RHF>)");
+}
+
+template <typename Method>
+std::vector<double> TDA<Method>::nac_vectors(cpu::Frame&, int, int) const {
+    throw std::logic_error(
+        "TDA::nac_vectors: NAC vectors are closed-shell RHF only (TDA<RHF>)");
+}
+
+template <typename Method>
+double TDA<Method>::nac_strength(cpu::Frame&, int, int, double) const {
+    throw std::logic_error(
+        "TDA::nac_strength: NAC strength is closed-shell RHF only (TDA<RHF>)");
+}
+
+template <typename Method>
+TDHF<Method>::TDHF(const Method& mf) : mf_(&mf) {}
+
+template <typename Method>
+TDDFT<Method>::TDDFT(const Method& mf) : mf_(&mf) {}
+
+template <typename Method>
+SfTDA<Method>::SfTDA(const Method& mf) : mf_(&mf) {}
+
+template <typename Method>
+SfTDHF<Method>::SfTDHF(const Method& mf) : mf_(&mf) {}
+
+template class TDA<RHF>;
+template class TDA<RKS>;
+template class TDA<UKS>;
+template class TDHF<RHF>;
+template class TDDFT<RKS>;
+template class TDDFT<UKS>;
+template class SfTDA<UHF>;
+template class SfTDHF<UHF>;
 
 } // namespace scf
 } // namespace cpu

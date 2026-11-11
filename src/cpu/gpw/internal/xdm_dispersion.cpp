@@ -54,21 +54,17 @@ XdmResult xdm_pbe(const std::vector<int>& Z,
     for (std::size_t i = 0; i < n; ++i) {
         for (std::size_t j = 0; j <= i; ++j) {
             const double fac =
-                alpha[i] * alpha[j]
-                / (m1[i] * alpha[j] + m1[j] * alpha[i]);
+                alpha[i] * alpha[j] / (m1[i] * alpha[j] + m1[j] * alpha[i]);
             const double c6 = fac * m1[i] * m1[j];
-            const double c8 =
-                1.5 * fac * (m1[i] * m2[j] + m2[i] * m1[j]);
-            const double c10 =
-                2.0 * fac * (m1[i] * m3[j] + m3[i] * m1[j])
-                + 4.2 * fac * m2[i] * m2[j];
+            const double c8 = 1.5 * fac * (m1[i] * m2[j] + m2[i] * m1[j]);
+            const double c10 = 2.0 * fac * (m1[i] * m3[j] + m3[i] * m1[j])
+                               + 4.2 * fac * m2[i] * m2[j];
             if (!(c6 > 0.0) || !(c8 > 0.0) || !(c10 > 0.0))
                 throw std::runtime_error(
                     "GPW XDM: non-positive C6/C8/C10 for a pair");
-            const double rc =
-                (std::sqrt(c8 / c6) + std::pow(c10 / c6, 0.25)
-                 + std::sqrt(c10 / c8))
-                / 3.0;
+            const double rc = (std::sqrt(c8 / c6) + std::pow(c10 / c6, 0.25)
+                               + std::sqrt(c10 / c8))
+                              / 3.0;
             const double rvdw = a1 * rc + a2_bohr;
             const double d6 = std::pow(rvdw, 6.0);
             const double d8 = std::pow(rvdw, 8.0);
@@ -101,14 +97,13 @@ XdmResult xdm_pbe(const std::vector<int>& Z,
                         const double den6 = r6 + d6;
                         const double den8 = r8 + d8;
                         const double den10 = r10 + d10;
-                        double eij =
-                            -c6 / den6 - c8 / den8 - c10 / den10;
+                        double eij = -c6 / den6 - c8 / den8 - c10 / den10;
                         // dE/dR = + 6 C6 R^5 / den6² + 8 C8 R^7 / den8²
                         //         + 10 C10 R^9 / den10²
                         // Force on i along unit vector u: F = −(dE/dR) u
                         // with R vector from j to i, so
                         // F_i = −(dE/dR)(R/r)  and dE/dR > 0 ⇒ attraction
-                        // pulls i toward j when R points from j to i? 
+                        // pulls i toward j when R points from j to i?
                         // E decreases as r grows in long range? No: E is
                         // more negative at shorter r (until damping).
                         // dE/dr = +6 C6 r^5/den6² + … > 0 means energy

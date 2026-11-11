@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-d3-stress/ (never launched by ctest).
+! Offline CP2K twin for regressions/gpw/d3/ (never launched by ctest).
 ! Periodic water dimer, PBE + DFT-D3 zero damping, STRESS_TENSOR NUMERICAL.
 ! Same geometry as gpw-d3-forces/water_dimer_d3_periodic_forces.inp; CUTOFF 200
 ! matches the gpw-d4-stress cost family (the pinned E_disp and the D3 stress

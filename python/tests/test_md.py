@@ -21,7 +21,7 @@ collecting on a build whose extension does not bind them yet.
 disk. Same in-body import discipline.
 
 ``TestAm1Bomd`` (spec py-am1-forces) covers semiempirical Born-Oppenheimer
-MD: ``MD.set_evaluator(AM1Evaluator(...))``, i.e. an electronic-structure
+MD: ``MD.set_evaluator(AM1(...))``, i.e. an electronic-structure
 method in the force slot instead of a classical pair style.
 
 ``TestPairStyleCatalogue`` (spec py-pair-styles) covers the nine styles
@@ -40,8 +40,12 @@ import numpy as np
 import pytest
 import molpy
 
-import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
+from _domains import needs, skip_module_unless
+
+skip_module_unless("ATV_BUILD_MD")
+
+import atomiverse as av
 from atomiverse.md import MD, InitVelocity
 from atomiverse.md.barostat import BerendsenBarostat
 from atomiverse.md.integrator import NoseHooverNPT, ParrinelloRahmanNPT, VelocityVerlet
@@ -119,7 +123,7 @@ class TestMDDriverBuild:
 # ── ac-002: MD on a molpy.Frame, end to end ─────────────────────────
 
 
-class TestMDRunOnMolrsFrame:
+class TestMDRunOnMolpyFrame:
     def test_positions_written_back(self, argon_frame, full_lj_md):
         """Positions update in the SAME molpy.Frame after run()."""
         x_before = np.asarray(argon_frame["atoms"]["x"]).copy()
@@ -140,7 +144,6 @@ class TestMDRunOnMolrsFrame:
         full_lj_md.run(argon_frame, 5)
         assert "scalars" not in argon_frame.keys()
         assert "stress" not in argon_frame.keys()
-        assert molrs.FRAME_SCHEMA_VERSION == 2
         energy = argon_frame.meta["energy"]
         kinetic = argon_frame.meta["kinetic"]
         stress = argon_frame.meta["stress"]
@@ -180,6 +183,69 @@ class TestMDRunOnMolrsFrame:
         """Passing a non-molpy.Frame object fails with a clear message."""
         with pytest.raises(RuntimeError, match="molpy.Frame"):
             full_lj_md.run(object(), 1)
+
+
+# ── LJ setters: set_type_coeff / set_tail_correction ────────────────
+
+
+class TestPairLJSetters:
+    @staticmethod
+    def _energy(frame, lj) -> float:
+        sim = MD()
+        sim.set_integrator(VelocityVerlet(0.001))
+        sim.set_neighbor(NeighborList(8.5))
+        sim.set_evaluator(lj)
+        sim.run(frame, 0)
+        return frame.meta["energy"]
+
+    def test_setters_chain_and_refuse_the_single_type_form(self):
+        lj = LJCut([av.LJTypeCoeff(1, 1, 0.0104, 3.4)], 8.5)
+        assert lj.set_type_coeff(av.LJTypeCoeff(1, 1, 0.011, 3.4)) is lj
+        assert lj.set_tail_correction(True) is lj
+        with pytest.raises(Exception, match="single epsilon/sigma"):
+            LJCut(0.0104, 3.4, 8.5).set_type_coeff(
+                av.LJTypeCoeff(1, 1, 0.011, 3.4))
+        fused = av.PairLJCutCoulLong([av.LJTypeCoeff(1, 1, 0.0104, 3.4)],
+                                     0.3, 8.5)
+        assert fused.set_type_coeff(av.LJTypeCoeff(1, 1, 0.011, 3.4)) is fused
+        assert fused.set_tail_correction(True) is fused
+
+    def test_set_type_coeff_overrides_the_row(self, argon_frame):
+        e_ref = self._energy(argon_frame, LJCut(0.011, 3.4, 8.5))
+        typed = LJCut([av.LJTypeCoeff(1, 1, 0.0104, 3.4)], 8.5)
+        typed.set_type_coeff(av.LJTypeCoeff(1, 1, 0.011, 3.4))
+        assert self._energy(argon_frame, typed) == pytest.approx(e_ref,
+                                                                 rel=1e-12)
+
+    def test_typed_table_needs_the_type_id_column(self):
+        """A per-type table keys on ``atoms.type_id``. A frame that carries
+        only the species (``atomic_number``) is refused with the how-to —
+        the table is never keyed on Z, and absent types are not zeros."""
+        atoms = molpy.Block()
+        atoms.insert("x", np.array([0.0, 3.8], dtype=np.float64))
+        atoms.insert("y", np.zeros(2, dtype=np.float64))
+        atoms.insert("z", np.zeros(2, dtype=np.float64))
+        atoms.insert("mass", np.full(2, 39.948, dtype=np.float64))
+        atoms.insert("atomic_number", np.full(2, 18, dtype=np.uint32))
+        frame = molpy.Frame()
+        frame["atoms"] = atoms
+        frame.box = molpy.Box.cube(20.0)
+        typed = LJCut([av.LJTypeCoeff(18, 18, 0.0104, 3.4)], 8.5)
+        with pytest.raises(RuntimeError, match="type_id"):
+            self._energy(frame, typed)
+        # The single-pair form reads no type and runs on the same frame.
+        assert np.isfinite(self._energy(frame, LJCut(0.0104, 3.4, 8.5)))
+
+    def test_tail_adds_the_lammps_tail_over_volume(self, argon_frame):
+        eps, sig, rc = 0.0104, 3.4, 8.5
+        e_off = self._energy(argon_frame, LJCut(eps, sig, rc))
+        e_on = self._energy(argon_frame,
+                            LJCut(eps, sig, rc).set_tail_correction(True))
+        n, volume = 8, 6.8 ** 3  # conftest argon_frame: 2^3 lattice, 3.4 A
+        s6 = sig ** 6
+        etail = (8.0 * math.pi * n * n * eps * s6 * (s6 - 3.0 * rc ** 6)
+                 / (9.0 * rc ** 9))
+        assert e_on - e_off == pytest.approx(etail / volume, rel=1e-10)
 
 
 # ── Late reconfiguration is refused (the MC late-setter contract) ───
@@ -349,7 +415,7 @@ class TestFrameBindingRemoved:
         assert not hasattr(_cpp, "Cpu" + "Frame")  # token split: ac-002 grep gate
 
     def test_no_frame_attr_on_package(self):
-        # Frame and Block have one owner: molrs.
+        # Frame and Block have one owner: molpy.
         assert not hasattr(av, "Frame")
         assert not hasattr(av, "Block")
 
@@ -405,22 +471,32 @@ def _kinetic_from_columns(frame: "molpy.Frame") -> float:
     return float(0.5 * np.sum(mass * v_sq))
 
 
+#: These cases run in LAMMPS ``units metal`` (eV, Å, g/mol, ps, K, bar):
+#: one fs is 1e-3 ps.
+_FS: float = 1.0e-3
+
+
 class TestThermostatsAndNpt:
-    """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`)."""
+    """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`).
+
+    The argon recipe is in LAMMPS ``units metal``: temperatures in K,
+    pressures in bar, times in ps (``_FS`` per fs).
+    """
+
 
     #: Barostat cases need a real timestep: the 0.001 fs of the NVE smokes
     #: advances 5 as of physical time, which no cell can respond to. The Ar
-    #: step of regressions/md/pr_npt_lj/reg_pr_npt_lj.cpp is 1.0 fs; 4.0 fs
+    #: step of regressions/md/npt/pr_npt_lj.cpp is 1.0 fs; 4.0 fs
     #: is still ~1/450 of the Ar LJ oscillation period (~1.8 ps) and buys
     #: the same physical time in a quarter of the steps, which is what
     #: keeps these cases inside the suite's seconds-scale budget.
-    _DT = 4.0
+    _DT = 4.0 * _FS
     _CUTOFF = 8.5
 
     def _lj_no_integrator(self) -> MD:
         """Ar LJ recipe + seeded velocities; the caller installs the
         integrator (plain, NPT, or plain-plus-barostat)."""
-        sim = MD()
+        sim = MD(units="metal")
         sim.set_observer(InitVelocity(10.0, 42))
         sim.set_neighbor(NeighborList(self._CUTOFF))
         sim.set_evaluator(LJCut(0.0104, 3.4, self._CUTOFF))
@@ -428,8 +504,8 @@ class TestThermostatsAndNpt:
 
     def _lj_nvt(self, thermostat) -> MD:
         cutoff = 8.5
-        sim = MD()
-        sim.set_integrator(VelocityVerlet(0.001))
+        sim = MD(units="metal")
+        sim.set_integrator(VelocityVerlet(0.001 * _FS))
         sim.set_observer(InitVelocity(10.0, 42))
         sim.set_thermostat(thermostat)
         sim.set_neighbor(NeighborList(cutoff))
@@ -437,21 +513,21 @@ class TestThermostatsAndNpt:
         return sim
 
     def test_langevin_nvt_smoke(self, argon_frame):
-        sim = self._lj_nvt(Langevin(10.0, 10.0, 100.0, 0.001, 7))
+        sim = self._lj_nvt(Langevin(10.0, 10.0, 100.0 * _FS, 0.001 * _FS, 7))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
         assert argon_frame.meta["kinetic"] > 0.0
 
     def test_csvr_nvt_smoke(self, argon_frame):
-        sim = self._lj_nvt(CSVR(10.0, 50.0, 0.001, 7))
+        sim = self._lj_nvt(CSVR(10.0, 50.0 * _FS, 0.001 * _FS, 7))
         sim.run(argon_frame, 5)
         assert np.isfinite(argon_frame.meta["energy"])
         assert argon_frame.meta["kinetic"] > 0.0
 
     def test_npt_smoke(self, argon_frame):
         cutoff = 8.5
-        sim = MD()
-        sim.set_integrator(NoseHooverNPT(10.0, 100.0, 0.0, 1000.0, 0.001))
+        sim = MD(units="metal")
+        sim.set_integrator(NoseHooverNPT(10.0, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.001 * _FS))
         sim.set_observer(InitVelocity(10.0, 42))
         sim.set_neighbor(NeighborList(cutoff))
         sim.set_evaluator(LJCut(0.0104, 3.4, cutoff))
@@ -459,13 +535,13 @@ class TestThermostatsAndNpt:
         assert np.isfinite(argon_frame.meta["energy"])
 
     def test_set_thermostat_rejects_unknown_type(self, argon_frame):
-        sim = MD()
+        sim = MD(units="metal")
         with pytest.raises(TypeError, match="NoseHoover, Langevin, or CSVR"):
-            sim.set_thermostat(VelocityVerlet(0.001))
+            sim.set_thermostat(VelocityVerlet(0.001 * _FS))
 
     def test_set_integrator_accepts_npt(self):
-        sim = MD()
-        sim.set_integrator(NoseHooverNPT(300.0, 100.0, 0.0, 1000.0, 0.5))
+        sim = MD(units="metal")
+        sim.set_integrator(NoseHooverNPT(300.0, 100.0 * _FS, 0.0, 1000.0 * _FS, 0.5 * _FS))
 
     # ── py-md-npt: PR-NPT, Berendsen, and the NoseHooverNPT knob tail ──
 
@@ -480,7 +556,9 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         # ctor order is T, P_target, tau_T, tau_P, dt — NOT NoseHooverNPT's
         # T, tau_T, P_target, tau_P, dt.
-        sim.set_integrator(ParrinelloRahmanNPT(10.0, 0.0, 100.0, 1000.0, self._DT))
+        sim.set_integrator(ParrinelloRahmanNPT(
+                10.0, 0.0, 100.0 * _FS, 1000.0 * _FS, self._DT
+            ))
         sim.run(argon_frame, 10)
         assert np.isfinite(argon_frame.meta["energy"])
         volume_after = argon_frame.box.volume()
@@ -497,7 +575,9 @@ class TestThermostatsAndNpt:
         volume_before = argon_frame.box.volume()
         sim = self._lj_no_integrator()
         sim.set_integrator(VelocityVerlet(self._DT))
-        sim.set_barostat(BerendsenBarostat(0.0, 1000.0, self._DT))
+        # The modulus is in the run's pressure unit like the target: an
+        # argon-like 1e4 bar (the old 1.0 meant 1 eV/A^3 in lj).
+        sim.set_barostat(BerendsenBarostat(0.0, 1000.0 * _FS, self._DT, 1.0e4))
         sim.run(argon_frame, 10)
         assert np.isfinite(argon_frame.meta["energy"])
         volume_after = argon_frame.box.volume()
@@ -508,13 +588,13 @@ class TestThermostatsAndNpt:
         )
 
     def test_set_barostat_rejects_unknown_type(self):
-        sim = MD()
+        sim = MD(units="metal")
         with pytest.raises(TypeError, match="BerendsenBarostat"):
             sim.set_barostat(VelocityVerlet(self._DT))
 
     def test_set_integrator_accepts_pr_npt(self):
-        sim = MD()
-        sim.set_integrator(ParrinelloRahmanNPT(300.0, 0.0, 100.0, 1000.0, 0.5))
+        sim = MD(units="metal")
+        sim.set_integrator(ParrinelloRahmanNPT(300.0, 0.0, 100.0 * _FS, 1000.0 * _FS, 0.5 * _FS))
 
     def test_npt_couple_axis_freezes_axis(self, argon_frame):
         """couple_axis[2] = False freezes the z edge exactly while the
@@ -524,9 +604,9 @@ class TestThermostatsAndNpt:
         sim.set_integrator(
             NoseHooverNPT(
                 10.0,
-                100.0,
+                100.0 * _FS,
                 0.0,
-                1000.0,
+                1000.0 * _FS,
                 self._DT,
                 couple_axis=(True, True, False),
             )
@@ -561,13 +641,17 @@ class TestThermostatsAndNpt:
 
         flat = self._lj_no_integrator()
         flat.set_integrator(
-            NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, self._DT, T_stop=10.0)
+            NoseHooverNPT(
+                10.0, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=10.0
+            )
         )
         flat.run(frame_flat, 25)
 
         ramped = self._lj_no_integrator()
         ramped.set_integrator(
-            NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, self._DT, T_stop=1000.0)
+            NoseHooverNPT(
+                10.0, 60.0 * _FS, 0.0, 1.0e5 * _FS, self._DT, T_stop=1000.0
+            )
         )
         ramped.run(frame_ramped, 25)
 
@@ -585,7 +669,14 @@ class TestThermostatsAndNpt:
         sim = self._lj_no_integrator()
         sim.set_integrator(
             NoseHooverNPT(
-                10.0, 100.0, 0.0, 1000.0, self._DT, drag=0.5, mtchain=4, mpchain=4
+                10.0,
+                100.0 * _FS,
+                0.0,
+                1000.0 * _FS,
+                self._DT,
+                drag=0.5,
+                mtchain=4,
+                mpchain=4,
             )
         )
         sim.run(argon_frame, 5)
@@ -594,7 +685,7 @@ class TestThermostatsAndNpt:
 
 # ── py-coulomb-pme: charged systems ─────────────────────────────────
 #
-# Geometry and Ewald settings mirror regressions/md/npt_pme_nacl exactly
+# Geometry and Ewald settings mirror regressions/md/npt exactly
 # (reg_npt_pme_nacl.cpp `nacl()` / `electrostatic_energy()`): 4³ = 64 ions
 # on a rock-salt lattice with alternating (-1)^(i+j+k) site charges, so the
 # cell is neutral; nearest-neighbour spacing d = a₀/2 at the experimental
@@ -614,12 +705,12 @@ _PME_ORDER: int = 6
 _ARGON_ALPHA: float = 3.5 / 3.0
 
 #: HARD-CODED GOLDEN — Madelung constant of the rock-salt lattice, from
-#: regressions/md/npt_pme_nacl/REFERENCE.md §1 (Ziman, *Principles of the
+#: regressions/md/npt/REFERENCE.md §1 (Ziman, *Principles of the
 #: Theory of Solids*, 2nd ed., Cambridge 1972, §2.3). Not measured here.
 _MADELUNG: float = 1.747564594633182
 
-#: HARD-CODED GOLDEN — the engine's Coulomb conversion, `units::coulomb`
-#: in core/units.h (LAMMPS `qqr2e`): E [eV] = k_e q_i q_j / r, q in e, r in Å.
+#: HARD-CODED GOLDEN — LAMMPS `units metal` `qqr2e` (src/update.cpp), the
+#: Coulomb constant of the run: E = k_e q_i q_j / r [eV].
 _COULOMB_EV_A: float = 14.399645
 
 
@@ -677,12 +768,13 @@ class TestCoulombPme:
     def _md_with(*evaluators: object, cutoff: float = _NACL_CUTOFF) -> MD:
         """MD carrying *evaluators* plus the regression's neighbor list.
 
-        The integrator is a 0.001 fs VelocityVerlet with no InitVelocity:
-        perfect rock salt has zero net force on every ion by symmetry, so
-        one step is a static single point on stationary atoms.
+        Units metal (eV, Å, e). The integrator is a 1e-6 ps VelocityVerlet
+        with no InitVelocity: perfect rock salt has zero net force on every
+        ion by symmetry, so one step is a static single point on stationary
+        atoms.
         """
-        sim = MD()
-        sim.set_integrator(VelocityVerlet(0.001))
+        sim = MD(units="metal")
+        sim.set_integrator(VelocityVerlet(1.0e-6))
         sim.set_neighbor(NeighborList(cutoff, 0.3))
         for evaluator in evaluators:
             sim.set_evaluator(evaluator)
@@ -696,7 +788,7 @@ class TestCoulombPme:
 
         E = −½ N M k_e / d with the hard-coded constants above; tolerance
         5e-4 relative is the PME discretization budget pinned by
-        regressions/md/npt_pme_nacl/REFERENCE.md §1 (measured there: 3.8e-8).
+        regressions/md/npt/REFERENCE.md §1 (measured there: 3.8e-8).
         """
         from atomiverse.longrange import CoulLong, KSpacePME
 
@@ -762,6 +854,61 @@ class TestCoulombPme:
     @pytest.mark.skipif(
         not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
     )
+    def test_pppm_from_accuracy_matches_lammps_init(self) -> None:
+        """``KSpacePPPM.from_accuracy`` picks LAMMPS's alpha and mesh.
+
+        40 alternating ±1 charges in a 12 × 13 × 14 cell,
+        ``pair_style coul/long 6.0``, ``kspace_style pppm 1e-4``,
+        ``kspace_modify order 6``, ``units metal`` (the oracle's: 12³,
+        G = 0.46340394; tests/core/test_pppm_accuracy.cpp, case ortho_o6).
+        The parameters then run as an explicit-mesh solver.
+        """
+        from atomiverse.longrange import CoulLong, KSpacePPPM
+
+        n = 40
+        i = np.arange(n, dtype=np.float64)
+        lengths = np.array([12.0, 13.0, 14.0])
+        frac = np.stack(
+            [
+                np.fmod(0.137 + 0.618034 * i, 1.0),
+                np.fmod(0.291 + 0.414214 * i, 1.0),
+                np.fmod(0.533 + 0.732051 * i, 1.0),
+            ],
+            axis=1,
+        )
+        pos = frac * lengths
+        atoms = molpy.Block()
+        atoms.insert("x", pos[:, 0].copy())
+        atoms.insert("y", pos[:, 1].copy())
+        atoms.insert("z", pos[:, 2].copy())
+        atoms.insert("charge", np.where(np.arange(n) % 2 == 0, 1.0, -1.0))
+        atoms.insert("mass", np.full(n, 1.0))
+        atoms.insert("atomic_number", np.full(n, 3, dtype=np.uint32))
+        frame = molpy.Frame()
+        frame["atoms"] = atoms
+        frame.box = molpy.Box.ortho(lengths)
+
+        p = KSpacePPPM.from_accuracy(frame, 1e-4, 6.0, order=6, units="metal")
+        assert tuple(p.mesh) == (12, 12, 12)
+        assert p.order == 6
+        assert abs(p.alpha - 0.46340394) <= 6e-8 * 0.46340394
+        fixed = KSpacePPPM.from_accuracy(
+            frame, 1e-4, 6.0, order=6, alpha=0.3, units="metal"
+        )
+        assert fixed.alpha == 0.3
+        with pytest.raises(ValueError):
+            KSpacePPPM(0.3, mesh=(12, 0, 12))
+
+        # Same alpha for the real-space half; a 5 Å real-space cutoff keeps
+        # the minimum-image bound of the 12 Å edge.
+        sim = self._md_with(CoulLong(p.alpha, 5.0), p, cutoff=5.0)
+        sim.run(frame, 1)
+        energy = float(frame.meta["energy"])
+        assert np.isfinite(energy)
+
+    @pytest.mark.skipif(
+        not _HAS_KSPACE, reason="extension built without ATV_BUILD_KSPACE"
+    )
     def test_pme_without_real_partner_raises(self) -> None:
         """Reciprocal space alone is not a Hamiltonian: the driver requires
         exactly one matched real-space partner."""
@@ -796,10 +943,10 @@ class TestCoulombPme:
 #   pair_born.h:83, pair_yukawa.h:25, pair_wca.h:23, pair_dpd.h:42), so
 #   no ``NeighborList`` is installed anywhere below. A style that started
 #   demanding one would fail these tests at build, loudly.
-# * ``atoms.atomic_number`` is what becomes the CPU frame's per-atom type
-#   (src/cpu/frame/molrs_exchange.cpp:185, :201). Type keys handed to
-#   ``Born`` from Python are therefore ATOMIC NUMBERS: an Ar dimer keys
-#   {18, 18}, and a real Na/Cl table would key {11, 17}.
+# * ``atoms.type_id`` is what becomes the CPU frame's per-atom force-field
+#   type; ``atoms.atomic_number`` is the species and is never a table key.
+#   Type keys handed to ``Born`` from Python are therefore type ids: the Ar
+#   dimer below is type 1 and keys {1, 1}.
 #
 # The new names are imported inside the test bodies, like TestCoulombPme:
 # until the bindings land the import IS the failure and this module keeps
@@ -810,15 +957,15 @@ class TestCoulombPme:
 #: under the minimum-image convention.
 _PAIR_BOX: float = 20.0
 
-#: Argon: the fixture's element. Z is the value the Born table keys on.
+#: Argon: the fixture's element (species only; no table keys on it).
 _PAIR_Z: int = 18
+#: The fixture's force-field type — the value a per-type table keys on.
+_PAIR_TYPE: int = 1
 _PAIR_MASS: float = 39.948  # [amu]
 
-#: Timestep [fs] of the static single point. The frame arrives with no
-#: velocity and no force column, so ``initial_integrate`` moves nothing
-#: and the force phase sees the geometry exactly as built; the timestep
-#: only has to be small enough that the trailing half-kick cannot matter
-#: to the energy already recorded.
+#: Timestep (lj time) the static single point installs. ``MD.run(frame, 0)``
+#: only evaluates the setup forces, so no step is taken and the value never
+#: moves an atom; MD still needs an integrator to build.
 _STATIC_DT: float = 1.0e-6
 
 #: Absolute energy tolerance [eV] for the closed forms. The kernels and
@@ -837,7 +984,8 @@ def _pair_frame(r: float) -> "molpy.Frame":
     point at the geometry written here.
 
     @param r: Separation [Å] of the two atoms.
-    @return A 2-atom molpy.Frame (atomic_number 18, mass 39.948 amu).
+    @return A 2-atom molpy.Frame (atomic_number 18, type_id 1,
+            mass 39.948 amu).
     """
     atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, r], dtype=np.float64))
@@ -845,6 +993,7 @@ def _pair_frame(r: float) -> "molpy.Frame":
     atoms.insert("z", np.zeros(2, dtype=np.float64))
     atoms.insert("mass", np.full(2, _PAIR_MASS, dtype=np.float64))
     atoms.insert("atomic_number", np.full(2, _PAIR_Z, dtype=np.uint32))
+    atoms.insert("type_id", np.full(2, _PAIR_TYPE, dtype=np.uint32))
     frame = molpy.Frame()
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_PAIR_BOX)
@@ -882,8 +1031,8 @@ def _build_style(name: str) -> object:
         "PairMorse": lambda: pair.Morse(D=0.5, alpha=1.5, r0=2.0, cutoff=6.0),
         "PairBuck": lambda: pair.Buck(A=1000.0, rho=0.3, C=50.0, cutoff=8.0),
         "PairBorn": lambda: pair.Born(
-            type_i=[_PAIR_Z],
-            type_j=[_PAIR_Z],
+            type_i=[_PAIR_TYPE],
+            type_j=[_PAIR_TYPE],
             A=[1000.0],
             rho=[3.0],
             sigma=[1.0],
@@ -915,10 +1064,11 @@ class TestPairStyleCatalogue:
     def _energy(frame: "molpy.Frame", evaluator: object) -> float:
         """Total potential energy [eV] of one static single point.
 
-        One VelocityVerlet step with no ``InitVelocity`` and no
-        ``NeighborList``: velocities and forces start at zero, so the
-        force phase evaluates the frame's own geometry and
-        ``frame.meta["energy"]`` is that geometry's energy.
+        A zero-step run: setup evaluates the force phase on the frame's own
+        geometry and nothing integrates, so ``frame.meta["energy"]`` is that
+        geometry's energy. (One VelocityVerlet step would first move the
+        atoms by ½·F/m·dt² — negligible in fs, but ~10⁻⁹ eV on the 509 eV
+        Born dimer once dt is in lj time.)
 
         @param frame: molpy.Frame to evaluate (advanced in place).
         @param evaluator: The single force source to install.
@@ -927,7 +1077,7 @@ class TestPairStyleCatalogue:
         sim = MD()
         sim.set_integrator(VelocityVerlet(_STATIC_DT))
         sim.set_evaluator(evaluator)
-        sim.run(frame, 1)
+        sim.run(frame, 0)
         return float(frame.meta["energy"])
 
     # ── pair styles ────────────────────────────────────────────────
@@ -1035,8 +1185,8 @@ class TestPairStyleCatalogue:
         ρ = 3 Å, σ = 1 Å, C = 50 eV·Å⁶, D = 20 eV·Å⁸, r_c = 8 Å,
         r = 2.5 Å → 509.367188590998… eV.
 
-        The one-row table keys {18, 18} because the fixture is argon and
-        molrs ``atomic_number`` is what the type column carries.
+        The one-row table keys {1, 1}: the fixture's ``type_id``, which is
+        what the type column carries (``atomic_number`` is the species).
         """
         from atomiverse.potentials.pair import Born
 
@@ -1054,8 +1204,8 @@ class TestPairStyleCatalogue:
         energy = self._energy(
             _pair_frame(r),
             Born(
-                type_i=[_PAIR_Z],
-                type_j=[_PAIR_Z],
+                type_i=[_PAIR_TYPE],
+                type_j=[_PAIR_TYPE],
                 A=[a],
                 rho=[rho],
                 sigma=[sigma],
@@ -1073,8 +1223,8 @@ class TestPairStyleCatalogue:
         not interact (no silent mixing — Fumi–Tosi parameters are not
         Lorentz–Berthelot)" — cpu/potentials/pair_born.h:68-71.
 
-        The table keys the Na/Cl pair {11, 17} while the frame is an
-        argon (Z = 18) dimer, so the correct answer is exactly zero: a
+        The table keys the type pair {11, 17} while the frame is a type-1
+        argon dimer, so the correct answer is exactly zero: a
         binding that mixed, folded or clamped the type key would instead
         produce the huge repulsive number of the case above.
         """
@@ -1235,6 +1385,7 @@ class TestPairStyleCatalogue:
 
     # ── the shared evaluator slot ──────────────────────────────────
 
+    @needs("ATV_BUILD_MINIMIZER")
     @pytest.mark.parametrize("name", _CATALOGUE_NAMES)
     def test_style_accepted_by_minimize(self, name: str) -> None:
         """Every new style is legal in ``Minimize.set_evaluator`` too.
@@ -1264,11 +1415,11 @@ _XYZ_STEPS: int = 10
 _XYZ_FREQ: int = 5  # [steps]
 
 #: Frames a ``_XYZ_STEPS``-step run at ``_XYZ_FREQ`` leaves in the file.
-#: ``ctx.step`` runs 0..n-1, so the stride gate opens at steps 0 and 5
-#: only — 2 frames, empirically pinned by the C++ unit test
-#: (tests/cpu/record/test_xyz_recorder.cpp), which owns the authoritative
-#: cadence; if it measures a different count, flip this one constant.
-_EXPECTED_FRAMES: int = 2
+#: LAMMPS ``dump`` convention: the initial state and the ends of steps 5
+#: and 10 (a frame's step counts completed steps) — 3 frames, pinned by the
+#: C++ unit test (tests/cpu/record/test_xyz_recorder.cpp), which owns the
+#: authoritative cadence.
+_EXPECTED_FRAMES: int = 3
 
 
 def _lj_md_with_record(recorder: object) -> MD:
@@ -1380,6 +1531,25 @@ class TestXyzRecorder:
             f"after run 1 but {frames_second} after run 2"
         )
 
+    def test_xyz_refuses_a_frame_without_species(self, tmp_path: Path) -> None:
+        """XYZ names elements from ``atomic_number``. A coarse-grained frame
+        carries force-field ``type_id`` only; the recorder refuses it with the
+        how-to instead of writing a bead type as an element."""
+        from atomiverse.recorder import XYZ
+
+        atoms = molpy.Block()
+        atoms.insert("x", np.array([0.0, 3.8], dtype=np.float64))
+        atoms.insert("y", np.zeros(2, dtype=np.float64))
+        atoms.insert("z", np.zeros(2, dtype=np.float64))
+        atoms.insert("mass", np.full(2, 1.0, dtype=np.float64))
+        atoms.insert("type_id", np.array([1, 2], dtype=np.uint32))
+        frame = molpy.Frame()
+        frame["atoms"] = atoms
+        frame.box = molpy.Box.cube(20.0)
+        sim = _lj_md_with_record(XYZ(str(tmp_path / "cg.xyz"), _XYZ_FREQ))
+        with pytest.raises(RuntimeError, match="atomic_number"):
+            sim.run(frame, _XYZ_STEPS)
+
     def test_set_record_rejects_unknown_type(self) -> None:
         """``set_record`` names its supported recorders on refusal."""
         sim = MD()
@@ -1391,7 +1561,7 @@ class TestXyzRecorder:
 #
 # The C++ twin is regressions/semiempirical/am1_water_bomd
 # (reg_am1_water_bomd.cpp): MD + VelocityVerlet{0.25 fs} + InitVelocity{10 K,
-# seed 7} + a gradient-enabled AM1Evaluator carrying max_iter = 300,
+# seed 7} + an AM1 method carrying max_iter = 300,
 # density_tol = 1e-7, energy_tol = 1e-9 — tighter than the AM1 defaults
 # because BOMD needs the force to be consistent from step to step. Those
 # five numbers are reused verbatim here; only the molecule differs.
@@ -1431,10 +1601,11 @@ def _h2_frame() -> "molpy.Frame":
     return frame
 
 
+@needs("ATV_BUILD_SEMIEMPIRICAL")
 class TestAm1Bomd:
     """AM1 forces driving the MD loop (spec py-am1-forces).
 
-    ``AM1Evaluator`` is imported inside the test bodies for the same
+    ``AM1`` is imported inside the test bodies for the same
     build-capability reason as ``TestCoulombPme`` / ``TestXyzRecorder`` —
     the name is absent on an extension built with
     ``ATV_BUILD_SEMIEMPIRICAL=OFF``.
@@ -1448,7 +1619,7 @@ class TestAm1Bomd:
     def bomd_h2() -> tuple["molpy.Frame", "np.ndarray"]:
         """One 5-step AM1 NVE run on H2; returns the frame and its starting
         z column (the frame itself is advanced in place)."""
-        from atomiverse.semiempirical import AM1Evaluator
+        from atomiverse.semiempirical import AM1
 
         frame = _h2_frame()
         z_before = np.asarray(frame["atoms"]["z"], dtype=np.float64).copy()
@@ -1456,7 +1627,7 @@ class TestAm1Bomd:
         sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
         sim.set_observer(InitVelocity(_AM1_BOMD_T0, _AM1_BOMD_SEED))
         sim.set_evaluator(
-            AM1Evaluator(
+            AM1(
                 charge=0,
                 multiplicity=1,
                 max_iter=300,
@@ -1471,11 +1642,11 @@ class TestAm1Bomd:
         """The dispatch keyed on the live component type must accept the
         semiempirical evaluator — this is the whole point of the spec, and
         it is checked without running so the failure is unambiguous."""
-        from atomiverse.semiempirical import AM1Evaluator
+        from atomiverse.semiempirical import AM1
 
         sim = MD()
         sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
-        sim.set_evaluator(AM1Evaluator())
+        sim.set_evaluator(AM1())
 
     def test_potential_energy_finite_and_bound(
         self, bomd_h2: tuple["molpy.Frame", "np.ndarray"]
@@ -1529,23 +1700,20 @@ class TestAm1Bomd:
     def test_set_evaluator_still_rejects_unknown_type(self) -> None:
         """Growing the dispatch table must not turn it into an accept-all:
         an unsupported object still raises, and the message names the
-        supported types (which now include AM1Evaluator)."""
+        supported types (which now include AM1)."""
         sim = MD()
-        with pytest.raises(TypeError, match="AM1Evaluator"):
+        with pytest.raises(TypeError, match="AM1"):
             sim.set_evaluator(object())
 
 
-class TestMolrsFrameV2Boundary:
-    def test_exact_frame_schema_version(self):
-        assert molrs.FRAME_SCHEMA_VERSION == 2
-
+class TestMolpyFrameBoundary:
     def test_box_is_the_only_cell_property(self, argon_frame):
         assert argon_frame.box is not None
         assert not hasattr(argon_frame, "simbox")
 
     def test_untyped_metadata_is_rejected(self, argon_frame):
         """Non-primitive meta values fail loud at the molpy boundary."""
-        with pytest.raises(TypeError, match="MetaValue"):
+        with pytest.raises(TypeError, match="metadata value"):
             argon_frame.meta["bad"] = object()
 
     @pytest.mark.parametrize("legacy_block_name", ("scalars", "stress"))
@@ -1557,3 +1725,95 @@ class TestMolrsFrameV2Boundary:
         argon_frame[legacy_block_name] = legacy
         with pytest.raises(RuntimeError, match=legacy_block_name):
             full_lj_md.run(argon_frame, 1)
+
+
+class TestImageFlagsCrossTheBoundary:
+    """``ix/iy/iz`` cross the molpy boundary exactly as int32.
+
+    Atomiverse keeps one int32 counter per component (``ImageInt``), the
+    molpy dtype of ``ix/iy/iz``: values past the old int8 range (±127
+    crossings) come back unchanged, and a 64-bit column is refused rather
+    than silently truncated.
+    """
+
+    @staticmethod
+    def _with_images(frame: "molpy.Frame", dtype: type) -> "molpy.Frame":
+        atoms = frame["atoms"]
+        n = len(atoms["x"])
+        atoms.insert("ix", np.full(n, 300, dtype=dtype))
+        atoms.insert("iy", np.arange(n, dtype=dtype) - 200_000)
+        atoms.insert("iz", np.full(n, -128, dtype=dtype))
+        frame["atoms"] = atoms
+        return frame
+
+    def test_wide_images_round_trip_through_a_run(
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
+    ) -> None:
+        frame = self._with_images(argon_frame, np.int32)
+        full_lj_md.run(frame, 0)  # forces only: no atom moves or wraps
+        n = len(frame["atoms"]["x"])
+        np.testing.assert_array_equal(frame["atoms"]["ix"], np.full(n, 300))
+        np.testing.assert_array_equal(
+            frame["atoms"]["iy"], np.arange(n) - 200_000
+        )
+        np.testing.assert_array_equal(frame["atoms"]["iz"], np.full(n, -128))
+        assert frame["atoms"]["ix"].dtype == np.int32
+
+    def test_int64_images_are_refused_not_truncated(
+        self, argon_frame: "molpy.Frame", full_lj_md: MD
+    ) -> None:
+        frame = self._with_images(argon_frame, np.int64)
+        with pytest.raises(RuntimeError, match="ix"):
+            full_lj_md.run(frame, 0)
+
+
+_HAS_CUDA_MD: bool = extension_available() and hasattr(_cpp, "_CudaMD")
+
+
+@pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA")
+class TestCudaThermo:
+    """``MD(device="cuda").set_thermo`` has the CPU handle's surface."""
+
+    @staticmethod
+    def _cuda_lj() -> MD:
+        sim = MD(device="cuda")
+        sim.set_integrator(VelocityVerlet(1.0))
+        sim.set_neighbor(NeighborList(8.5, 0.5))
+        sim.set_evaluator(LJCut(0.0104, 3.4, 8.5))
+        return sim
+
+    def test_set_thermo_runs_and_prints(
+        self, capfd: pytest.CaptureFixture[str]
+    ) -> None:
+        frame = _cuda_argon_frame()
+        sim = self._cuda_lj()
+        assert sim.set_thermo(2) is sim
+        sim.run(frame, 4)
+        out = capfd.readouterr()
+        text = out.out + out.err
+        assert "Step" in text or "step" in text, text
+
+    def test_late_set_thermo_raises(self) -> None:
+        sim = self._cuda_lj()
+        sim.run(_cuda_argon_frame(), 1)
+        with pytest.raises(RuntimeError, match=_LATE_SETTER_MATCH) as excinfo:
+            sim.set_thermo(100)
+        assert "set_thermo" in str(excinfo.value)
+
+
+def _cuda_argon_frame() -> "molpy.Frame":
+    """Simple-cubic Ar, 64 atoms in a 20 Å cell (> 2 × (cutoff + skin))."""
+    side, a = 4, 20.0 / 4
+    grid = np.arange(side) * a + 0.5 * a
+    x, y, z = (c.ravel() for c in np.meshgrid(grid, grid, grid, indexing="ij"))
+    n = x.size
+    frame = molpy.Frame()
+    atoms = molpy.Block()
+    atoms.insert("x", x.astype(np.float64))
+    atoms.insert("y", y.astype(np.float64))
+    atoms.insert("z", z.astype(np.float64))
+    atoms.insert("mass", np.full(n, 39.948, dtype=np.float64))
+    atoms.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
+    frame["atoms"] = atoms
+    frame.box = molpy.Box.cube(20.0)
+    return frame

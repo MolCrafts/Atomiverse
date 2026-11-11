@@ -1,41 +1,51 @@
 [build-system]
-# Default delivery is a pure-Python wheel (wheel.cmake = false below).
-# nanobind is only needed when CMake actually builds the extension
-# (optional-dependencies.native, or an install that forces cmake on).
+# Default delivery is a pure-Python wheel (wheel.cmake = false below). The
+# native extension is built from a source checkout by `python -m atomiverse
+# compile`, which runs `pip wheel --no-build-isolation -C wheel.cmake=true` in
+# the user's environment — hence the `native` extra.
 requires = ["scikit-build-core>=0.10"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "atomiverse"
-version = "0.1.0"
+# Single source: __version__ in src/atomiverse/__init__.py. A release tag
+# vX.Y.Z must equal it (.github/workflows/release.yml checks).
+dynamic = ["version"]
 description = "Molecular simulation compute backend (CPU + optional CUDA)"
+readme = "README.md"
 license = "GPL-2.0-only"
-license-files = ["../LICENSE"]
-requires-python = ">=3.9"
-dependencies = ["numpy", "molcrafts-molpy>=0.13.0,<0.14", "typer>=0.12"]
+# molcrafts-molpy (the Frame currency) requires >=3.12.
+requires-python = ">=3.12"
+# The local molpy wheel and CXX bridge must come from the same tree.
+# No molpy release version is pinned.
+dependencies = ["numpy", "molcrafts-molpy", "typer>=0.12"]
 
 [project.optional-dependencies]
 dev      = ["pytest", "pytest-cov", "numpy"]
-# Native extension build (nanobind). Not required for the pure wheel.
-native   = ["nanobind>=2.4"]
+# Native extension build (`python -m atomiverse compile`): scikit-build-core
+# and nanobind for the extension, maturin for molpy from the local checkout. Not
+# required for the pure wheel; the build runs without isolation, so all three
+# live in this env.
+native   = ["nanobind>=2.4", "scikit-build-core>=0.10", "maturin>=1.0,<2.0"]
+benchmark = ["pyscf>=2.11,<3", "threadpoolctl>=3.5", "pydantic>=2.11"]
 # Docs: only the theme (+ zensical). MolVis and MolPlot fences both live in
 # molcrafts-zensical-theme; browser bundles load from the npm CDN in
-# zensical.toml. Do NOT add molcrafts-molplot here — that is for paper
-# charting in the `examples` extra, not for documentation builds.
+# zensical.toml. Do NOT add molcrafts-molplot here.
 docs     = [
   "zensical>=0.0.45",
   "molcrafts-zensical-theme>=0.2.3",
-]
-# Python examples (pw_qe_compare, …): paper plots via molplot; systems via molpy.
-# Do not add matplotlib or ASE here — use the MolCrafts stack only.
-examples = [
-  "molcrafts-molplot>=0.1.2",
-  "molcrafts-molpy==0.13.1",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts   = "-v --tb=short"
+
+[dependency-groups]
+ci = ["build>=1.2", "twine>=6", "pip>=25", "molcrafts-ci>=0.3"]
+
+[tool.uv.sources]
+molcrafts-molpy = { git = "https://github.com/MolCrafts/molpy", rev = "2ba2b2d974d036da8823e13f4a6c9236bfe46f3f", subdirectory = "molpy" }
+molcrafts-ci = { git = "https://github.com/MolCrafts/molcrafts-ci", rev = "54799bfe986f247edd1788e6242673a527400306" }
 
 [tool.coverage.run]
 source = ["src/atomiverse"]
@@ -57,9 +67,18 @@ build-dir = "build/skbuild/{wheel_tag}"
 wheel.packages = ["src/atomiverse"]
 
 # Default: pure-Python wheel — no CMake / no C++ compile at pip install time.
-# On-demand native build is `python -m atomiverse install` (phase 03) or an
-# override that re-enables cmake (e.g. -C wheel.cmake=true for dev wheels).
+# The native wheel is `python -m atomiverse compile` (-C wheel.cmake=true plus
+# an explicit cmake.define per product module), installed by pip so the
+# extension is a RECORD-tracked file of the distribution.
 wheel.cmake = false
+
+# Only the `python` CMake component (extension, _build_info.json, launcher)
+# goes into the wheel — vendored dependencies' own install rules (xtensor,
+# xsimd, … headers and CMake configs) must not land in site-packages.
+install.components = ["python"]
+
+metadata.version.provider = "scikit_build_core.metadata.regex"
+metadata.version.input = "src/atomiverse/__init__.py"
 
 # Editable installs: redirect mode injects a finder that delegates to both
 # the CMake install tree and the Python source tree
@@ -75,38 +94,13 @@ sdist.exclude = [
     "**/__pycache__/**",
 ]
 
-# ── CMake defines (use cmake.define, not cmake.args, so they can be overridden
-#    from the command line:  pip install -C cmake.define.ATV_BUILD_CUDA=ON .)
-# ──────────────────────────────────────────────────────────────────────────────
+# ── CMake defines ─────────────────────────────────────────────────────────────
+# Only the switches that are fixed for every Python build. Product modules,
+# MPI and precision tiers are chosen per build by `python -m atomiverse
+# config`, which passes every one explicitly as -C cmake.define.KEY=VALUE.
 
 [tool.scikit-build.cmake.define]
 ATV_BUILD_PYTHON     = "ON"
 ATV_BUILD_TESTS      = "OFF"
 ATV_BUILD_BENCHMARKS = "OFF"
 ATV_BUILD_EXAMPLES   = "OFF"
-ATV_BUILD_PW         = {env = "ATV_BUILD_PW",  default = "OFF"}
-ATV_BUILD_HF        = {env = "ATV_BUILD_HF", default = "ON"}
-# Reciprocal-space electrostatics (PME, needs FFTW3): ON so the shipped
-# wheel can run charged periodic systems (CoulLong + KSpacePME).
-ATV_BUILD_KSPACE     = {env = "ATV_BUILD_KSPACE", default = "ON"}
-
-# Optional backends: driven by environment variable with a safe default
-# Override: ATV_BUILD_CUDA=ON pip install .
-ATV_BUILD_CUDA  = {env = "ATV_BUILD_CUDA",  default = "OFF"}
-# MPI launcher executable in the wheel (opt-in: an MPI + libpython-linked
-# binary is environment-bound, never manylinux-distributable):
-#   ATV_BUILD_LAUNCHER=ON pip install .
-ATV_BUILD_LAUNCHER = {env = "ATV_BUILD_LAUNCHER", default = "OFF"}
-
-# Precision tiers: per-atom storage and transient kernel work, each float or
-# double. The engine default is double on both; the wheel keeps that so a pip
-# install and a source build agree numerically.
-ATV_REAL_STORAGE = {env = "ATV_REAL_STORAGE", default = "double"}
-ATV_REAL_WORK    = {env = "ATV_REAL_WORK",    default = "double"}
-
-# ── Environment-specific overrides ────────────────────────────────────────────
-
-# CI wheel builds: enable full rebuild logging
-[[tool.scikit-build.overrides]]
-if.env.CIBUILDWHEEL = true
-cmake.build-type = "Release"

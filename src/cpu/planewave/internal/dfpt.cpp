@@ -32,15 +32,17 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/planewave/internal/davidson.h"
 #include "atomiverse/cpu/planewave/internal/density_builder.h"
+#include "atomiverse/cpu/planewave/internal/ewald.h"
+#include "atomiverse/cpu/planewave/internal/nc_potential.h"
 #include "atomiverse/cpu/planewave/internal/poisson.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
+#include "atomiverse/cpu/planewave/internal/response_mixer.h"
 #include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
-#include "atomiverse/cpu/planewave/internal/upf_reader.h"
 #include "atomiverse/cpu/planewave/internal/veff_builder.h"
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/electronic/smearing.h"
 
 #include <algorithm>
 #include <cmath>
@@ -154,24 +156,24 @@ struct KbMoments {
 
 /// Evaluate KB moments of `psi` for every (m) of one projector of one atom.
 /// `want_t` skips the second moments when only c/s are needed.
-void kb_moments(const PWWorkspace& ws, std::size_t ia, std::size_t ip,
+void kb_moments(PWProjectorView ws, std::size_t ia, std::size_t ip,
                 const Cx* psi, bool want_t, std::vector<KbMoments>& out) {
-    const auto& gv = *ws.gvec;
-    const auto& proj = ws.kb_proj[ia][ip];
+    const auto& gv = ws.modes;
+    const auto& proj = ws.projectors[ia][ip];
     const int l = proj.l;
     const int nm = n_m_for_l(l);
-    const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(ws.omega);
+    const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(ws.volume);
     const auto im_l = im_l_factor(l);
-    const AccReal ax = ws.atom_pos_bohr[ia][0];
-    const AccReal ay = ws.atom_pos_bohr[ia][1];
-    const AccReal az = ws.atom_pos_bohr[ia][2];
+    const AccReal ax = ws.positions[ia][0];
+    const AccReal ay = ws.positions[ia][1];
+    const AccReal az = ws.positions[ia][2];
 
     out.assign(static_cast<std::size_t>(nm), KbMoments{});
     std::vector<AccReal> ylm(static_cast<std::size_t>(nm));
 
-    for (int ig = 0; ig < ws.n_g; ++ig) {
+    for (int ig = 0; ig < ws.modes.count(); ++ig) {
         const AccReal fl = proj.f_G[ig];
-        if (std::abs(fl) < AccReal(1e-30))
+        if (fl == AccReal(0))
             continue;
         const AccReal qx = gv.g[ig][0] + gv.kvec[0];
         const AccReal qy = gv.g[ig][1] + gv.kvec[1];
@@ -205,21 +207,21 @@ void kb_moments(const PWWorkspace& ws, std::size_t ia, std::size_t ip,
 
 /// Accumulate (∂V_nl^{(I,α)} ψ)(G) for atom `ia`, axis `alpha` into `out`:
 /// Σ_{p,m} i D β(G) (s_α − q_α c).
-void add_dnl_psi(const PWWorkspace& ws, std::size_t ia, int alpha,
-                 const Cx* psi, Cx* out) {
-    if (ws.kb_proj.empty() || ia >= ws.kb_proj.size())
+void add_dnl_psi(PWProjectorView ws, std::size_t ia, int alpha, const Cx* psi,
+                 Cx* out) {
+    if (ws.projectors.empty() || ia >= ws.projectors.size())
         return;
-    const auto& gv = *ws.gvec;
-    const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(ws.omega);
-    const AccReal ax = ws.atom_pos_bohr[ia][0];
-    const AccReal ay = ws.atom_pos_bohr[ia][1];
-    const AccReal az = ws.atom_pos_bohr[ia][2];
+    const auto& gv = ws.modes;
+    const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(ws.volume);
+    const AccReal ax = ws.positions[ia][0];
+    const AccReal ay = ws.positions[ia][1];
+    const AccReal az = ws.positions[ia][2];
 
     std::vector<KbMoments> mo;
-    for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
-        const auto& proj = ws.kb_proj[ia][ip];
+    for (std::size_t ip = 0; ip < ws.projectors[ia].size(); ++ip) {
+        const auto& proj = ws.projectors[ia][ip];
         const AccReal D = proj.d;
-        if (std::abs(D) < AccReal(1e-16))
+        if (D == AccReal(0))
             continue;
         const int l = proj.l;
         const int nm = n_m_for_l(l);
@@ -227,9 +229,9 @@ void add_dnl_psi(const PWWorkspace& ws, std::size_t ia, int alpha,
         kb_moments(ws, ia, ip, psi, /*want_t=*/false, mo);
 
         std::vector<AccReal> ylm(static_cast<std::size_t>(nm));
-        for (int ig = 0; ig < ws.n_g; ++ig) {
+        for (int ig = 0; ig < ws.modes.count(); ++ig) {
             const AccReal fl = proj.f_G[ig];
-            if (std::abs(fl) < AccReal(1e-30))
+            if (fl == AccReal(0))
                 continue;
             const AccReal qx = gv.g[ig][0] + gv.kvec[0];
             const AccReal qy = gv.g[ig][1] + gv.kvec[1];
@@ -250,21 +252,21 @@ void add_dnl_psi(const PWWorkspace& ws, std::size_t ia, int alpha,
     }
 }
 
-AccReal lda_fxc_at(AccReal rho, cpu::scf::XCType xc) {
+AccReal lda_fxc_at(AccReal rho, cpu::xc::XCType xc) {
     if (rho < AccReal(1e-10))
         return AccReal(0);
     const double r = static_cast<double>(rho);
     const double h = std::max(1e-6 * r, 1e-12);
     const double vp =
-        cpu::scf::evaluate_xc(xc, (r + h) / 2.0, (r + h) / 2.0).vrho_alpha;
+        cpu::xc::evaluate_xc(xc, (r + h) / 2.0, (r + h) / 2.0).vrho_alpha;
     const double vm =
-        cpu::scf::evaluate_xc(xc, (r - h) / 2.0, (r - h) / 2.0).vrho_alpha;
+        cpu::xc::evaluate_xc(xc, (r - h) / 2.0, (r - h) / 2.0).vrho_alpha;
     return static_cast<AccReal>((vp - vm) / (2.0 * h));
 }
 
 /// @brief Pure semi-local XC only (LSDA + pure GGA). Hybrids need HF-X response.
-bool dfpt_xc_supported(cpu::scf::XCType xc) {
-    return cpu::scf::hybrid_exchange_fraction(xc) == 0.0;
+bool dfpt_xc_supported(cpu::xc::XCType xc) {
+    return cpu::xc::hybrid_exchange_fraction(xc) == 0.0;
 }
 
 /// @brief \(K_{\mathrm{xc}}[\Delta n]\) via central FD of `XCBuilder::step`.
@@ -272,10 +274,10 @@ bool dfpt_xc_supported(cpu::scf::XCType xc) {
 /// Matches the discrete ground-state \(V_{\mathrm{xc}}[n]\) operator (spectral
 /// \(\nabla\rho\) + GGA flux for pure GGA; local for LSDA). Output is
 /// sphere-filtered like the ground-state \(V_{\mathrm{xc}}\) path.
-/// Restores `ws.rho_G` to `rho0_G` on exit. `dn_r` must be real-valued
+/// Leaves the accepted workspace state unchanged. `dn_r` must be real-valued
 /// total density response [e/Bohr³].
 void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
-                        const std::vector<Cx>& rho0_G, cpu::scf::XCType xc_type,
+                        const std::vector<Cx>& rho0_G, cpu::xc::XCType xc_type,
                         const AccReal* dn_r, AccReal* dv_xc_r,
                         fftw_complex* work, AccReal eps) {
     const int ng0 = gv0.count();
@@ -295,39 +297,9 @@ void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
         eps_use = std::max(eps_use, AccReal(1e-8));
     }
 
-    std::vector<AccReal> v_plus(static_cast<std::size_t>(nr));
-    std::vector<AccReal> v_minus(static_cast<std::size_t>(nr));
-
-    auto set_rho = [&](AccReal sign) {
-        for (int ig = 0; ig < ng0; ++ig)
-            ws.rho_G[ig] =
-                rho0_G[static_cast<std::size_t>(ig)]
-                + sign * eps_use * dn_g[static_cast<std::size_t>(ig)];
-    };
-
-    set_rho(+AccReal(1));
-    xc.step(ws, xc_type);
-    for (int i = 0; i < nr; ++i)
-        v_plus[static_cast<std::size_t>(i)] = ws.V_xc_r[i];
-
-    set_rho(-AccReal(1));
-    xc.step(ws, xc_type);
-    for (int i = 0; i < nr; ++i)
-        v_minus[static_cast<std::size_t>(i)] = ws.V_xc_r[i];
-
-    for (int ig = 0; ig < ng0; ++ig)
-        ws.rho_G[ig] = rho0_G[static_cast<std::size_t>(ig)];
-
-    const AccReal inv_2eps = AccReal(1) / (AccReal(2) * eps_use);
-    for (int i = 0; i < nr; ++i)
-        dv_xc_r[i] = (v_plus[static_cast<std::size_t>(i)]
-                      - v_minus[static_cast<std::size_t>(i)])
-                     * inv_2eps;
-
-    // Sphere-filter like the ground-state V_xc (reject high-G noise).
-    std::vector<Cx> vg(static_cast<std::size_t>(ng0));
-    real_to_sphere(ws, gv0, dv_xc_r, vg.data(), work);
-    sphere_to_real(ws, gv0, vg.data(), dv_xc_r, work);
+    const XCBuilder::ResponseChannel channels[] = {
+        {rho0_G, dn_g, {dv_xc_r, static_cast<std::size_t>(nr)}}};
+    xc.response(ws, xc_type, channels, eps_use);
 }
 
 /// @brief Add \(K_{\mathrm{xc}}[\Delta n]\) into `dv_hxc_r` (Γ, real Δn).
@@ -336,7 +308,7 @@ void apply_xc_kernel_fd(XCBuilder& xc, PWWorkspace& ws, const GVectorList& gv0,
 /// Pure GGA: FD of `XCBuilder` (true gradient kernel).
 void add_xc_kernel_gamma(bool use_gga, XCBuilder& xc, PWWorkspace& ws,
                          const GVectorList& gv0, const std::vector<Cx>& rho0_G,
-                         cpu::scf::XCType xc_type, const AccReal* fxc_r,
+                         cpu::xc::XCType xc_type, const AccReal* fxc_r,
                          const AccReal* dn_mixed, AccReal* dv_hxc_r,
                          std::vector<Cx>& scratch_g, fftw_complex* work) {
     const int nr = ws.nr;
@@ -376,8 +348,8 @@ void project_conduction(const Cx* occ_wfc, int n_occ, int ng, Cx* x) {
 
 std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
                                             const std::vector<AccReal>& charges,
-                                            const cpu::Box& cell,
-                                            AccReal ecut_hartree) {
+                                            const cpu::Box& cell) {
+    const EwaldSummation ewald(pos_ang, charges, cell);
     const AccReal a2b = AccReal(1.8897259886);
     cpu::Box cell_bohr;
     cell_bohr.set_cell(cell.cell() * a2b);
@@ -389,20 +361,14 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     if (n == 0)
         return D;
 
-    std::vector<Vec3> pos(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        pos[static_cast<std::size_t>(i)] = {
-            pos_ang[static_cast<std::size_t>(i)][0] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][1] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][2] * a2b};
+    const auto pos = ewald.positions_bohr();
 
     const AccReal vol = cell_bohr.volume();
     if (vol <= 0)
         return D;
 
-    // α selection and cutoffs identical to EwaldSummation.
-    const AccReal rcut_alpha = cell_bohr.lengths().norm() * AccReal(0.5);
-    const AccReal alpha = std::sqrt(-std::log(AccReal(2e-17))) / rcut_alpha;
+    // Canonical ion-ion precision domains, independent of electronic cutoff.
+    const AccReal alpha = ewald.alpha();
     const AccReal two_alpha_over_sqrt_pi =
         AccReal(2) * alpha / std::sqrt(AccReal(units::pi));
 
@@ -411,8 +377,9 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     };
 
     // ── Real space ──
-    const AccReal r_cut = AccReal(5) / alpha;
-    const auto lens = cell_bohr.lengths();
+    const AccReal r_cut = ewald.real_cutoff();
+    const auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
+                           cell_bohr.face_height(2)};
     const int ncell_r = static_cast<int>(std::ceil(
                             r_cut / std::min({lens[0], lens[1], lens[2]})))
                         + 1;
@@ -424,15 +391,15 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
             for (int hx = -ncell_r; hx <= ncell_r; ++hx)
                 for (int hy = -ncell_r; hy <= ncell_r; ++hy)
                     for (int hz = -ncell_r; hz <= ncell_r; ++hz) {
-                        // L = hx a + hy b + hz c (rows of cb = lattice vectors).
+                        // L = hx a + hy b + hz c (columns of cb = lattice vectors).
                         const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                           + AccReal(hy) * cb(1, 0)
-                                           + AccReal(hz) * cb(2, 0);
-                        const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                           + AccReal(hy) * cb(0, 1)
+                                           + AccReal(hz) * cb(0, 2);
+                        const AccReal Ly = AccReal(hx) * cb(1, 0)
                                            + AccReal(hy) * cb(1, 1)
-                                           + AccReal(hz) * cb(2, 1);
-                        const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                           + AccReal(hy) * cb(1, 2)
+                                           + AccReal(hz) * cb(1, 2);
+                        const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                           + AccReal(hy) * cb(2, 1)
                                            + AccReal(hz) * cb(2, 2);
                         const Vec3 dr = {
                             pos[static_cast<std::size_t>(i)][0]
@@ -477,14 +444,17 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     }
 
     // ── Reciprocal space ──
-    const AccReal g_cut = std::sqrt(AccReal(8) * ecut_hartree);
+    const AccReal g_cut = ewald.reciprocal_cutoff();
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 b0{recip(0, 0), recip(0, 1), recip(0, 2)};
-    const Vec3 b1{recip(1, 0), recip(1, 1), recip(1, 2)};
-    const Vec3 b2{recip(2, 0), recip(2, 1), recip(2, 2)};
-    const int gmax =
-        static_cast<int>(g_cut / std::min({b0.norm(), b1.norm(), b2.norm()}))
-        + 1;
+    const Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
+    const Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
+    const Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
+    const int gmax = static_cast<int>(g_cut
+                                      * std::max({cell_bohr.lengths()[0],
+                                                  cell_bohr.lengths()[1],
+                                                  cell_bohr.lengths()[2]})
+                                      / (AccReal(2) * units::pi))
+                     + 1;
     const AccReal alpha_sq_4 = AccReal(4) * alpha * alpha;
     const AccReal two_pi_over_vol = AccReal(2) * AccReal(units::pi) / vol;
 
@@ -531,9 +501,21 @@ std::vector<AccReal> ewald_dynamical_matrix(const std::vector<Vec3>& pos_ang,
     return D;
 }
 
-std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
-    const std::vector<Vec3>& pos_ang, const std::vector<AccReal>& charges,
-    const cpu::Box& cell, AccReal ecut_hartree, const Vec3& q_frac) {
+std::vector<std::complex<AccReal>>
+ewald_dynamical_matrix_q(const std::vector<Vec3>& pos_ang,
+                         const std::vector<AccReal>& charges,
+                         const cpu::Box& cell, const Vec3& q_frac) {
+    for (int d = 0; d < 3; ++d)
+        if (!std::isfinite(q_frac[d]))
+            throw std::invalid_argument("Ewald Hessian: q must be finite");
+    // Γ uses the identical accumulation and needs no second Ewald assembly.
+    if (std::abs(q_frac[0]) < AccReal(1e-14)
+        && std::abs(q_frac[1]) < AccReal(1e-14)
+        && std::abs(q_frac[2]) < AccReal(1e-14)) {
+        const auto gamma = ewald_dynamical_matrix(pos_ang, charges, cell);
+        return {gamma.begin(), gamma.end()};
+    }
+    const EwaldSummation ewald(pos_ang, charges, cell);
     using Cx = std::complex<AccReal>;
     const AccReal a2b = AccReal(1.8897259886);
     cpu::Box cell_bohr;
@@ -546,23 +528,7 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     if (n == 0)
         return D;
 
-    // Exact Γ matrix when q vanishes (identical α / cutoffs / accumulation).
-    if (std::abs(q_frac[0]) < AccReal(1e-14)
-        && std::abs(q_frac[1]) < AccReal(1e-14)
-        && std::abs(q_frac[2]) < AccReal(1e-14)) {
-        const auto Dg =
-            ewald_dynamical_matrix(pos_ang, charges, cell, ecut_hartree);
-        for (std::size_t i = 0; i < Dg.size(); ++i)
-            D[i] = Dg[i];
-        return D;
-    }
-
-    std::vector<Vec3> pos(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        pos[static_cast<std::size_t>(i)] = {
-            pos_ang[static_cast<std::size_t>(i)][0] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][1] * a2b,
-            pos_ang[static_cast<std::size_t>(i)][2] * a2b};
+    const auto pos = ewald.positions_bohr();
 
     const AccReal vol = cell_bohr.volume();
     if (vol <= 0)
@@ -570,12 +536,11 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
 
     // Cartesian q [1/Bohr]; recip_cell includes 2π.
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 b0{recip(0, 0), recip(0, 1), recip(0, 2)};
-    const Vec3 b1{recip(1, 0), recip(1, 1), recip(1, 2)};
-    const Vec3 b2{recip(2, 0), recip(2, 1), recip(2, 2)};
+    const Vec3 b0{recip(0, 0), recip(1, 0), recip(2, 0)};
+    const Vec3 b1{recip(0, 1), recip(1, 1), recip(2, 1)};
+    const Vec3 b2{recip(0, 2), recip(1, 2), recip(2, 2)};
     const Vec3 q_cart = b0 * q_frac[0] + b1 * q_frac[1] + b2 * q_frac[2];
-    const AccReal rcut_alpha = cell_bohr.lengths().norm() * AccReal(0.5);
-    const AccReal alpha = std::sqrt(-std::log(AccReal(2e-17))) / rcut_alpha;
+    const AccReal alpha = ewald.alpha();
     const AccReal two_alpha_over_sqrt_pi =
         AccReal(2) * alpha / std::sqrt(AccReal(units::pi));
 
@@ -584,9 +549,10 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     };
 
     // Mirror the Γ real-space pair loop (i < j) with lattice phase e^{iq·L}.
-    // Same φ′′ kernel and L = h a + k b + l c (rows) as ewald_dynamical_matrix.
-    const AccReal r_cut = AccReal(5) / alpha;
-    const auto lens = cell_bohr.lengths();
+    // Same φ′′ kernel and L = h a + k b + l c (columns) as ewald_dynamical_matrix.
+    const AccReal r_cut = ewald.real_cutoff();
+    const auto lens = Vec3{cell_bohr.face_height(0), cell_bohr.face_height(1),
+                           cell_bohr.face_height(2)};
     const int ncell_r = static_cast<int>(std::ceil(
                             r_cut / std::min({lens[0], lens[1], lens[2]})))
                         + 1;
@@ -599,13 +565,13 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                 for (int hy = -ncell_r; hy <= ncell_r; ++hy)
                     for (int hz = -ncell_r; hz <= ncell_r; ++hz) {
                         const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                           + AccReal(hy) * cb(1, 0)
-                                           + AccReal(hz) * cb(2, 0);
-                        const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                           + AccReal(hy) * cb(0, 1)
+                                           + AccReal(hz) * cb(0, 2);
+                        const AccReal Ly = AccReal(hx) * cb(1, 0)
                                            + AccReal(hy) * cb(1, 1)
-                                           + AccReal(hz) * cb(2, 1);
-                        const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                           + AccReal(hy) * cb(1, 2)
+                                           + AccReal(hz) * cb(1, 2);
+                        const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                           + AccReal(hy) * cb(2, 1)
                                            + AccReal(hz) * cb(2, 2);
                         const Vec3 dr = {
                             pos[static_cast<std::size_t>(i)][0]
@@ -666,13 +632,13 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                     if (hx == 0 && hy == 0 && hz == 0)
                         continue;
                     const AccReal Lx = AccReal(hx) * cb(0, 0)
-                                       + AccReal(hy) * cb(1, 0)
-                                       + AccReal(hz) * cb(2, 0);
-                    const AccReal Ly = AccReal(hx) * cb(0, 1)
+                                       + AccReal(hy) * cb(0, 1)
+                                       + AccReal(hz) * cb(0, 2);
+                    const AccReal Ly = AccReal(hx) * cb(1, 0)
                                        + AccReal(hy) * cb(1, 1)
-                                       + AccReal(hz) * cb(2, 1);
-                    const AccReal Lz = AccReal(hx) * cb(0, 2)
-                                       + AccReal(hy) * cb(1, 2)
+                                       + AccReal(hz) * cb(1, 2);
+                    const AccReal Lz = AccReal(hx) * cb(2, 0)
+                                       + AccReal(hy) * cb(2, 1)
                                        + AccReal(hz) * cb(2, 2);
                     const AccReal r = std::sqrt(Lx * Lx + Ly * Ly + Lz * Lz);
                     if (!(r > AccReal(0)) || r >= r_cut)
@@ -717,13 +683,15 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
     // Reciprocal: Γ uses (2π/Ω)·2·cos for i<j + ASR on diagonals.
     // Finite q: (4π/Ω) Σ_{G+q≠0} e^{-…}/|G+q|² (G+q)_α(G+q)_β
     //   × Z_i Z_j exp(i(G+q)·(R_i−R_j)) for i≤j with Hermitian completion.
-    const AccReal g_cut = std::sqrt(AccReal(8) * ecut_hartree);
+    const AccReal g_cut = ewald.reciprocal_cutoff();
     const AccReal qn = q_cart.norm();
-    const AccReal g_cut_eff = g_cut + qn + AccReal(1e-6);
-    const int gmax =
-        static_cast<int>(g_cut_eff
-                         / std::min({b0.norm(), b1.norm(), b2.norm()}))
-        + 1;
+    const AccReal g_cut_eff = g_cut + qn;
+    const int gmax = static_cast<int>(g_cut_eff
+                                      * std::max({cell_bohr.lengths()[0],
+                                                  cell_bohr.lengths()[1],
+                                                  cell_bohr.lengths()[2]})
+                                      / (AccReal(2) * units::pi))
+                     + 1;
     const AccReal alpha_sq_4 = AccReal(4) * alpha * alpha;
     const AccReal four_pi_over_vol = AccReal(4) * AccReal(units::pi) / vol;
 
@@ -735,7 +703,7 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                 const Vec3 Gq = {G[0] + q_cart[0], G[1] + q_cart[1],
                                  G[2] + q_cart[2]};
                 const AccReal gq2 = Gq.norm_squared();
-                if (gq2 < AccReal(1e-16) || gq2 > g_cut_eff * g_cut_eff)
+                if (gq2 < AccReal(1e-16) || gq2 > g_cut * g_cut)
                     continue;
                 const AccReal coeff =
                     four_pi_over_vol * std::exp(-gq2 / alpha_sq_4) / gq2;
@@ -771,6 +739,25 @@ std::vector<std::complex<AccReal>> ewald_dynamical_matrix_q(
                     }
             }
 
+    // The lattice sums used primary-cell representatives. Restore the raw
+    // atomic-basis gauge used by electronic exp[-i(G+q)R] perturbations:
+    // C_ij(raw)=exp[i q.(T_i-T_j)] C_ij(primary).
+    std::vector<Cx> image_phase(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        AccReal angle = 0;
+        for (int d = 0; d < 3; ++d)
+            angle += q_cart[d]
+                     * (pos_ang[static_cast<std::size_t>(i)][d] * a2b
+                        - pos[static_cast<std::size_t>(i)][d]);
+        image_phase[static_cast<std::size_t>(i)] = {std::cos(angle),
+                                                    std::sin(angle)};
+    }
+    for (int row = 0; row < dim; ++row)
+        for (int column = 0; column < dim; ++column)
+            D[static_cast<std::size_t>(row) * dim + column] *=
+                image_phase[static_cast<std::size_t>(row / 3)]
+                * std::conj(image_phase[static_cast<std::size_t>(column / 3)]);
+
     // Hermitian projection (numerical noise).
     for (int p = 0; p < dim; ++p)
         for (int q = p; q < dim; ++q) {
@@ -800,7 +787,7 @@ int sternheimer_cg(const PWWorkspace& ws, const Cx* occ_wfc, int n_occ,
     };
     auto precond = [&](const Cx* r, Cx* z) {
         for (int ig = 0; ig < ng; ++ig) {
-            AccReal denom = ws.T_G[ig] - eps;
+            AccReal denom = ws.gvec->ekin[ig] - eps;
             if (denom < AccReal(0.35))
                 denom = AccReal(0.35);
             z[ig] = r[ig] / denom;
@@ -835,6 +822,8 @@ int sternheimer_cg(const PWWorkspace& ws, const Cx* occ_wfc, int n_occ,
     for (int ig = 0; ig < ng; ++ig)
         r[static_cast<std::size_t>(ig)] =
             b[static_cast<std::size_t>(ig)] - Ap[static_cast<std::size_t>(ig)];
+    if (std::sqrt(std::max(dot_re(r.data(), r.data()), AccReal(0))) <= stop)
+        return 0; // The projected initial guess already satisfies this solve.
     precond(r.data(), z.data());
     p = z;
     AccReal rz = dot_re(r.data(), z.data());
@@ -878,15 +867,15 @@ int sternheimer_cg(const PWWorkspace& ws, const Cx* occ_wfc, int n_occ,
 namespace {
 
 /// Local collinear LSDA kernel \(f_{\mathrm{xc}}^{\sigma\sigma'}\) at one grid point.
-void lda_spin_fxc(AccReal rho_up, AccReal rho_dn, cpu::scf::XCType xc,
+void lda_spin_fxc(AccReal rho_up, AccReal rho_dn, cpu::xc::XCType xc,
                   AccReal& fuu, AccReal& fud, AccReal& fdu, AccReal& fdd) {
     const double ru = std::max(static_cast<double>(rho_up), 1e-14);
     const double rd = std::max(static_cast<double>(rho_dn), 1e-14);
     const double h = std::max(1e-6 * std::max(ru, rd), 1e-12);
-    const auto vpu = cpu::scf::evaluate_xc(xc, ru + h, rd);
-    const auto vmu = cpu::scf::evaluate_xc(xc, ru - h, rd);
-    const auto vpd = cpu::scf::evaluate_xc(xc, ru, rd + h);
-    const auto vmd = cpu::scf::evaluate_xc(xc, ru, rd - h);
+    const auto vpu = cpu::xc::evaluate_xc(xc, ru + h, rd);
+    const auto vmu = cpu::xc::evaluate_xc(xc, ru - h, rd);
+    const auto vpd = cpu::xc::evaluate_xc(xc, ru, rd + h);
+    const auto vmd = cpu::xc::evaluate_xc(xc, ru, rd - h);
     fuu = static_cast<AccReal>((vpu.vrho_alpha - vmu.vrho_alpha) / (2.0 * h));
     fdu = static_cast<AccReal>((vpu.vrho_beta - vmu.vrho_beta) / (2.0 * h));
     fud = static_cast<AccReal>((vpd.vrho_alpha - vmd.vrho_alpha) / (2.0 * h));
@@ -897,7 +886,7 @@ void lda_spin_fxc(AccReal rho_up, AccReal rho_dn, cpu::scf::XCType xc,
 void apply_xc_kernel_spin_fd(XCBuilder& xc, PWWorkspace& ws,
                              const GVectorList& gv0,
                              const std::vector<Cx> rho0_spin[2],
-                             cpu::scf::XCType xc_type, const AccReal* dn_up,
+                             cpu::xc::XCType xc_type, const AccReal* dn_up,
                              const AccReal* dn_dn, AccReal* dv_xc_up,
                              AccReal* dv_xc_dn, fftw_complex* work,
                              AccReal eps) {
@@ -919,56 +908,10 @@ void apply_xc_kernel_spin_fd(XCBuilder& xc, PWWorkspace& ws,
         eps_use = std::max(eps_use, AccReal(1e-8));
     }
 
-    auto set_rho = [&](AccReal sign) {
-        for (int ig = 0; ig < ng0; ++ig) {
-            ws.rho_spin_G[0][ig] =
-                rho0_spin[0][static_cast<std::size_t>(ig)]
-                + sign * eps_use * dng_u[static_cast<std::size_t>(ig)];
-            ws.rho_spin_G[1][ig] =
-                rho0_spin[1][static_cast<std::size_t>(ig)]
-                + sign * eps_use * dng_d[static_cast<std::size_t>(ig)];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-        }
-    };
-
-    std::vector<AccReal> vpu(static_cast<std::size_t>(nr));
-    std::vector<AccReal> vpd(static_cast<std::size_t>(nr));
-    std::vector<AccReal> vmu(static_cast<std::size_t>(nr));
-    std::vector<AccReal> vmd(static_cast<std::size_t>(nr));
-
-    set_rho(+AccReal(1));
-    xc.step_spin(ws, xc_type);
-    for (int i = 0; i < nr; ++i) {
-        vpu[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[0][i];
-        vpd[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[1][i];
-    }
-    set_rho(-AccReal(1));
-    xc.step_spin(ws, xc_type);
-    for (int i = 0; i < nr; ++i) {
-        vmu[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[0][i];
-        vmd[static_cast<std::size_t>(i)] = ws.V_xc_spin_r[1][i];
-    }
-    // Restore ground-state spin densities.
-    for (int ig = 0; ig < ng0; ++ig) {
-        ws.rho_spin_G[0][ig] = rho0_spin[0][static_cast<std::size_t>(ig)];
-        ws.rho_spin_G[1][ig] = rho0_spin[1][static_cast<std::size_t>(ig)];
-        ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-    }
-    const AccReal inv = AccReal(1) / (AccReal(2) * eps_use);
-    for (int i = 0; i < nr; ++i) {
-        dv_xc_up[i] = (vpu[static_cast<std::size_t>(i)]
-                       - vmu[static_cast<std::size_t>(i)])
-                      * inv;
-        dv_xc_dn[i] = (vpd[static_cast<std::size_t>(i)]
-                       - vmd[static_cast<std::size_t>(i)])
-                      * inv;
-    }
-    // Sphere-filter each channel.
-    std::vector<Cx> vg(static_cast<std::size_t>(ng0));
-    real_to_sphere(ws, gv0, dv_xc_up, vg.data(), work);
-    sphere_to_real(ws, gv0, vg.data(), dv_xc_up, work);
-    real_to_sphere(ws, gv0, dv_xc_dn, vg.data(), work);
-    sphere_to_real(ws, gv0, vg.data(), dv_xc_dn, work);
+    const XCBuilder::ResponseChannel channels[] = {
+        {rho0_spin[0], dng_u, {dv_xc_up, static_cast<std::size_t>(nr)}},
+        {rho0_spin[1], dng_d, {dv_xc_dn, static_cast<std::size_t>(nr)}}};
+    xc.response(ws, xc_type, channels, eps_use);
 }
 
 DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
@@ -977,11 +920,9 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                                      int cg_max_iter, AccReal mix_beta) {
     const int n = frame.nlocal();
     const int dim = 3 * n;
-    const int* types = frame.span(kAtom_type);
 
-    int n_elec = 0;
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    const int n_elec =
+        internal::assign_nc_species(frame, method.potentials).n_elec;
     if (method.multiplicity < 1)
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: multiplicity must be >= 1 when "
@@ -994,16 +935,17 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     const int n_alpha = (n_elec + mag) / 2;
     const int n_beta = (n_elec - mag) / 2;
     const int n_occ_fixed[2] = {n_alpha, n_beta};
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: degauss must be > 0 [Ry] when "
             "smearing is enabled");
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -1023,12 +965,12 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptGammaOutput out;
-    PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
-    PWWorkspace& ws = prob.ws;
+    PWSetup prob;
+    PWWorkspace ws;
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
     auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const AccReal omega = ws.omega;
     const int nr = ws.nr;
     const int ng0 = gv0.count();
@@ -1071,13 +1013,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     // fixed-occ spin DFPT. Self-consistent Mermin spin-density for open
     // metals reuses the same response; a fully fractional GS density loop is
     // available via PW::run (spin+smear) when needed as a follow-on.
-    // Supercell / sparse-k spin densities can ring with mix_beta ~ 0.7 —
-    // use a conservative channel mix and back off if the residual grows.
+    // Both spin channels share the canonical joint-density Pulay history.
     bool scf_ok = false;
-    AccReal scf_mix = AccReal(method.mix_beta);
-    if (scf_mix > AccReal(0.4))
-        scf_mix = AccReal(0.4);
-    AccReal best_rms = AccReal(1e30);
     for (int iter = 0; iter < method.max_iter; ++iter) {
         for (int ig = 0; ig < ng0; ++ig)
             ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
@@ -1085,57 +1022,28 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
         xc.step_spin(ws, method.xc);
 
         xt::xarray<std::complex<AccReal>> rho_out[2];
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int s = 0; s < 2; ++s) {
             for (int ig = 0; ig < ng0; ++ig)
                 ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
             veff.step(ws);
             density.begin(ws);
             for (int ik = 0; ik < n_kpts; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                ws.gvec = &gvk;
-                ws.n_g = gvk.count();
-                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.T_G[ig] = gvk.ekin[ig];
-                if (!prob.kb_proj_k.empty())
-                    ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
                 davidson.step(ws);
                 const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 // Integer channel fill for GS density (multiplicity constraint).
                 density.accumulate_kpoint(ws, weight, n_occ_fixed[s],
                                           AccReal(1));
-                ws.gvec = saved_gvec;
-                ws.n_g = ng0;
+                ws.bind(saved_point);
             }
             density.extract(ws, rho_out[s]);
         }
-        for (int s = 0; s < 2; ++s) {
-            for (int ig = 0; ig < ng0; ++ig) {
-                ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                ws.rho_spin_G[s][ig] =
-                    ws.rho_spin_G_old[s][ig]
-                    + scf_mix * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-            }
-        }
-        AccReal dr = 0;
-        for (int ig = 0; ig < ng0; ++ig) {
-            const Cx old = ws.rho_G[ig];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-            const Cx d = ws.rho_G[ig] - old;
-            dr += d.real() * d.real() + d.imag() * d.imag();
-        }
-        const AccReal rms = std::sqrt(dr);
-        if (rms < best_rms)
-            best_rms = rms;
-        else if (rms > AccReal(2) * best_rms && best_rms < AccReal(1e-3))
-            scf_mix = std::max(scf_mix * AccReal(0.5), AccReal(0.1));
+        const AccReal rms = density.mix_spin(ws, rho_out[0], rho_out[1]);
         if ((iter + 1) % 20 == 0 || rms < AccReal(method.tol))
-            ATV_DEBUG("[pw][dfpt] spin SCF iter={} dens_rms={:.3e} mix={:.2f}",
-                      iter + 1, rms, scf_mix);
+            ATV_DEBUG("[pw][dfpt] spin SCF iter={} dens_rms={:.3e}", iter + 1,
+                      rms);
         if (rms < AccReal(method.tol)) {
             scf_ok = true;
             break;
@@ -1152,7 +1060,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     poisson.step(ws);
     xc.step_spin(ws, method.xc);
 
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_spin[2];
     for (int s = 0; s < 2; ++s) {
         rho0_spin[s].resize(ngs);
@@ -1202,16 +1110,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     };
     std::vector<KState> kstates(static_cast<std::size_t>(2 * n_kpts));
     auto bind_k = [&](int ik) {
-        auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
     };
     for (int s = 0; s < 2; ++s) {
         // Bind frozen H_σ.
@@ -1245,7 +1144,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
         all_weights.reserve(static_cast<std::size_t>(2 * n_kpts * n_bands));
         for (int s = 0; s < 2; ++s) {
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 const auto& ks =
                     kstates[static_cast<std::size_t>(s * n_kpts + ik)];
                 for (int b = 0; b < n_bands; ++b) {
@@ -1266,11 +1166,9 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
             }
         }
     }
-    ws.gvec = &prob.gv0;
-    ws.n_g = ng0;
+    ws.bind({prob.gv0});
 
-    const UPFData upf = read_upf_v1(method.upf_path);
-    const std::vector<AccReal> vg = upf_vloc_to_gspace(upf, gv0, omega);
+    const auto vg = nc_vloc_to_gspace(prob.ions.species, gv0, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -1302,7 +1200,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                                           + gv0.g[ig][2] * az;
                     const Cx eir(std::cos(phase), -std::sin(phase));
                     dvg[static_cast<std::size_t>(ig)] =
-                        Cx(0, -1) * ga * vg[static_cast<std::size_t>(ig)] * eir;
+                        Cx(0, -1) * ga * vg[prob.ions.atom_species[ia]][ig]
+                        * eir;
                 }
                 sphere_to_real(
                     ws, gv0, dvg.data(),
@@ -1312,13 +1211,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
         }
     }
 
-    std::vector<AccReal> valence(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<AccReal> C =
-        ewald_dynamical_matrix(pos_ang_v, valence, frame.box, ecut_ht);
+        ewald_dynamical_matrix(pos_ang_v, prob.ions.ionic_charges, frame.box);
     auto Cat = [&](int mu, int nu) -> AccReal& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
     };
@@ -1333,7 +1227,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                 gv0.g[ig][0] * ax + gv0.g[ig][1] * ay + gv0.g[ig][2] * az;
             const Cx eir(std::cos(phase), -std::sin(phase));
             const AccReal re = (std::conj(ws.rho_G[ig])
-                                * (vg[static_cast<std::size_t>(ig)] * eir))
+                                * (vg[prob.ions.atom_species[ia]][ig] * eir))
                                    .real();
             for (int a = 0; a < 3; ++a)
                 for (int b = 0; b < 3; ++b)
@@ -1350,7 +1244,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                 bind_k(ik);
                 const auto& ks =
                     kstates[static_cast<std::size_t>(s * n_kpts + ik)];
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 for (int b = 0; b < n_bands; ++b) {
                     const AccReal f_b = ks.occ[static_cast<std::size_t>(b)];
                     if (f_b < kOccThr)
@@ -1361,9 +1256,10 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                         for (std::size_t ip = 0; ip < ws.kb_proj[ia].size();
                              ++ip) {
                             const AccReal Dc = ws.kb_proj[ia][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
-                            kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
+                            kb_moments(ws.projectors(), ia, ip, psi,
+                                       /*want_t=*/true, mo);
                             for (const auto& mm : mo) {
                                 for (int a = 0; a < 3; ++a)
                                     for (int bb = 0; bb < 3; ++bb) {
@@ -1387,8 +1283,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                 }
             }
         }
-        ws.gvec = &prob.gv0;
-        ws.n_g = ng0;
+        ws.bind({prob.gv0});
     }
 
     // Response: Δn↑, Δn↓; weight spinor occupations f in [0,1].
@@ -1410,7 +1305,11 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs, hpsi_tmp;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 2, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed_u.begin(), dn_mixed_u.end(), AccReal(0));
         std::fill(dn_mixed_d.begin(), dn_mixed_d.end(), AccReal(0));
         std::fill(dv_h_r.begin(), dv_h_r.end(), AccReal(0));
@@ -1450,7 +1349,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                         kstates[static_cast<std::size_t>(s * n_kpts + ik)];
                     const int ngk = ks.ng;
                     const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     rhs.resize(static_cast<std::size_t>(ngk));
 
                     // Projector: bands with f >= thr.
@@ -1487,8 +1386,9 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                                         + static_cast<std::ptrdiff_t>(b) * ngk;
                         apply_mult_potential(ws, dv_scr, psi, rhs.data(),
                                              work_buf.data());
-                        add_dnl_psi(ws, static_cast<std::size_t>(atom_mu),
-                                    axis_mu, psi, rhs.data());
+                        add_dnl_psi(ws.projectors(),
+                                    static_cast<std::size_t>(atom_mu), axis_mu,
+                                    psi, rhs.data());
                         for (int ig = 0; ig < ngk; ++ig)
                             rhs[static_cast<std::size_t>(ig)] =
                                 -rhs[static_cast<std::size_t>(ig)];
@@ -1526,8 +1426,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
 
             // Metallic Gamma: shared-mu Fermi shift so ∫(Δn↑+Δn↓)=0.
             if (use_smear && degauss_ha > AccReal(0)) {
@@ -1550,7 +1449,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                             kstates[static_cast<std::size_t>(s * n_kpts + ik)];
                         const int ngk = ks.ng;
                         const AccReal w =
-                            prob.kg.weights[static_cast<std::size_t>(ik)];
+                            prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                         for (int b = 0; b < n_bands; ++b) {
                             const AccReal f_b =
                                 ks.occ[static_cast<std::size_t>(b)];
@@ -1558,7 +1457,8 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                             const AccReal x =
                                 (ks.eps[static_cast<std::size_t>(b)] - mu_ha)
                                 / degauss_ha;
-                            if (smear_kind == SmearKind::fermi_dirac) {
+                            if (smear_kind
+                                == ATV::electronic::Smearing::fermi_dirac) {
                                 if (f_b > AccReal(1e-14)
                                     && f_b < AccReal(1) - AccReal(1e-14))
                                     df_dmu =
@@ -1591,8 +1491,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                         }
                     }
                 }
-                ws.gvec = &prob.gv0;
-                ws.n_g = ng0;
+                ws.bind({prob.gv0});
                 if (dN_dmu > AccReal(1e-8)) {
                     const AccReal dmu = -q_dn / dN_dmu;
                     for (int i = 0; i < nr; ++i) {
@@ -1614,16 +1513,17 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
-            for (int i = 0; i < nr; ++i) {
-                dn_mixed_u[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_u[static_cast<std::size_t>(i)]
-                       - dn_mixed_u[static_cast<std::size_t>(i)]);
-                dn_mixed_d[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_d[static_cast<std::size_t>(i)]
-                       - dn_mixed_d[static_cast<std::size_t>(i)]);
+            if (this_converged) {
+                std::copy(dn_new_u.begin(), dn_new_u.end(), dn_mixed_u.begin());
+                std::copy(dn_new_d.begin(), dn_new_d.end(), dn_mixed_d.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt] spin response mu={} converged iter={} "
+                          "delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
             }
+            response_mixer.mix<AccReal>(
+                {{dn_mixed_u, dn_new_u}, {dn_mixed_d, dn_new_d}});
 
             // ΔV_H from total Δn.
             std::vector<AccReal> dn_tot(static_cast<std::size_t>(nr));
@@ -1674,14 +1574,6 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                                         dv_xc_u.data(), dv_xc_d.data(),
                                         work_buf.data(), AccReal(1e-3));
             }
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt] spin response mu={} converged iter={} "
-                          "delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
-            }
         }
         if (!converged) {
             all_responses_converged = false;
@@ -1712,7 +1604,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                     const auto& ks =
                         kstates[static_cast<std::size_t>(s * n_kpts + ik)];
                     const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     for (int b = 0; b < n_bands; ++b) {
                         const AccReal f_b = ks.occ[static_cast<std::size_t>(b)];
                         if (f_b < kOccThr)
@@ -1728,11 +1620,12 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                             for (std::size_t ip = 0; ip < ws.kb_proj[ja].size();
                                  ++ip) {
                                 const AccReal Dc = ws.kb_proj[ja][ip].d;
-                                if (std::abs(Dc) < AccReal(1e-16))
+                                if (Dc == AccReal(0))
                                     continue;
-                                kb_moments(ws, ja, ip, psi, false, mo_psi);
-                                kb_moments(ws, ja, ip, x.data(), false,
-                                           mo_dpsi);
+                                kb_moments(ws.projectors(), ja, ip, psi, false,
+                                           mo_psi);
+                                kb_moments(ws.projectors(), ja, ip, x.data(),
+                                           false, mo_dpsi);
                                 for (std::size_t m = 0; m < mo_psi.size();
                                      ++m) {
                                     const Cx cP = mo_psi[m].c;
@@ -1753,8 +1646,7 @@ DfptGammaOutput dfpt_gamma_spin_impl(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
         }
     }
     out.response_converged = all_responses_converged;
@@ -1782,18 +1674,11 @@ DfptGammaOutput
 dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                            AccReal response_tol, int response_max_iter,
                            AccReal cg_tol, int cg_max_iter, AccReal mix_beta) {
-    // Fail fast, before any SCF: a run needs a real pseudopotential from one
-    // of the two sources. This used to test `upf_path` alone, which rejected
-    // a perfectly valid analytic-GTH run as if it were the deleted toy path.
-    if (method.upf_path.empty() && method.gth_name.empty())
-        throw std::invalid_argument(
-            "dfpt_gamma_force_constants: requires a pseudopotential — set "
-            "PW::upf_path (UPF file) or PW::gth_name (e.g. \"GTH-PBE-q4\")");
     if (!dfpt_xc_supported(method.xc))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: hybrid XC unsupported "
             "(pure LSDA / pure GGA only; no exact-exchange response)");
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_gamma_force_constants: degauss must be > 0 [Ry] when "
@@ -1816,10 +1701,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                                     mix_beta);
 
     // ── Ground-state SCF (fixed or metallic occupations) ──
-    int n_elec = 0;
-    const int* types = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    const int n_elec =
+        internal::assign_nc_species(frame, method.potentials).n_elec;
     const int n_valence = std::max((n_elec + 1) / 2, 1); // ceil(N_e/2)
     const int n_bands = use_smear ? n_valence + std::max(method.extra_bands, 0)
                                   : std::max(n_elec / 2, 1);
@@ -1828,11 +1711,12 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             "dfpt_gamma_force_constants: odd electron count needs "
             "spin/smearing");
 
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -1845,26 +1729,25 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptGammaOutput out;
-    PWProblem prob;
+    PWSetup prob;
+    PWWorkspace ws;
     const PWResult scf =
         use_smear
-            ? run_scf_smear_restricted(frame, method, prob, poisson, xc, veff,
-                                       density, davidson, n_bands, "dfpt")
-            : run_scf_fixed_occ(frame, method, prob, poisson, xc, veff, density,
-                                davidson, "dfpt");
+            ? run_scf_smear_restricted(frame, method, prob, ws, poisson, xc,
+                                       veff, density, davidson, n_bands, "dfpt")
+            : run_scf_fixed_occ(frame, method, prob, ws, poisson, xc, veff,
+                                density, davidson, "dfpt");
     out.scf_converged = scf.converged;
     if (!scf.converged)
         ATV_WARN("[pw][dfpt] ground-state SCF not converged after {} iters; "
                  "response uses last density",
                  scf.iterations);
 
-    PWWorkspace& ws = prob.ws;
     const GVectorList& gv0 = prob.gv0;
-    ws.gvec = &prob.gv0;
-    ws.n_g = gv0.count();
+    ws.bind({prob.gv0});
     const int ng0 = gv0.count();
     const int nr = ws.nr;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const AccReal omega = ws.omega;
     const AccReal dV = omega / AccReal(nr);
 
@@ -1877,7 +1760,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     veff.step(ws);
 
     // Ground-state density (real + G) for the XC kernel.
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_G(static_cast<std::size_t>(ng0));
     for (int ig = 0; ig < ng0; ++ig)
         rho0_G[static_cast<std::size_t>(ig)] = ws.rho_G[ig];
@@ -1900,16 +1783,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     };
     std::vector<KState> kstates(static_cast<std::size_t>(n_kpts));
     auto bind_k = [&](int ik) {
-        auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        if (!prob.kb_proj_k.empty())
-            ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
     };
     for (int ik = 0; ik < n_kpts; ++ik) {
         bind_k(ik);
@@ -1923,8 +1797,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                 ks.wfc[static_cast<std::size_t>(b) * ws.n_g + ig] =
                     ws.wfc(b, ig);
     }
-    ws.gvec = &prob.gv0;
-    ws.n_g = ng0;
+    ws.bind({prob.gv0});
 
     // Per-(k, band) occupations in [0, 2]: fixed f=2 or metallic smear fill.
     std::vector<std::vector<AccReal>> occ_kb(
@@ -1937,7 +1810,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
         all_evals.reserve(static_cast<std::size_t>(n_kpts * n_bands));
         all_weights.reserve(static_cast<std::size_t>(n_kpts * n_bands));
         for (int ik = 0; ik < n_kpts; ++ik) {
-            const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal w =
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             const auto& ks = kstates[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands; ++b) {
                 all_evals.push_back(ks.eps[static_cast<std::size_t>(b)]);
@@ -1957,8 +1831,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     }
 
     // ── Per-atom radial form factor v(G) on the density sphere ──
-    const UPFData upf = read_upf_v1(method.upf_path);
-    const std::vector<AccReal> vg = upf_vloc_to_gspace(upf, gv0, omega);
+    const auto vg = nc_vloc_to_gspace(prob.ions.species, gv0, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -1992,7 +1865,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                     // −i G_α v(G) e^{−iG·R_I}
                     const Cx eir(std::cos(phase), -std::sin(phase));
                     dvg[static_cast<std::size_t>(ig)] =
-                        Cx(0, -1) * ga * vg[static_cast<std::size_t>(ig)] * eir;
+                        Cx(0, -1) * ga * vg[prob.ions.atom_species[ia]][ig]
+                        * eir;
                 }
                 sphere_to_real(
                     ws, gv0, dvg.data(),
@@ -2003,13 +1877,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     }
 
     // ── Ion–ion Ewald Hessian ──
-    std::vector<AccReal> valence(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
     std::vector<AccReal> C =
-        ewald_dynamical_matrix(pos_ang_v, valence, frame.box, ecut_ht);
+        ewald_dynamical_matrix(pos_ang_v, prob.ions.ionic_charges, frame.box);
 
     auto Cat = [&](int mu, int nu) -> AccReal& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
@@ -2025,7 +1894,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                 gv0.g[ig][0] * ax + gv0.g[ig][1] * ay + gv0.g[ig][2] * az;
             const Cx eir(std::cos(phase), -std::sin(phase));
             const AccReal re = (std::conj(ws.rho_G[ig])
-                                * (vg[static_cast<std::size_t>(ig)] * eir))
+                                * (vg[prob.ions.atom_species[ia]][ig] * eir))
                                    .real();
             for (int a = 0; a < 3; ++a)
                 for (int b = 0; b < 3; ++b)
@@ -2039,7 +1908,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
         for (int ik = 0; ik < n_kpts; ++ik) {
             bind_k(ik);
             const auto& ks = kstates[static_cast<std::size_t>(ik)];
-            const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+            const AccReal w =
+                prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands; ++b) {
                 const AccReal f_b = occ_kb[static_cast<std::size_t>(ik)]
                                           [static_cast<std::size_t>(b)];
@@ -2050,9 +1920,10 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                 for (std::size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
                     for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
                         const AccReal Dc = ws.kb_proj[ia][ip].d;
-                        if (std::abs(Dc) < AccReal(1e-16))
+                        if (Dc == AccReal(0))
                             continue;
-                        kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
+                        kb_moments(ws.projectors(), ia, ip, psi,
+                                   /*want_t=*/true, mo);
                         for (const auto& mm : mo) {
                             for (int a = 0; a < 3; ++a)
                                 for (int bb = 0; bb < 3; ++bb) {
@@ -2073,8 +1944,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                 }
             }
         }
-        ws.gvec = &prob.gv0;
-        ws.n_g = ng0;
+        ws.bind({prob.gv0});
     }
 
     // ── Self-consistent response, one perturbation μ = (J,β) at a time ──
@@ -2091,7 +1961,11 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs, hpsi_tmp;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 1, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed.begin(), dn_mixed.end(), AccReal(0));
         std::fill(dv_hxc_r.begin(), dv_hxc_r.end(), AccReal(0));
         for (auto& v : dpsi)
@@ -2114,7 +1988,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                 bind_k(ik);
                 const auto& ks = kstates[static_cast<std::size_t>(ik)];
                 const int ngk = ks.ng;
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 rhs.resize(static_cast<std::size_t>(ngk));
                 hpsi_tmp.resize(static_cast<std::size_t>(ngk));
 
@@ -2158,8 +2033,9 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                     // rhs = −(ΔV_scr ψ + ΔV_nl^{μ} ψ)
                     apply_mult_potential(ws, dv_scr_r.data(), psi, rhs.data(),
                                          work_buf.data());
-                    add_dnl_psi(ws, static_cast<std::size_t>(atom_mu), axis_mu,
-                                psi, rhs.data());
+                    add_dnl_psi(ws.projectors(),
+                                static_cast<std::size_t>(atom_mu), axis_mu, psi,
+                                rhs.data());
                     for (int ig = 0; ig < ngk; ++ig)
                         rhs[static_cast<std::size_t>(ig)] =
                             -rhs[static_cast<std::size_t>(ig)];
@@ -2194,8 +2070,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
 
             // Metallic Γ: restore charge neutrality with a Fermi-level shift
             // δμ so ∫(Δn_Sternheimer + Δn_δμ) = 0 (de Gironcoli). For a
@@ -2214,7 +2089,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                     const auto& ks = kstates[static_cast<std::size_t>(ik)];
                     const int ngk = ks.ng;
                     const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                        prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                     for (int b = 0; b < n_bands; ++b) {
                         const AccReal f_b = occ_kb[static_cast<std::size_t>(ik)]
                                                   [static_cast<std::size_t>(b)];
@@ -2224,7 +2099,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                         const AccReal x =
                             (ks.eps[static_cast<std::size_t>(b)] - mu_ha)
                             / degauss_ha;
-                        if (smear_kind == SmearKind::fermi_dirac) {
+                        if (smear_kind
+                            == ATV::electronic::Smearing::fermi_dirac) {
                             const AccReal f_s = f_b * AccReal(0.5);
                             if (f_s > AccReal(1e-14)
                                 && f_s < AccReal(1) - AccReal(1e-14))
@@ -2258,8 +2134,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                         }
                     }
                 }
-                ws.gvec = &prob.gv0;
-                ws.n_g = ng0;
+                ws.bind({prob.gv0});
                 if (dN_dmu > AccReal(1e-8)) {
                     const AccReal dmu = -q_dn / dN_dmu;
                     for (int i = 0; i < nr; ++i)
@@ -2277,13 +2152,17 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
+            if (this_converged) {
+                std::copy(dn_new.begin(), dn_new.end(), dn_mixed.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt] response mu={} converged iter={} "
+                          "delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
+            }
 
-            // Linear mix, then rebuild ΔV_HXC from the mixed Δn.
-            for (int i = 0; i < nr; ++i)
-                dn_mixed[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new[static_cast<std::size_t>(i)]
-                       - dn_mixed[static_cast<std::size_t>(i)]);
+            // Joint Pulay update, then rebuild the next response potential.
+            response_mixer.mix<AccReal>({{dn_mixed, dn_new}});
 
             real_to_sphere(ws, gv0, dn_mixed.data(), dn_g.data(),
                            work_buf.data());
@@ -2302,14 +2181,6 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             add_xc_kernel_gamma(use_gga, xc, ws, gv0, rho0_G, method.xc,
                                 fxc_r.data(), dn_mixed.data(), dv_hxc_r.data(),
                                 dn_g, work_buf.data());
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt] response mu={} converged iter={} "
-                          "delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
-            }
         }
         if (!converged) {
             all_responses_converged = false;
@@ -2334,7 +2205,8 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
             for (int ik = 0; ik < n_kpts; ++ik) {
                 bind_k(ik);
                 const auto& ks = kstates[static_cast<std::size_t>(ik)];
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w =
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 for (int b = 0; b < n_bands; ++b) {
                     const AccReal f_b = occ_kb[static_cast<std::size_t>(ik)]
                                               [static_cast<std::size_t>(b)];
@@ -2350,10 +2222,12 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                         for (std::size_t ip = 0; ip < ws.kb_proj[ja].size();
                              ++ip) {
                             const AccReal Dc = ws.kb_proj[ja][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
-                            kb_moments(ws, ja, ip, psi, false, mo_psi);
-                            kb_moments(ws, ja, ip, x.data(), false, mo_dpsi);
+                            kb_moments(ws.projectors(), ja, ip, psi, false,
+                                       mo_psi);
+                            kb_moments(ws.projectors(), ja, ip, x.data(), false,
+                                       mo_dpsi);
                             for (std::size_t m = 0; m < mo_psi.size(); ++m) {
                                 const Cx cP = mo_psi[m].c;
                                 const Cx cD = mo_dpsi[m].c;
@@ -2371,8 +2245,7 @@ dfpt_gamma_force_constants(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
         }
     }
     out.response_converged = all_responses_converged;
@@ -2400,41 +2273,39 @@ namespace {
 /// First-order nonlocal KB at finite phonon q: writes into the k+q sphere.
 /// Moments of ψ are taken on the k sphere; projectors for the ket on k+q.
 /// Reduces to `add_dnl_psi` when kq == k (same sphere / same projectors).
-void add_dnl_psi_q(const PWWorkspace& ws_k, const PWWorkspace& ws_kq,
-                   std::size_t ia, int alpha, const Cx* psi_k, Cx* out_kq) {
-    if (ws_k.kb_proj.empty() || ia >= ws_k.kb_proj.size())
+void add_dnl_psi_q(PWProjectorView ws_k, PWProjectorView ws_kq, std::size_t ia,
+                   int alpha, const Cx* psi_k, Cx* out_kq) {
+    if (ws_k.projectors.empty() || ia >= ws_k.projectors.size())
         return;
-    if (ws_kq.kb_proj.empty() || ia >= ws_kq.kb_proj.size())
+    if (ws_kq.projectors.empty() || ia >= ws_kq.projectors.size())
         return;
-    const auto& gv_kq = *ws_kq.gvec;
-    const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(ws_kq.omega);
-    const AccReal ax = ws_kq.atom_pos_bohr[ia][0];
-    const AccReal ay = ws_kq.atom_pos_bohr[ia][1];
-    const AccReal az = ws_kq.atom_pos_bohr[ia][2];
+    const auto& gv_kq = ws_kq.modes;
+    const AccReal pref = AccReal(4.0 * M_PI) / std::sqrt(ws_kq.volume);
+    const AccReal ax = ws_kq.positions[ia][0];
+    const AccReal ay = ws_kq.positions[ia][1];
+    const AccReal az = ws_kq.positions[ia][2];
 
     std::vector<KbMoments> mo;
     const std::size_t nproj =
-        std::min(ws_k.kb_proj[ia].size(), ws_kq.kb_proj[ia].size());
+        std::min(ws_k.projectors[ia].size(), ws_kq.projectors[ia].size());
     for (std::size_t ip = 0; ip < nproj; ++ip) {
-        const auto& proj_k = ws_k.kb_proj[ia][ip];
-        const auto& proj_kq = ws_kq.kb_proj[ia][ip];
+        const auto& proj_k = ws_k.projectors[ia][ip];
+        const auto& proj_kq = ws_kq.projectors[ia][ip];
         const AccReal D = proj_k.d;
-        if (std::abs(D) < AccReal(1e-16))
+        if (D == AccReal(0))
             continue;
         const int l = proj_k.l;
         const int nm = n_m_for_l(l);
         const auto im_l = im_l_factor(l);
         // Moments of ψ at k (bra projectors).
         {
-            // Temporarily bind: kb_moments reads ws.gvec / kb_proj / n_g.
-            // Call with ws_k.
             kb_moments(ws_k, ia, ip, psi_k, /*want_t=*/false, mo);
         }
 
         std::vector<AccReal> ylm(static_cast<std::size_t>(nm));
-        for (int ig = 0; ig < ws_kq.n_g; ++ig) {
+        for (int ig = 0; ig < ws_kq.modes.count(); ++ig) {
             const AccReal fl = proj_kq.f_G[ig];
-            if (std::abs(fl) < AccReal(1e-30))
+            if (fl == AccReal(0))
                 continue;
             const AccReal qx = gv_kq.g[ig][0] + gv_kq.kvec[0];
             const AccReal qy = gv_kq.g[ig][1] + gv_kq.kvec[1];
@@ -2492,11 +2363,9 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                              int cg_max_iter, AccReal mix_beta) {
     const int n = frame.nlocal();
     const int dim = 3 * n;
-    const int* types = frame.span(kAtom_type);
 
-    int n_elec = 0;
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    const int n_elec =
+        internal::assign_nc_species(frame, method.potentials).n_elec;
     if (method.multiplicity < 1)
         throw std::invalid_argument(
             "dfpt_q_force_constants: multiplicity must be >= 1 when "
@@ -2509,16 +2378,17 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     const int n_alpha = (n_elec + mag) / 2;
     const int n_beta = (n_elec - mag) / 2;
     const int n_occ_fixed[2] = {n_alpha, n_beta};
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_q_force_constants: degauss must be > 0 [Ry] when "
             "smearing is enabled");
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -2538,12 +2408,12 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptQOutput out;
-    PWProblem prob;
-    setup_pw_problem(frame, method.upf_path, method.gth_name, method.ecut_ry,
-                     method.k_mesh, prob);
-    PWWorkspace& ws = prob.ws;
+    PWSetup prob;
+    PWWorkspace ws;
+    setup_pw_problem(frame, method.potentials, method.ecut_ry, method.k_mesh,
+                     prob, ws);
     auto& gv0 = prob.gv0;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const AccReal omega = ws.omega;
     const int nr = ws.nr;
     const int ng0 = gv0.count();
@@ -2579,14 +2449,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     davidson.prepare(ws);
 
     // ── Collinear fixed-occupation ground-state SCF ──
-    // Bulk Γ-only meshes can ring with mix_beta ~ 0.7; use a conservative
-    // spin-channel mix and accept the first residual that meets tol (do not
-    // keep mixing into an oscillatory regime).
+    // Both spin channels share the canonical joint-density Pulay history.
     bool scf_ok = false;
-    AccReal scf_mix = AccReal(method.mix_beta);
-    if (scf_mix > AccReal(0.4))
-        scf_mix = AccReal(0.4);
-    AccReal best_rms = AccReal(1e30);
     for (int iter = 0; iter < method.max_iter; ++iter) {
         for (int ig = 0; ig < ng0; ++ig)
             ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
@@ -2594,60 +2458,28 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         xc.step_spin(ws, method.xc);
 
         xt::xarray<std::complex<AccReal>> rho_out[2];
-        auto* saved_gvec = ws.gvec;
+        const auto saved_point = ws.point();
         for (int s = 0; s < 2; ++s) {
             for (int ig = 0; ig < ng0; ++ig)
                 ws.V_xc_G[ig] = ws.V_xc_spin_G[s][ig];
             veff.step(ws);
             density.begin(ws);
             for (int ik = 0; ik < n_kpts; ++ik) {
-                auto& gvk = prob.gv_k[static_cast<std::size_t>(ik)];
-                ws.gvec = &gvk;
-                ws.n_g = gvk.count();
-                ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-                for (int ig = 0; ig < ws.n_g; ++ig)
-                    ws.T_G[ig] = gvk.ekin[ig];
-                if (!prob.kb_proj_k.empty())
-                    ws.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-                if (!prob.atom_wfc_k.empty())
-                    ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+                ws.bind(prob.mesh.point(static_cast<std::size_t>(ik)));
                 davidson.step(ws);
                 const AccReal weight =
-                    prob.kg.weights[static_cast<std::size_t>(ik)];
+                    prob.mesh.kg.weights[static_cast<std::size_t>(ik)];
                 // Integer channel fill for GS density (multiplicity constraint).
                 density.accumulate_kpoint(ws, weight, n_occ_fixed[s],
                                           AccReal(1));
-                ws.gvec = saved_gvec;
-                ws.n_g = ng0;
+                ws.bind(saved_point);
             }
             density.extract(ws, rho_out[s]);
         }
-        for (int s = 0; s < 2; ++s) {
-            for (int ig = 0; ig < ng0; ++ig) {
-                ws.rho_spin_G_old[s][ig] = ws.rho_spin_G[s][ig];
-                ws.rho_spin_G[s][ig] =
-                    ws.rho_spin_G_old[s][ig]
-                    + scf_mix * (rho_out[s][ig] - ws.rho_spin_G_old[s][ig]);
-            }
-        }
-        for (int ig = 0; ig < ng0; ++ig) {
-            ws.rho_G_old[ig] = ws.rho_G[ig];
-            ws.rho_G[ig] = ws.rho_spin_G[0][ig] + ws.rho_spin_G[1][ig];
-        }
-        AccReal dr = 0;
-        for (int ig = 0; ig < ng0; ++ig) {
-            const Cx d = ws.rho_G[ig] - ws.rho_G_old[ig];
-            dr += d.real() * d.real() + d.imag() * d.imag();
-        }
-        const AccReal rms = std::sqrt(dr);
-        if (rms < best_rms)
-            best_rms = rms;
-        else if (rms > AccReal(2) * best_rms && best_rms < AccReal(1e-3))
-            scf_mix = std::max(scf_mix * AccReal(0.5), AccReal(0.1));
+        const AccReal rms = density.mix_spin(ws, rho_out[0], rho_out[1]);
         if ((iter + 1) % 20 == 0 || rms < AccReal(method.tol))
-            ATV_DEBUG(
-                "[pw][dfpt_q] spin SCF iter={} dens_rms={:.3e} mix={:.2f}",
-                iter + 1, rms, scf_mix);
+            ATV_DEBUG("[pw][dfpt_q] spin SCF iter={} dens_rms={:.3e}", iter + 1,
+                      rms);
         if (rms < AccReal(method.tol)) {
             scf_ok = true;
             break;
@@ -2663,7 +2495,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     poisson.step(ws);
     xc.step_spin(ws, method.xc);
 
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_spin[2];
     for (int s = 0; s < 2; ++s) {
         rho0_spin[s].resize(ngs);
@@ -2709,11 +2541,11 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     cpu::Box cell_bohr;
     cell_bohr.set_cell(frame.box.cell() * AccReal(1.8897259886));
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(1, 0) * q_frac[1]
-                          + recip(2, 0) * q_frac[2],
-                      recip(0, 1) * q_frac[0] + recip(1, 1) * q_frac[1]
-                          + recip(2, 1) * q_frac[2],
-                      recip(0, 2) * q_frac[0] + recip(1, 2) * q_frac[1]
+    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(0, 1) * q_frac[1]
+                          + recip(0, 2) * q_frac[2],
+                      recip(1, 0) * q_frac[0] + recip(1, 1) * q_frac[1]
+                          + recip(1, 2) * q_frac[2],
+                      recip(2, 0) * q_frac[0] + recip(2, 1) * q_frac[1]
                           + recip(2, 2) * q_frac[2]};
     const AccReal q2 =
         q_cart[0] * q_cart[0] + q_cart[1] * q_cart[1] + q_cart[2] * q_cart[2];
@@ -2724,32 +2556,20 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         std::vector<AccReal> eps;
         std::vector<AccReal> occ; ///< spinor f in [0,1]
         int ng = 0;
-        std::vector<std::vector<PWWorkspace::KBProjG>> kb_proj;
     };
 
-    auto bind_state = [&](KState& ks, const GVectorList& gvk, int spin) {
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        ws.kb_proj = ks.kb_proj;
+    auto bind_state = [&](PWKPointView point, int spin) {
+        ws.bind(point);
         for (int i = 0; i < nr; ++i)
             ws.V_eff_r[i] = veff_r[spin][static_cast<std::size_t>(i)];
     };
 
     // Eigenstates at every ground-state k for both spins (n_bands).
-    std::vector<GVectorList> gv_k0 = prob.gv_k;
     std::vector<KState> kstates(static_cast<std::size_t>(2 * n_kpts));
     for (int s = 0; s < 2; ++s) {
         for (int ik = 0; ik < n_kpts; ++ik) {
-            auto& gvk = gv_k0[static_cast<std::size_t>(ik)];
             auto& ks = kstates[static_cast<std::size_t>(s * n_kpts + ik)];
-            if (!prob.kb_proj_k.empty())
-                ks.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            bind_state(ks, gvk, s);
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            bind_state(prob.mesh.point(ik), s);
             davidson.step(ws);
             ks.ng = ws.n_g;
             ks.eps.assign(ws.eigenvalues.begin(),
@@ -2767,7 +2587,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
             }
         }
     }
-    const std::vector<AccReal> k_weights = prob.kg.weights;
+    const auto& k_weights = prob.mesh.kg.weights;
 
     // Shared μ for spinor occupations when metallic smearing is on.
     AccReal mu_ha = AccReal(0);
@@ -2803,23 +2623,17 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     // Eigenstates at k+q for both spins (P_c^{k+q} manifold).
     std::vector<Vec3> kq_frac(static_cast<std::size_t>(n_kpts));
     for (int ik = 0; ik < n_kpts; ++ik) {
-        const auto& kf = prob.kg.kpoints[static_cast<std::size_t>(ik)];
+        const auto& kf = prob.mesh.kg.kpoints[static_cast<std::size_t>(ik)];
         kq_frac[static_cast<std::size_t>(ik)] = {
             kf[0] + q_frac[0], kf[1] + q_frac[1], kf[2] + q_frac[2]};
     }
-    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kq_frac);
-    std::vector<GVectorList> gv_kq = prob.gv_k;
+    const auto mesh_q =
+        make_pw_k_mesh(prob.ions, frame.box, method.ecut_ry, kq_frac);
     std::vector<KState> kqstates(static_cast<std::size_t>(2 * n_kpts));
     for (int s = 0; s < 2; ++s) {
         for (int ik = 0; ik < n_kpts; ++ik) {
-            auto& gvk = gv_kq[static_cast<std::size_t>(ik)];
             auto& ks = kqstates[static_cast<std::size_t>(s * n_kpts + ik)];
-            if (!prob.kb_proj_k.empty())
-                ks.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-            bind_state(ks, gvk, s);
-            if (!prob.atom_wfc_k.empty())
-                ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+            bind_state(mesh_q.point(ik), s);
             davidson.step(ws);
             ks.ng = ws.n_g;
             ks.eps.assign(ws.eigenvalues.begin(),
@@ -2843,18 +2657,16 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         }
     }
 
-    ws.gvec = &prob.gv0;
-    ws.n_g = ng0;
+    ws.bind({prob.gv0});
 
     // v(|G+q|) on the density sphere.
-    const UPFData upf = read_upf_v1(method.upf_path);
     GVectorList gv_qp = gv0;
     for (int ig = 0; ig < ng0; ++ig) {
         gv_qp.g[static_cast<std::size_t>(ig)] = {gv0.g[ig][0] + q_cart[0],
                                                  gv0.g[ig][1] + q_cart[1],
                                                  gv0.g[ig][2] + q_cart[2]};
     }
-    const std::vector<AccReal> vg_qp = upf_vloc_to_gspace(upf, gv_qp, omega);
+    const auto vg_qp = nc_vloc_to_gspace(prob.ions.species, gv_qp, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -2888,7 +2700,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                                           + (gv0.g[ig][2] + q_cart[2]) * az;
                     const Cx eir(std::cos(phase), -std::sin(phase));
                     dvg[static_cast<std::size_t>(ig)] =
-                        Cx(0, -1) * gqa * vg_qp[static_cast<std::size_t>(ig)]
+                        Cx(0, -1) * gqa * vg_qp[prob.ions.atom_species[ia]][ig]
                         * eir;
                 }
                 sphere_to_complex_grid(
@@ -2899,13 +2711,8 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         }
     }
 
-    std::vector<AccReal> valence(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
-    std::vector<Cx> C = ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box,
-                                                 ecut_ht, q_frac);
+    std::vector<Cx> C = ewald_dynamical_matrix_q(
+        pos_ang_v, prob.ions.ionic_charges, frame.box, q_frac);
 
     auto Cat = [&](int mu, int nu) -> Cx& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
@@ -2924,7 +2731,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
             const AccReal phase = gqx * ax + gqy * ay + gqz * az;
             const Cx eir(std::cos(phase), -std::sin(phase));
             const Cx term = std::conj(Cx(ws.rho_G[ig]))
-                            * (vg_qp[static_cast<std::size_t>(ig)] * eir);
+                            * (vg_qp[prob.ions.atom_species[ia]][ig] * eir);
             for (int a = 0; a < 3; ++a)
                 for (int b = 0; b < 3; ++b)
                     Cat(3 * ia + a, 3 * ia + b) -= omega * gq[a] * gq[b] * term;
@@ -2937,7 +2744,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
         for (int s = 0; s < 2; ++s) {
             for (int ik = 0; ik < n_kpts; ++ik) {
                 auto& ks = kstates[static_cast<std::size_t>(s * n_kpts + ik)];
-                bind_state(ks, gv_k0[static_cast<std::size_t>(ik)], s);
+                bind_state(prob.mesh.point(ik), s);
                 const AccReal w = k_weights[static_cast<std::size_t>(ik)];
                 for (int b = 0; b < n_bands; ++b) {
                     const AccReal f_b = ks.occ[static_cast<std::size_t>(b)];
@@ -2949,9 +2756,10 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                         for (std::size_t ip = 0; ip < ws.kb_proj[ia].size();
                              ++ip) {
                             const AccReal Dc = ws.kb_proj[ia][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            if (Dc == AccReal(0))
                                 continue;
-                            kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
+                            kb_moments(ws.projectors(), ia, ip, psi,
+                                       /*want_t=*/true, mo);
                             for (const auto& mm : mo) {
                                 for (int a = 0; a < 3; ++a)
                                     for (int bb = 0; bb < 3; ++bb) {
@@ -2975,8 +2783,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                 }
             }
         }
-        ws.gvec = &prob.gv0;
-        ws.n_g = ng0;
+        ws.bind({prob.gv0});
     }
 
     // Self-consistent response: complex Δn↑, Δn↓.
@@ -2996,7 +2803,11 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 2, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed_u.begin(), dn_mixed_u.end(), Cx(0, 0));
         std::fill(dn_mixed_d.begin(), dn_mixed_d.end(), Cx(0, 0));
         std::fill(dv_h_r.begin(), dv_h_r.end(), Cx(0, 0));
@@ -3071,8 +2882,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                         // ΔV_scr ψ on real grid from ψ_k → k+q sphere.
                         rhs.assign(static_cast<std::size_t>(ngkq), Cx(0, 0));
                         {
-                            ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                            ws.n_g = ngk;
+                            ws.bind(prob.mesh.point(ik));
                             pad_sphere_to_grid(ws, *ws.gvec, ngk, psi,
                                                work_buf.data());
                             ws.fft->c2c_bwd(work_buf.data());
@@ -3089,8 +2899,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                                     static_cast<double>(vp.imag());
                             }
                             ws.fft->c2c_fwd(work_buf2.data());
-                            ws.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                            ws.n_g = ngkq;
+                            ws.bind(mesh_q.point(ik));
                             extract_sphere_from_grid(ws, *ws.gvec, ngkq,
                                                      work_buf2.data(),
                                                      rhs.data());
@@ -3101,24 +2910,12 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
 
                         // + ΔV_nl (cross k → k+q).
                         {
-                            ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                            ws.n_g = ngk;
-                            ws.T_G.resize({static_cast<std::size_t>(ngk)});
-                            for (int ig = 0; ig < ngk; ++ig)
-                                ws.T_G[ig] = gv_k0[static_cast<std::size_t>(ik)]
-                                                 .ekin[ig];
-                            ws.kb_proj = ks.kb_proj;
-                            PWWorkspace ws_kq;
-                            ws_kq.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                            ws_kq.n_g = ngkq;
-                            ws_kq.omega = omega;
-                            ws_kq.nr = nr;
-                            ws_kq.fft_nx = ws.fft_nx;
-                            ws_kq.fft_ny = ws.fft_ny;
-                            ws_kq.fft_nz = ws.fft_nz;
-                            ws_kq.atom_pos_bohr = ws.atom_pos_bohr;
-                            ws_kq.kb_proj = kqs.kb_proj;
-                            add_dnl_psi_q(ws, ws_kq,
+                            ws.bind(prob.mesh.point(ik));
+                            const auto shifted = mesh_q.point(ik);
+                            const PWProjectorView projectors_kq{
+                                shifted.modes, shifted.projectors,
+                                ws.atom_pos_bohr, omega};
+                            add_dnl_psi_q(ws.projectors(), projectors_kq,
                                           static_cast<std::size_t>(atom_mu),
                                           axis_mu, psi, rhs.data());
                         }
@@ -3129,13 +2926,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
 
                         // Sternheimer at k+q with H_σ; project out occupied
                         // manifold (f ≥ thr) at k+q.
-                        ws.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngkq;
-                        ws.T_G.resize({static_cast<std::size_t>(ngkq)});
-                        for (int ig = 0; ig < ngkq; ++ig)
-                            ws.T_G[ig] =
-                                gv_kq[static_cast<std::size_t>(ik)].ekin[ig];
-                        ws.kb_proj = kqs.kb_proj;
+                        ws.bind(mesh_q.point(ik));
                         for (int i = 0; i < nr; ++i)
                             ws.V_eff_r[i] =
                                 veff_r[s][static_cast<std::size_t>(i)];
@@ -3156,13 +2947,11 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
 
                         // Lattice-periodic Δñ_{qσ}(r), weight f_b.
                         {
-                            ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                            ws.n_g = ngk;
+                            ws.bind(prob.mesh.point(ik));
                             pad_sphere_to_grid(ws, *ws.gvec, ngk, psi,
                                                work_buf.data());
                             ws.fft->c2c_bwd(work_buf.data());
-                            ws.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                            ws.n_g = ngkq;
+                            ws.bind(mesh_q.point(ik));
                             pad_sphere_to_grid(ws, *ws.gvec, ngkq, x.data(),
                                                work_buf2.data());
                             ws.fft->c2c_bwd(work_buf2.data());
@@ -3183,8 +2972,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
 
             AccReal diff2 = 0;
             for (int i = 0; i < nr; ++i) {
@@ -3197,17 +2985,18 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
-
-            for (int i = 0; i < nr; ++i) {
-                dn_mixed_u[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_u[static_cast<std::size_t>(i)]
-                       - dn_mixed_u[static_cast<std::size_t>(i)]);
-                dn_mixed_d[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new_d[static_cast<std::size_t>(i)]
-                       - dn_mixed_d[static_cast<std::size_t>(i)]);
+            if (this_converged) {
+                std::copy(dn_new_u.begin(), dn_new_u.end(), dn_mixed_u.begin());
+                std::copy(dn_new_d.begin(), dn_new_d.end(), dn_mixed_d.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt_q] spin response mu={} converged "
+                          "iter={} delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
             }
+
+            response_mixer.mix<Cx>(
+                {{dn_mixed_u, dn_new_u}, {dn_mixed_d, dn_new_d}});
 
             // ΔV_H from total Δn with |G+q| kernel.
             std::vector<Cx> dn_tot(static_cast<std::size_t>(nr));
@@ -3292,14 +3081,6 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                            dvim_d[static_cast<std::size_t>(i)]);
                 }
             }
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt_q] spin response mu={} converged "
-                          "iter={} delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
-            }
         }
         if (!converged) {
             all_responses_converged = false;
@@ -3326,8 +3107,6 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     auto& ks =
                         kstates[static_cast<std::size_t>(s * n_kpts + ik)];
-                    auto& kqs =
-                        kqstates[static_cast<std::size_t>(s * n_kpts + ik)];
                     const AccReal w = k_weights[static_cast<std::size_t>(ik)];
                     const int ngk = ks.ng;
                     for (int b = 0; b < n_bands; ++b) {
@@ -3340,28 +3119,26 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                             (s * n_kpts + ik) * n_bmax + b)];
                         if (x.empty())
                             continue;
-                        ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngk;
-                        ws.kb_proj = ks.kb_proj;
-                        PWWorkspace ws_kq;
-                        ws_kq.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                        ws_kq.n_g = kqs.ng;
-                        ws_kq.omega = omega;
-                        ws_kq.atom_pos_bohr = ws.atom_pos_bohr;
-                        ws_kq.kb_proj = kqs.kb_proj;
+                        ws.bind(prob.mesh.point(ik));
+                        const auto shifted = mesh_q.point(ik);
+                        const PWProjectorView projectors_kq{
+                            shifted.modes, shifted.projectors, ws.atom_pos_bohr,
+                            omega};
                         for (std::size_t ja = 0;
-                             ja
-                             < std::min(ks.kb_proj.size(), kqs.kb_proj.size());
+                             ja < std::min(ws.kb_proj.size(),
+                                           projectors_kq.projectors.size());
                              ++ja) {
-                            const std::size_t nproj = std::min(
-                                ks.kb_proj[ja].size(), kqs.kb_proj[ja].size());
+                            const std::size_t nproj =
+                                std::min(ws.kb_proj[ja].size(),
+                                         projectors_kq.projectors[ja].size());
                             for (std::size_t ip = 0; ip < nproj; ++ip) {
-                                const AccReal Dc = ks.kb_proj[ja][ip].d;
-                                if (std::abs(Dc) < AccReal(1e-16))
+                                const AccReal Dc = ws.kb_proj[ja][ip].d;
+                                if (Dc == AccReal(0))
                                     continue;
-                                kb_moments(ws, ja, ip, psi, false, mo_psi);
-                                kb_moments(ws_kq, ja, ip, x.data(), false,
-                                           mo_dpsi);
+                                kb_moments(ws.projectors(), ja, ip, psi, false,
+                                           mo_psi);
+                                kb_moments(projectors_kq, ja, ip, x.data(),
+                                           false, mo_dpsi);
                                 for (std::size_t m = 0; m < mo_psi.size();
                                      ++m) {
                                     const Cx cP = mo_psi[m].c;
@@ -3381,8 +3158,7 @@ DfptQOutput dfpt_q_spin_impl(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
         }
     }
     out.response_converged = all_responses_converged;
@@ -3410,17 +3186,11 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                                    const Vec3& q_frac, AccReal response_tol,
                                    int response_max_iter, AccReal cg_tol,
                                    int cg_max_iter, AccReal mix_beta) {
-    // Same fail-fast gate as the Γ path: either pseudopotential source is
-    // valid; only "neither set" is an error.
-    if (method.upf_path.empty() && method.gth_name.empty())
-        throw std::invalid_argument(
-            "dfpt_q_force_constants: requires a pseudopotential — set "
-            "PW::upf_path (UPF file) or PW::gth_name (e.g. \"GTH-PBE-q4\")");
     if (!dfpt_xc_supported(method.xc))
         throw std::invalid_argument(
             "dfpt_q_force_constants: hybrid XC unsupported "
             "(pure LSDA / pure GGA only; no exact-exchange response)");
-    const bool use_smear = (method.smearing != Smearing::none);
+    const bool use_smear = (method.smearing != ATV::electronic::Smearing::none);
     if (use_smear && !(method.degauss > 0.0))
         throw std::invalid_argument(
             "dfpt_q_force_constants: degauss must be > 0 [Ry] when "
@@ -3441,10 +3211,8 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             "dfpt_q_force_constants: frame has no atoms");
     const int dim = 3 * n;
 
-    int n_elec = 0;
-    const int* types = frame.span(kAtom_type);
-    for (int i = 0; i < n; ++i)
-        n_elec += valence_from_z(types[i]);
+    const int n_elec =
+        internal::assign_nc_species(frame, method.potentials).n_elec;
     const int n_valence = std::max((n_elec + 1) / 2, 1);
     const int n_bands = use_smear ? n_valence + std::max(method.extra_bands, 0)
                                   : std::max(n_elec / 2, 1);
@@ -3453,11 +3221,12 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             "dfpt_q_force_constants: odd electron count needs "
             "spin/smearing (unsupported)");
 
-    SmearKind smear_kind = SmearKind::fermi_dirac;
-    if (method.smearing == Smearing::methfessel_paxton)
-        smear_kind = SmearKind::methfessel_paxton;
-    else if (method.smearing == Smearing::gaussian)
-        smear_kind = SmearKind::gaussian;
+    ATV::electronic::Smearing smear_kind =
+        ATV::electronic::Smearing::fermi_dirac;
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        smear_kind = ATV::electronic::Smearing::methfessel_paxton;
+    else if (method.smearing == ATV::electronic::Smearing::gaussian)
+        smear_kind = ATV::electronic::Smearing::gaussian;
     const AccReal degauss_ha =
         static_cast<AccReal>(method.degauss) * AccReal(0.5);
     const int mp_order = method.mp_order;
@@ -3470,26 +3239,25 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     DavidsonSolver davidson{n_bands, AccReal(method.tol) * AccReal(0.1), 40};
 
     DfptQOutput out;
-    PWProblem prob;
+    PWSetup prob;
+    PWWorkspace ws;
     const PWResult scf =
-        use_smear
-            ? run_scf_smear_restricted(frame, method, prob, poisson, xc, veff,
-                                       density, davidson, n_bands, "dfpt_q")
-            : run_scf_fixed_occ(frame, method, prob, poisson, xc, veff, density,
-                                davidson, "dfpt_q");
+        use_smear ? run_scf_smear_restricted(frame, method, prob, ws, poisson,
+                                             xc, veff, density, davidson,
+                                             n_bands, "dfpt_q")
+                  : run_scf_fixed_occ(frame, method, prob, ws, poisson, xc,
+                                      veff, density, davidson, "dfpt_q");
     out.scf_converged = scf.converged;
     if (!scf.converged)
         ATV_WARN("[pw][dfpt_q] ground-state SCF not converged after {} iters; "
                  "response uses last density",
                  scf.iterations);
 
-    PWWorkspace& ws = prob.ws;
     const GVectorList& gv0 = prob.gv0;
-    ws.gvec = &prob.gv0;
-    ws.n_g = gv0.count();
+    ws.bind({prob.gv0});
     const int ng0 = gv0.count();
     const int nr = ws.nr;
-    const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    const int n_kpts = static_cast<int>(prob.mesh.kg.kpoints.size());
     const AccReal omega = ws.omega;
     const AccReal dV = omega / AccReal(nr);
 
@@ -3497,11 +3265,11 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     cpu::Box cell_bohr;
     cell_bohr.set_cell(frame.box.cell() * AccReal(1.8897259886));
     const auto recip = cell_bohr.recip_cell();
-    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(1, 0) * q_frac[1]
-                          + recip(2, 0) * q_frac[2],
-                      recip(0, 1) * q_frac[0] + recip(1, 1) * q_frac[1]
-                          + recip(2, 1) * q_frac[2],
-                      recip(0, 2) * q_frac[0] + recip(1, 2) * q_frac[1]
+    const Vec3 q_cart{recip(0, 0) * q_frac[0] + recip(0, 1) * q_frac[1]
+                          + recip(0, 2) * q_frac[2],
+                      recip(1, 0) * q_frac[0] + recip(1, 1) * q_frac[1]
+                          + recip(1, 2) * q_frac[2],
+                      recip(2, 0) * q_frac[0] + recip(2, 1) * q_frac[1]
                           + recip(2, 2) * q_frac[2]};
 
     FFTWBuffer<fftw_complex> work_buf(static_cast<std::size_t>(nr));
@@ -3512,7 +3280,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     veff.step(ws);
 
     // Ground-state density for the XC kernel (real Δn split for GGA).
-    const bool use_gga = cpu::scf::is_gga(method.xc);
+    const bool use_gga = cpu::xc::is_gga(method.xc);
     std::vector<Cx> rho0_G(static_cast<std::size_t>(ng0));
     for (int ig = 0; ig < ng0; ++ig)
         rho0_G[static_cast<std::size_t>(ig)] = ws.rho_G[ig];
@@ -3535,31 +3303,19 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
         std::vector<Cx> wfc;
         std::vector<AccReal> eps;
         int ng = 0;
-        std::vector<std::vector<PWWorkspace::KBProjG>> kb_proj;
     };
 
-    auto bind_state = [&](KState& ks, const GVectorList& gvk) {
-        ws.gvec = &gvk;
-        ws.n_g = gvk.count();
-        ws.T_G.resize({static_cast<std::size_t>(ws.n_g)});
-        for (int ig = 0; ig < ws.n_g; ++ig)
-            ws.T_G[ig] = gvk.ekin[ig];
-        ws.kb_proj = ks.kb_proj;
+    auto bind_state = [&](PWKPointView point) {
+        ws.bind(point);
         for (int i = 0; i < nr; ++i)
             ws.V_eff_r[i] = veff_frozen[static_cast<std::size_t>(i)];
     };
 
-    // Eigenstates at every ground-state k; keep owned G-sphere copies.
-    std::vector<GVectorList> gv_k0 = prob.gv_k;
+    // Eigenstates at every ground-state k; their mesh stays live beside k+q.
     std::vector<KState> kstates(static_cast<std::size_t>(n_kpts));
     for (int ik = 0; ik < n_kpts; ++ik) {
-        auto& gvk = gv_k0[static_cast<std::size_t>(ik)];
         auto& ks = kstates[static_cast<std::size_t>(ik)];
-        if (!prob.kb_proj_k.empty())
-            ks.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        bind_state(ks, gvk);
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        bind_state(prob.mesh.point(ik));
         davidson.step(ws);
         ks.ng = ws.n_g;
         ks.eps.assign(ws.eigenvalues.begin(), ws.eigenvalues.begin() + n_bands);
@@ -3569,7 +3325,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                 ks.wfc[static_cast<std::size_t>(b) * ws.n_g + ig] =
                     ws.wfc(b, ig);
     }
-    const std::vector<AccReal> k_weights = prob.kg.weights;
+    const auto& k_weights = prob.mesh.kg.weights;
 
     // Per-(k, band) occupations [0, 2]: fixed f=2 or metallic smear fill.
     std::vector<std::vector<AccReal>> occ_kb(
@@ -3604,22 +3360,16 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     // Eigenstates at k+q (occupied manifold for P_c^{k+q}).
     std::vector<Vec3> kq_frac(static_cast<std::size_t>(n_kpts));
     for (int ik = 0; ik < n_kpts; ++ik) {
-        const auto& kf = prob.kg.kpoints[static_cast<std::size_t>(ik)];
+        const auto& kf = prob.mesh.kg.kpoints[static_cast<std::size_t>(ik)];
         kq_frac[static_cast<std::size_t>(ik)] = {
             kf[0] + q_frac[0], kf[1] + q_frac[1], kf[2] + q_frac[2]};
     }
-    rebuild_k_tables(prob, frame, method.upf_path, method.gth_name,
-                     method.ecut_ry, kq_frac);
-    std::vector<GVectorList> gv_kq = prob.gv_k;
+    const auto mesh_q =
+        make_pw_k_mesh(prob.ions, frame.box, method.ecut_ry, kq_frac);
     std::vector<KState> kqstates(static_cast<std::size_t>(n_kpts));
     for (int ik = 0; ik < n_kpts; ++ik) {
-        auto& gvk = gv_kq[static_cast<std::size_t>(ik)];
         auto& ks = kqstates[static_cast<std::size_t>(ik)];
-        if (!prob.kb_proj_k.empty())
-            ks.kb_proj = prob.kb_proj_k[static_cast<std::size_t>(ik)];
-        bind_state(ks, gvk);
-        if (!prob.atom_wfc_k.empty())
-            ws.atom_wfc = prob.atom_wfc_k[static_cast<std::size_t>(ik)];
+        bind_state(mesh_q.point(ik));
         davidson.step(ws);
         ks.ng = ws.n_g;
         ks.eps.assign(ws.eigenvalues.begin(), ws.eigenvalues.begin() + n_bands);
@@ -3646,18 +3396,16 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     }
 
     // Density sphere / V_eff stay on Γ; k-sphere tables are the owned copies.
-    ws.gvec = &prob.gv0;
-    ws.n_g = ng0;
+    ws.bind({prob.gv0});
 
     // v(|G+q|) on the density sphere: shift g → G+q for the radial transform.
-    const UPFData upf = read_upf_v1(method.upf_path);
     GVectorList gv_qp = gv0;
     for (int ig = 0; ig < ng0; ++ig) {
         gv_qp.g[static_cast<std::size_t>(ig)] = {gv0.g[ig][0] + q_cart[0],
                                                  gv0.g[ig][1] + q_cart[1],
                                                  gv0.g[ig][2] + q_cart[2]};
     }
-    const std::vector<AccReal> vg_qp = upf_vloc_to_gspace(upf, gv_qp, omega);
+    const auto vg_qp = nc_vloc_to_gspace(prob.ions.species, gv_qp, omega);
 
     std::vector<Vec3> pos_ang_v(static_cast<std::size_t>(n));
     {
@@ -3691,7 +3439,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                                           + (gv0.g[ig][2] + q_cart[2]) * az;
                     const Cx eir(std::cos(phase), -std::sin(phase));
                     dvg[static_cast<std::size_t>(ig)] =
-                        Cx(0, -1) * gqa * vg_qp[static_cast<std::size_t>(ig)]
+                        Cx(0, -1) * gqa * vg_qp[prob.ions.atom_species[ia]][ig]
                         * eir;
                 }
                 sphere_to_complex_grid(
@@ -3703,13 +3451,8 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     }
 
     // Ion–ion Ewald C(q).
-    std::vector<AccReal> valence(static_cast<std::size_t>(n));
-    for (int i = 0; i < n; ++i)
-        valence[static_cast<std::size_t>(i)] =
-            static_cast<AccReal>(valence_from_z(types[i]));
-    const AccReal ecut_ht = static_cast<AccReal>(method.ecut_ry) * AccReal(0.5);
-    std::vector<Cx> C = ewald_dynamical_matrix_q(pos_ang_v, valence, frame.box,
-                                                 ecut_ht, q_frac);
+    std::vector<Cx> C = ewald_dynamical_matrix_q(
+        pos_ang_v, prob.ions.ionic_charges, frame.box, q_frac);
 
     auto Cat = [&](int mu, int nu) -> Cx& {
         return C[static_cast<std::size_t>(mu) * dim + nu];
@@ -3730,7 +3473,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             const Cx eir(std::cos(phase), -std::sin(phase));
             // Use ground-state ρ(G); contract as conj(ρ)*v*eir (complex).
             const Cx term = std::conj(Cx(ws.rho_G[ig]))
-                            * (vg_qp[static_cast<std::size_t>(ig)] * eir);
+                            * (vg_qp[prob.ions.atom_species[ia]][ig] * eir);
             for (int a = 0; a < 3; ++a)
                 for (int b = 0; b < 3; ++b)
                     Cat(3 * ia + a, 3 * ia + b) -= omega * gq[a] * gq[b] * term;
@@ -3742,7 +3485,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
         std::vector<KbMoments> mo;
         for (int ik = 0; ik < n_kpts; ++ik) {
             auto& ks = kstates[static_cast<std::size_t>(ik)];
-            bind_state(ks, gv_k0[static_cast<std::size_t>(ik)]);
+            bind_state(prob.mesh.point(ik));
             const AccReal w = k_weights[static_cast<std::size_t>(ik)];
             for (int b = 0; b < n_bands; ++b) {
                 const AccReal f_b = occ_kb[static_cast<std::size_t>(ik)]
@@ -3754,9 +3497,10 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                 for (std::size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
                     for (std::size_t ip = 0; ip < ws.kb_proj[ia].size(); ++ip) {
                         const AccReal Dc = ws.kb_proj[ia][ip].d;
-                        if (std::abs(Dc) < AccReal(1e-16))
+                        if (Dc == AccReal(0))
                             continue;
-                        kb_moments(ws, ia, ip, psi, /*want_t=*/true, mo);
+                        kb_moments(ws.projectors(), ia, ip, psi,
+                                   /*want_t=*/true, mo);
                         for (const auto& mm : mo) {
                             for (int a = 0; a < 3; ++a)
                                 for (int bb = 0; bb < 3; ++bb) {
@@ -3777,8 +3521,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                 }
             }
         }
-        ws.gvec = &prob.gv0;
-        ws.n_g = ng0;
+        ws.bind({prob.gv0});
     }
 
     // Self-consistent response, one perturbation μ = (J,β) at a time.
@@ -3792,7 +3535,11 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
     std::vector<Cx> dn_g(static_cast<std::size_t>(ng0));
     std::vector<Cx> rhs;
 
+    ResponseMixer response_mixer(static_cast<std::size_t>(nr), 1, mix_beta,
+                                 method.pulay_depth);
+
     for (int mu = 0; mu < dim; ++mu) {
+        response_mixer.reset();
         std::fill(dn_mixed.begin(), dn_mixed.end(), Cx(0, 0));
         std::fill(dv_hxc_r.begin(), dv_hxc_r.end(), Cx(0, 0));
         for (auto& v : dpsi)
@@ -3856,8 +3603,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                     // ΔV_scr ψ on real grid from ψ_k, extract on k+q sphere.
                     rhs.assign(static_cast<std::size_t>(ngkq), Cx(0, 0));
                     {
-                        ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngk;
+                        ws.bind(prob.mesh.point(ik));
                         pad_sphere_to_grid(ws, *ws.gvec, ngk, psi,
                                            work_buf.data());
                         ws.fft->c2c_bwd(work_buf.data());
@@ -3873,8 +3619,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                                 static_cast<double>(vp.imag());
                         }
                         ws.fft->c2c_fwd(work_buf2.data());
-                        ws.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngkq;
+                        ws.bind(mesh_q.point(ik));
                         extract_sphere_from_grid(ws, *ws.gvec, ngkq,
                                                  work_buf2.data(), rhs.data());
                         const AccReal inv_nr = AccReal(1) / AccReal(nr);
@@ -3884,24 +3629,12 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
 
                     // + ΔV_nl (cross k → k+q).
                     {
-                        ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngk;
-                        ws.T_G.resize({static_cast<std::size_t>(ngk)});
-                        for (int ig = 0; ig < ngk; ++ig)
-                            ws.T_G[ig] =
-                                gv_k0[static_cast<std::size_t>(ik)].ekin[ig];
-                        ws.kb_proj = ks.kb_proj;
-                        PWWorkspace ws_kq;
-                        ws_kq.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                        ws_kq.n_g = ngkq;
-                        ws_kq.omega = omega;
-                        ws_kq.nr = nr;
-                        ws_kq.fft_nx = ws.fft_nx;
-                        ws_kq.fft_ny = ws.fft_ny;
-                        ws_kq.fft_nz = ws.fft_nz;
-                        ws_kq.atom_pos_bohr = ws.atom_pos_bohr;
-                        ws_kq.kb_proj = kqs.kb_proj;
-                        add_dnl_psi_q(ws, ws_kq,
+                        ws.bind(prob.mesh.point(ik));
+                        const auto shifted = mesh_q.point(ik);
+                        const PWProjectorView projectors_kq{
+                            shifted.modes, shifted.projectors, ws.atom_pos_bohr,
+                            omega};
+                        add_dnl_psi_q(ws.projectors(), projectors_kq,
                                       static_cast<std::size_t>(atom_mu),
                                       axis_mu, psi, rhs.data());
                     }
@@ -3911,13 +3644,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                             -rhs[static_cast<std::size_t>(ig)];
 
                     // Sternheimer at k+q.
-                    ws.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                    ws.n_g = ngkq;
-                    ws.T_G.resize({static_cast<std::size_t>(ngkq)});
-                    for (int ig = 0; ig < ngkq; ++ig)
-                        ws.T_G[ig] =
-                            gv_kq[static_cast<std::size_t>(ik)].ekin[ig];
-                    ws.kb_proj = kqs.kb_proj;
+                    ws.bind(mesh_q.point(ik));
                     for (int i = 0; i < nr; ++i)
                         ws.V_eff_r[i] =
                             veff_frozen[static_cast<std::size_t>(i)];
@@ -3938,13 +3665,11 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                     // At finite q the TR partner is the independent −q channel
                     // (no extra ×2). At q = 0 recover the Γ 2 Re[ψ*Δψ] weight.
                     {
-                        ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngk;
+                        ws.bind(prob.mesh.point(ik));
                         pad_sphere_to_grid(ws, *ws.gvec, ngk, psi,
                                            work_buf.data());
                         ws.fft->c2c_bwd(work_buf.data());
-                        ws.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                        ws.n_g = ngkq;
+                        ws.bind(mesh_q.point(ik));
                         pad_sphere_to_grid(ws, *ws.gvec, ngkq, x.data(),
                                            work_buf2.data());
                         ws.fft->c2c_bwd(work_buf2.data());
@@ -3968,8 +3693,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
 
             AccReal diff2 = 0;
             for (int i = 0; i < nr; ++i) {
@@ -3979,12 +3703,16 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             }
             const AccReal delta = std::sqrt(diff2 * dV);
             const bool this_converged = (delta < response_tol);
+            if (this_converged) {
+                std::copy(dn_new.begin(), dn_new.end(), dn_mixed.begin());
+                converged = true;
+                ATV_DEBUG("[pw][dfpt_q] response mu={} converged iter={} "
+                          "delta={:.3e}",
+                          mu, rit + 1, delta);
+                break;
+            }
 
-            for (int i = 0; i < nr; ++i)
-                dn_mixed[static_cast<std::size_t>(i)] +=
-                    mix_beta
-                    * (dn_new[static_cast<std::size_t>(i)]
-                       - dn_mixed[static_cast<std::size_t>(i)]);
+            response_mixer.mix<Cx>({{dn_mixed, dn_new}});
 
             complex_grid_to_sphere(ws, gv0, dn_mixed.data(), dn_g.data(),
                                    work_buf.data());
@@ -4036,14 +3764,6 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                         Cx(dvre[static_cast<std::size_t>(i)],
                            dvim[static_cast<std::size_t>(i)]);
             }
-
-            if (this_converged) {
-                converged = true;
-                ATV_DEBUG("[pw][dfpt_q] response mu={} converged iter={} "
-                          "delta={:.3e}",
-                          mu, rit + 1, delta);
-                break;
-            }
         }
         if (!converged) {
             all_responses_converged = false;
@@ -4066,7 +3786,6 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
             std::vector<KbMoments> mo_psi, mo_dpsi;
             for (int ik = 0; ik < n_kpts; ++ik) {
                 auto& ks = kstates[static_cast<std::size_t>(ik)];
-                auto& kqs = kqstates[static_cast<std::size_t>(ik)];
                 const AccReal w = k_weights[static_cast<std::size_t>(ik)];
                 const int ngk = ks.ng;
                 for (int b = 0; b < n_bands; ++b) {
@@ -4078,28 +3797,28 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                         ks.wfc.data() + static_cast<std::ptrdiff_t>(b) * ngk;
                     const auto& x = dpsi[static_cast<std::size_t>(ik) * n_bands
                                          + static_cast<std::size_t>(b)];
-                    if (static_cast<int>(x.size()) != kqs.ng)
+                    const auto shifted = mesh_q.point(ik);
+                    if (static_cast<int>(x.size()) != shifted.modes.count())
                         continue;
-                    ws.gvec = &gv_k0[static_cast<std::size_t>(ik)];
-                    ws.n_g = ngk;
-                    ws.kb_proj = ks.kb_proj;
-                    PWWorkspace ws_kq;
-                    ws_kq.gvec = &gv_kq[static_cast<std::size_t>(ik)];
-                    ws_kq.n_g = kqs.ng;
-                    ws_kq.omega = omega;
-                    ws_kq.atom_pos_bohr = ws.atom_pos_bohr;
-                    ws_kq.kb_proj = kqs.kb_proj;
+                    ws.bind(prob.mesh.point(ik));
+                    const PWProjectorView projectors_kq{
+                        shifted.modes, shifted.projectors, ws.atom_pos_bohr,
+                        omega};
                     for (std::size_t ja = 0;
-                         ja < std::min(ks.kb_proj.size(), kqs.kb_proj.size());
+                         ja < std::min(ws.kb_proj.size(),
+                                       projectors_kq.projectors.size());
                          ++ja) {
-                        const std::size_t nproj = std::min(
-                            ks.kb_proj[ja].size(), kqs.kb_proj[ja].size());
+                        const std::size_t nproj =
+                            std::min(ws.kb_proj[ja].size(),
+                                     projectors_kq.projectors[ja].size());
                         for (std::size_t ip = 0; ip < nproj; ++ip) {
-                            const AccReal Dc = ks.kb_proj[ja][ip].d;
-                            if (std::abs(Dc) < AccReal(1e-16))
+                            const AccReal Dc = ws.kb_proj[ja][ip].d;
+                            if (Dc == AccReal(0))
                                 continue;
-                            kb_moments(ws, ja, ip, psi, false, mo_psi);
-                            kb_moments(ws_kq, ja, ip, x.data(), false, mo_dpsi);
+                            kb_moments(ws.projectors(), ja, ip, psi, false,
+                                       mo_psi);
+                            kb_moments(projectors_kq, ja, ip, x.data(), false,
+                                       mo_dpsi);
                             for (std::size_t m = 0; m < mo_psi.size(); ++m) {
                                 const Cx cP = mo_psi[m].c;
                                 const Cx cD = mo_dpsi[m].c;
@@ -4122,8 +3841,7 @@ DfptQOutput dfpt_q_force_constants(const cpu::Frame& frame, const PW& method,
                     }
                 }
             }
-            ws.gvec = &prob.gv0;
-            ws.n_g = ng0;
+            ws.bind({prob.gv0});
         }
     }
     out.response_converged = all_responses_converged;

@@ -161,7 +161,7 @@ class Metropolis : public OutcomePolicy {
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const AccReal dE = e_trial - e_cur_;
         ++n_attempts_;
-        if (accept_(dE)) {
+        if (accept_(dE, s.runtime.units.boltz)) {
             e_cur_ = e_trial; // the frame already holds the move
             ++n_accepts_;
             return Outcome::Commit;
@@ -192,11 +192,11 @@ class Metropolis : public OutcomePolicy {
     /// @brief The test itself.
     /// @param dE Trial energy change [eV].
     /// @return True to accept the trial move.
-    bool accept_(AccReal dE) {
+    /// @param boltz The run's Boltzmann constant [energy/temperature].
+    bool accept_(AccReal dE, double boltz) {
         if (dE <= AccReal(0))
             return true;
-        const double beta =
-            1.0 / (ATV::units::kB_ev_per_k * static_cast<double>(temperature_));
+        const double beta = 1.0 / (boltz * static_cast<double>(temperature_));
         const double p = std::exp(-static_cast<double>(dE) * beta);
         std::uniform_real_distribution<double> u(0.0, 1.0);
         return u(rng_) < p;

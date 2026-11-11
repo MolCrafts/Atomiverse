@@ -105,8 +105,7 @@ bool clip_cell(Cell& cell, const Vec3& nrm, double h) {
                 }
             } else if (b_in && db < -kOnPlaneEps) {
                 const double t = da / (da - db);
-                const Vec3 p{a[0] + t * (b[0] - a[0]),
-                             a[1] + t * (b[1] - a[1]),
+                const Vec3 p{a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]),
                              a[2] + t * (b[2] - a[2])};
                 np.push_back(p);
                 cap.push_back(p);
@@ -189,8 +188,7 @@ std::vector<double> VoronoiVolume::volumes(const Frame& frame) const {
     auto y = frame.span(kAtom_y);
     auto z = frame.span(kAtom_z);
 
-    const double diag =
-        std::sqrt(L[0] * L[0] + L[1] * L[1] + L[2] * L[2]);
+    const double diag = std::sqrt(L[0] * L[0] + L[1] * L[1] + L[2] * L[2]);
     // Neighbor images with |dr| >= diag cannot cut the initial cuboid
     // (circumradius diag/2). Base displacements are min-imaged, so
     // ceil(diag/L)+1 image shells per axis cover every reachable image.
@@ -233,10 +231,9 @@ std::vector<double> VoronoiVolume::volumes(const Frame& frame) const {
                 }
             }
         }
-        std::sort(planes.begin(), planes.end(),
-                  [](const Plane& a, const Plane& b) {
-                      return a.dist < b.dist;
-                  });
+        std::sort(
+            planes.begin(), planes.end(),
+            [](const Plane& a, const Plane& b) { return a.dist < b.dist; });
 
         Cell cell = box_cuboid(0.5 * L[0], 0.5 * L[1], 0.5 * L[2]);
         double rmax = max_vertex_norm(cell);

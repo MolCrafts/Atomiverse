@@ -67,23 +67,28 @@ void symmetrize(RealMatrix& M) {
 
 } // namespace
 
-BSEResult RHF::bse(int n_states, bool tda) const {
-    if (!has_result())
-        throw std::runtime_error(
-            "RHF::bse: no SCF result — call run(frame) first");
+template <typename Method>
+BSE<Method>::BSE(const Method& mf) : mf_(&mf) {}
 
-    const SlaterDeterminant& det = determinant();
+template <typename Method>
+BSEResult BSE<Method>::run(int n_states, bool tda) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
+        throw std::runtime_error(
+            "BSE::run: no SCF result — call run(frame) first");
+
+    const SlaterDeterminant& det = mf.determinant();
     if (!det.restricted() || det.generalized())
         throw std::runtime_error(
-            "RHF::bse: closed-shell RHF reference required (no fallback)");
+            "BSE::run: closed-shell RHF reference required (no fallback)");
 
-    // Spectral G0W0 poles (and HF audit fields) — same path as RHF::g0w0().
-    const G0W0Result gw = g0w0();
+    // Spectral G0W0 poles — GWExact(mf).kernel, not an RHF member.
+    const G0W0Result gw = G0W0<Method>{mf}.run();
     if (!gw.converged)
         throw std::runtime_error(
-            "RHF::bse: G0W0 quasiparticle Newton did not converge");
+            "BSE::run: G0W0 quasiparticle Newton did not converge");
 
-    const internal::IntegralView pack = integral_view_();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -94,15 +99,15 @@ BSEResult RHF::bse(int n_states, bool tda) const {
     const int n_vir = n_mo - n_occ;
     if (n_occ < 1 || n_vir < 1)
         throw std::invalid_argument(
-            "RHF::bse: need at least one occupied and one virtual orbital "
+            "BSE::run: need at least one occupied and one virtual orbital "
             "(no fallback)");
     if (static_cast<int>(gw.qp_energy_ha.size()) != n_mo)
-        throw std::runtime_error("RHF::bse: QP energy dimension mismatch");
+        throw std::runtime_error("BSE::run: QP energy dimension mismatch");
 
     const int n_ov = n_occ * n_vir;
     if (n_states < 1 || n_states > n_ov)
         throw std::invalid_argument(
-            "RHF::bse: n_states = " + std::to_string(n_states)
+            "BSE::run: n_states = " + std::to_string(n_states)
             + " outside [1, n_ov = " + std::to_string(n_ov) + "]");
 
     const xt::xtensor<double, 4> eri = ao2mo_full(eri_ao, C, n_mo);
@@ -218,7 +223,7 @@ BSEResult RHF::bse(int n_states, bool tda) const {
         for (int s = 0; s < n_states; ++s) {
             if (!(w(static_cast<std::size_t>(s)) > 0.0))
                 throw std::runtime_error(
-                    "RHF::bse: TDA root " + std::to_string(s)
+                    "BSE::run: TDA root " + std::to_string(s)
                     + " is non-positive ("
                     + std::to_string(w(static_cast<std::size_t>(s)))
                     + " Ha) — no fallback");
@@ -233,7 +238,7 @@ BSEResult RHF::bse(int n_states, bool tda) const {
     RealMatrix Mm = A - B;
     symmetrize(Mp);
     symmetrize(Mm);
-    const RealMatrix T = checked_sym_power(Mm, 0.5, "RHF::bse");
+    const RealMatrix T = checked_sym_power(Mm, 0.5, "BSE::run");
     RealMatrix M = xt::linalg::dot(T, RealMatrix(xt::linalg::dot(Mp, T)));
     symmetrize(M);
     auto [w2, Z] = xt::linalg::eigh(M);
@@ -242,18 +247,20 @@ BSEResult RHF::bse(int n_states, bool tda) const {
         const double w2s = w2(static_cast<std::size_t>(s));
         if (w2s < -kOmega2Tol)
             throw std::runtime_error(
-                "RHF::bse: omega^2 = " + std::to_string(w2s) + " Ha^2 (root "
+                "BSE::run: omega^2 = " + std::to_string(w2s) + " Ha^2 (root "
                 + std::to_string(s)
                 + ") is negative — imaginary excitation (no fallback)");
         if (w2s <= kOmega2Tol)
             throw std::runtime_error(
-                "RHF::bse: omega^2 = " + std::to_string(w2s) + " Ha^2 (root "
+                "BSE::run: omega^2 = " + std::to_string(w2s) + " Ha^2 (root "
                 + std::to_string(s) + ") is numerically zero (no fallback)");
         out.energy_ev[static_cast<std::size_t>(s)] =
             std::sqrt(w2s) * units::kHartreeInEv;
     }
     return out;
 }
+
+template class BSE<RHF>;
 
 } // namespace scf
 } // namespace cpu

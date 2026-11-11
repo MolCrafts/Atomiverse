@@ -6,6 +6,7 @@
 
 #include "atomiverse/cpu/planewave/dfpt_phonon.h"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <optional>
@@ -52,11 +53,10 @@ std::optional<int> commensurate_factor(double x, int nmax = 6) {
 }
 
 /// @brief Mass-weight Hermitian C [Ha/Bohr²], diagonalize, fill frequencies.
-void diagonalize_complex_C(const std::vector<std::complex<AccReal>>& C,
-                           int n, int dim, const int* types,
+void diagonalize_complex_C(const std::vector<std::complex<AccReal>>& C, int n,
+                           int dim, const int* types,
                            DfptPhononResult& result) {
-    const double to_ev_ang2 =
-        1.0 / vib::nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2;
+    const double to_ev_ang2 = 1.0 / vib::nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2;
 
     std::vector<double> inv_sqrt_m(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i)
@@ -65,16 +65,15 @@ void diagonalize_complex_C(const std::vector<std::complex<AccReal>>& C,
 
     for (int i = 0; i < dim; ++i)
         for (int j = 0; j < dim; ++j) {
-            const auto& cij =
-                C[static_cast<std::size_t>(i) * dim + j];
+            const auto& cij = C[static_cast<std::size_t>(i) * dim + j];
             result.force_constants(i, j) =
                 static_cast<double>(cij.real()) * to_ev_ang2;
             result.force_constants_imag(i, j) =
                 static_cast<double>(cij.imag()) * to_ev_ang2;
         }
 
-    std::vector<std::complex<AccReal>> dmat(
-        static_cast<std::size_t>(dim) * dim);
+    std::vector<std::complex<AccReal>> dmat(static_cast<std::size_t>(dim)
+                                            * dim);
     for (int i = 0; i < dim; ++i)
         for (int j = 0; j < dim; ++j) {
             const AccReal scale = static_cast<AccReal>(
@@ -85,20 +84,18 @@ void diagonalize_complex_C(const std::vector<std::complex<AccReal>>& C,
         }
 
     std::vector<AccReal> eig(static_cast<std::size_t>(dim));
-    std::vector<std::complex<AccReal>> vecs(
-        static_cast<std::size_t>(dim) * dim);
-    internal::jacobi_eigh_hermitian(dim, dmat.data(), eig.data(),
-                                    vecs.data(), 50);
+    std::vector<std::complex<AccReal>> vecs(static_cast<std::size_t>(dim)
+                                            * dim);
+    internal::jacobi_eigh_hermitian(dim, dmat.data(), eig.data(), vecs.data(),
+                                    50);
 
     const double au2cm = vib::nist::au2wavenumber();
-    result.frequencies =
-        xt::zeros<double>({static_cast<std::size_t>(dim)});
+    result.frequencies = xt::zeros<double>({static_cast<std::size_t>(dim)});
     for (int k = 0; k < dim; ++k) {
         const double lambda =
             static_cast<double>(eig[static_cast<std::size_t>(k)]);
-        result.frequencies(k) =
-            (lambda < 0.0) ? -std::sqrt(-lambda) * au2cm
-                           : std::sqrt(lambda) * au2cm;
+        result.frequencies(k) = (lambda < 0.0) ? -std::sqrt(-lambda) * au2cm
+                                               : std::sqrt(lambda) * au2cm;
     }
 }
 
@@ -106,10 +103,17 @@ void diagonalize_complex_C(const std::vector<std::complex<AccReal>>& C,
 
 DfptPhononResult DfptPhonon::compute(const PW& method,
                                      const cpu::Frame& frame) const {
+    // The response occupied-space projectors and occupation thresholds
+    // currently assume probability weights. Ground-state MP supports signed
+    // quasi-occupations; carrying those through Sternheimer response needs
+    // a separate implementation and validation before admitting this model.
+    if (method.smearing == ATV::electronic::Smearing::methfessel_paxton)
+        throw std::invalid_argument(
+            "DfptPhonon::compute: signed Methfessel-Paxton response is not "
+            "implemented; use Fermi-Dirac, Gaussian or fixed occupations");
     const int n = frame.nlocal();
     const int dim = 3 * n;
-    const double to_ev_ang2 =
-        1.0 / vib::nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2;
+    const double to_ev_ang2 = 1.0 / vib::nist::EV_PER_ANG2_TO_HARTREE_PER_BOHR2;
 
     DfptPhononResult result;
     result.n_atoms = n;
@@ -143,7 +147,7 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
                     * to_ev_ang2;
             }
 
-        const int* types = frame.span(kAtom_type);
+        const int* types = frame.span(kAtom_atomic_number);
         std::vector<double> inv_sqrt_m(static_cast<std::size_t>(n));
         for (int i = 0; i < n; ++i)
             inv_sqrt_m[static_cast<std::size_t>(i)] =
@@ -164,14 +168,12 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
         internal::jacobi_eigh(dim, dmat.data(), eig.data(), vecs.data(), 50);
 
         const double au2cm = vib::nist::au2wavenumber();
-        result.frequencies =
-            xt::zeros<double>({static_cast<std::size_t>(dim)});
+        result.frequencies = xt::zeros<double>({static_cast<std::size_t>(dim)});
         for (int k = 0; k < dim; ++k) {
             const double lambda =
                 static_cast<double>(eig[static_cast<std::size_t>(k)]);
-            result.frequencies(k) =
-                (lambda < 0.0) ? -std::sqrt(-lambda) * au2cm
-                               : std::sqrt(lambda) * au2cm;
+            result.frequencies(k) = (lambda < 0.0) ? -std::sqrt(-lambda) * au2cm
+                                                   : std::sqrt(lambda) * au2cm;
         }
         return result;
     }
@@ -200,9 +202,9 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
 
             const int n_sc = sc.nlocal();
             const int dim_sc = 3 * n_sc;
-            xt::xtensor<double, 2> hess_sc = xt::zeros<double>(
-                {static_cast<std::size_t>(dim_sc),
-                 static_cast<std::size_t>(dim_sc)});
+            xt::xtensor<double, 2> hess_sc =
+                xt::zeros<double>({static_cast<std::size_t>(dim_sc),
+                                   static_cast<std::size_t>(dim_sc)});
             for (int i = 0; i < dim_sc; ++i)
                 for (int j = 0; j < dim_sc; ++j)
                     hess_sc(i, j) =
@@ -213,19 +215,23 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
                         * to_ev_ang2;
 
             vib::PhononDispersion path;
-            const std::vector<double> freqs = path.frequencies_at_q(
-                hess_sc, frame, na, nb, nc, q_frac);
+            const std::vector<double> freqs =
+                path.frequencies_at_q(hess_sc, frame, na, nb, nc, q_frac);
             result.frequencies =
                 xt::zeros<double>({static_cast<std::size_t>(dim)});
             for (int k = 0; k < dim; ++k)
                 result.frequencies(k) = freqs[static_cast<std::size_t>(k)];
 
-            for (int i = 0; i < n; ++i)
-                for (int a = 0; a < 3; ++a)
-                    for (int j = 0; j < n; ++j)
-                        for (int b = 0; b < 3; ++b)
-                            result.force_constants(3 * i + a, 3 * j + b) =
-                                hess_sc(3 * i + a, 3 * j + b);
+            double fourier_asymmetry = 0;
+            const auto Cq = path.force_constants_at_q(
+                hess_sc, frame, na, nb, nc, q_frac, &fourier_asymmetry);
+            result.max_asymmetry =
+                std::max(result.max_asymmetry, fourier_asymmetry);
+            for (int i = 0; i < dim; ++i)
+                for (int j = 0; j < dim; ++j) {
+                    result.force_constants(i, j) = Cq(i, j).real();
+                    result.force_constants_imag(i, j) = Cq(i, j).imag();
+                }
 
             return result;
         }
@@ -240,10 +246,9 @@ DfptPhononResult DfptPhonon::compute(const PW& method,
         AccReal(cg_tol), cg_max_iter, AccReal(mix_beta));
     result.scf_converged = out.scf_converged;
     result.response_converged = out.response_converged;
-    result.max_asymmetry =
-        static_cast<double>(out.max_asymmetry) * to_ev_ang2;
+    result.max_asymmetry = static_cast<double>(out.max_asymmetry) * to_ev_ang2;
 
-    const int* types = frame.span(kAtom_type);
+    const int* types = frame.span(kAtom_atomic_number);
     diagonalize_complex_C(out.force_constants, n, dim, types, result);
     return result;
 }

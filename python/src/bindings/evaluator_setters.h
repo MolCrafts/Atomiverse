@@ -17,7 +17,7 @@
 /// `MdHandle` and `MinimizeHandle` satisfy: it registers the component on the
 /// driver's plural evaluator slot and records the TaskSpec mirror entry.
 ///
-/// Two docstrings are the caller's, not this header's: AM1 and plane-wave DFT
+/// The plane-wave docstring belongs to the caller: plane-wave DFT
 /// cost one self-consistent-field solve per *step* under MD and per *iteration*
 /// under a minimizer, and only an MD run also needs a per-atom mass column, so
 /// that guidance cannot be written once. The sixteen classical setters describe
@@ -26,31 +26,45 @@
 
 #include <nanobind/nanobind.h>
 
+#include <cstddef>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+#ifdef ATV_HAS_MD
+#include "atomiverse/cpu/dynamics/fix_efield.h"
+#endif
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
+#include "atomiverse/cpu/longrange/pppm.h"
 #endif
 #ifdef ATV_HAS_PW
-// `copy_pw_params` is the one definition of "the same method, no state".
-#include "atomiverse/cpu/planewave/internal/scf_loop.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 #endif
+#include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/dihedral_charmm.h"
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
+#include "atomiverse/cpu/potentials/improper_cvff.h"
 #include "atomiverse/cpu/potentials/improper_harmonic.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 #include "atomiverse/cpu/potentials/pair_buck.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #ifdef ATV_HAS_SEMIEMPIRICAL
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
+#include "atomiverse/cpu/semiempirical/dftb2.h"
+#include "atomiverse/cpu/semiempirical/mndo_solver.h"
+#include "atomiverse/cpu/semiempirical/pm3_solver.h"
+#include "atomiverse/cpu/semiempirical/rm1_solver.h"
 #endif
 // The one params-mirror-to-component factory of the catalogue: the Born table
 // crosses as parallel vectors and has to be transposed back into coefficient
@@ -65,31 +79,93 @@ namespace nb = nanobind;
 /// @tparam Handle    `MdHandle` or `MinimizeHandle` — anything exposing
 ///                   `set_categorical(setter, params, component)`.
 /// @param cls        The bound handle class the methods are added to.
-/// @param am1_doc    Docstring for `set_evaluator_am1`, written in the caller's
-///                   loop vocabulary (step vs iteration). Unused on a build
-///                   without `ATV_HAS_SEMIEMPIRICAL`.
 /// @param pw_doc     Docstring for `set_evaluator_pw`, likewise. Unused on a
 ///                   build without `ATV_HAS_PW`.
 template <typename Handle>
 void bind_evaluator_setters(nb::class_<Handle>& cls,
-                            [[maybe_unused]] const char* am1_doc,
                             [[maybe_unused]] const char* pw_doc) {
+#ifdef ATV_HAS_SEMIEMPIRICAL
+    // Concrete casts preserve the nonzero DriverNode base offset. The driver
+    // still borrows the original method and owns the normal nested adapter.
+    cls.def(
+           "set_evaluator",
+           [](Handle& self, ATV::cpu::semiempirical::AM1& method) {
+               self.set_local_evaluator(method, "AM1");
+           },
+           nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::RM1& method) {
+                self.set_local_evaluator(method, "RM1");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::MNDO& method) {
+                self.set_local_evaluator(method, "MNDO");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::PM3& method) {
+                self.set_local_evaluator(method, "PM3");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>())
+        // DFTB2 leads with its Driver<scc::Phase> base, so its Component
+        // base sits at a nonzero offset too: convert in C++, never through
+        // a Python inheritance cast (nanobind applies no base offset).
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::semiempirical::DFTB2& method) {
+                self.set_local_evaluator(method, "DFTB2");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>());
+#endif
+    cls.def(
+           "set_evaluator",
+           [](Handle& self, ATV::cpu::Component& evaluator) {
+               self.set_local_evaluator(evaluator, evaluator.name().c_str());
+           },
+           nb::arg("comp"), nb::keep_alive<1, 2>())
+        .def(
+            "set_evaluator",
+            [](Handle& self, ATV::cpu::DriverNode& evaluator) {
+                self.set_local_evaluator(evaluator, "nested electronic method");
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>());
+
     cls.def(
         "set_evaluator_pair_lj_cut",
         [](Handle& self, const ATV::cpu::task::PairLJCutParams& p) {
-            self.set_categorical(
-                "set_evaluator", p,
-                ATV::cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::task::internal::make_pair_lj_cut(p));
         },
         nb::arg("comp"),
-        "Append the Lennard-Jones 12-6 pair evaluator. Needs a NeighborList "
-        "whose cutoff is >= the LJ cutoff.");
+        "Append the Lennard-Jones 12-6 pair evaluator (single-type or per-type "
+        "table, optional r^-4 attraction). Needs a NeighborList whose cutoff "
+        "is >= the largest per-pair cutoff.");
+
+    cls.def(
+        "set_evaluator_pair_lj_cut_coul_long",
+        [](Handle& self, const ATV::cpu::task::PairLJCutCoulLongParams& p) {
+            self.set_categorical(
+                "set_evaluator", p,
+                ATV::cpu::task::internal::make_pair_lj_cut_coul_long(p));
+        },
+        nb::arg("comp"),
+        "Append the fused typed LJ + Ewald real-space evaluator (LAMMPS "
+        "lj/cut/coul/long). The real-space half of an Ewald split: build() "
+        "requires exactly one reciprocal-space partner (KSpacePME) at the "
+        "SAME alpha [1/A]. Needs a NeighborList whose cutoff is >= the "
+        "largest LJ / r^-4 / Coulomb cutoff, and a per-atom 'charge' column "
+        "[e] on the frame handed to run().");
 
     cls.def(
         "set_evaluator_pair_coul_cut",
         [](Handle& self, const ATV::cpu::task::PairCoulCutParams& p) {
-            self.set_categorical("set_evaluator", p,
-                                 ATV::cpu::PairCoulCut{p.cutoff});
+            self.set_categorical(
+                "set_evaluator", p,
+                ATV::cpu::task::internal::make_pair_coul_cut(p));
         },
         nb::arg("comp"),
         "Append the truncated Coulomb pair evaluator. Self-contained — it "
@@ -111,6 +187,17 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "cutoff is >= the Coulomb cutoff, and a per-atom 'charge' column [e] "
         "on the frame handed to run().");
 
+    cls.def(
+        "set_evaluator_improper_cvff",
+        [](Handle& self, const ATV::cpu::task::ImproperCvffParams& p) {
+            self.set_unmirrored_evaluator(ATV::cpu::ImproperCvff{p.K, p.d, p.n},
+                                          "ImproperCvff", false);
+        },
+        nb::arg("comp"),
+        "Append the Amber/GAFF improper V = K(1 + d cos(n phi)). Reads the "
+        "frame's improper topology; its type_id indexes the per-type "
+        "vectors. Not an MPI task-wire component.");
+
 #ifdef ATV_HAS_KSPACE
     cls.def(
         "set_evaluator_kspace_pme",
@@ -125,67 +212,34 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "Append the reciprocal-space half of the same Ewald/PME split. build() "
         "requires exactly one real-space partner (CoulLong) at the SAME alpha "
         "[1/A]. Bound only on an extension built with ATV_BUILD_KSPACE=ON.");
-#endif
-
-#ifdef ATV_HAS_SEMIEMPIRICAL
     cls.def(
-        "set_evaluator_am1",
-        [](Handle& self,
-           const ATV::cpu::semiempirical::AM1Evaluator& evaluator) {
-            // Handed a LIVE component rather than a params mirror: AM1Evaluator
-            // is bound for its own single_point / forces surface, so Python
-            // already holds the real thing. Read the five SCF parameters back
-            // off the owned method — the same five the MPI launcher path
-            // copies in bind_semiempirical.cpp — and let set_categorical build
-            // the driver's own copy from them, so the wire mirror and the
-            // registered component cannot disagree.
-            const ATV::cpu::semiempirical::AM1& method = evaluator.method();
-            const ATV::cpu::task::AM1EvaluatorParams p{
-                method.charge, method.multiplicity, method.max_iter,
-                method.density_tol, method.energy_tol};
-            self.set_categorical("set_evaluator", p,
-                                 ATV::cpu::semiempirical::AM1Evaluator{
-                                     p.charge, p.multiplicity, p.max_iter,
-                                     p.density_tol, p.energy_tol}
-                                     .with_gradient(true));
+        "set_evaluator_kspace_pppm",
+        [](Handle& self, const ATV::cpu::task::KSpacePppmParams& p) {
+            // Move-only (FFTW plans). Not a wire alternative: the handle
+            // records the name and the charge requirement itself.
+            if (p.mesh[0] > 0)
+                self.set_unmirrored_evaluator(
+                    ATV::cpu::KSpacePPPM{p.alpha, p.mesh, p.order},
+                    "KSpacePPPM", true);
+            else
+                self.set_unmirrored_evaluator(
+                    ATV::cpu::KSpacePPPM{p.alpha, p.grid_spacing, p.order},
+                    "KSpacePPPM", true);
         },
-        nb::arg("comp"), am1_doc);
+        nb::arg("comp"),
+        "Append ik PPPM, the Hockney-Eastwood reciprocal half. build() "
+        "requires exactly one CoulLong at the SAME alpha [1/A]. Not an MPI "
+        "task-wire component: a launcher run that names it is refused. "
+        "Bound only on an extension built with ATV_BUILD_KSPACE=ON.");
 #endif
 
 #ifdef ATV_HAS_PW
     cls.def(
         "set_evaluator_pw",
-        [](Handle& self, const ATV::cpu::pw::PWEvaluator& evaluator) {
-            // Handed a LIVE component, like set_evaluator_am1 and for the same
-            // reason: PWEvaluator is bound in bind_pw.cpp so Python already
-            // holds the real thing.
-            const ATV::cpu::pw::PW& method = evaluator.method();
-            // The two enum members cross the wire as their integer values:
-            // `cpu::task::PwEvaluatorParams` is compiled without the
-            // plane-wave headers those enums live in.
-            const ATV::cpu::task::PwEvaluatorParams p{
-                method.upf_path,
-                method.gth_name,
-                method.ecut_ry,
-                method.k_mesh,
-                method.tol,
-                method.max_iter,
-                method.mix_beta,
-                method.pulay_depth,
-                static_cast<int>(method.xc),
-                method.spin_polarized,
-                method.multiplicity,
-                static_cast<int>(method.smearing),
-                method.degauss,
-                method.mp_order,
-                method.extra_bands};
-            self.set_categorical(
-                "set_evaluator", p,
-                ATV::cpu::pw::PWEvaluator{
-                    ATV::cpu::pw::internal::copy_pw_params(method)}
-                    .with_gradient(true));
+        [](Handle& self, ATV::cpu::pw::PW& method) {
+            self.set_local_evaluator(method, "PW");
         },
-        nb::arg("comp"), pw_doc);
+        nb::arg("comp"), nb::keep_alive<1, 2>(), pw_doc);
 #endif
 
     cls.def(
@@ -207,6 +261,32 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         nb::arg("comp"),
         "Append the harmonic angle evaluator. Reads the frame's angle "
         "topology; parameters are indexed by angle type.");
+
+    cls.def(
+        "set_evaluator_angle_cosine",
+        [](Handle& self, const ATV::cpu::task::AngleCosineParams& p) {
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::AngleCosine{p.K});
+        },
+        nb::arg("comp"),
+        "Append the cosine angle evaluator V = K(1 + cos theta) (LAMMPS "
+        "`angle_style cosine`). Reads the frame's angle topology; K [eV] is "
+        "indexed by angle type.");
+
+#ifdef ATV_HAS_MD
+    cls.def(
+        "set_evaluator_fix_efield",
+        [](Handle& self, const ATV::cpu::task::FixEfieldParams& p) {
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
+        },
+        nb::arg("comp"),
+        "Append a constant uniform electric field (LAMMPS `fix efield`): "
+        "F_i += q_i E with E in V/A, so F is eV/A for charges in e. Adds "
+        "U = -sum_i q_i E . r_i^u (unwrapped through the image flags) to the "
+        "energy and nothing to the virial. Reads the per-atom 'charge' "
+        "column; run() refuses a frame without one.");
+#endif
 
     cls.def(
         "set_evaluator_dihedral_multi_harmonic",
@@ -272,10 +352,10 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "U = A exp((sigma - r)/rho) - C/r^6 + D/r^8, shifted at the cutoff "
         "(LAMMPS `pair_style born`) — the Fumi-Tosi short-range half of a "
         "molten-salt model; add the Coulomb term as a separate evaluator.\n\n"
-        "The table is keyed by ATOMIC NUMBER. The frame's per-atom type "
-        "column is filled from the molrs `atomic_number` column, so a "
-        "sodium-chloride row is type_i=11, type_j=17 and an argon dimer is "
-        "18, 18 — not a 0-based index into anything.\n\n"
+        "The table is keyed by FORCE-FIELD TYPE: the frame's per-atom type "
+        "column is filled from the molpy `atoms.type_id` column (u64), not "
+        "from `atomic_number` (the species), and the keys are used as-is. "
+        "A frame without `type_id` is refused with a how-to.\n\n"
         "Every interacting type pair must be listed, and the table is "
         "symmetric in (i, j). An unlisted pair does NOT interact: Fumi-Tosi "
         "parameters are not Lorentz-Berthelot, so there is no mixing rule to "

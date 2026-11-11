@@ -21,11 +21,10 @@ namespace ATV {
 namespace cpu {
 
 using TagIndex = std::unordered_map<TagInt, int>;
-using MetaValue =
-    std::variant<bool, std::int32_t, std::int64_t, std::uint32_t, std::uint64_t,
-                 float, double, std::string, MetaBool3, MetaI32x3, MetaI64x3,
-                 MetaU32x3, MetaU64x3, MetaF32x3, MetaF64x3, MetaF32x6,
-                 MetaF64x6, MetaF32x9, MetaF64x9, TagIndex>;
+using MetaValue = std::variant<bool, std::int32_t, std::int64_t, std::uint32_t,
+                               std::uint64_t, double, std::string, MetaBool3,
+                               MetaI32x3, MetaI64x3, MetaU32x3, MetaU64x3,
+                               MetaF64x3, MetaF64x6, MetaF64x9, TagIndex>;
 
 class meta_error : public std::runtime_error {
   public:
@@ -81,20 +80,16 @@ enum class MetaDType : std::uint8_t {
     I64 = 2,
     U32 = 3,
     U64 = 4,
-    F32 = 5,
-    F64 = 6,
-    String = 7,
-    Bool3 = 8,
-    I32x3 = 9,
-    I64x3 = 10,
-    U32x3 = 11,
-    U64x3 = 12,
-    F32x3 = 13,
-    F64x3 = 14,
-    F32x6 = 15,
-    F64x6 = 16,
-    F32x9 = 17,
-    F64x9 = 18,
+    F64 = 5,
+    String = 6,
+    Bool3 = 7,
+    I32x3 = 8,
+    I64x3 = 9,
+    U32x3 = 10,
+    U64x3 = 11,
+    F64x3 = 12,
+    F64x6 = 13,
+    F64x9 = 14,
     TagIndexLocal = 255,
 };
 

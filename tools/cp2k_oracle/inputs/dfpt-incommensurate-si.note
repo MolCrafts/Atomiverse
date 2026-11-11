@@ -18,7 +18,7 @@ direct `internal::dfpt_q_force_constants` (not supercell).
 
 CP2K binary **not available**. Pins are literature-biased windows + measured
 ATV spectrum under the regression twin (see
-`regressions/response/dfpt-incommensurate-si/REFERENCE.md`).
+`regressions/response/dfpt/REFERENCE.md`).
 `perf_exempt=true` until a fair CP2K DFPT wall is recorded.
 
 ## Cite

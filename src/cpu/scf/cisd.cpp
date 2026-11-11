@@ -92,7 +92,7 @@ double cisd_correction_ha(const xt::xtensor<double, 4>& eri_mo,
                         - eps_so(occ[static_cast<std::size_t>(jj)]);
                     if (std::abs(denom) < 1e-12)
                         throw std::runtime_error(
-                            "RHF::cisd: near-zero MP2 doubles denominator "
+                            "CISD::run: near-zero MP2 doubles denominator "
                             "(degenerate or non-aufbau reference)");
                     const double abij =
                         antisym_eri(eri_mo, vir[static_cast<std::size_t>(aa)],
@@ -153,7 +153,7 @@ double cisd_correction_ha(const xt::xtensor<double, 4>& eri_mo,
                         - eps_so(occ[static_cast<std::size_t>(jj)]) - omega_ha;
                     if (std::abs(denom) < 1e-12)
                         throw std::runtime_error(
-                            "RHF::cisd: near-zero CIS(D) doubles denominator "
+                            "CISD::run: near-zero CIS(D) doubles denominator "
                             "(Δ − ω)");
                     V += s * s / denom;
                 }
@@ -195,13 +195,18 @@ double cisd_correction_ha(const xt::xtensor<double, 4>& eri_mo,
 
 } // namespace
 
-CISDResult RHF::cisd(int n_states) const {
-    if (!has_result())
-        throw std::runtime_error(
-            "RHF::cisd: no SCF result — call run(frame) first");
+template <typename Method>
+CISD<Method>::CISD(const Method& mf) : mf_(&mf) {}
 
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+template <typename Method>
+CISDResult CISD<Method>::run(int n_states) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
+        throw std::runtime_error(
+            "CISD::run: no SCF result — call run(frame) first");
+
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -221,7 +226,7 @@ CISDResult RHF::cisd(int n_states) const {
             ++n_occ;
     if (n_occ == 0 || n_occ >= n_mo)
         throw std::invalid_argument(
-            "RHF::cisd: no virtual orbitals (e.g. He/STO-3G — no fallback)");
+            "CISD::run: no virtual orbitals (e.g. He/STO-3G — no fallback)");
 
     // Full MO ERI (pq|rs) chemist notation.
     const xt::xtensor<double, 4> eri_mo = ao2mo_full(eri_ao, C, n_mo);
@@ -248,6 +253,8 @@ CISDResult RHF::cisd(int n_states) const {
     }
     return out;
 }
+
+template class CISD<RHF>;
 
 } // namespace scf
 } // namespace cpu

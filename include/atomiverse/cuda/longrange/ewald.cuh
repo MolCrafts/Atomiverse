@@ -1,10 +1,14 @@
 /// @file cuda/longrange/ewald.cuh
 /// @brief Reciprocal-space Ewald summation (LAMMPS `kspace_style ewald`) — CUDA.
 ///
-/// GPU mirror of `cpu::KSpaceEwald`. Adds the long-range reciprocal sum,
-/// the self-energy, on top of the real-space `cuda::CoulLong`. Single-GPU in
-/// this revision (the structure-factor sum is over `frame.n_local()` atoms;
-/// a cross-GPU `S(k)` reduction is a multi-GPU follow-up — NCCL is available).
+/// GPU mirror of `cpu::KSpaceEwald`. Adds the long-range reciprocal sum, the
+/// self-energy and the neutralizing background of a charged cell on top of
+/// the real-space `cuda::CoulLong`. Single-GPU (the structure-factor sum is
+/// over `frame.n_local()` atoms). The integer mode set is chosen at build;
+/// wave vectors, weights, volume and the six-component reciprocal virial
+/// follow the published device cell (`Box::revision`), so deform and
+/// barostats run without a rebuild. The cutoff sphere is not re-chosen when
+/// the cell changes.
 ///
 /// Cross-driver component: bind explicitly to the force phase. Shares the
 /// splitting parameter α with `cuda::CoulLong`.
@@ -28,11 +32,22 @@ class KSpaceEwald : public KSpace {
     ~KSpaceEwald() override;
 
     std::string name() const override { return "ewald"; }
+
+    bool graph_capturable() const override { return true; }
     LongRangeContract long_range_contract() const override {
         return {LongRangeRole::ReciprocalSpace, AccReal(alpha_), AccReal(0),
                 AccReal(accuracy_)};
     }
 
+    /// @brief Record whether a consumer reads stress (enables the virial).
+    /// @param required True iff a downstream consumer reads stress.
+
+    // Charge-dependent background data (PME also captures it in a graph)
+    // is fixed at build; reject edits until that cache has an update path.
+    bool supports_input_changes(InputChange changes) const override {
+        return !has_input_change(changes, InputChange::Identity)
+               && !has_input_change(changes, InputChange::Charge);
+    }
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
@@ -42,8 +57,13 @@ class KSpaceEwald : public KSpace {
   private:
     double alpha_;
     double accuracy_;
+    /// Background energy times volume, k_e π Q² / (2α²) [eV·Å³].
+    double background_coef_ = 0;
 
-    int ng_ = 0; ///< Number of reciprocal vectors.
+    int ng_ = 0;                 ///< Number of reciprocal vectors.
+    int* d_modes_ = nullptr;     ///< Integer modes (m0, m1, m2) per vector.
+    void* d_tables_ = nullptr;   ///< Cell revision of the k tables.
+    double* d_virial_ = nullptr; ///< 6 × ng strain coefficients.
     // Device reciprocal vectors + kernel weight, and structure-factor scratch.
     double* d_kx_ = nullptr;
     double* d_ky_ = nullptr;

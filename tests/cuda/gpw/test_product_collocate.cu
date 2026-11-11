@@ -16,11 +16,11 @@
 using ATV::cpu::gpw::GridProduct;
 using ATV::cpu::gpw::UniformGrid;
 using ATV::cpu::gpw::internal::collint_collocate_product;
-using ATV::cuda::gpw::internal::CollocateGridDesc;
-using ATV::cuda::gpw::internal::DeviceProduct;
 using ATV::cuda::gpw::internal::collocate_integrate_rho;
 using ATV::cuda::gpw::internal::collocate_product;
 using ATV::cuda::gpw::internal::collocate_products;
+using ATV::cuda::gpw::internal::CollocateGridDesc;
+using ATV::cuda::gpw::internal::DeviceProduct;
 
 namespace {
 
@@ -180,7 +180,8 @@ std::vector<double> run_device(const UniformGrid& grid,
     return rho;
 }
 
-double max_abs_diff(const std::vector<double>& a, const std::vector<double>& b) {
+double max_abs_diff(const std::vector<double>& a,
+                    const std::vector<double>& b) {
     EXPECT_EQ(a.size(), b.size());
     double m = 0.0;
     for (std::size_t i = 0; i < a.size(); ++i)
@@ -294,8 +295,7 @@ TEST(CudaGpwProductCollocate, IntegrateRhoMatchesHost) {
     std::vector<DeviceProduct> prods = {make_ss(1.5, pc, 1.0)};
 
     const long ng = grid.npts();
-    auto* d_prods =
-        static_cast<DeviceProduct*>(dmalloc(sizeof(DeviceProduct)));
+    auto* d_prods = static_cast<DeviceProduct*>(dmalloc(sizeof(DeviceProduct)));
     auto* d_rho =
         static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
     auto* d_sum = static_cast<double*>(dmalloc(sizeof(double)));
@@ -309,8 +309,9 @@ TEST(CudaGpwProductCollocate, IntegrateRhoMatchesHost) {
     check_cuda(cudaDeviceSynchronize(), "sync");
 
     double sum_dev = 0.0;
-    check_cuda(cudaMemcpy(&sum_dev, d_sum, sizeof(double), cudaMemcpyDeviceToHost),
-               "D2H sum");
+    check_cuda(
+        cudaMemcpy(&sum_dev, d_sum, sizeof(double), cudaMemcpyDeviceToHost),
+        "D2H sum");
 
     const auto rho_host = host_collocate(grid, prods);
     double sum = 0.0, c = 0.0;
@@ -351,8 +352,7 @@ TEST(CudaGpwProductCollocate, EdgeCenteredPbcMatchesCollint) {
     sum_cpu *= grid.weight();
 
     // Analytic ∫ exp(−p r²) d³r = (π/p)^{3/2} for weight=1 s–s (infinite space).
-    const double charge_exact =
-        std::pow(3.14159265358979323846 / 3.0, 1.5);
+    const double charge_exact = std::pow(3.14159265358979323846 / 3.0, 1.5);
     // Collint + device must recover nearly full charge (PBC wrap).
     EXPECT_NEAR(sum_cpu, charge_exact, 2e-3 * charge_exact)
         << "collint charge=" << sum_cpu << " exact=" << charge_exact;

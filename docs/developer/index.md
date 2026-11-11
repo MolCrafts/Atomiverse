@@ -10,6 +10,10 @@ way it is, not to assume domain knowledge.
 
 ## What to read
 
+- **[CPU Workflow Reference](cpu-workflow-reference.md)** — the detailed
+  execution fragments accompanying the tutorial, maintained here and reused
+  directly by the print appendix.
+
 - **[Architecture](architecture.md)** — start here. One CUDA-free contract
   layer in `core/`, two execution backends, a host-side `cpu::Frame` throughout.
 - **[CPU Backend Internals](cpu-internals.md)** — *why* the CPU side has one
@@ -32,24 +36,28 @@ way it is, not to assume domain knowledge.
 - **[The Frame](frame-architecture.md)** — what `cpu::Frame` physically is:
   named typed Blocks, exact-dtype meta, and the Box that owns the cell; the
   typed resolution boundary that keeps a column read as cheap as a raw array;
-  and the schema that drives MPI packing and the molrs boundary.
+  and the schema that drives MPI packing and the molpy boundary.
 - **[KSpace long-range electrostatics](kspace-long-range.md)** — CoulLong +
   Ewald/PME pairing, stress, cell refresh vs rebuild, replicated-grid MPI
   ceiling, and the accepted charged-NPT scope.
 - **[Python / molpy boundary](python-molpy-boundary.md)** — the acyclic
-  dependency order between molrs, molpy, the C++ library, the CLI and the
+  dependency order between molpy, molpy, the C++ library, the CLI and the
   Python package.
-- **[Oracle capability loops](oracle-capability-loop.md)** — how a capability
-  gets from "an external code can do this" to a landed regression with a
-  citable pin.
+- **[Releasing the Python package](release.md)** — what goes to PyPI, how
+  users build the native extension with pip, and how a tag is published.
+- **[Scientific benchmark framework](scientific-benchmarks.md)** — proposed
+  method-level accuracy/performance suite, hardware-annotated reports,
+  molcrafts-ci integration and evidence-derived roadmap status.
+
+- **[Project contract](project-contract.md)** — architecture, build recipes and conventions.
 
 ## Codebase map
 
 | Directory | Role |
 |---|---|
-| `include/atomiverse/core` | the CUDA-free contract layer both backends share: precision tiers, `Mat3`, units, device tags, Frame schema, the `Driver<PhaseEnum, DeviceTag>` template, `Plan`, `Stage`, `Role`, `Verdict` |
-| `include/atomiverse/cpu`, `src/cpu` | CPU backend — frame, drivers, dynamics, montecarlo, minimize, scf, planewave, gpw, semiempirical, observe |
-| `include/atomiverse/cuda`, `src/cuda` | CUDA backend — staged components, transfers, async observer bridges |
+| `core` | the CUDA-free contract layer both backends share: precision tiers, `Mat3`, units, device tags, Frame schema, the `Driver<PhaseEnum, DeviceTag>` template, `Plan`, `Stage`, `Role`, `Verdict` |
+| `cpu`, `src/cpu` | CPU backend — frame, drivers, dynamics, montecarlo, minimize, scf, planewave, gpw, semiempirical, observe |
+| `cuda`, `src/cuda` | CUDA backend — staged components, transfers, async observer bridges |
 | `tests` | **unit tests only** — one function or method each, at millisecond scale |
 | `regressions` | end-to-end cases, one directory per delivered feature, each checked against a cited external or analytic value |
 | `benchmarks` | standing performance harnesses; never registered with ctest |
@@ -81,7 +89,7 @@ Ask in order:
    *topology* is genuinely new.
 6. Does it need a test? A single-function unit test in `tests/`. Anything
    end-to-end — a full solve, a convergence loop, a comparison against an
-   external engine — goes to `regressions/<domain>/<case>/` as an
+   external engine — goes to `<case>` as an
    out-of-library consumer, never to `tests/`.
 
 ## Maintaining these docs

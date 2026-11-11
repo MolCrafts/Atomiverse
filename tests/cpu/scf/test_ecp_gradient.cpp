@@ -2,7 +2,7 @@
 /// @brief Unit: ECP nuclear-gradient guard + single-atom translational
 ///        invariance of the semi-numerical dU/dR path (hf-parity-01-ecp-forces).
 ///
-/// The ECP energy path is validated by regressions/scf/ecp_heavy_atom; the
+/// The ECP energy path is validated by regressions/scf/relativistic; the
 /// gradient's binding physics bar (I2 vs pinned PySCF) lives in
 /// regressions/scf/ecp_i2_grad. These are the fast unit checks: the RHF ECP
 /// guard opens (siblings stay shut) and a single ECP atom has zero force for
@@ -28,15 +28,16 @@ namespace {
 /// A single iodine atom with def2-SVP + def2-ECP (Z_val = 25).
 cpu::scf::internal::IntegralWorkspace iodine_pack() {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 53; // I
+    f.span(kAtom_atomic_number)[0] = 53; // I
     f.box = cpu::Box::cubic(50.0);
-    return cpu::scf::internal::IntegralWorkspace{f, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    return cpu::scf::internal::IntegralWorkspace{f, BasisSet::Def2SVP, 0, false,
+                                                 "def2-ECP"};
 }
 
 cpu::scf::internal::ScfGradient make_grad(cpu::scf::SpinType spin) {
     return cpu::scf::internal::ScfGradient{cpu::scf::MeanFieldType::HF,
                                            spin,
-                                           cpu::scf::XCType::LSDA,
+                                           cpu::xc::XCType::LSDA,
                                            cpu::scf::GridLevel::SG0,
                                            0,
                                            0,
@@ -51,9 +52,10 @@ cpu::scf::internal::ScfGradient make_grad(cpu::scf::SpinType spin) {
 /// atom ECP gradient is zero by translational invariance; ROHF/GHF ECP throw.
 TEST(EcpGradient, RhfEcpRunsSiblingsThrowSingleAtomZeroForce) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 53; // I
+    f.span(kAtom_atomic_number)[0] = 53; // I
     f.box = cpu::Box::cubic(50.0);
-    const cpu::scf::internal::IntegralWorkspace p{f, BasisSet::Def2SVP, 0, false, "def2-ECP"};
+    const cpu::scf::internal::IntegralWorkspace p{f, BasisSet::Def2SVP, 0,
+                                                  false, "def2-ECP"};
     ASSERT_TRUE(p.has_ecp);
 
     const int n = p.n_basis;

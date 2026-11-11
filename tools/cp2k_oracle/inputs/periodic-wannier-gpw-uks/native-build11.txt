@@ -1,0 +1,58 @@
+
+=== gpw/wannier :: periodic-wannier-gpw-uks ===
+[gpw setup] STVpp_build    0 ms
+[gpw setup] ionic_density  1 ms
+[gpw setup] local_pp_grid  1 ms
+[2026-10-25 20:05:06.594] [info] CPU runtime initialized: 8 threads
+[2026-10-25 20:05:06.598] [info] all components built
+[gpw wannier] AO-links=48 nk=8 nbas=52 elapsed=67024 ms
+[gpw wannier] spin=0 occupied=8 localization=27 ms
+[gpw wannier] spin=1 occupied=8 localization=28 ms
+SCF E=-15.76993360 Ha  n_up=8 n_dn=8 n_wann=16  iters=1  conv=0
+Omega_init=215.271325  Omega=23.004194  [Ang^2]
+ATV wall (SCF+MLWF) = 84.017 s
+|E - CP2K| = 2.306724e-05 Ha (tol 2.0e-03)
+  spin0 center[0] = (+2.86979, -0.00096, +0.68567)
+  spin0 center[1] = (+0.96429, -0.01073, +0.67663)
+  spin0 center[2] = (+0.00529, +2.87236, +4.74775)
+  spin0 center[3] = (+0.00054, +0.96674, +4.73840)
+  spin0 center[4] = (+1.92202, +0.96141, +2.04536)
+  spin0 center[5] = (+1.92428, +2.88555, +2.03343)
+  spin0 center[6] = (+0.96631, +1.91592, +3.39808)
+  spin0 center[7] = (+2.87250, +1.91257, +3.39764)
+spin 0: max mid-image→midpoint = 0.01457 Ang (tol 0.90); Omega_spin≈11.50210
+  spin1 center[0] = (+2.86979, -0.00096, +0.68567)
+  spin1 center[1] = (+0.96429, -0.01073, +0.67663)
+  spin1 center[2] = (+0.00529, +2.87236, +4.74775)
+  spin1 center[3] = (+0.00054, +0.96674, +4.73840)
+  spin1 center[4] = (+1.92202, +0.96141, +2.04536)
+  spin1 center[5] = (+1.92428, +2.88555, +2.03343)
+  spin1 center[6] = (+0.96631, +1.91592, +3.39808)
+  spin1 center[7] = (+2.87250, +1.91257, +3.39764)
+spin 1: max mid-image→midpoint = 0.01457 Ang (tol 0.90); Omega_spin≈11.50210
+spread ratio Omega/Omega_init = 0.1069 (want < 0.50)
+WARN: MV loop did not flag converged; centers still pin (accepting for product pin)
+Whole section got=84.018104 want<=60 seconds
+FAIL: whole section wall=84.018104 want<=60 seconds
+
+=== gpw/wannier summary ===
+  FAIL    84.0 s  periodic-wannier-gpw-uks
+1/1 sections failed
+       84.54 real       247.89 user         3.51 sys
+           294322176  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               18327  page reclaims
+                 170  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   6  voluntary context switches
+              603153  involuntary context switches
+       2174562960871  instructions retired
+        484709776630  cycles elapsed
+           289276648  peak memory footprint

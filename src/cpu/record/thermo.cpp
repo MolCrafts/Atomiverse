@@ -1,83 +1,80 @@
 /// @file cpu/record/thermo.cpp
-/// @brief CPU thermodynamic output: Thermo component + thermo_print helper.
+/// @brief CPU thermodynamic output component.
 
 #include "atomiverse/cpu/record/thermo.h"
 #include "atomiverse/core/log.h"
-#include "atomiverse/core/units.h"
 
-#include <spdlog/fmt/fmt.h>
+#include <utility>
 
 namespace ATV {
 namespace cpu {
 
-// ── Thermo component ───────────────────────────────────────────────
+Thermo::Thermo(int freq, std::vector<std::string> keywords)
+    : freq_(freq),
+      style_(keywords.empty() ? ThermoStyle{} : ThermoStyle{keywords}) {}
 
-Thermo::Thermo(int freq) : freq_(freq) {}
+// LAMMPS src/output.cpp Output::setup / Output::write, src/verlet.cpp
+// Verlet::run and src/min.cpp Min::run, e8c4c278a8. Copyright (2003) Sandia
+// Corporation. GPL-2.0-only. `update->ntimestep` is incremented at the top
+// of every step, so the end-of-step line at timestep N reports the state
+// after N steps. Setup prints the header and the current timestep at the
+// start of every run (`thermo->header(); thermo->compute(0)`); the loop
+// prints when the timestep is a multiple of `thermo_every` and on the run's
+// last step (`next_thermo = MIN(next_thermo, update->laststep)`; with
+// `thermo_every == 0` only the last step); a minimization stopped early
+// prints its final step; `last_thermo` keeps a step from printing twice
+// within a run.
 
-void Thermo::launch(const cpu::LaunchContext& ctx) {
-    if (ctx.runtime.mpi_rank != 0)
-        return;
-
-    auto& f = ctx.frame;
-    // Ndof has ONE owner (Driver::publish_dof_): 3N - 3 - n_constraints. This
-    // used to be hardcoded as 3N - 3 here, which is simply wrong the moment
-    // anything is constrained — a rigid-water box would report T ~33% low.
-    int n_dof = ctx.runtime.md.n_dof_global;
-
-    double temperature = 0;
-    if (n_dof > 0)
-        temperature = double(2) * f.meta.get(kKinetic)
-                      / (static_cast<double>(n_dof) * units::kB_ev_per_k);
-
-    double total_energy = f.meta.get(kEnergy) + f.meta.get(kKinetic);
-
-    // `Conserved` is the integrator's conserved quantity (extended
-    // Hamiltonian for Nosé-Hoover NVT/NPT); `0` when no integrator
-    // populates `frame.meta.get(kConserved)`. A flat column confirms the
-    // integrator is symplectic — for NVT/NPT, `TotalE` itself is *not*
-    // conserved (energy flows to the thermostat / barostat).
-    if (ctx.step == 0) {
-        ATV_INFO("  Step          PE              KE           Temp         "
-                 "TotalE         Conserved");
-        ATV_INFO("  ----  --------------- --------------- --------------- "
-                 "--------------- ---------------");
-    }
-
-    ATV_INFO("  {:4d}  {:15.8e} {:15.8e} {:15.8e} {:15.8e} {:15.8e}", ctx.step,
-             static_cast<double>(f.meta.get(kEnergy)),
-             static_cast<double>(f.meta.get(kKinetic)),
-             static_cast<double>(temperature),
-             static_cast<double>(total_energy),
-             static_cast<double>(f.meta.get(kConserved)));
+void Thermo::setup_output(const cpu::LaunchContext& ctx) {
+    print_(ctx, ctx.step, /*header=*/true);
 }
 
-// ── thermo_print free function ─────────────────────────────────────
+void Thermo::launch(const cpu::LaunchContext& ctx) {
+    // A single pass (Evaluate, LAMMPS `run 0`) is its own setup output.
+    const bool single = single_pass_output(ctx);
+    const BigInt step = loop_output_step(ctx);
+    const bool on_cadence = freq_ > 0 && (step % freq_) == 0;
+    if (!single && !on_cadence && !ctx.runtime.md.is_last_step)
+        return;
+    if (step == last_step_)
+        return;
+    print_(ctx, step, /*header=*/!header_printed_);
+}
 
-void thermo_print(int step, double pe, double ke, int n_dof,
-                  bool& header_printed, std::ofstream& file) {
-    // Temperature: T = 2*KE / (Ndof * kB). Ndof is supplied by the caller — it is
-    // owned by Driver::publish_dof_ and accounts for constraints.
-    const int ndof = n_dof;
-    const double temp =
-        (ndof > 0) ? 2.0 * ke / (static_cast<double>(ndof) * units::kB_ev_per_k)
-                   : 0.0;
-    const double total = pe + ke;
+void Thermo::final_output(const cpu::LaunchContext& ctx) {
+    if (ctx.step == last_step_)
+        return;
+    print_(ctx, ctx.step, /*header=*/!header_printed_);
+}
 
-    if (!header_printed) {
-        ATV_INFO("{:>8s} {:>12s} {:>14s} {:>14s} {:>14s}", "Step", "Temp",
-                 "PotEng", "KinEng", "TotEng");
-        header_printed = true;
+void Thermo::print_(const cpu::LaunchContext& ctx, BigInt step, bool header) {
+    last_step_ = step; // every rank: the never-twice rule stays rank-identical
+    if (ctx.runtime.mpi_rank != 0)
+        return;
+    const auto& f = ctx.frame;
+    ThermoSample sample;
+    sample.step = step;
+    sample.pe = f.meta.get(kEnergy);
+    sample.ke = f.meta.get(kKinetic);
+    // The integrator's conserved quantity (extended Hamiltonian for
+    // Nosé-Hoover NVT/NPT); 0 when no integrator populates it.
+    sample.conserved = f.meta.get(kConserved);
+    sample.volume = f.box.volume();
+    const auto virial = f.meta.get(kStress);
+    const auto kinetic = f.meta.get(kStressKinetic);
+    for (int a = 0; a < 6; ++a) {
+        sample.virial[a] = virial[a];
+        sample.kinetic[a] = kinetic[a];
     }
-    ATV_INFO("{:8d} {:12.4f} {:14.6f} {:14.6f} {:14.6f}", step,
-             static_cast<double>(temp), static_cast<double>(pe),
-             static_cast<double>(ke), static_cast<double>(total));
-
-    if (file.is_open()) {
-        file << fmt::format("{} {:.6f} {:.6f} {:.6f} {:.6f}\n", step,
-                            static_cast<double>(temp), static_cast<double>(pe),
-                            static_cast<double>(ke),
-                            static_cast<double>(total));
+    // Ndof has ONE owner (Driver::publish_dof_): 3N - 3 - n_constraints.
+    sample.ndof = ctx.runtime.md.n_dof_global;
+    sample.boltz = ctx.runtime.units.boltz;
+    sample.nktv2p = ctx.runtime.units.nktv2p;
+    if (header) {
+        ATV_INFO("{}", style_.header());
+        header_printed_ = true;
     }
+    ATV_INFO("{}", style_.line(sample));
 }
 
 } // namespace cpu

@@ -1,7 +1,7 @@
 # OpenMOPAC offline twin — AM1 water
 
 First entry in `tools/tb_oracle/inputs/mopac/`. Backs
-`regressions/semiempirical/am1-water-mopac-energy/`.
+`regressions/semiempirical/am1/`.
 
 ```text
 oracle: mopac

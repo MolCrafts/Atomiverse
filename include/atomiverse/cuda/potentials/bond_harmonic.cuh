@@ -21,6 +21,7 @@ class BondHarmonic : public Bond {
     BondHarmonic& operator=(BondHarmonic&&) noexcept;
 
     std::string name() const override { return "harmonic_bond"; }
+    bool graph_capturable() const override { return true; }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

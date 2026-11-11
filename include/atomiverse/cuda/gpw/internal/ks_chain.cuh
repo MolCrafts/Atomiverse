@@ -2,9 +2,10 @@
 /// @brief Composed Γ-point device KS stage: products → ρ → Poisson → XC → V_eff → integrate.
 ///
 /// Stage unit reusing landed footholds (`product_collocate`, `PoissonFftDevice`,
-/// Padé LDA / closed-shell PBE via spectral ∇ρ/−∇·flux + `xc_pbe_grid`,
+/// Padé LDA/LSD and restricted/collinear PBE-family GGA (PBE/PBEsol/RevPBE/RPBE) via
+/// spectral spin gradients/flux divergences and shared device XC point laws,
 /// `product_integrate`, spectral multigrid prolong/restrict). Mirrors the
-/// fine-grid path of CPU `ks_grid_build_rks` (closed-shell Padé LDA or PBE-GGA,
+/// fine-grid paths of CPU `ks_grid_build_rks/uks` (Padé or PBE-family GGA,
 /// periodic Poisson) plus collocate/integrate bookends, and the multi-level
 /// product density assembly of CPU Γ multigrid (collocate per level → spectral
 /// prolong to fine → KS on fine → spectral restrict → integrate per level).
@@ -15,12 +16,13 @@
 /// stage unit is never promoted to user API.
 #pragma once
 
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/gpw/internal/multigrid_transfer.cuh"
 #include "atomiverse/cuda/gpw/internal/poisson_fft.cuh"
 #include "atomiverse/cuda/gpw/internal/product_collocate.cuh"
 #include "atomiverse/cuda/gpw/internal/product_integrate.cuh"
 #include "atomiverse/cuda/gpw/internal/spectral_fft.cuh"
-#include "atomiverse/cuda/gpw/internal/xc_lda.cuh"
+#include "atomiverse/cuda/xc/xc_pade.cuh"
 
 #include <cuda_runtime.h>
 
@@ -32,24 +34,14 @@ namespace cuda {
 namespace gpw {
 namespace internal {
 
-/// @brief XC functional for one KS-chain launch.
-///
-/// `PADE` = GTH Padé LDA (default; original chain). `PBE` = closed-shell PBE
-/// GGA (spectral ∇ρ, device PBE-X/C, spectral −∇·flux). Requires the plane-wave
-/// CUDA product (`ATV_HAS_PW`) for the shared `xc_pbe_grid` kernel.
-enum class KsXcKind {
-    PADE = 0,
-    PBE = 1,
-};
-
 /// @brief Host-side scalars from one KS-chain launch [Hartree].
 struct KsChainEnergies {
     double e_hartree = 0.0; ///< 0.5 w Σ n V_es (Poisson of n = ρ − n_ion).
-    double e_xc = 0.0;      ///< w Σ ρ ε_xc (Padé LDA or PBE).
+    double e_xc = 0.0;      ///< w Σ ρ ε_xc (Padé LDA or PBE-family GGA).
     double e_locgrid = 0.0; ///< w Σ ρ V_loc when V_loc provided; else 0.
 };
 
-/// @brief Device-resident closed-shell KS chain for one orthorhombic grid shape.
+/// @brief Device-resident restricted/collinear KS chain for one orthorhombic grid shape.
 ///
 /// Owns workspace + a `PoissonFftDevice` + a `SpectralFftDevice` (GGA). Caller
 /// owns product arrays and optional ion / local-PP grids. All scientific work
@@ -65,24 +57,28 @@ class KsChainDevice {
     PoissonFftDevice poisson_;
     SpectralFftDevice spectral_;
 
-    double* d_rho_ = nullptr;    ///< electron density ρ (total; UKS: ρ_α+ρ_β)
-    double* d_n_tot_ = nullptr;  ///< n = ρ − n_ion (Poisson input)
-    double* d_v_es_ = nullptr;   ///< electrostatic potential
-    double* d_vxc_ = nullptr;    ///< XC potential (RKS; UKS: V_xc^α)
-    double* d_exc_ = nullptr;    ///< per-electron ε_xc
-    double* d_veff_ = nullptr;   ///< V_es + V_xc [+ V_loc] (RKS; UKS: V_eff^α)
-    double* d_e_xc_ = nullptr;   ///< scalar E_xc
-    double* d_e_loc_ = nullptr;  ///< scalar ∫ρ V_loc / then ×w
+    double* d_rho_ = nullptr;   ///< electron density ρ (total; UKS: ρ_α+ρ_β)
+    double* d_n_tot_ = nullptr; ///< n = ρ − n_ion (Poisson input)
+    double* d_v_es_ = nullptr;  ///< electrostatic potential
+    double* d_vxc_ = nullptr;   ///< XC potential (RKS; UKS: V_xc^α)
+    double* d_exc_ = nullptr;   ///< per-electron ε_xc
+    double* d_veff_ = nullptr;  ///< V_es + V_xc [+ V_loc] (RKS; UKS: V_eff^α)
+    double* d_e_xc_ = nullptr;  ///< scalar E_xc
+    double* d_e_loc_ = nullptr; ///< scalar ∫ρ V_loc / then ×w
     // GGA scratch: ∇ρ / flux components + divergence of flux.
     double* d_gx_ = nullptr;
     double* d_gy_ = nullptr;
     double* d_gz_ = nullptr;
     double* d_div_ = nullptr;
-    // Collinear UKS workspace (allocated on first `run_uks`).
+    // Collinear UKS workspace (allocated on first spin build).
     double* d_rho_a_ = nullptr;
     double* d_rho_b_ = nullptr;
     double* d_vxc_b_ = nullptr;
     double* d_veff_b_ = nullptr;
+    // Beta gradient/flux fields. Alpha reuses d_g{x,y,z}; div is sequential.
+    double* d_gbx_ = nullptr;
+    double* d_gby_ = nullptr;
+    double* d_gbz_ = nullptr;
 
   public:
     /// @brief Allocate workspace + Poisson / spectral plans for grid shape / cell.
@@ -103,7 +99,7 @@ class KsChainDevice {
     ///  3. Poisson(n) → V_es, e_hartree
     ///  4. XC(ρ) → V_xc, ε_xc; E_xc = w Σ ρ ε_xc
     ///     - PADE: Padé LDA on total ρ
-    ///     - PBE:  spectral ∇ρ → closed-shell PBE (local v_ρ, flux) →
+    ///     - PBE family: spectral ∇ρ → selected GGA (local v_ρ, flux) →
     ///             spectral −∇·flux → V_xc = v_ρ − div
     ///  5. V_eff = V_es + V_xc [+ V_loc]; optional e_locgrid = w Σ ρ V_loc
     ///  6. if d_acc: integrate V_eff against product shapes → d_acc[0..nprod)
@@ -115,13 +111,14 @@ class KsChainDevice {
     /// @param d_v_loc Optional short-range local PP, length npts (null ⇒ 0).
     /// @param d_acc   Optional per-product integrate output, length nprod
     ///                (null ⇒ skip integrate).
-    /// @param xc      XC functional (`PADE` default; `PBE` needs `ATV_HAS_PW`).
+    /// @param xc      `PADE` default or PBE/PBEsol/RevPBE/RPBE
+    ///                (PBE-family kernels require `ATV_HAS_PW`).
     /// @return Host-side energy pieces after device sync of scalars.
     KsChainEnergies run(const DeviceProduct* d_prods, int nprod,
                         const double* d_n_ion = nullptr,
                         const double* d_v_loc = nullptr,
                         double* d_acc = nullptr,
-                        KsXcKind xc = KsXcKind::PADE);
+                        cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
     /// @brief Run Poisson+XC+assemble from a pre-built fine-grid density.
     ///
@@ -136,22 +133,23 @@ class KsChainDevice {
     ///                 0 ⇒ skip integrate).
     /// @param nprod    Number of products for optional integrate.
     /// @param d_acc    Optional integrate output (null ⇒ skip).
-    /// @param xc       XC functional.
+    /// @param xc       PADE or PBE/PBEsol/RevPBE/RPBE, as in `run`.
     KsChainEnergies run_from_rho(const double* d_rho_in,
                                  const double* d_n_ion = nullptr,
                                  const double* d_v_loc = nullptr,
                                  const DeviceProduct* d_prods = nullptr,
                                  int nprod = 0, double* d_acc = nullptr,
-                                 KsXcKind xc = KsXcKind::PADE);
+                                 cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
-    /// @brief Collinear UKS product chain (Padé LSD first cut).
+    /// @brief Collinear UKS product chain (Padé LSD or pure PBE-family GGA).
     ///
     /// Steps (all device):
     ///  1. collocate α products → ρ_α; collocate β products → ρ_β
     ///     (nprod_σ==0 ⇒ that spin density is zero)
     ///  2. ρ = ρ_α + ρ_β; n = ρ − n_ion
     ///  3. Poisson(n) → V_es, e_hartree
-    ///  4. Padé LSD(ρ_α, ρ_β) → V_xc^α/β, E_xc  (PBE-UKS not on this stage)
+    ///  4. Spin XC(ρ_α, ρ_β) → V_xc^α/β, E_xc; GGA includes both
+    ///     spectral gradients and flux divergences before integration.
     ///  5. V_eff^σ = V_es + V_xc^σ [+ V_loc]; e_locgrid = w Σ ρ V_loc
     ///  6. optional integrate V_eff^σ against product shapes → d_acc_σ
     ///
@@ -163,7 +161,7 @@ class KsChainDevice {
     /// @param d_v_loc   Optional local PP.
     /// @param d_acc_a   Optional α integrate output (null ⇒ skip).
     /// @param d_acc_b   Optional β integrate output (null ⇒ skip).
-    /// @param xc        Must be `KsXcKind::PADE` (first UKS cut).
+    /// @param xc        PADE or PBE/PBEsol/RevPBE/RPBE; GGA requires ATV_HAS_PW.
     /// @return Host-side energy pieces after device sync.
     KsChainEnergies run_uks(const DeviceProduct* d_prods_a, int nprod_a,
                             const DeviceProduct* d_prods_b, int nprod_b,
@@ -171,23 +169,31 @@ class KsChainDevice {
                             const double* d_v_loc = nullptr,
                             double* d_acc_a = nullptr,
                             double* d_acc_b = nullptr,
-                            KsXcKind xc = KsXcKind::PADE);
+                            cpu::xc::XCType xc = cpu::xc::XCType::PADE);
+
+    /// @brief Build spin potentials and energies from two device density grids.
+    /// Both densities have length ntot() and are left intact. Ionic density
+    /// and local PP are optional, as in run_uks().
+    KsChainEnergies run_uks_from_rho(const double* d_rho_a,
+                                     const double* d_rho_b,
+                                     const double* d_n_ion,
+                                     const double* d_v_loc, cpu::xc::XCType xc);
 
     /// @brief Device pointer to last V_eff (RKS) / V_eff^α (UKS) [Hartree].
     const double* d_veff() const { return d_veff_; }
-    /// @brief Device pointer to last V_eff^β after `run_uks` (null before).
+    /// @brief Device pointer to last V_eff^β (null before a spin build).
     const double* d_veff_b() const { return d_veff_b_; }
     /// @brief Device pointer to last ρ (total; length npts).
     const double* d_rho() const { return d_rho_; }
-    /// @brief Device pointer to last ρ_α after `run_uks` (null before).
+    /// @brief Device pointer to last ρ_α (null before a spin build).
     const double* d_rho_a() const { return d_rho_a_; }
-    /// @brief Device pointer to last ρ_β after `run_uks` (null before).
+    /// @brief Device pointer to last ρ_β (null before a spin build).
     const double* d_rho_b() const { return d_rho_b_; }
     /// @brief Device pointer to last V_es (length npts).
     const double* d_v_es() const { return d_v_es_; }
     /// @brief Device pointer to last V_xc (RKS) / V_xc^α (UKS).
     const double* d_vxc() const { return d_vxc_; }
-    /// @brief Device pointer to last V_xc^β after `run_uks` (null before).
+    /// @brief Device pointer to last V_xc^β (null before a spin build).
     const double* d_vxc_b() const { return d_vxc_b_; }
 
     long ntot() const { return ntot_; }
@@ -197,6 +203,10 @@ class KsChainDevice {
 
   private:
     void ensure_uks_buffers_();
+    void ensure_uks_gga_buffers_();
+    void build_uks_fields_(const double* d_n_ion, const double* d_v_loc,
+                           cpu::xc::XCType xc);
+    KsChainEnergies read_uks_energies_(bool has_local_pp);
 };
 
 /// @brief Multi-grid product collocate → fine KS → restrict → integrate.
@@ -245,13 +255,13 @@ class KsMultiGridChainDevice {
     /// @param d_acc_by_level Optional host array of device acc pointers (length
     ///        nlevels). Null array ⇒ skip all integrate. Per-level null ⇒ skip
     ///        that level. Each non-null buffer length = nprod_by_level[l].
-    /// @param xc XC on the fine grid.
+    /// @param xc Fine-grid XC: PADE or PBE/PBEsol/RevPBE/RPBE (RKS only).
     KsChainEnergies run(const DeviceProduct* const* d_prods_by_level,
                         const int* nprod_by_level,
                         const double* d_n_ion = nullptr,
                         const double* d_v_loc = nullptr,
                         double* const* d_acc_by_level = nullptr,
-                        KsXcKind xc = KsXcKind::PADE);
+                        cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
     const KsChainDevice& fine_chain() const { return *fine_; }
     const MultigridDesc& multigrid() const { return mg_; }

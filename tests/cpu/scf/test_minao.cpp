@@ -105,15 +105,15 @@ cpu::Frame make_water() {
     f.span(ATV::kAtom_x)[0] = 0.0;
     f.span(ATV::kAtom_y)[0] = 0.0;
     f.span(ATV::kAtom_z)[0] = 0.117;
-    f.span(ATV::kAtom_type)[0] = 8;
+    f.span(ATV::kAtom_atomic_number)[0] = 8;
     f.span(ATV::kAtom_x)[1] = 0.0;
     f.span(ATV::kAtom_y)[1] = 0.757;
     f.span(ATV::kAtom_z)[1] = -0.468;
-    f.span(ATV::kAtom_type)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
     f.span(ATV::kAtom_x)[2] = 0.0;
     f.span(ATV::kAtom_y)[2] = -0.757;
     f.span(ATV::kAtom_z)[2] = -0.468;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
@@ -124,23 +124,23 @@ cpu::Frame make_methane() {
     f.span(ATV::kAtom_x)[0] = 0.0;
     f.span(ATV::kAtom_y)[0] = 0.0;
     f.span(ATV::kAtom_z)[0] = 0.0;
-    f.span(ATV::kAtom_type)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
     f.span(ATV::kAtom_x)[1] = 0.629;
     f.span(ATV::kAtom_y)[1] = 0.629;
     f.span(ATV::kAtom_z)[1] = 0.629;
-    f.span(ATV::kAtom_type)[1] = 1;
+    f.span(ATV::kAtom_atomic_number)[1] = 1;
     f.span(ATV::kAtom_x)[2] = -0.629;
     f.span(ATV::kAtom_y)[2] = -0.629;
     f.span(ATV::kAtom_z)[2] = 0.629;
-    f.span(ATV::kAtom_type)[2] = 1;
+    f.span(ATV::kAtom_atomic_number)[2] = 1;
     f.span(ATV::kAtom_x)[3] = -0.629;
     f.span(ATV::kAtom_y)[3] = 0.629;
     f.span(ATV::kAtom_z)[3] = -0.629;
-    f.span(ATV::kAtom_type)[3] = 1;
+    f.span(ATV::kAtom_atomic_number)[3] = 1;
     f.span(ATV::kAtom_x)[4] = 0.629;
     f.span(ATV::kAtom_y)[4] = -0.629;
     f.span(ATV::kAtom_z)[4] = -0.629;
-    f.span(ATV::kAtom_type)[4] = 1;
+    f.span(ATV::kAtom_atomic_number)[4] = 1;
     f.box = ATV::cpu::Box::cubic(100.0);
     return f;
 }
@@ -162,8 +162,9 @@ void expect_matches_pyscf(const cpu::scf::RealMatrix& atv, const double* ref,
 
 TEST(MinaoGuess, H2O_MatchesPyscfToMicroHartree) {
     auto frame = make_water();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                            /*compute_eri=*/false};
+    auto integrals = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*compute_eri=*/false};
     auto P = cpu::scf::build_minao_density(integrals);
 
     ASSERT_EQ(P.shape(0), 7u);
@@ -176,8 +177,9 @@ TEST(MinaoGuess, H2O_MatchesPyscfToMicroHartree) {
 
 TEST(MinaoGuess, CH4_MatchesPyscfToMicroHartree) {
     auto frame = make_methane();
-    auto integrals = cpu::scf::internal::IntegralWorkspace{frame, cpu::scf::BasisSet::STO3G, 0,
-                                            /*compute_eri=*/false};
+    auto integrals = cpu::scf::internal::IntegralWorkspace{
+        frame, cpu::scf::BasisSet::STO3G, 0,
+        /*compute_eri=*/false};
     auto P = cpu::scf::build_minao_density(integrals);
 
     ASSERT_EQ(P.shape(0), 9u);
@@ -200,8 +202,8 @@ TEST(MinaoGuess, Symmetric) {
 TEST(MinaoGuess, SupportedElements) {
     // H, C, N, O, F are supported; Li (Z=3) currently is not.
     auto frame_h2o = make_water();
-    auto integrals_h2o =
-        cpu::scf::internal::IntegralWorkspace{frame_h2o, cpu::scf::BasisSet::STO3G, 0, false};
+    auto integrals_h2o = cpu::scf::internal::IntegralWorkspace{
+        frame_h2o, cpu::scf::BasisSet::STO3G, 0, false};
     EXPECT_TRUE(cpu::scf::minao_supported(integrals_h2o));
 }
 

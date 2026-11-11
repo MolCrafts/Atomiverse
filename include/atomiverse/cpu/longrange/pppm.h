@@ -18,15 +18,26 @@
 /// each rank a **slab** of whole planes, so a rank owning no plane has no FFT
 /// work at all. A **brick** is the block of mesh points one rank owns under the
 /// spatial domain decomposition — the ranks laid out as a 3-D grid, the
-/// **Cartesian communicator** — ringed by `order - 1` **ghost** layers that its
-/// neighbours also write into; **reverse_comm** sums those ghosts back into
+/// **Cartesian communicator** — ringed by the **ghost** layers that its
+/// owned atoms' stencils reach and its neighbours also write into; **reverse_comm** sums those ghosts back into
 /// their owners and **forward_comm** refills them from the owners afterwards.
 /// Brick layout and slab layout cut the mesh differently, so a **remap** (a
 /// plan-based point-to-point exchange between overlapping ranks, LAMMPS
 /// `remap_3d`) converts between them before and after the FFT.
-/// Forces are taken in the **AD** (analytic differentiation) scheme: each atom
-/// differentiates the interpolation weights it spread with, rather than reading
-/// a separately differentiated mesh.
+/// Forces are **ik** differentiation, the LAMMPS `pppm` default: the mesh
+/// potential's Cartesian gradient is i·k·G(k)·ρ̂(k), inverse-transformed, and
+/// gathered with the same B-spline θ that spread the charge.
+///
+/// Charge assignment is LAMMPS's centred stencil (`core/pppm_ik.h`): an
+/// order-p charge at grid coordinate u covers nx + nlower … nx + nupper,
+/// nx = ⌊u⌋ for even p and the nearest grid point for odd p. The brick's
+/// ghost extents are LAMMPS `Grid3d::ghost_grid` for that stencil
+/// (`set_stencil_atom(-nlower, nupper)`, `set_shift_atom` 0.5 for odd p,
+/// `set_distance(0.5·skin)`): an owned atom may sit half the neighbor skin
+/// outside its subdomain before the next reneighbouring, and the skin is
+/// the one the active neighbor provider publishes (`Context::md` slice,
+/// `neighbor_skin`). Like LAMMPS the extents are fixed when the mesh, the
+/// processor grid or the skin changes, not on every cell change.
 ///
 /// ## Architecture (LAMMPS-aligned)
 ///
@@ -36,9 +47,9 @@
 /// | 2 | Spread **owned atoms only** onto brick |
 /// | 3 | **mesh reverse fold**: ghost density to owners (Grid3d plan, p2p) |
 /// | 4 | **brick→FFT remap** (remap_3d plan, p2p) into FFTW-MPI dim-0 slabs |
-/// | 5 | Distributed r2c FFT → SPME H(m) → c2r |
-/// | 6 | **FFT→brick remap** + **mesh forward fill** of potential ghosts |
-/// | 7 | AD force interpolation from local brick |
+/// | 5 | Distributed r2c FFT → Hockney–Eastwood G(k) → three ik c2r transforms |
+/// | 6 | **FFT→brick remap** + **mesh forward fill** of each field component |
+/// | 7 | θ interpolation of the Cartesian electric field |
 ///
 /// ### Mesh arms
 ///
@@ -73,6 +84,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -81,6 +93,8 @@
 #include <vector>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/mat3.h"
+#include "atomiverse/core/pppm_accuracy.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
@@ -92,13 +106,6 @@
 
 namespace ATV {
 namespace cpu {
-
-/// @brief Match real-space α to a PPPM accuracy setting (LAMMPS-style guess).
-inline double pppm_alpha_from_accuracy(double accuracy, double real_cutoff) {
-    if (!(accuracy > 0.0) || !(accuracy < 1.0) || !(real_cutoff > 0.0))
-        throw std::invalid_argument("pppm_alpha_from_accuracy: bad args");
-    return (1.35 - 0.15 * std::log(accuracy)) / real_cutoff;
-}
 
 /// @brief Which mesh decomposition the reciprocal solve runs on.
 ///
@@ -185,7 +192,9 @@ inline PppmMeshArm pppm_select_mesh_arm(int planes_k0, int nprocs,
     return PppmMeshArm::BrickSubgroup;
 }
 
-/// @brief Brick-decomposed particle–mesh kspace.
+/// @brief Brick-decomposed particle–mesh kspace (Hockney–Eastwood ik PPPM).
+///
+/// Same parameters, defaults and mesh rule as `cuda::KSpacePPPM`.
 class KSpacePPPM : public cpu::KSpace {
   public:
     /// @brief Construct a brick PPPM solver.
@@ -193,22 +202,38 @@ class KSpacePPPM : public cpu::KSpace {
     ///        of the Gaussian that separates the short-ranged real-space sum
     ///        from this mesh part; a larger alpha moves work onto the mesh.
     /// @param grid_spacing Target mesh spacing (Å), > 0; the mesh counts
-    ///        `K0,K1,K2` are derived from it and the cell at grid setup.
-    /// @param order B-spline interpolation order (count), ≥ 3 — how many mesh
-    ///        points along each axis one charge is spread over (order 5 spreads
-    ///        it over 5³ points). It also fixes the ghost depth, `order - 1`.
+    ///        `K0,K1,K2` are ⌈cell length / spacing⌉ rounded up to sizes with
+    ///        prime factors 2, 3 and 5 (LAMMPS `factorable`), at least
+    ///        order + 1, derived at grid setup.
+    /// @param order Charge-assignment order (count), in [3, 12] — how many
+    ///        mesh points along each axis one charge is spread over (order 5
+    ///        spreads it over 5³ points), on LAMMPS's centred stencil. It
+    ///        also sets the ghost depth. The ik denominator keeps 12
+    ///        coefficient slots, which is why the order stops at 12; LAMMPS
+    ///        itself stops at 7.
     /// @param fft_ranks Requested FFT group size (rank count); 0 (the default)
     ///        derives it from the mesh with pppm_fft_ranks() at the first
     ///        reciprocal solve, and again whenever the mesh or the rank count
     ///        changes. Ignored on the replicated arm and when
     ///        `ATV_PPPM_BRICK=1` forces the world arm.
     /// @throws std::invalid_argument at construction on a non-positive alpha
-    ///         or grid_spacing, an order < 3, or a negative fft_ranks; and at
+    ///         or grid_spacing, an order outside [3, 12], or a negative
+    ///         fft_ranks; and at
     ///         the first multi-rank reciprocal solve when a positive fft_ranks
     ///         exceeds `min(nprocs, K0)` — an FFTW-MPI slab member needs at
     ///         least one mesh plane, so no such group can exist.
-    explicit KSpacePPPM(double alpha, double grid_spacing = 1.0, int order = 5,
+    explicit KSpacePPPM(double alpha, double grid_spacing = 1.0, int order = 6,
                         int fft_ranks = 0);
+    /// @brief Construct on an explicit mesh (LAMMPS `kspace_modify mesh`).
+    /// @param alpha Ewald α (Å⁻¹), > 0.
+    /// @param mesh  Grid points per axis (count), each > 0; raised to sizes
+    ///        with factors 2, 3 and 5 and to at least order + 1, as LAMMPS
+    ///        and the spacing rule do. The mesh does not follow the cell.
+    /// @param order, fft_ranks As for the spacing constructor.
+    /// @throws std::invalid_argument as the spacing constructor, and on a
+    ///         non-positive mesh entry.
+    KSpacePPPM(double alpha, std::array<int, 3> mesh, int order = 6,
+               int fft_ranks = 0);
     ~KSpacePPPM() override;
 
     KSpacePPPM(const KSpacePPPM&) = delete;
@@ -216,13 +241,24 @@ class KSpacePPPM : public cpu::KSpace {
     KSpacePPPM(KSpacePPPM&& other) noexcept;
     KSpacePPPM& operator=(KSpacePPPM&&) = delete;
 
-    static KSpacePPPM from_accuracy(double accuracy, double real_cutoff,
-                                    double grid_spacing = -1.0) {
-        const double alpha = pppm_alpha_from_accuracy(accuracy, real_cutoff);
-        const double spacing =
-            grid_spacing > 0.0 ? grid_spacing : (real_cutoff / 2.5);
-        return KSpacePPPM(alpha, spacing, /*order=*/5);
+    /// @brief α and mesh from an accuracy target (LAMMPS `kspace_style pppm
+    ///        <accuracy>` + `kspace_modify gewald / mesh / order`).
+    ///
+    /// `longrange::pppm_from_accuracy` decides; the same request gives the
+    /// same solver on `cuda::KSpacePPPM`. Read the chosen α back from
+    /// `long_range_contract().alpha` for the real-space `CoulLong`.
+    /// @throws std::invalid_argument / std::runtime_error from
+    ///         `pppm_from_accuracy`.
+    static KSpacePPPM from_accuracy(const longrange::PppmAccuracyRequest& req,
+                                    int fft_ranks = 0) {
+        const auto r = longrange::pppm_from_accuracy(req);
+        return KSpacePPPM(r.alpha, {r.mesh[0], r.mesh[1], r.mesh[2]}, r.order,
+                          fft_ranks);
     }
+
+    /// @brief Mesh of the last grid setup; zero before build().
+    /// @return {K0, K1, K2} (grid points).
+    std::array<int, 3> mesh() const noexcept { return {K_[0], K_[1], K_[2]}; }
 
     std::string name() const override { return "pppm"; }
     LongRangeContract long_range_contract() const override {
@@ -287,14 +323,33 @@ class KSpacePPPM : public cpu::KSpace {
     void ensure_grid(const cpu::Frame& frame, bool initial_build);
     void ensure_atom_capacity(int required, bool initial_build);
     void release_storage() noexcept;
-    void setup_brick_partition_(const int (&coords)[3], const int (&dims)[3]);
-    /// @brief Image-map every atom's stencil into the contiguous brick;
-    /// throws when an atom drifted beyond the ghost range (LAMMPS
-    /// "out of range atoms — cannot compute PPPM").
-    void map_stencils_(int n_local);
+    /// @brief Owned cells (LAMMPS `Grid3d::partition_grid`) and the
+    /// ghost-extended brick (`Grid3d::ghost_grid`) of the rank at @p coords
+    /// in a uniform @p dims processor grid.
+    /// LAMMPS `set_distance(0.5·skin + qdist)` (qdist = 0, point charges)
+    /// enters as @p dist_cells, the drift distance in grid cells per axis.
+    void setup_brick_partition_(const int (&coords)[3], const int (&dims)[3],
+                                const double (&dist_cells)[3]);
+    /// @brief Re-partition the brick for the decomposition, re-deriving the
+    /// drift distance (and dropping the grid plans) only when the mesh, the
+    /// processor grid or the neighbor skin changed — the same on every rank.
+    void partition_for_decomposition_(const int (&coords)[3],
+                                      const int (&dims)[3], double skin,
+                                      const Mat3& inv_cell);
+    /// @brief Stencil start and θ of every owned atom (LAMMPS
+    /// `particle_map` + `compute_rho1d` on the centred stencil).
+    void fill_stencils_(const StorageReal* x, const StorageReal* y,
+                        const StorageReal* z, int n_local,
+                        const Mat3& inv_cell);
+    /// @brief Image-map every atom's stencil into the contiguous brick.
+    /// @return Empty, or the error for an atom that drifted beyond the ghost
+    ///         range (LAMMPS "out of range atoms — cannot compute PPPM"); the
+    ///         caller agrees on it across ranks before throwing.
+    std::string map_stencils_(int n_local);
 #ifdef ATV_HAS_MPI
-    /// @brief Build the four grid plans against the Allgathered brick /
-    /// slab extent tables (once per mesh shape / decomposition / group).
+    /// @brief Build the four grid plans against the Allgathered owned /
+    /// ghost-extended brick and slab extent tables (once per mesh shape /
+    /// decomposition / group).
     void build_grid_plans_(MPI_Comm comm, int me, int nprocs);
     /// @brief Replay one plan: Irecv all, pack + Isend all, local self
     /// copies, Waitall, unpack. `src_brick` / `dst_brick` select brick vs
@@ -308,6 +363,14 @@ class KSpacePPPM : public cpu::KSpace {
     double spacing_;
     int order_;
     int fft_ranks_requested_ = 0; ///< 0 = derive from the mesh at first solve.
+    /// Explicit mesh (`kspace_modify mesh`); zeros = derive from spacing_.
+    int fixed_K_[3] = {0, 0, 0};
+
+    // Decomposition the brick extents were last derived for (rank-uniform).
+    int part_K_[3] = {0, 0, 0};
+    int part_dims_[3] = {0, 0, 0};
+    double part_skin_ = -1.0;
+    double part_dist_cells_[3] = {0.0, 0.0, 0.0};
 
     int K_[3] = {0, 0, 0};
     const cpu::Box* box_identity_ = nullptr;
@@ -322,17 +385,18 @@ class KSpacePPPM : public cpu::KSpace {
     int nylo_out_ = 0, nyhi_out_ = 0;
     int nzlo_out_ = 0, nzhi_out_ = 0;
     int nxl_ = 0, nyl_ = 0, nzl_ = 0; ///< brick dimensions incl. ghosts
-    /// Ghost layers below / above the owned brick per axis. The one-sided
-    /// SPME stencil needs order-1 below + drift margin; above only drift.
-    int nghost_lo_ = 0;
-    int nghost_hi_ = 0;
     std::vector<double> brick_; ///< density or potential, size nxl*nyl*nzl
 
     // Serial full-mesh buffers (1-rank path / green tables).
     std::vector<double> dens_full_; ///< full K0·K1·K2 real buffer (serial FFT)
     std::vector<std::complex<double>> work_;
-    std::vector<double> green_; ///< H(m) half-spectrum, full K0×K1×n2c
-    std::vector<double> bsp_mod_[3];
+    std::vector<std::complex<double>>
+        density_; ///< ρ̂/V kept across the 3 ik solves
+    /// Folded half-spectrum tables (`longrange::pppm_half_mode`), full
+    /// K0×K1×n2c: energy weight, three ik planes, six virial planes.
+    std::vector<double> green_;
+    std::vector<double> ik_coef_;
+    std::vector<double> virial_coef_;
 
     void* plan_fwd_ = nullptr;
     void* plan_bwd_ = nullptr;
@@ -394,9 +458,12 @@ class KSpacePPPM : public cpu::KSpace {
     bool mesh_plans_ready_ = false;
 
     int atom_capacity_ = 0;
+    /// Per-atom first stencil point nx + nlower (3·capacity), nx from the
+    /// position wrapped into the cell, so in [nlower, K + nlower].
     std::vector<int> base_;
+    /// Per-atom weights (3·order·capacity): θ[(3i+d)·order + a] belongs to
+    /// grid point base_[3i+d] + a and equals LAMMPS rho1d[d][nlower + a].
     std::vector<double> theta_;
-    std::vector<double> dtheta_;
     /// Per-atom stencil-min brick coordinate (3·capacity), image-mapped so
     /// the whole `order³` stencil is contiguous inside the out-range brick.
     std::vector<int> stencil_min_;

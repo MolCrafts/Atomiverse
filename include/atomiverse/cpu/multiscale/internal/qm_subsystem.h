@@ -20,9 +20,9 @@ namespace internal {
 
 /// @brief Resolved link bond (user-frame rows + private-frame H index).
 struct ResolvedLink {
-    int qm_row = -1;     ///< User-frame row of QM host.
-    int mm_row = -1;     ///< User-frame row of MM partner.
-    int fqm_h_row = -1;  ///< Private QM frame row of link H.
+    int qm_row = -1;    ///< User-frame row of QM host.
+    int mm_row = -1;    ///< User-frame row of MM partner.
+    int fqm_h_row = -1; ///< Private QM frame row of link H.
 };
 
 /// @brief Persistent QM subsystem owned by a multiscale coupling.
@@ -62,7 +62,7 @@ class QmSubsystem {
 
     /// @brief Resolve mask, derive links from bond topology, allocate private
     ///        frame, prepare engine.
-    /// @param frame User frame with `kAtomQmZ` filled. Covalent QM/MM cuts are
+    /// @param ctx Parent build context with `kAtomQm` filled. Covalent QM/MM cuts are
     ///        **derived** from `num_bond`/`bond_atom` × mask (no bonds ⇒ zero
     ///        links). There is no `set_links` / `links()` user API.
     /// @param mpi_size Communicator size (v1 requires 1).
@@ -71,15 +71,17 @@ class QmSubsystem {
     ///        When false (mechanical), any `QmEngine` is accepted and QM
     ///        charges may be nonzero.
     /// @throws std::runtime_error / invalid_argument on validation failure.
-    void build(Frame& frame, int mpi_size, bool require_embedding = true);
+    void build(const BuildContext& ctx, int mpi_size,
+               bool require_embedding = true);
 
     /// @brief Per-launch: refresh geometry, collect sites, evaluate, scatter.
-    /// @param frame User frame.
-    /// @param forces_requested Honor LaunchContext force gate.
+    /// @param ctx Parent launch context; only the Frame is replaced for QM.
     /// @param[out] e_qm QM energy written this step [eV] (before scatter).
-    void launch(Frame& frame, bool forces_requested, double& e_qm);
+    void launch(const LaunchContext& ctx, double& e_qm);
 
-    int last_n_links() const { return static_cast<int>(resolved_links_.size()); }
+    int last_n_links() const {
+        return static_cast<int>(resolved_links_.size());
+    }
     int n_qm() const { return n_qm_real_; }
     /// @brief User-frame rows of real QM atoms (valid after build/launch).
     const std::vector<int>& qm_rows() const { return qm_rows_; }
@@ -106,8 +108,8 @@ class QmSubsystem {
     double embed_cutoff_ = 12.0;
     bool reset_history_each_launch_ = false;
 
-    std::vector<int> qm_rows_;           ///< User-frame rows of real QM atoms.
-    std::vector<int> qm_z_;              ///< Atomic numbers from mask.
+    std::vector<int> qm_rows_; ///< User-frame rows of real QM atoms.
+    std::vector<int> qm_z_;    ///< Species Z of the QM rows.
     std::vector<ResolvedLink> resolved_links_;
     std::unordered_set<TagInt> link_mm_tags_;
 

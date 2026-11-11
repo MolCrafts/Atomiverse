@@ -1,7 +1,9 @@
+#include "atomiverse/core/dynamics_math.h"
 /// @file cpu/dynamics/fix_langevin.cpp
 /// @brief LAMMPS-equivalent Langevin thermostat (force-additive form).
 
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/internal/gauss_stream.h"
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
@@ -14,54 +16,6 @@
 namespace ATV {
 namespace cpu {
 namespace md {
-
-namespace {
-
-/// @brief Per-atom Gaussian stream with Box-Muller pair caching.
-///
-/// Deliberately constructed once per atom inside the `launch()` loop so
-/// each atom's kick is seeded from `(step, tag)` — two ranks that own
-/// the same global atom (different row indices, same tag) produce the
-/// same random force, preserving cross-rank reproducibility without
-/// needing an MPI reduction. The construction cost is a single
-/// `uint64_t` store on the stack; `next()`'s `log / cos / sqrt` triple
-/// dominates per-atom cost.
-///
-/// Pair caching: a single Box-Muller call returns two IID gaussians
-/// (the `sin` and `cos` partners); we consume one and stash the other,
-/// halving the Box-Muller invocations per atom (3 gaussians needed ⇒
-/// 2 invocations instead of 3). A dedicated HPC pass can drop the
-/// `log / cos` entirely by switching to Marsaglia polar; keep the
-/// current form here so the statistical properties stay identical to
-/// the 12 existing Langevin tests.
-struct GaussStream {
-    std::uint64_t s;
-    bool has_cached = false;
-    double cached = 0.0;
-    double next_u01() {
-        s += 0x9E3779B97F4A7C15ULL;
-        std::uint64_t z = s;
-        z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-        z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-        z = z ^ (z >> 31);
-        return static_cast<double>(z >> 11) * (1.0 / 9007199254740992.0);
-    }
-    double next() {
-        if (has_cached) {
-            has_cached = false;
-            return cached;
-        }
-        const double u = next_u01();
-        const double v = next_u01();
-        const double r = std::sqrt(-2.0 * std::log(u > 1e-300 ? u : 1e-300));
-        const double theta = 2.0 * ATV::units::pi * v;
-        cached = r * std::sin(theta);
-        has_cached = true;
-        return r * std::cos(theta);
-    }
-};
-
-} // namespace
 
 FixLangevin::FixLangevin(double T_start, double T_stop, double damp, double dt,
                          std::uint32_t seed)
@@ -96,31 +50,31 @@ void FixLangevin::launch(const cpu::LaunchContext& ctx) {
     // extrapolating. With the default span (`nlast_ <= nfirst_`) or
     // `T_stop_ == T_start_`, `T_live_` stays at `T_start_` — the
     // no-ramp default.
-    double delta = 0.0;
-    if (nlast_ > nfirst_) {
-        delta = static_cast<double>(ctx.step - nfirst_)
-                / static_cast<double>(nlast_ - nfirst_);
-        delta = std::clamp(delta, 0.0, 1.0);
-    }
-    T_live_ = T_start_ + delta * (T_stop_ - T_start_);
+    T_live_ =
+        ATV::md::ramp_target(T_start_, T_stop_, ctx.step, nfirst_, nlast_);
 
     // Per-step seed mixed in. Atom identity = global tag, so the same
     // atom on different rank counts gets the same kick (modulo
     // floating-point reduction noise elsewhere).
+    // Setup precedes the first production draw. A later re-preparation
+    // reuses the preceding completed step, without shifting production RNG.
+    const std::int64_t noise_step =
+        static_cast<std::int64_t>(ctx.step)
+        - (ctx.runtime.exec.initializing_forces ? 1 : 0);
     const std::uint64_t base =
         static_cast<std::uint64_t>(seed_) * 0x9E3779B97F4A7C15ULL
-        + static_cast<std::uint64_t>(ctx.step) * 0xBF58476D1CE4E5B9ULL;
+        + static_cast<std::uint64_t>(noise_step) * 0xBF58476D1CE4E5B9ULL;
 
     // gfactor1 multiplies v -> drag force (temperature-independent, as
     // LAMMPS `gfactor1`).
     // gfactor2_pre * sqrt(m) * gauss -> random force. The temperature
     // enters as `sqrt(T_live_)`, recomputed every step so the ramp is
     // honoured exactly like LAMMPS scaling `gfactor2` by `tsqrt`.
-    const double inv_damp_ftm2v = 1.0 / (damp_ * units::force_to_accel);
+    const double inv_damp_ftm2v = 1.0 / (damp_ * ctx.runtime.units.ftm2v);
     const double gfactor2_pre =
-        std::sqrt(2.0 * units::kB_ev_per_k * T_live_
-                  / (damp_ * dt_ * units::mass_v2_to_energy))
-        / units::force_to_accel;
+        std::sqrt(2.0 * ctx.runtime.units.boltz * T_live_
+                  / (damp_ * dt_ * ctx.runtime.units.mvv2e))
+        / ctx.runtime.units.ftm2v;
 
     // Hoisted once before the parallel region -- never span() inside
     // #pragma omp parallel.
@@ -135,9 +89,9 @@ void FixLangevin::launch(const cpu::LaunchContext& ctx) {
 
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
-        GaussStream g{base
-                      + static_cast<std::uint64_t>(sp_tag[i])
-                            * 0xD6E8FEB86659FD93ULL};
+        internal::GaussStream g{base
+                                + static_cast<std::uint64_t>(sp_tag[i])
+                                      * 0xD6E8FEB86659FD93ULL};
 
         const double m = sp_mass[i];
         const double gfactor1 = -m * inv_damp_ftm2v;

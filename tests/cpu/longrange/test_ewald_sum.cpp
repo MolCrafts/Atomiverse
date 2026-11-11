@@ -76,13 +76,15 @@ TEST(EwaldSumMath, TwoIonCubicKTableAndReciprocalEnergy) {
     sum.reciprocal_energy_virial(sr.data(), si.data(), L * L * L, e_recip,
                                  stress);
 
-    // Pin from pre-refactor implementation output (same formula, same α/acc).
-    EXPECT_NEAR(e_recip, 1.5075250344529976, 1e-12);
+    // Pin from pre-refactor implementation output (same formula, same α/acc)
+    // in lj units (qqrd2e = 1): the metal-unit pin 1.5075250344529976
+    // divided by k_e = 14.399645.
+    EXPECT_NEAR(e_recip, 0.10469181944784046, 1e-12);
 
     const double e_self = sum.self_energy(q[0] * q[0] + q[1] * q[1]);
     // −k_C · α/√π · Σq² with Σq² = 2.
-    const double e_self_pin =
-        -ATV::units::coulomb * alpha / std::sqrt(ATV::units::pi) * 2.0;
+    const double e_self_pin = -ATV::units::UnitSystem::lj().qqrd2e() * alpha
+                              / std::sqrt(ATV::units::pi) * 2.0;
     EXPECT_DOUBLE_EQ(e_self, e_self_pin);
 
     // Neutral cell → net-charge term is exactly zero.
@@ -106,4 +108,34 @@ TEST(EwaldSumMath, ForcesOpposeOnOppositeCharges) {
     EXPECT_NEAR(fy[0] + fy[1], 0.0, 1e-10);
     EXPECT_NEAR(fz[0] + fz[1], 0.0, 1e-10);
     EXPECT_GT(std::fabs(fx[0]) + std::fabs(fy[0]) + std::fabs(fz[0]), 1e-6);
+}
+
+TEST(EwaldSumMath, SkewCellReciprocalSphereUsesDualColumnBasis) {
+    Mat3 h = Mat3::diagonal(4.0, 3.0, 5.0);
+    h(0, 1) = 7.0;
+    h(1, 2) = 1.2;
+    const double alpha = 0.4, accuracy = 1e-5;
+    EwaldSum sum(alpha, accuracy);
+    sum.rebuild(h.inverse());
+    const Mat3 b = h.inverse().transpose() * AccReal(2 * units::pi);
+    const double cutoff2 = 4 * alpha * alpha * -std::log(accuracy);
+    std::size_t count = 0;
+    for (int i = -12; i <= 12; ++i)
+        for (int j = -12; j <= 12; ++j)
+            for (int k = -12; k <= 12; ++k) {
+                if (k < 0 || (k == 0 && j < 0) || (k == 0 && j == 0 && i <= 0))
+                    continue;
+                const Vec3 g = b * Vec3{AccReal(i), AccReal(j), AccReal(k)};
+                if (g.norm_squared() > cutoff2)
+                    continue;
+                ++count;
+                bool found = false;
+                for (std::size_t n = 0; n < sum.size(); ++n)
+                    if (std::abs(sum.kx()[n] - g[0]) < 1e-12
+                        && std::abs(sum.ky()[n] - g[1]) < 1e-12
+                        && std::abs(sum.kz()[n] - g[2]) < 1e-12)
+                        found = true;
+                EXPECT_TRUE(found) << i << "," << j << "," << k;
+            }
+    EXPECT_EQ(sum.size(), count);
 }

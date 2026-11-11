@@ -142,14 +142,16 @@ and are not bound. Analytic (non-finite-difference) Hessians are likewise
 not on this surface.
 
 Vibrational analysis is CPU-only: there is no ``device=`` argument.
-``ATV_BUILD_VIB`` is ON by default and the shipped wheel does not override
-it, so both names stay in the top-level ``__all__``; only a staged CLI
-install that leaves ``vib`` out drops them.
+Both names exist on an extension built with the ``vib`` module
+(``ATV_BUILD_VIB=ON``); on one built without it, importing this module raises
+``MissingDomainError`` (an ``ImportError``) naming the flag.
 """
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, require_domain
+
+require_domain(__name__, "vib")
 
 #: Central finite-difference Hessian driver — ``cpu::vib::Hessian``.
 #: ``Hessian(temperature=298.15 [K], pressure=101325.0 [Pa],

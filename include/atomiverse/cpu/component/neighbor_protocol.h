@@ -11,7 +11,15 @@
 /// `Component` and overrides the matching `as_*` accessor to return
 /// `this`; the driver infrastructure scan probes those typed accessors —
 /// no `dynamic_cast`, no `name()` matching.
+// Per-consumer half/full requests follow LAMMPS src/neigh_request.h,
+// a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b. Copyright (2003) Sandia
+// Corporation. Under Contract DE-AC04-94AL85000, the U.S. Government retains
+// certain rights. Distributed under the GNU General Public License.
 #pragma once
+
+#include <cmath>
+#include <stdexcept>
+#include <string>
 
 #include "atomiverse/core/precision.h"
 
@@ -20,6 +28,9 @@ namespace cpu {
 
 class Frame;
 struct Context;
+
+/// Each consumer selects its counting convention independently.
+enum class NeighborListMode { Half, Full };
 
 /// @brief Consumer side of the neighbor-list contract: a component that
 ///        requires a neighbor structure covering its interaction cutoff.
@@ -39,20 +50,24 @@ class NeighborConsumer {
     /// @return Cutoff radius [Å]; `0` = no cutoff declared.
     virtual AccReal neighbor_cutoff() const = 0;
 
+    virtual NeighborListMode neighbor_list_mode() const {
+        return NeighborListMode::Half;
+    }
+
+    /// @brief Require neighbour rows centred on ghosts as well as owners.
+    /// Independent of full/half pair counting; ordinary full lists (e.g. SW)
+    /// only need owned centres. Currently supported for full lists.
+    virtual bool requires_ghost_neighbor_rows() const { return false; }
+
     /// @brief How far the MPI halo must reach for this component [Å].
     ///
     /// Defaults to the interaction cutoff, which is right for any style whose atoms
     /// only ever need their OWN neighbours: a pair style touches `j` within `r_c` of
     /// an owned `i`, and a ghost shell of `r_c` supplies every such `j`.
     ///
-    /// A **many-body** style needs more. EAM's second pass wants `F'(rho_j)` for a
-    /// ghost `j`, and `rho_j` is a sum over *j's* neighbours — so completing it
-    /// locally requires the neighbours of the ghosts, i.e. a **ghost-of-ghost** shell
-    /// of `2 r_c`. Declaring that here buys the whole thing without a single extra
-    /// message: the engine exchanges exactly one forward halo (`pre_neighbor`) and one
-    /// reverse halo (`post_force`), and there is no communication point inside the
-    /// force phase in which a derived per-atom quantity could be traded. A wider halo
-    /// sidesteps that hole instead of punching a new one through it.
+    /// A consumer may require a wider coordinate dependency independently of
+    /// pair counting or ghost-centred rows. EAM exchanges density/derivatives
+    /// and SW enumerates triplets at owned centres; both need only r_c.
     ///
     /// @return Halo radius [Å]; `0` = no halo requirement declared.
     virtual AccReal halo_cutoff() const { return neighbor_cutoff(); }
@@ -61,14 +76,24 @@ class NeighborConsumer {
 /// @brief Supply side of the neighbor-list contract: a component that
 ///        builds and publishes the neighbor structure.
 ///
-/// The publication channel stays `Context::pair_list` (a non-owning pointer
-/// written in the provider's `build()`/`launch()`), not a virtual on this
-/// interface. The one thing the interface does carry is the row-order
-/// guarantee below, because a provider is the only component that renumbers
-/// rows and a driver has to be able to forbid it.
+/// Publishes independent half/full views in Context. Providers receive the
+/// current consumer requirements and the driver's row-order constraints.
 class NeighborProvider {
   public:
     virtual ~NeighborProvider() = default;
+
+    /// Publish this provider's borrowed views/cadence for the active Plan.
+    virtual void activate(Context&) {}
+
+    /// Compile the union of current consumers; replacement, not sticky opt-in.
+    /// A provider supporting only half lists must reject a full-list request.
+    virtual void configure_lists(bool half, bool full,
+                                 bool ghost_rows = false) {
+        (void)half;
+        if (full || ghost_rows)
+            throw std::runtime_error(
+                "neighbor provider does not support full lists");
+    }
 
     /// @brief Forbid the spatial reorder of owned rows for the rest of this
     ///        provider's life (LAMMPS `atom_modify sort`).
@@ -88,24 +113,49 @@ class NeighborProvider {
     /// not negotiable against it.
     virtual void forbid_row_reordering() = 0;
 
-    /// @brief Total distance out to which this provider enumerates pairs [Å].
-    ///
-    /// A Verlet structure does not stop at the interaction cutoff: it builds out
-    /// to `cutoff + skin`, and that band is the entire reason the list is reusable
-    /// between rebuilds. Any pair inside it is *supposed* to be enumerated, so the
-    /// MPI ghost shell has to be at least this wide. A shell sized from the
-    /// interaction cutoff alone leaves a cross-rank `j` sitting in the band with no
-    /// ghost on `i`'s rank: the pair is absent from the CSR outright rather than
-    /// merely inactive, and stays absent until the next full rebuild while the
-    /// displacement trigger (`max_disp * 2 > skin`) is by construction not watching
-    /// for it. The pair can then drift from the band down below the interaction
-    /// cutoff contributing exactly zero force the whole way.
-    ///
-    /// Runtime sizes `ctx.md.comm` from this (max over providers).
-    ///
-    /// @return Enumeration radius [Å]; `0` = no reach declared (the halo falls
-    ///         back to the consumer-cutoff estimate).
-    virtual AccReal neighbor_reach() const { return AccReal(0); }
+    /// @brief Largest interaction cutoff safely supported during list reuse.
+    /// @return Interaction radius [Å], excluding the displacement skin.
+    virtual AccReal supported_cutoff() const = 0;
+
+    /// @brief Total pair enumeration distance, including the displacement skin.
+    /// Runtime also includes this distance in the communication halo.
+    /// @return Enumeration radius [Å], at least supported_cutoff().
+    virtual AccReal neighbor_reach() const = 0;
+
+    /// @brief LAMMPS `units` resets `neighbor->skin`: the driver hands the
+    ///        style's default skin [length] before it validates or builds.
+    ///        A provider constructed with an explicit skin (or without a
+    ///        skin of its own) keeps what it has.
+    virtual void apply_default_skin(double skin) { (void)skin; }
+
+    /// @brief Validate the radii and return the allowed relative displacement.
+    double validated_skin() const {
+        const double cutoff = supported_cutoff();
+        const double reach = neighbor_reach();
+        if (!std::isfinite(cutoff) || cutoff < 0 || !std::isfinite(reach)
+            || reach < cutoff)
+            throw std::runtime_error(
+                "neighbor provider requires finite nonnegative interaction "
+                "cutoff "
+                "and enumeration reach >= interaction cutoff");
+        return reach - cutoff;
+    }
+
+    /// @brief Reject a consumer whose interaction radius consumes the skin.
+    void validate_coverage(const NeighborConsumer& consumer,
+                           const std::string& provider_name,
+                           const std::string& consumer_name) const {
+        (void)validated_skin();
+        const double supported = supported_cutoff();
+        const double required = consumer.neighbor_cutoff();
+        if (!std::isfinite(required) || required < 0 || required > supported)
+            throw std::runtime_error(
+                "neighbor provider '" + provider_name
+                + "' supports interaction cutoff " + std::to_string(supported)
+                + ", but consumer '" + consumer_name + "' requires "
+                + std::to_string(required)
+                + "; the Verlet skin is not interaction coverage");
+    }
 
     /// @brief LAMMPS `Neighbor::decide()` — one `nflag` for the whole step.
     ///
@@ -117,10 +167,15 @@ class NeighborProvider {
     /// @param rt Runtime context; the implementation writes nothing here
     ///        (the caller stores the bool on `rt.md.reneighbor`).
     /// @param frame Positions for the optional skin displacement test.
+    /// @param md_cadence `true` under MD, where `delay` / `every` / `check`
+    ///        apply. `false` for linear workflows: LAMMPS `Min::init` runs
+    ///        every minimization pass at `every 1 delay 0 check yes`, so a
+    ///        large line-search step cannot hide inside the delay window.
     /// @return `true` if this step should exchange + borders + rebuild.
-    virtual bool decide_reneighbor(Context& rt, Frame& frame) {
+    virtual bool decide_reneighbor(Context& rt, Frame& frame, bool md_cadence) {
         (void)rt;
         (void)frame;
+        (void)md_cadence;
         return true;
     }
 };

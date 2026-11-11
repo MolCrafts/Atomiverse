@@ -4,8 +4,8 @@
 Runs ONLY in the external PySCF venv (~/work/.x86_64/bin/python) — never from
 CMake/ctest. Prints the numbers that are transcribed by hand into
 
-  regressions/scf/h2o_charges_pyscf/reg_h2o_charges_pyscf.cpp + REFERENCE.md
-  regressions/scf/n2_ionization/reg_n2_ionization.cpp + REFERENCE.md
+  regressions/scf/properties/h2o_charges_pyscf.cpp + REFERENCE.md
+  regressions/scf/uhf/n2_ionization.cpp + REFERENCE.md
 
 Computed here with PySCF 2.14.0 (cart=True, 6-31G*):
   (a) H2O RHF Loewdin charges  q_A = Z_A - sum_{mu in A} (S^1/2 P S^1/2)_mumu

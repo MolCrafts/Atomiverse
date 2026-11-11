@@ -61,12 +61,12 @@ class PointChargeEmbedding {
     /// @param P_cart Total density in the Cartesian AO basis (dimensionless).
     /// @param shell_to_atom Map shell index → atom index (size = n_shells).
     /// @param atoms QM nuclei for the classical nucleus–MM leg.
-    void accumulate_qm_center_gradient(
-        xt::xtensor<double, 2>& grad,
-        const std::vector<native::Shell>& shells,
-        const xt::xtensor<double, 2>& P_cart,
-        const std::vector<int>& shell_to_atom,
-        const std::vector<native::Atom>& atoms) const;
+    void
+    accumulate_qm_center_gradient(xt::xtensor<double, 2>& grad,
+                                  const std::vector<native::Shell>& shells,
+                                  const xt::xtensor<double, 2>& P_cart,
+                                  const std::vector<int>& shell_to_atom,
+                                  const std::vector<native::Atom>& atoms) const;
 
     /// @brief Analytic ∂E_embed/∂R_C on embedding sites (electron + nucleus).
     ///

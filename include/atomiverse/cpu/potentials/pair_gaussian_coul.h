@@ -20,6 +20,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -54,6 +55,7 @@ class PairGaussianCoul : public Pair {
     /// @return This style's ghost declarations.
     static constexpr std::array kGhosts = {
         GhostField::read_stable(kAtom_charge, "PairGaussianCoul"),
+        GhostField::read_stable(kAtom_type, "PairGaussianCoul"),
     };
     std::span<const GhostField> declare_ghosts() const override {
         return kGhosts;
@@ -69,6 +71,9 @@ class PairGaussianCoul : public Pair {
 
     /// @brief Width table (copy) [Å⁻¹].
     const std::vector<double>& eta_by_type() const { return eta_by_type_; }
+
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
 
   protected:
     void compute(const LaunchContext& ctx) override;
@@ -101,6 +106,7 @@ class PairGaussianCoul : public Pair {
                   "pass an empty table to make every atom a point charge.");
         return eta_by_type_[static_cast<std::size_t>(type)];
     }
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

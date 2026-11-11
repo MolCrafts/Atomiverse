@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstring>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -179,8 +180,14 @@ TEST(TestAtomPackGenericWire, BorderAllScalarRoundTripIsFieldMajor) {
         f.span(kAtom_tag)[i] = static_cast<TagInt>(500 + i);
         f.span(kAtom_type)[i] = i;
     }
-    cpu::comm::PackPlan plan = cpu::comm::make_wire_plan(
-        f, cpu::comm::PackKind::Border, ATV::base_fields::engine_contract());
+    // The engine fields plus the force-field type a per-type style declares.
+    ATV::GhostContract contract = ATV::base_fields::engine_contract();
+    constexpr std::array typed = {
+        ATV::GhostField::read_stable(kAtom_type, "test"),
+    };
+    contract.declare(typed);
+    cpu::comm::PackPlan plan =
+        cpu::comm::make_wire_plan(f, cpu::comm::PackKind::Border, contract);
     const int send[2] = {1, 3};
     const std::size_t bytes = plan.bytes(2);
     std::vector<std::byte> wire(bytes);
@@ -193,6 +200,33 @@ TEST(TestAtomPackGenericWire, BorderAllScalarRoundTripIsFieldMajor) {
     EXPECT_EQ(f.span(kAtom_type)[5], 3);
 }
 
+TEST(TestAtomPackGenericWire, ScalarPackUsesEverySendIndex) {
+    cpu::Frame f(8);
+    for (int i = 0; i < 5; ++i) {
+        f.span(kAtom_x)[i] = static_cast<StorageReal>(i);
+        f.span(kAtom_tag)[i] = static_cast<TagInt>(500 + i);
+    }
+    // The endpoints look contiguous, but the interior row is elsewhere.
+    const int send[] = {0, 4, 2};
+    const double shift[] = {5.0, 0.0, 0.0};
+    for (const auto kind :
+         {cpu::comm::PackKind::Comm, cpu::comm::PackKind::Border}) {
+        const auto plan =
+            cpu::comm::make_wire_plan(f, kind, base_fields::engine_contract());
+        std::vector<std::byte> wire(plan.bytes(3));
+        plan.pack(f, send, 3, shift, wire.data(), wire.size());
+        plan.unpack(f, 3, 5, wire.data(), wire.size());
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_DOUBLE_EQ(f.span(kAtom_x)[5 + k], send[k] + shift[0]);
+            if (kind == cpu::comm::PackKind::Border)
+                EXPECT_EQ(f.span(kAtom_tag)[5 + k], 500 + send[k]);
+        }
+        const int invalid[] = {0, f.capacity(), 2};
+        EXPECT_THROW(plan.pack(f, invalid, 3, shift, wire.data(), wire.size()),
+                     std::out_of_range);
+    }
+}
+
 /// A 3-component `image` on the border wire forces the row-major arm.
 /// Round-tripping pins that layout against the scalar field-major arm.
 TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
@@ -202,9 +236,9 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
         f.span(kAtom_tag)[i] = static_cast<TagInt>(500 + i);
         f.span(kAtom_type)[i] = i;
         f.span(kAtom_charge)[i] = static_cast<StorageReal>(0.25 * i);
-        f.span(kAtom_image)(i, 0) = static_cast<std::int8_t>(i);
-        f.span(kAtom_image)(i, 1) = static_cast<std::int8_t>(-i);
-        f.span(kAtom_image)(i, 2) = static_cast<std::int8_t>(2 * i);
+        f.span(kAtom_image)(i, 0) = static_cast<ATV::ImageInt>(i);
+        f.span(kAtom_image)(i, 1) = static_cast<ATV::ImageInt>(-i);
+        f.span(kAtom_image)(i, 2) = static_cast<ATV::ImageInt>(2 * i);
     }
     cpu::comm::PackPlan plan =
         cpu::comm::make_wire_plan(f, cpu::comm::PackKind::Border, [] {
@@ -214,8 +248,9 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
             ATV::GhostContract b;
             b.declare(ATV::base_fields::kEngine);
             constexpr std::array plugin = {
+                ATV::GhostField::read_stable(kAtom_type, "test"),
                 ATV::GhostField::read_stable(kAtom_charge, "test"),
-                ATV::GhostField::read_stable("image", ColDType::Int8, 3,
+                ATV::GhostField::read_stable("image", ColDType::Image, 3,
                                              "test"),
             };
             b.declare(plugin);
@@ -238,10 +273,11 @@ TEST(TestAtomPackGenericWire, BorderRoundTripIncludesTheImageTriple) {
         EXPECT_DOUBLE_EQ(f.span(kAtom_charge)[dst],
                          static_cast<StorageReal>(0.25 * src));
         // All three image components survive — the reason border is row-major.
-        EXPECT_EQ(f.span(kAtom_image)(dst, 0), static_cast<std::int8_t>(src));
-        EXPECT_EQ(f.span(kAtom_image)(dst, 1), static_cast<std::int8_t>(-src));
+        EXPECT_EQ(f.span(kAtom_image)(dst, 0), static_cast<ATV::ImageInt>(src));
+        EXPECT_EQ(f.span(kAtom_image)(dst, 1),
+                  static_cast<ATV::ImageInt>(-src));
         EXPECT_EQ(f.span(kAtom_image)(dst, 2),
-                  static_cast<std::int8_t>(2 * src));
+                  static_cast<ATV::ImageInt>(2 * src));
     }
 }
 

@@ -1,13 +1,14 @@
 /// @file cpu/scf/cc2.h
 /// @brief Canonical closed-shell CC2 correlation energy (public API).
 ///
-/// User path: `RHF::cc2(frame)` after (or driving) a closed-shell RHF
-/// reference. Approximate coupled-cluster doubles of Christiansen, Koch &
-/// Jørgensen, Chem. Phys. Lett. **243**, 409 (1995): full singles residual,
-/// doubles residual truncated to at most linear in T₂ with the (T₁-dressed)
-/// Fock operator. Matches PySCF `cc.RCCSD` with `cc2=True` on the same RHF
-/// orbitals (stock PySCF has no top-level `cc.CC2` factory — the flag is the
-/// product oracle).
+/// User path: `CC2<RHF>{rhf}.run(frame)` after (or driving) a closed-shell
+/// RHF reference. Approximate coupled-cluster doubles of Christiansen, Koch
+/// & Jørgensen, Chem. Phys. Lett. **243**, 409 (1995): full singles residual,
+/// doubles residual truncated to at most linear in T₂. The product loop is
+/// `cpu::scf::CC2` (`Driver<cc::Phase>`), PySCF `cc.RCCSD` with `cc2=True`
+/// (stock PySCF has no top-level `cc.CC2` factory — the flag is the product
+/// oracle). Hartree stays on `CC2Result`; `run(Frame&)` writes eV to
+/// `kEnergy`.
 #pragma once
 
 namespace ATV {
@@ -26,8 +27,8 @@ struct CC2Result {
     bool converged = false;
 };
 
-// Pack-based entry is private — see internal/ccsd_pack.h (`cc2_energy`).
-// Public: MeanFieldMethod::cc2(frame).
+// The product solve is `CC2::run` in post_hf.h. EOM-CC2 amplitudes stay on
+// the spin-orbital pack (`ccsd_solve(..., cc2=true)`).
 
 } // namespace scf
 } // namespace cpu

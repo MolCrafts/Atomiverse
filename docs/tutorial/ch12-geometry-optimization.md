@@ -1,7 +1,117 @@
-# Chapter 12. Geometry Optimization
+# Geometry Optimization
 
-The same `cpu::minimizer::Minimize` preset and `ForceConverged` criterion work
-for classical, AM1, and SCF forces — only the force-phase component changes.
+Status tables: [Optimization roadmap](../roadmap/optimization.md).
+
+A distorted molecule experiences forces, but finding a resting geometry is
+not the same as simulating its motion. Optimization seeks a stationary point
+of a chosen potential. It does not by itself establish a global minimum or
+a finite-temperature average structure.
+
+**Learning goals.** Interpret search directions and curvature, use several
+stopping criteria, and distinguish a local minimum from a saddle point.
+
+**Before you begin.** Gradients and Hessians in
+[Mathematical Tools](mathematical-tools.md), and one force-capable model.
+
+## Directions and local curvature
+
+With $\mathbf g=\nabla U=-\mathbf F$, a direction $\mathbf p$ is locally
+downhill if $\mathbf g^T\mathbf p<0$. Steepest descent uses $-\mathbf g$.
+Newton's method solves $H\mathbf p=-\mathbf g$, using the Hessian $H$ to
+account for curvature. An indefinite Hessian can produce an inappropriate
+step; line searches and trust regions limit how much a local model is trusted.
+
+Quasi-Newton methods infer curvature from displacement
+$\mathbf s=\mathbf R_{k+1}-\mathbf R_k$ and gradient change
+$\mathbf y=\mathbf g_{k+1}-\mathbf g_k$. The secant relation approximates
+$B\mathbf s=\mathbf y$. BFGS positivity relies on suitable curvature
+conditions, including $\mathbf s^T\mathbf y>0$; L-BFGS retains a limited
+history instead of a full dense matrix. Noisy electronic forces undermine
+both search directions and these curvature estimates.
+
+## What stopping establishes
+
+Inspect maximum and RMS forces, displacement, energy change, and stopping
+reason. A tiny energy change may mean only that a line search has stalled.
+A vanishing gradient establishes stationarity, not positive curvature.
+Constraints restrict the space in which stationarity is required, so fixed
+coordinates and constraint forces must be reported explicitly.
+
+For an electronic evaluator, SCF accuracy must be sufficient for the outer
+force criteria. An optimizer cannot compensate for inconsistent gradients
+by accepting more steps.
+
+## Tolerance convergence
+
+The aspirin example above uses `max_dtol = 0.05 Å` — quite loose by
+quantum-chemistry standards. The reason is that the L-BFGS line search
+is opt-in, and a fixed-step optimizer near a minimum routinely takes
+0.05 Å — 0.2 Å steps when the gradient is small but non-vanishing.
+Setting `max_dtol = 0.001 Å` on a fixed-step run will keep the loop
+running until `max_iter`, even when the energy and forces are clearly
+at minimum.
+
+Two clean cures, in order of effort:
+
+1. **Match displacement tolerance to step size.** If your `alpha0` is
+   $0.01\,\text{Å}^2/\text{eV}$ and the typical $|g|$ near minimum is
+   $0.05\,\text{eV/Å}$, the predicted step is ~$5 \times 10^{-4}\,\text{Å}$,
+   so `max_dtol = 1\text{e-}3` is appropriate. Loosen it only if you
+   are far from this regime.
+2. **Turn on the line search.** With Armijo backtracking the optimizer
+   refuses to take steps that increase the energy, and the typical step
+   length adapts to the local curvature. Tight displacement tolerances
+   become physically meaningful.
+
+The five-criterion rule means you should report all five thresholds
+when you publish a geometry, not just the force tolerance.
+
+## Failed searches
+
+Geometry optimization with quantum forces fails for two qualitatively
+different reasons. Distinguishing them quickly is what separates a
+fifteen-minute fix from a two-day debug.
+
+**The optimizer is the problem** when the energy is converging
+monotonically and the forces are shrinking, but the loop hits
+`max_iter`. Symptoms in `LBFGS::trace()`: `max_force` plateaus near
+the threshold and oscillates; `step_norm` is large because the fixed
+step keeps overshooting. Cure: turn on the line search, or tighten
+`alpha0`.
+
+**The SCF is the problem** when the energy jumps non-monotonically,
+the forces blow up, or the atoms move by tens of Ångström in one step.
+Symptoms: SCF's `converged()` is false; the
+trajectory shows atoms passing through each other. Cure: this is not
+an optimizer bug. Either the SCF tolerance is set too loose
+(`config.tol > 1e-6` produces noisy gradients near minimum), the
+initial guess is poor (try MINAO via `default_config`), or you are
+running the wrong method for the chemistry (e.g. RHF on a singlet
+biradical, or a small basis on an anion). The
+[SCF tutorials](ch02-rhf.md) cover these cases.
+
+If forces, energy, and SCF are all healthy but the geometry will not
+move, you may be at a saddle point. None of the shipped optimizers
+follow modes; they all minimize. Use a transition-state search package
+or perturb the starting geometry along a guessed mode and minimize from
+there.
+
+## Practice plan
+
+Start with distorted water and a supported AM1 or HF force. Record the initial
+geometry, attach the evaluator to the correct phase, and choose criteria with
+explicit units. Tighten them after apparent convergence and re-evaluate the
+same final geometry. Use [Molecular Vibrations](ch14-vibrations.md) to classify it.
+
+Extend to aspirin only after the small example works. Several starting
+conformers may lead to different local minima; one optimization is not a
+conformational search. Compare structures with the same Hamiltonian before
+interpreting an energy difference as a physical preference.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
 
 > **Build flag.** The ab initio half of this chapter needs `ATV_BUILD_HF=ON`,
 > which is **OFF by default** — with it off, the `cpu::scf::…` headers are not
@@ -9,13 +119,11 @@ for classical, AM1, and SCF forces — only the force-phase component changes.
 > regressions). The `Minimize` preset itself is `ATV_BUILD_MINIMIZER`, ON by
 > default.
 >
-> ```bash
+> ``bash
 > cmake -B build -DCMAKE_BUILD_TYPE=Release \
 >       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
 > cmake --build build -j$(nproc)
-> ```
-
-### Fast path: AM1 water
+> ``
 
 | | Before | After L-BFGS |
 |---|---:|---:|
@@ -23,21 +131,13 @@ for classical, AM1, and SCF forces — only the force-phase component changes.
 | max\|F\| (eV/Å) | 3.3135 | **0.1513** |
 | Status | — | `force_converged` |
 
-### Ab initio path: aspirin RHF/STO-3G
-
-21 atoms, 73 basis functions, 94 electrons. Live 25-step budget:
-
 | | Step 1 | Step 25 |
 |---|---:|---:|
 | \(E\) (eV) | −16988.935735 | **−17320.369991** |
 | max\|F\| (eV/Å) | 1723.87 | **0.434** |
 | \(\Delta E\) | — | **−331.43 eV** |
 
-Force thresholds (`ftol=0.05`) are not fully met in 25 steps — the tutorial
-stops on the step budget with a clear descent curve. Raise `max_steps` for
-`ForceConverged`.
-
-```molplot preset="molplot" theme="auto" width="100%" aspect="16:9"
+```molplot preset="molplot" theme="auto" width="100%" aspect="16:10"
 mark: {type: line, point: true, tooltip: true}
 data:
   values:
@@ -52,7 +152,7 @@ encoding:
   y: {field: y, type: quantitative, title: "E (eV)", scale: {zero: false}}
 ```
 
-```molplot preset="molplot" theme="auto" width="100%" aspect="16:9"
+```molplot preset="molplot" theme="auto" width="100%" aspect="16:10"
 mark: {type: line, point: true, tooltip: true}
 data:
   values:
@@ -67,25 +167,10 @@ encoding:
   y: {field: maxF, type: quantitative, title: "max |F| (eV/Å)", scale: {type: log, base: 10}}
 ```
 
-The `cpu::minimizer::Minimize` driver answers a different question from
-the MD chapters. Instead of "how does the system evolve in time?" it
-asks "where is the nearest local minimum of the potential energy
-surface?" The wiring is closely related — same `cpu::Frame`, same
-`SCF` at the force phase — but the outer loop is no longer a
-time integrator. It is a quasi-Newton or conjugate-gradient *search*,
-and it terminates when the gradient and the displacements between
-successive geometries fall below tolerance.
-
-This chapter walks through the full geometry-optimization recipe with
-an aspirin (acetylsalicylic acid) molecule at RHF / STO-3G. The example
-to read alongside this chapter is
-the Practice block.
-
-## What the Minimize Driver Actually Does
+## Optimization criteria
 
 `cpu::minimizer::Minimize`
-([`cpu/minimize/minimize.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/minimize/minimize.h))
-is a **preset** over the CPU loop node, `cpu::Driver<minimizer::Phase>`.
+([`cpu/minimize/minimize.hcpu::Driver<minimizer::Phase>`.
 "Preset" means: it is an ordinary driver whose constructor pre-attaches
 the pieces a geometry optimization wants — the zeroing components, and a
 termination policy. It owns the loop:
@@ -131,7 +216,7 @@ Unlike MD, the optimizer side has only one composition rule — pick
 `CG`, are mutually exclusive in the same way Nose-Hoover and Langevin
 are.
 
-## The Phase Order
+## Optimization stages
 
 ```text
 search_direction → line_search → force → convergence_check → end_of_step
@@ -157,7 +242,7 @@ The optimizer component is bound at *three* phases: `search_direction`
 That is why a single `LBFGS{...}` registration is enough for the entire
 algorithm.
 
-## L-BFGS, the Default Optimizer
+## L-BFGS
 
 `cpu::minimizer::LBFGS` is the limited-memory BFGS quasi-Newton
 optimizer (Nocedal, *Math. Comp.* 35, 773 (1980)). At every iteration
@@ -252,7 +337,7 @@ updated only on accepted trials. `min_alpha` floors the contraction so the
 loop cannot run forever on a pathological evaluation, and `max_ls` caps the
 attempts per step.
 
-## Conjugate Gradient as an Alternative
+## Conjugate gradients
 
 `cpu::minimizer::CG` is a Polak-Ribière+ conjugate-gradient optimizer.
 It publishes the same metrics as `LBFGS`, and is judged by the same
@@ -271,7 +356,7 @@ opt.set_optimizer(cpu::minimizer::CG{/*alpha0=*/0.01});
 ```
 
 The rest of the driver setup is unchanged. The hot-swap is exercised in
-[`tests/cpu/test_minimize_driver_swap_optimizer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/test_minimize_driver_swap_optimizer.cpp),
+[`tests/cpu/test_minimize_driver_swap_optimizer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/test_minimize_driver_swap_optimizer.cpp),
 which builds the same molecule twice and checks that both optimizers
 converge under the same criterion — the same `ForceConverged` object, not
 two copies of the same five numbers.
@@ -283,7 +368,7 @@ noisy. CG's smaller per-step memory makes it the right default for
 very large systems where storing $2m$ vectors of length $3N$ would be
 expensive.
 
-## Putting It Together: Aspirin at RHF/STO-3G
+## An aspirin calculation
 
 Aspirin is 21 atoms (9 C + 8 H + 4 O), 73 STO-3G basis functions, 94
 electrons. It is small enough that an SCF + analytic gradient finishes
@@ -340,35 +425,10 @@ displacement and energy metrics that `ForceConverged` will judge.
 On a non-converged run that number equals `max_iter`, and you can
 inspect `LBFGS::trace()` for the per-step record.
 
-## What Loose Tolerances Actually Cost You
-
-The aspirin example above uses `max_dtol = 0.1 Å` — quite loose by
-quantum-chemistry standards. The reason is that the L-BFGS line search
-is opt-in, and a fixed-step optimizer near a minimum routinely takes
-0.05 Å — 0.2 Å steps when the gradient is small but non-vanishing.
-Setting `max_dtol = 0.001 Å` on a fixed-step run will keep the loop
-running until `max_iter`, even when the energy and forces are clearly
-at minimum.
-
-Two clean cures, in order of effort:
-
-1. **Match displacement tolerance to step size.** If your `alpha0` is
-   $0.01\,\text{Å}^2/\text{eV}$ and the typical $|g|$ near minimum is
-   $0.05\,\text{eV/Å}$, the predicted step is ~$5 \times 10^{-4}\,\text{Å}$,
-   so `max_dtol = 1\text{e-}3` is appropriate. Loosen it only if you
-   are far from this regime.
-2. **Turn on the line search.** With Armijo backtracking the optimizer
-   refuses to take steps that increase the energy, and the typical step
-   length adapts to the local curvature. Tight displacement tolerances
-   become physically meaningful.
-
-The five-criterion rule means you should report all five thresholds
-when you publish a geometry, not just the force tolerance.
-
-## Recorders for the Optimization Trace
+## Recording the search
 
 Three recorder components live under
-[`include/atomiverse/cpu/minimize/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/minimize/)
+`minimize`
 and are designed specifically for optimization runs.
 
 `OptLog` writes a tab-separated row per step with `step`, `E (eV)`,
@@ -401,40 +461,21 @@ opt.on(minimizer::Phase::end_of_step)
    .add(cpu::minimizer::TrajectoryWriter{"aspirin_traj.xyz", /*stride=*/1});
 ```
 
+`OptLog`, `TrajectoryWriter` (and `Thermo`, `XyzRecorder`,
+`MrecRecorder` and the cube writers when bound in a minimization) follow
+the LAMMPS `minimize` output convention (src/min.cpp `Min::setup` /
+`Min::run`): a record's `step` is the number of completed optimizer
+iterations and holds the state after exactly that many. The run's setup
+writes the initial geometry as step 0; iteration *i* writes step *i* when
+it is on the stride; a minimization stopped by a criterion before its
+iteration budget also writes its final state off stride; no step is written
+twice. A run that converges after 7 iterations at `stride=3` therefore
+writes steps 0, 3, 6 and 7; `OptLog` (every iteration) writes rows 0–7.
+
 All three are MPI-aware (rank-0-only writes) and respect the same
 build/launch/destroy lifecycle as every other component.
 
-## When Optimization Diverges
-
-Geometry optimization with quantum forces fails for two qualitatively
-different reasons. Distinguishing them quickly is what separates a
-fifteen-minute fix from a two-day debug.
-
-**The optimizer is the problem** when the energy is converging
-monotonically and the forces are shrinking, but the loop hits
-`max_iter`. Symptoms in `LBFGS::trace()`: `max_force` plateaus near
-the threshold and oscillates; `step_norm` is large because the fixed
-step keeps overshooting. Cure: turn on the line search, or tighten
-`alpha0`.
-
-**The SCF is the problem** when the energy jumps non-monotonically,
-the forces blow up, or the atoms move by tens of Ångström in one step.
-Symptoms: SCF's `converged()` is false; the
-trajectory shows atoms passing through each other. Cure: this is not
-an optimizer bug. Either the SCF tolerance is set too loose
-(`config.tol > 1e-6` produces noisy gradients near minimum), the
-initial guess is poor (try MINAO via `default_config`), or you are
-running the wrong method for the chemistry (e.g. RHF on a singlet
-biradical, or a small basis on an anion). The
-[SCF tutorials](ch02-rhf.md) cover these cases.
-
-If forces, energy, and SCF are all healthy but the geometry will not
-move, you may be at a saddle point. None of the shipped optimizers
-follow modes; they all minimize. Use a transition-state search package
-or perturb the starting geometry along a guessed mode and minimize from
-there.
-
-## What's Next
+## Related workflows
 
 The exact same recipe — `Minimize` driver, `RHF` at the force
 phase, optimizer component at `search_direction` — also drives
@@ -443,7 +484,7 @@ classical relaxation. Replace the SCF with `cpu::PairLJCut` and
 The optimizer does not know the difference, and the convergence
 tolerances stay in the same units.
 
-If you came here from [Chapter 15](ch15-cross-method.md), the symmetry is
+If you came here from [Comparing Models](ch15-cross-method.md), the symmetry is
 worth pausing on. The same concrete method plugs into either driver:
 
 ```cpp
@@ -461,3 +502,7 @@ sim.on(md::Phase::force).add(cpu::scf::RHF{basis}.predictor(3));
 
 Two drivers, one evaluator, two ensembles. That is the architecture
 paying off.
+
+## Questions for reflection
+
+Why does a small energy change not guarantee a small force? Which additional calculation distinguishes a stationary saddle from a local minimum?

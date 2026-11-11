@@ -7,8 +7,8 @@
 /// stays flat — it is read by every component. Workflow-specific services
 /// are grouped into nested plain-aggregate slices, each filled only by its
 /// owning preset: `md` (classical force pipeline), `mc`
-/// (Metropolis sampling), `opt` (optimizer line search), `analysis`
-/// (async analysis executor). Unfilled slice fields stay `nullptr` =
+/// (Metropolis sampling), `opt` (optimizer line search), `capture`
+/// (the shared asynchronous capture buffer). Unfilled slice fields stay `nullptr` =
 /// service unavailable; components check before use. Cross-slice reads
 /// are legitimate (slices group by *publisher*, not by exclusive
 /// consumer): `CommBrick::exchange` reads `opt.line_search_trial`, Minimize's
@@ -25,21 +25,24 @@
 #include <type_traits>
 
 #include "atomiverse/core/iteration_status.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/verdict.h"
 
 namespace ATV {
 
 class TimerRegistry;
+class EvaluationTransaction;
 
 namespace cpu {
 
-class AnalysisExecutor;
+class CaptureBuffer;
 class ReplicaSet;
 class Runtime; ///< The Runtime; published on `Context::exec`. @see ExecServices
 
 namespace md {
 struct AtomSortState;
 struct PairList;
+class ChunkForces;
 namespace mpi {
 struct DomainDecomposition;
 } // namespace mpi
@@ -94,25 +97,29 @@ struct DynamicsServices {
     /// DomainRuntime destruction). Serial methods no-op with `n_ghost == 0`.
     Comm* comm = nullptr;
 
-    /// @brief Opt-in: publish a FULL neighbor list instead of the half list.
+    /// Independent full CSR for many-body consumers; pair_list always means half.
+    const md::PairList* full_pair_list = nullptr;
+
+    /// @brief Non-owning handle to the Runtime's per-thread force
+    ///        accumulators (`cpu/potentials/force_scratch.h`).
     ///
-    /// A consumer that cannot work from a half list sets this in its `build()`;
-    /// `NeighborList` then calls `CellList::refresh_full` and the published
-    /// `pair_list` carries, for every owned `i`, *all* of its neighbours in both
-    /// directions. Mirrors `cuda::DynamicsServices::flat_pairs_requested`.
+    /// Published by `Runtime::init()`; the Runtime reduces them into the
+    /// frame once at the end of each slot walk, so every threaded kernel of
+    /// a step shares one zero and one reduce pass. Null outside a Runtime:
+    /// kernels then run with a team of one (`md::ForcePass`).
+    md::ChunkForces* chunk_forces = nullptr;
+
+    /// @brief LAMMPS `neighbor->skin` [Å]: the relative displacement the
+    ///        active `NeighborProvider` tolerates between reneighbourings
+    ///        (`NeighborProvider::validated_skin()`).
     ///
-    /// Who needs it: any style whose per-atom term is not a sum over *unordered*
-    /// pairs — the EAM embedding density `rho_i = sum_j phi(r_ij)` (which must see
-    /// every neighbour of `i`, not the half of them that happen to sit in `i`'s
-    /// row), and every 3-body style (Stillinger-Weber, Tersoff), whose angular
-    /// term enumerates `(j,k)` pairs drawn from `i`'s complete neighbour set.
-    ///
-    /// Read in `NeighborList::launch()`, not `build()`: component `build()` runs
-    /// in Plan order, and the neighbor phase precedes the force phase, so the
-    /// requester's `build()` runs *after* the provider's. The provider therefore
-    /// treats a mode change as a rebuild trigger — same lazy resolution as the
-    /// CUDA flat-pairs export.
-    bool full_list_requested = false;
+    /// Published by the Runtime with the provider's views, before any
+    /// component runs. An owned atom lies at most `skin / 2` outside its
+    /// subdomain until the next exchange, which is what a consumer that
+    /// sizes per-rank storage from atom positions (KSpacePPPM's ghost
+    /// brick, LAMMPS `Grid3d::set_distance`) must allow for. 0 without a
+    /// provider: every step then reneighbours and exchanges.
+    double neighbor_skin = 0.0;
 
     /// @brief Global degrees of freedom, `3N - 3 - n_constraints`.
     ///
@@ -143,9 +150,14 @@ struct DynamicsServices {
     /// linear drivers that never call decide still rebuild ghosts.
     bool reneighbor = true;
 
-    /// @brief Verlet already ran `NeighborProvider::decide_reneighbor`
-    /// this step. When false, a direct `launch()` decides inline.
-    bool reneighbor_decided = false;
+    /// @brief A fix forces the next step to reneighbor (LAMMPS
+    ///        `Fix::force_reneighbor` / `next_reneighbor`, honoured first in
+    ///        `Neighbor::decide`).
+    ///
+    /// Set by a component whose next `pre_exchange` must run (NvtSllod after
+    /// deciding a box flip); MD Verlet consumes and clears it in the next
+    /// reneighbor decision. Every rank sets it identically.
+    bool reneighbor_requested = false;
 };
 
 /// @brief Metropolis-sampling services (publisher: `cpu::mc::MC::run`).
@@ -185,6 +197,19 @@ struct OptimizeServices {
     /// would corrupt it. Halo exchange still runs, keeping trial forces
     /// correct for the bounded step.
     bool line_search_trial = false;
+
+    /// @brief Published by the Runtime when a Minimizer plan is compiled: true
+    /// when every op of the force phase is `Component::trial_invariant()`, so
+    /// a line-search trial's forces/energy at the accepted geometry are the
+    /// committed ones.
+    bool trial_forces_reusable = false;
+
+    /// @brief Set by an Optimizer during `line_search` when the frame already
+    /// holds the forces and energy of the geometry it just committed (the
+    /// accepted trial was the last one evaluated and `trial_forces_reusable`
+    /// holds). The Runtime then skips that step's force phase and clears the
+    /// flag; it is also cleared at the start of every linear step.
+    bool forces_current = false;
 };
 
 /// @brief Coupled-replica (band) services — publisher: `cpu::PathDriver::run`.
@@ -234,6 +259,11 @@ struct LoopServices {
 struct ExecServices {
     /// @brief The Backend running this node tree. Null outside a run.
     Runtime* runtime = nullptr;
+    /// Physical evaluation transaction; nested solves borrow this ledger.
+    EvaluationTransaction* evaluation_transaction = nullptr;
+    /// Full replicas opt out of spatial decomposition. This does not establish
+    /// an electronic communicator; collective methods must check that contract.
+    bool serial_on_replica = false;
 
     /// @brief The force-request veto channel — how an energy-only phase reaches
     ///        the slots of the drivers nested inside it.
@@ -250,14 +280,20 @@ struct ExecServices {
     ///
     /// True outside any veto, which is every loop but MC's trial `energy` phase.
     bool forces_requested = true;
+    /// @brief Stress-request veto propagated through nested driver dispatch.
+    bool stress_requested = true;
+    /// Evaluate the current nuclear state without advancing propagation history.
+    bool initializing_forces = false;
+    /// A reversible energy/force trial must not advance temporal history.
+    bool trial_evaluation = false;
 };
 
-/// @brief Async-analysis services (publisher: `AnalysisExecutor::install`).
-struct AnalysisServices {
-    /// @brief Non-owning handle to the per-rank analysis executor.
-    /// Allocated by `Backend::init()`; published so async observers /
-    /// recorders can reach the executor from any lifecycle context.
-    AnalysisExecutor* executor = nullptr;
+/// @brief Asynchronous-capture services (publisher: `cpu::Runtime::init`).
+struct CaptureServices {
+    /// @brief Non-owning handle to the driver tree's shared capture buffer
+    /// (`cpu::CaptureBuffer`, owned by the Runtime). Every asynchronous
+    /// consumer (`cpu::AsyncConsumer`) subscribes to it at build.
+    CaptureBuffer* buffer = nullptr;
 };
 
 /// @brief CPU execution context: flat core state + per-workflow slices.
@@ -265,6 +301,15 @@ struct Context {
     int n_threads = 0; ///< OpenMP threads (0 = auto-detect).
     int mpi_rank = 0;  ///< MPI rank within communicator (0 if no MPI).
     int mpi_size = 1;  ///< MPI communicator size (1 if no MPI).
+
+    /// @brief The run's LAMMPS `units` style (publisher: the Driver, before
+    ///        any component builds; default lj as in LAMMPS).
+    ///
+    /// Every classical factor (`boltz`, `mvv2e`, `ftm2v`, `qqrd2e`,
+    /// `nktv2p`, ...) a component multiplies comes from here. One value for
+    /// the whole driver tree: a nested driver runs on its parent's Runtime and
+    /// reads the same one. @see core/unit_system.h
+    units::UnitSystem units = units::UnitSystem::lj();
 
     /// @brief Non-owning handle to the per-Backend timing registry.
     /// Published by `Backend::init()`. Components reach it (via
@@ -288,12 +333,12 @@ struct Context {
     /// It does not declare convergence: that is a `Criterion`'s job.
     LoopServices loop;
 
-    ExecServices exec;         ///< The Runtime executing this node tree.
-    DynamicsServices md;       ///< Classical force-pipeline slice.
-    SamplingServices mc;       ///< Metropolis-sampling slice.
-    OptimizeServices opt;      ///< Optimizer line-search slice.
-    PathServices path;         ///< Coupled-replica (band) slice.
-    AnalysisServices analysis; ///< Async-analysis slice.
+    ExecServices exec;       ///< The Runtime executing this node tree.
+    DynamicsServices md;     ///< Classical force-pipeline slice.
+    SamplingServices mc;     ///< Metropolis-sampling slice.
+    OptimizeServices opt;    ///< Optimizer line-search slice.
+    PathServices path;       ///< Coupled-replica (band) slice.
+    CaptureServices capture; ///< Asynchronous-capture slice.
 };
 
 // Zero-cost-grouping guards: the slices stay plain aggregates and the
@@ -305,7 +350,7 @@ static_assert(std::is_trivially_copyable_v<SamplingServices>);
 static_assert(std::is_trivially_copyable_v<PathServices>);
 static_assert(std::is_trivially_copyable_v<LoopServices>);
 static_assert(std::is_trivially_copyable_v<ExecServices>);
-static_assert(std::is_trivially_copyable_v<AnalysisServices>);
+static_assert(std::is_trivially_copyable_v<CaptureServices>);
 static_assert(!std::is_polymorphic_v<Context>);
 
 } // namespace cpu

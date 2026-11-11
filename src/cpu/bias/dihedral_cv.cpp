@@ -5,8 +5,8 @@
 #include <cmath>
 #include <stdexcept>
 
+#include "atomiverse/core/dihedral_geom.h"
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/potentials/dihedral_geom.h"
 
 namespace ATV {
 namespace cpu {

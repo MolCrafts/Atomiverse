@@ -6,7 +6,8 @@ Canonical deep path: ``atomiverse.driver.single_point``; top-level
 runs one pass of the ``Evaluate`` driver preset.
 """
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, has_domain, require_cpp, backend_type
+from atomiverse._units import resolve as _resolve_units
 
 
 def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
@@ -14,65 +15,126 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     geometry — a *single point*, as opposed to a trajectory or an
     optimization.
 
-    Energy lands in the frame's typed ``meta`` map [eV]; charge-capable
+    Energy lands in the frame's typed ``meta`` map (run units); charge-capable
     evaluators (AM1) write per-atom charges [e] back into the same
     ``molpy.Frame``. The evaluator is borrowed — inspect
     ``evaluator.last_result()`` afterwards for solver-internal quantities.
 
-    Two dispatch paths, one call shape. A component-style evaluator such as
-    ``AM1Evaluator`` is run by the C++ ``cpu::single_point`` helper, which
-    drives one pass of the ``Evaluate`` driver over it. A Gaussian SCF method
-    (``RHF`` / ``UHF`` / ``RKS`` / ``UKS``) is already a driver in its own
-    right — it owns the self-consistent-field loop — so it is dispatched
-    straight to ``evaluator.run(frame)``. Nothing is returned either way;
-    results are read off the frame or off the evaluator.
+    A method's public ``run(frame)`` entry owns its standalone solve (Gaussian
+    SCF, PW and DFTB2). Evaluator components use the C++ ``Evaluate`` preset.
+    AM1 keeps its MPI single-point task; generic components reject launcher
+    mode when no task payload can represent them.
 
     Parameters
     ----------
     frame : molpy.Frame
-        System state (``atoms`` block with ``x, y, z, atomic_number``; the
-        ``atomic_number`` column [uint] carries Z). Results land as typed
-        metadata read back as plain values, for example
-        ``frame.meta["energy"]`` is a ``float`` [eV].
-    evaluator : atomiverse.AM1Evaluator or atomiverse.RHF/UHF/RKS/UKS
-        The evaluator component. ``AM1Evaluator`` runs through the C++
-        ``Evaluate`` pass; a Gaussian SCF method owns its own SCF loop, so
-        it is driven by ``evaluator.run(frame)`` instead (read the Hartree
-        energy / loop state off the method afterwards with ``energy()`` /
-        ``converged()`` / ``iterations()``).
-
-        Forces differ between the two paths. The ``Evaluate`` pass requests
-        gradients, so ``AM1Evaluator`` publishes fx/fy/fz [eV/Å] here as
-        well; ``AM1Evaluator.forces(frame)`` is the entry that also *returns*
-        them as an (N, 3) array. A Gaussian SCF ``run`` computes no forces —
-        call that method's own ``forces(frame)`` for those.
+        System state, updated in place in the run's units.
+    evaluator : method or evaluator component
+        A method with ``run(frame)``, or a native evaluator Component.
+        Forces follow that object's run policy; use ``forces(frame)`` when
+        the method's standalone run is energy-only.
     device : str, optional
-        Execution backend, PyTorch-style. v1 accepts only ``"cpu"``; any
-        other value raises ``ValueError`` before any compute.
+        Execution backend, ``"cpu"`` or ``"cuda"``. The method must use
+        the same backend; unavailable bindings fail before compute.
 
     Raises
     ------
     ValueError
-        If *device* is anything but ``"cpu"``, or (SCF path) if the method's
-        spin multiplicity cannot split this frame's electron count.
+        If the requested backend is unavailable or mismatched, if the method's
+        ``n_alpha + n_beta`` does not equal this frame's electron count, or if
+        an NDDO method (AM1/RM1/MNDO/PM3) finds atoms closer than 0.6 x their
+        covalent-radius sum (the message names the pairs).
+    TypeError
+        If *evaluator* has neither a public run entry nor a native Component.
     RuntimeError
         If the frame is missing a required column or carries a wrong dtype.
     """
-    if device != "cpu":
-        raise ValueError(
-            f"device={device!r}: CUDA bindings are not yet available; "
-            "only device='cpu' is supported"
-        )
-    # A Gaussian SCF method is its own driver loop, not an Evaluate
-    # component. Imported here so this module stays importable on an
-    # extension built without ATV_BUILD_HF (then __all__ is empty).
-    from atomiverse import scf
-
-    scf_methods = tuple(getattr(scf, name) for name in scf.__all__)
-    if scf_methods and isinstance(evaluator, scf_methods):
-        evaluator.run(frame)
+    if device not in ("cpu", "cuda"):
+        raise ValueError(f"Unknown device {device!r}; expected 'cpu' or 'cuda'")
+    require_cpp()
+    method_device = getattr(evaluator, "device", "cpu")
+    if method_device != device:
+        raise ValueError(f"Method device={method_device!r} does not match requested device={device!r}")
+    if device == "cuda":
+        evaluation = Evaluate(device="cuda")
+        evaluation.set_evaluator(evaluator)
+        evaluation.run(frame)
         return
-    _cpp.single_point(frame, evaluator)
+    # Preserve AM1's existing single-point/MPI task behavior, including forces.
+    if has_domain("am1") and isinstance(evaluator, _cpp.AM1):
+        _cpp.single_point(frame, evaluator)
+        return
+    if has_domain("am1") and isinstance(evaluator, (_cpp.RM1, _cpp.MNDO, _cpp.PM3)):
+        Evaluate(device="cpu").set_evaluator(evaluator).run(frame)
+        return
+    # Methods own their standalone Frame entry. This also covers PW and
+    # DFTB2 without a second per-family list of supported methods.
+    run = getattr(evaluator, "run", None)
+    if callable(run):
+        run(frame)
+        return
+    if isinstance(evaluator, _cpp._Component):
+        _cpp._single_point_component(frame, evaluator)
+    else:
+        hint = (
+            ""
+            if has_domain("am1")
+            else "; the NDDO evaluators (AM1, RM1, MNDO, PM3) need an "
+            "extension built with ATV_BUILD_SEMIEMPIRICAL"
+        )
+        raise TypeError(
+            f"single_point cannot run {type(evaluator).__name__}: "
+            "expected a method with run(frame) or an evaluator component" + hint
+        )
 
 
-__all__ = ["single_point"]
+class Evaluate:
+    """One native energy/force evaluation with borrowed, kept-alive methods.
+
+    ``units`` is the run's LAMMPS ``units`` style (see
+    :class:`atomiverse.MD`); default :func:`atomiverse.units_style`.
+    """
+
+    def __init__(self, device: str = "cpu", units: str | None = None) -> None:
+        self.device = device
+        self._cpp = backend_type(device, "_Evaluate", "_CudaEvaluate")()
+        self._cpp.set_units(_resolve_units(units))
+        self._built = False
+
+    def set_units(self, style: str):
+        """LAMMPS ``units <style>`` of this run (before the first ``run``)."""
+        self._cpp.set_units(style)
+        return self
+
+    @property
+    def units_style(self) -> str:
+        """LAMMPS ``units`` style of this run."""
+        return self._cpp.units_style
+
+    def set_evaluator(self, method: object):
+        # A classical parameter mirror has no device. A borrowed electronic
+        # method does, and it has to match this driver.
+        method_device = getattr(method, "device", None)
+        if method_device is not None and method_device != self.device:
+            raise ValueError("Evaluator and driver must use the same device")
+        self._cpp.set_evaluator(method)
+        self._built = False
+        return self
+
+    def set_neighbor(self, component: object):
+        """Install the neighbor list. Coulomb and Lennard-Jones read it."""
+        self._cpp.set_neighbor(component)
+        self._built = False
+        return self
+
+    def build(self) -> None:
+        self._cpp.build()
+        self._built = True
+
+    def run(self, frame: object) -> None:
+        if not self._built:
+            self.build()
+        self._cpp.run(frame)
+
+
+__all__ = ["single_point", "Evaluate"]

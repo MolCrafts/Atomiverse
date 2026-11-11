@@ -34,10 +34,10 @@ namespace semiempirical {
 /// Hessian [eV/Å²], IP/EA [eV].
 ///
 /// Oracle: **xtb** (never OpenMOPAC / DFTB+). Pins:
-/// `regressions/semiempirical/ipea-xtb-small/` (energy),
-/// `regressions/semiempirical/ipea-xtb-forces/` (forces),
-/// `regressions/semiempirical/ipea-xtb-analytic-hessian/` (FD Hessian),
-/// `regressions/semiempirical/ipea-xtb-vip/` (ΔSCC IP/EA).
+/// `regressions/semiempirical/ipea-xtb/` (energy),
+/// `regressions/semiempirical/ipea-xtb/` (forces),
+/// `regressions/semiempirical/ipea-xtb/` (FD Hessian),
+/// `regressions/semiempirical/ipea-xtb/` (ΔSCC IP/EA).
 ///
 /// @code
 ///   cpu::Evaluate eval;
@@ -54,9 +54,9 @@ class IPEA : public cpu::Semiempirical, public cpu::QmEngine {
     /// @brief Anderson charge-mixing relaxation β ∈ (0,1] (dimensionless).
     double mix_beta = 0.4;
     /// @brief Net molecular charge [e] (subtracted from valence electron count).
-    int charge = 0;
+    const int charge;
     /// @brief Spin multiplicity 2S+1. Only 1 (closed shell) is supported.
-    int multiplicity = 1;
+    const int multiplicity;
     /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
     /// @brief When true, run the N−1 electron SCC and store IP_v [eV]
@@ -66,7 +66,11 @@ class IPEA : public cpu::Semiempirical, public cpu::QmEngine {
     ///        (`E(N)-E(N+1)` minus `kIpeaShiftEv`; xtb `--vea`).
     bool compute_vea = false;
 
-    IPEA() = default;
+    /// @brief IPEA-xTB.
+    /// @param charge Net molecular charge [e].
+    /// @param multiplicity Spin multiplicity 2S+1 (dimensionless).
+    explicit IPEA(int charge = 0, int multiplicity = 1)
+        : charge(charge), multiplicity(multiplicity) {}
 
     std::string name() const override { return "ipea"; }
 

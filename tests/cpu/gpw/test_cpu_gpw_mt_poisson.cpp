@@ -1,12 +1,13 @@
 /// @file tests/cpu/gpw/test_cpu_gpw_mt_poisson.cpp
-/// @brief Isolated (truncated-Coulomb) Poisson: matches the analytic isolated
+/// @brief Martyna–Tuckerman Poisson: matches the analytic isolated
 ///        Gaussian potential/energy and is box-size independent.
 ///
 /// A normalized Gaussian charge rho(r) = (2 pi s^2)^{-3/2} exp(-r^2/2s^2) has the
 /// exact open-boundary potential V(r) = erf(r/(sqrt2 s))/r and self-energy
-/// E = 1/(2 s sqrt(pi)). The truncated-Coulomb solver must reproduce both, while
+/// E = 1/(2 s sqrt(pi)). The isolated solver must reproduce both, while
 /// the bare periodic solver (G=0 dropped) gives a box-dependent answer.
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -25,9 +26,12 @@ using ATV::cpu::gpw::UniformGrid;
 namespace {
 
 // Normalized Gaussian charge of width sigma centered in the box, on the grid.
-std::vector<double> gaussian_density(const UniformGrid& g, double sigma) {
-    const double c[3] = {g.origin[0] + 0.5 * g.L[0], g.origin[1] + 0.5 * g.L[1],
-                         g.origin[2] + 0.5 * g.L[2]};
+std::vector<double> gaussian_density(const UniformGrid& g, double sigma,
+                                     const std::array<double, 3>& offset = {
+                                         0, 0, 0}) {
+    const double c[3] = {g.origin[0] + 0.5 * g.L[0] + offset[0],
+                         g.origin[1] + 0.5 * g.L[1] + offset[1],
+                         g.origin[2] + 0.5 * g.L[2] + offset[2]};
     const double s2 = sigma * sigma;
     const double norm = std::pow(2.0 * M_PI * s2, -1.5);
     std::vector<double> rho(static_cast<std::size_t>(g.npts()));
@@ -102,4 +106,23 @@ TEST(GpwMtPoisson, BoxSizeIndependentUnlikePeriodic) {
     // The periodic solver drifts with box size and is the wrong (non-isolated)
     // value — confirming MT is doing something different and correct.
     EXPECT_GT(std::abs(e_per[0] - e_per[1]), std::abs(e_mt[0] - e_mt[1]));
+}
+
+TEST(GpwMtPoisson, SeparatedGaussiansRetainInteractionBeyondInscribedSphere) {
+    const double cell[3] = {24, 24, 24};
+    const auto g = make_uniform_grid(cell, 100);
+    // Width keeps pair-density tails negligible at half-cell separations;
+    // MT, like CP2K, requires vacuum padding along each Cartesian axis.
+    const double sigma = 0.4, shift = 4.8;
+    auto rho = gaussian_density(g, sigma, {-shift, -shift, 0});
+    const auto other = gaussian_density(g, sigma, {shift, shift, 0});
+    for (std::size_t i = 0; i < rho.size(); ++i)
+        rho[i] += other[i];
+    // Each Cartesian separation fits inside half the box, while the diagonal
+    // separation exceeds its inscribed sphere. Isolated electrostatics must
+    // retain the analytic interaction between the two normalized Gaussians.
+    const double distance = 2 * std::sqrt(2.0) * shift;
+    const double expected = 2 * analytic_self_energy(sigma)
+                            + std::erf(distance / (2 * sigma)) / distance;
+    EXPECT_NEAR(solve_poisson_mt(g, rho).e_hartree, expected, 1e-5);
 }

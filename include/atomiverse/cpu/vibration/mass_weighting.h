@@ -10,7 +10,7 @@
 ///
 /// Masses are the IUPAC-2013 standard atomic weights from
 /// `atomic_masses.h`, looked up from each atom's atomic number
-/// (`frame.span(kAtom_type)`) — see `cpu::vib::mass_amu`.
+/// (`frame.span(kAtom_atomic_number)`) — see `cpu::vib::mass_amu`.
 ///
 /// Verbatim port of the `mass_hess` line of PySCF
 /// `pyscf/hessian/thermo.py::harmonic_analysis`:
@@ -56,7 +56,7 @@ class MassWeighting : public cpu::Component {
     ///
     /// Active only on the finalize pass (`ctx.step >= 6N`), once every
     /// Hessian row has been written and symmetrized. Reads each atom's
-    /// atomic number from `frame.span(kAtom_type)`, fetches the IUPAC-2013
+    /// atomic number from `frame.span(kAtom_atomic_number)`, fetches the IUPAC-2013
     /// mass, then overwrites `ws_->hessian` with
     /// `H^mw_{ia,jb} = H_{ia,jb} * unit_conv / sqrt(m_i m_j)`.
     ///

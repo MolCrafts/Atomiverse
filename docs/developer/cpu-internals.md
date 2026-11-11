@@ -97,9 +97,7 @@ adding a stopping rule never means adding a class.
 
 ## Termination Is a Criterion
 
-A `Criterion` ([`cpu/component/criterion.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/component/criterion.h))
-is a Component the driver polls once per iteration; it answers with an
-`ATV::Verdict`: `Continue`, `Converged`, or `Stop`. Criteria are
+A `Criterion` ([`cpu/component/criterion.hATV::Verdict`: `Continue`, `Converged`, or `Stop`. Criteria are
 **plural** — several can be attached, and their verdicts compose by
 severity, **Stop > Converged > Continue**, so a run that has gone
 numerically insane cannot report success by also happening to satisfy a
@@ -108,8 +106,7 @@ force tolerance.
 The criterion sees a `cpu::LoopState` — iteration index, frame, Context,
 metrics — and deliberately **never a phase**. That is what lets one
 criterion serve MD, Minimize, MC and Path alike. Three ship in-tree
-([`cpu/driver/criteria.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/criteria.h)):
-`ForceConverged` (the five-criteria geometry test), `AllReplicasConverged`,
+([`cpu/driver/criteria.h`criteria.h)):`ForceConverged` (the five-criteria geometry test), `AllReplicasConverged`,
 and `StopOnNaN`. A user writes their own from outside the library:
 
 ```cpp
@@ -138,8 +135,7 @@ the next collective, and that is not a hazard a criterion author should
 have to know about.
 
 The loop's *other* policy slot is the `OutcomePolicy`
-([`cpu/driver/outcome_policy.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/driver/outcome_policy.h)),
-set with `set_outcome(...)` and **singular**. It answers a different
+([`cpu/driver/outcome_policy.hset_outcome(...)` and **singular**. It answers a different
 question — *does this iteration count?* — with `Commit` or `Rollback`.
 Monte Carlo's accept/reject is the reason it exists: rejecting a trial
 move does not end the run, it discards one iteration's work and keeps
@@ -159,9 +155,7 @@ enum. Two orthogonal mechanisms remain:
    Presets validate with `dynamic_cast` to those types.
 2. **Role** — a `RoleFlag` bitset on `role()` (`FrameImmutable`,
    `Deferred`, `ExternalIO`). Unset `Deferred` ⇒ main-loop required.
-   See [`core/role.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/role.h).
-
-Outputs are Frame keys (`kEnergy`, `kAtom_fx`, …), not capability bits.
+   See [`core/role.hkEnergy`, `kAtom_fx`, …), not capability bits.
 
 - The concrete mean-field methods (`cpu::scf::RHF` / `UHF` / `RKS` /
   `UKS`) carry the `cpu::HF` kind tag. With `with_gradient(true)` a
@@ -178,10 +172,7 @@ own.
 ## The Component Lifecycle, Strictly
 
 The base class
-[`cpu::Component`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/component/component.h) defines
-exactly three hooks:
-
-```cpp
+[`cpu::Component``cpp
 virtual void build  (const BuildContext&)       {}
 virtual void launch (const LaunchContext&) = 0;  // pure
 virtual void destroy(const DestroyContext&)     {}
@@ -195,7 +186,7 @@ The contract is:
    or derived from `frame.box`.
 2. **`launch` runs once per iteration.** No allocation. Re-use only —
    everything a component needs is allocated in `build`. This is a review
-   rule (CLAUDE.md), not an automated gate: there is no allocation-counting
+   rule (the project iron laws), not an automated gate: there is no allocation-counting
    test in the suite today.
 3. **`destroy` runs once, after the last iteration.** RAII handles most
    cleanup automatically (xtensor destructors, `std::vector` going out
@@ -233,12 +224,8 @@ Two practical consequences:
 
 Two small structs carry the loop's verdict and the evidence for it.
 `ATV::IterationStatus`
-([`core/iteration_status.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h))
-is the verdict; `ATV::ConvergenceMetrics`
-([`core/verdict.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h))
-is the evidence.
-
-```cpp
+([`core/iteration_status.hATV::ConvergenceMetrics`
+([`core/verdict.h``cpp
 struct IterationStatus {
     bool converged       = false;
     bool stop_requested  = false;
@@ -350,14 +337,14 @@ energies, occupations, `homo()`/`lumo()`, the derived densities, and
 the cached `spin_contamination()`.
 
 The remaining helpers in
-[`include/atomiverse/cpu/scf/internal/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/internal/)
+[`internal`](https://github.com/MolCrafts/Atomiverse/blob/master/include/atomiverse/cpu/scf/internal/)
 (integrals, gradient kernels, MO transforms) stay private workspace:
 none register into any foreign Plan, and the **core-public**
 production headers — `evaluate.h`, `single_point.h`, `md.h`, `lbfgs.h`
-— must not include from `cpu/scf/internal/` (tests may). Two surfaces
-elsewhere still use the old inner-solver shape as scheduled debt, not a
-pattern: CUDA RHF private RhfScfCycle (post arch-cuda-scf-solver-fold) and the CPU
-plane-wave SCF (`cpu::pw::PW` + `PWEvaluator`).
+— must not include from `cpu/scf/internal/` (tests may). The CPU plane-wave
+SCF (`cpu::pw::PW`) is a `Driver<pw::Phase>` mounted directly as a nested node
+(no evaluator wrapper). CUDA RHF is
+`cuda::Driver<scf::Phase>` (same stage order as `MeanFieldMethod`).
 
 ## Hot-Path Data Hygiene
 
@@ -385,10 +372,7 @@ wrong everywhere outside MD.
 
 Every CPU file that loops over pairs of atoms, wraps a position into
 the cell, or applies the minimum-image convention reads
-[`cpu::Box`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/box.h). The full set of
-methods is:
-
-```cpp
+[`cpu::Box``cpp
 double length(int d)        const;   // edge length along axis d
 double volume()             const;
 void   min_image(double& dx, double& dy, double& dz) const;
@@ -412,10 +396,7 @@ orthorhombic min-image branch instead of calling through `Box::min_image`. This
 is because member loads through `this` defeat the compiler's ability to
 hoist the per-axis $L^{-1}$ out of the loop, and the cost was measured
 at ~7% per MD step. The xsimd batch overload `min_image_batch<B>` in
-[`cpu/frame/box_simd.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/box_simd.h) gives non-LJ
-SIMD callers a vectorized path without that landmine.
-
-The takeaway when adding new pair-loop code: prefer `cpu::Box`
+[`cpu/frame/box_simd.hcpu::Box`
 helpers; only inline the math when you can show the compiler is failing
 to hoist the loads, and document the reason.
 
@@ -504,7 +485,7 @@ plug into them automatically.
 
 - `tests/cpu/test_minimize_driver_swap_optimizer.cpp` — the
   canonical hot-swap test for two `Optimizer`-role components.
-- `regressions/scf/h2_rhf_sto3g_aimd/` — energy conservation under a
+- `h2_rhf_sto3g_aimd` — energy conservation under a
   composed `MD` + Gaussian-SCF run, the end-to-end proof that a method and
   an integrator compose.
 - [Extending CPU Subsystems](extending-cpu-subsystems.md) — the

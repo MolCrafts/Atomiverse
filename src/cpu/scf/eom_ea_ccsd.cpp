@@ -23,7 +23,6 @@
 #include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/scf/internal/ccsd_pack.h"
 #include "atomiverse/cpu/scf/internal/eom_ccsd_common.h"
-#include "atomiverse/cpu/scf/rhf.h"
 
 namespace ATV {
 namespace cpu {
@@ -248,20 +247,6 @@ EOMEACCSDResult eom_ea_ccsd_energies(const internal::IntegralView& ints,
                                 * units::kHartreeInEv);
     out.converged = true;
     return out;
-}
-
-EOMEACCSDResult RHF::eom_ea_ccsd(Frame& frame, int n_states) {
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "RHF::eom_ea_ccsd: SCF reference did not converge — refusing to "
-            "compute EOM-EA-CCSD on a non-stationary determinant (no "
-            "fallback).");
-    return eom_ea_ccsd_energies(integral_view_(), determinant(), energy(),
-                                n_states);
 }
 
 } // namespace scf

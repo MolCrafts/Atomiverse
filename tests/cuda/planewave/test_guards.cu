@@ -7,6 +7,7 @@
 /// one method (`run`'s member validation), no loop, no oracle.
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
+#include <memory>
 
 #include <gtest/gtest.h>
 #include <stdexcept>
@@ -14,13 +15,12 @@
 
 using namespace ATV;
 
-// Value semantics of the method object. ("PW is a concrete method, not a
-// Component / Driver node" is an architectural rule — it lives in CLAUDE.md
-// and is enforced by review, never by a test artefact.)
+// PW owns device-backed state and can be transferred by move. Its execution
+// topology is tracked separately in the architecture debt ledger.
 static_assert(!std::is_copy_constructible_v<ATV::cuda::pw::PW>,
               "cuda::pw::PW owns device-backed run state: no copies");
 static_assert(std::is_move_constructible_v<ATV::cuda::pw::PW>,
-              "cuda::pw::PW must be movable (member-set then handed off)");
+              "cuda::pw::PW must be movable (constructed then handed off)");
 
 namespace {
 
@@ -28,7 +28,7 @@ namespace {
 ///        analytic GTH-PBE-q1 parameterization, so no UPF file is needed.
 cpu::Frame make_h_atom() {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_mass)[0] = 1.008;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
@@ -39,55 +39,59 @@ cpu::Frame make_h_atom() {
 
 /// @brief Method with every member on a supported setting (LSDA, restricted,
 ///        fixed occupations) so a test can flip exactly one of them.
-cuda::pw::PW make_supported() {
-    cuda::pw::PW pw;
-    pw.gth_name = "GTH-PBE-q1"; // real H potential, no file needed
-    pw.ecut_ry = 6.0;
-    pw.k_mesh = 1;
-    pw.xc = cpu::scf::XCType::LSDA;
-    return pw;
+/// @param xc Exchange–correlation functional.
+/// @param ecut_ry Wavefunction cutoff [Ry].
+/// @param k_mesh Monkhorst-Pack mesh per dimension (dimensionless).
+cuda::pw::PW make_supported(cpu::xc::XCType xc = cpu::xc::XCType::LSDA,
+                            double ecut_ry = 6.0, int k_mesh = 1) {
+    // Real H potential, no file needed.
+    return cuda::pw::PW{{std::make_shared<cpu::pw::GthPseudopotential>(
+                            molrs::Element::H, "GTH-PBE-q1")},
+                        ecut_ry,
+                        k_mesh,
+                        xc};
 }
 
 } // namespace
 
 TEST(CudaPWGuards, DefaultXcIsPbe) {
-    cuda::pw::PW pw;
+    cuda::pw::PW pw{{std::make_shared<cpu::pw::GthPseudopotential>(
+                        molrs::Element::H, "GTH-PBE-q1")},
+                    /*ecut_ry=*/30.0,
+                    /*k_mesh=*/4};
     // The default deliberately matches cpu::pw::PW (PBE): identical user
     // code computes the same functional on both backends. PBE has a device
     // path, so the default is runnable — no throw to assert here.
-    EXPECT_EQ(pw.xc, cpu::scf::XCType::PBE);
+    EXPECT_EQ(pw.xc, cpu::xc::XCType::PBE);
 }
 
 TEST(CudaPWGuards, UnsupportedXcThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported();
-    // BLYP has no device kernel — only LSDA and PBE do. The gate must throw
+    // BLYP has no device kernel — LSDA and the PBE family do. The gate must throw
     // rather than silently compute a different functional.
-    pw.xc = cpu::scf::XCType::BLYP;
+    auto pw = make_supported(cpu::xc::XCType::BLYP);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
-TEST(CudaPWGuards, PbeFamilyVariantsThrow) {
+TEST(CudaPWGuards, PbeFamilyValidatesOtherSettingsBeforeDeviceWork) {
     auto frame = make_h_atom();
-    // PBEsol/revPBE/RPBE differ from PBE by μ/κ/β constants the device
-    // kernel hard-wires; accepting them would silently compute plain PBE.
-    for (const auto xc : {cpu::scf::XCType::PBEsol, cpu::scf::XCType::RevPBE,
-                          cpu::scf::XCType::RPBE}) {
-        auto pw = make_supported();
-        pw.xc = xc;
-        EXPECT_THROW(pw.run(frame), std::invalid_argument);
-    }
-}
-
-TEST(CudaPWGuards, SpinPolarizedWithPbesolThrows) {
-    // Collinear spin-GGA on device is plain PBE only; PBEsol/revPBE/RPBE
-    // hard-wire different μ/κ/β and must still throw under spin.
-    auto frame = make_h_atom();
-    auto pw = make_supported();
-    pw.xc = cpu::scf::XCType::PBEsol;
-    pw.spin_polarized = true;
-    pw.multiplicity = 2; // H: n_elec=1 → N↑=1, N↓=0
-    EXPECT_THROW(pw.run(frame), std::invalid_argument);
+    for (const auto xc : {cpu::xc::XCType::PBE, cpu::xc::XCType::PBEsol,
+                          cpu::xc::XCType::RevPBE, cpu::xc::XCType::RPBE})
+        for (const bool spin : {false, true}) {
+            auto pw = make_supported(xc);
+            pw.spin_polarized = spin;
+            pw.multiplicity = spin ? 2 : 1;
+            pw.tol = 0;
+            // Reach numerical validation without an SCF or device work.
+            try {
+                pw.run(frame);
+                FAIL() << "invalid tolerance accepted";
+            } catch (const std::invalid_argument& error) {
+                EXPECT_NE(std::string(error.what()).find("tol"),
+                          std::string::npos)
+                    << error.what();
+            }
+        }
 }
 
 TEST(CudaPWGuards, MultiplicityWithoutSpinThrows) {
@@ -102,7 +106,7 @@ TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
     auto pw = make_supported();
     pw.spin_polarized = true;
     pw.multiplicity = 2;
-    pw.smearing = cuda::pw::Smearing::fermi_dirac;
+    pw.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
@@ -110,7 +114,7 @@ TEST(CudaPWGuards, SpinSmearZeroDegaussThrows) {
 TEST(CudaPWGuards, SmearZeroDegaussThrows) {
     auto frame = make_h_atom();
     auto pw = make_supported();
-    pw.smearing = cuda::pw::Smearing::fermi_dirac;
+    pw.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     pw.degauss = 0.0;
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
@@ -124,17 +128,16 @@ TEST(CudaPWGuards, NonPositiveTolThrows) {
 
 TEST(CudaPWGuards, ZeroKMeshThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported();
     // generate_mp_mesh returns an empty grid for 0 without throwing, so an
     // ungated k_mesh = 0 reports a "converged" run with e_band == 0.
-    pw.k_mesh = 0;
+    auto pw = make_supported(cpu::xc::XCType::LSDA, /*ecut_ry=*/6.0,
+                             /*k_mesh=*/0);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
 TEST(CudaPWGuards, NonPositiveEcutThrows) {
     auto frame = make_h_atom();
-    auto pw = make_supported();
-    pw.ecut_ry = 0.0;
+    auto pw = make_supported(cpu::xc::XCType::LSDA, /*ecut_ry=*/0.0);
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
@@ -145,8 +148,42 @@ TEST(CudaPWGuards, ZeroPulayDepthThrows) {
     EXPECT_THROW(pw.run(frame), std::invalid_argument);
 }
 
+TEST(CudaPWGuards, EmptyPseudopotentialThrowsAtConstruction) {
+    EXPECT_THROW((cuda::pw::PW{{std::make_shared<cpu::pw::GthPseudopotential>(
+                                   molrs::Element::H, "")},
+                               6.0,
+                               1}),
+                 std::invalid_argument);
+    EXPECT_THROW(
+        (cuda::pw::PW{
+            {std::make_shared<cpu::pw::UpfPseudopotential>("")}, 6.0, 1}),
+        std::invalid_argument);
+}
+
 TEST(CudaPWGuards, FreshResultIsEmpty) {
-    cuda::pw::PW pw;
+    auto pw = make_supported();
     EXPECT_EQ(pw.last_result().iterations, 0);
     EXPECT_FALSE(pw.last_result().converged);
+}
+
+// Spin-smear stress is supported, but invalid thermal widths must still
+// fail before CUDA setup through both public entries.
+TEST(CudaPWGuards, SpinSmearStressRejectsInvalidWidthBeforeDeviceWork) {
+    auto frame = make_h_atom();
+    for (const auto xc : {cpu::xc::XCType::LSDA, cpu::xc::XCType::PBE}) {
+        auto pw = make_supported(xc);
+        pw.spin_polarized = true;
+        pw.multiplicity = 2;
+        for (const auto smear :
+             {::ATV::electronic::Smearing::fermi_dirac,
+              ::ATV::electronic::Smearing::gaussian,
+              ::ATV::electronic::Smearing::methfessel_paxton}) {
+            pw.smearing = smear;
+            pw.degauss = 0;
+            EXPECT_THROW(pw.stress(frame), std::invalid_argument);
+            EXPECT_THROW(pw.stress(frame), std::invalid_argument);
+        }
+        EXPECT_EQ(pw.last_result().iterations, 0);
+        EXPECT_FALSE(pw.last_result().converged);
+    }
 }

@@ -4,7 +4,7 @@
 ///        against externally pinned PySCF values, metric whitening
 ///        algebra, and the fitted J/K math on H2/STO-3G — all single
 ///        calls, NO converged SCF (the H2O/def2-TZVP end-to-end double
-///        gate lives in regressions/scf/h2o_ri_jk/).
+///        gate lives in regressions/scf/rhf/).
 ///
 /// Oracle: PySCF 2.14.0 (~/work/.x86_64/bin/python). Every pinned number
 /// below records the generating command in the adjacent comment.
@@ -100,7 +100,7 @@ struct Dummy {
 
 cpu::Frame single_atom_frame(int Z) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = Z;
+    f.span(kAtom_atomic_number)[0] = Z;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
     f.span(kAtom_z)[0] = 0.0;
@@ -111,7 +111,7 @@ cpu::Frame single_atom_frame(int Z) {
 cpu::Frame h2_frame(double bond_ang = 0.74) {
     cpu::Frame f(2);
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 1;
+        f.span(kAtom_atomic_number)[i] = 1;
         f.span(kAtom_x)[i] = 0.0;
         f.span(kAtom_y)[i] = 0.0;
     }
@@ -340,7 +340,8 @@ TEST(DensityFitting, MetricWhiteningIdentity) {
 //    path was silently substituted). ────────────────────────────────
 TEST(DensityFitting, FittedJKCloseToDenseH2) {
     cpu::Frame f = h2_frame();
-    internal::IntegralWorkspace pack{f, BasisSet::STO3G, 0, /*compute_eri=*/true};
+    internal::IntegralWorkspace pack{f, BasisSet::STO3G, 0,
+                                     /*compute_eri=*/true};
     internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
 
     // Hcore-guess density: P = 2 C_occ C_occᵀ, n_occ = 1.
@@ -399,6 +400,54 @@ TEST(DensityFitting, FittedJKCloseToDenseH2) {
             EXPECT_NEAR(K_half(i, j), K_fit(i, j), 1e-11)
                 << "k_fitted(C_occ) vs k_fitted_from_density(P) at (" << i
                 << "," << j << ")";
+}
+
+// ── Indefinite density: the signed single-pass level-3 exchange equals the
+//    literal fitted contraction K_il = Σ_P Σ_jk B^P_ij P_jk B^P_kl (water,
+//    def2-SVP: d shells, Cartesian engine AOs). ────────────────────────
+TEST(DensityFitting, SignedExchangeMatchesLiteralFittedContraction) {
+    cpu::Frame f(3);
+    const int z[] = {8, 1, 1};
+    const double xyz[][3] = {
+        {0, 0, 0.1173}, {0, 0.7572, -0.4692}, {0, -0.7572, -0.4692}};
+    for (int i = 0; i < 3; ++i) {
+        f.span(kAtom_atomic_number)[i] = z[i];
+        f.span(kAtom_x)[i] = xyz[i][0];
+        f.span(kAtom_y)[i] = xyz[i][1];
+        f.span(kAtom_z)[i] = xyz[i][2];
+    }
+    f.box = cpu::Box::cubic(30);
+    internal::IntegralWorkspace pack{f, BasisSet::Def2SVP};
+    internal::DensityFitting df(pack.shells, pack.atoms, AuxBasis::Def2JKFIT);
+    const int n = df.n_ao();
+    RealMatrix P = xt::zeros<double>({std::size_t(n), std::size_t(n)});
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            P(i, j) = std::cos(0.7 * i + 0.3 * j) + std::cos(0.7 * j + 0.3 * i);
+    const auto& B = df.b_tensor();
+    RealMatrix Kref = xt::zeros<double>({std::size_t(n), std::size_t(n)});
+    std::vector<double> T(static_cast<std::size_t>(n) * n);
+    for (int a = 0; a < df.n_aux(); ++a) {
+        for (int i = 0; i < n; ++i)
+            for (int k = 0; k < n; ++k) {
+                double v = 0.0;
+                for (int j = 0; j < n; ++j)
+                    v += B(i * n + j, a) * P(j, k);
+                T[static_cast<std::size_t>(i) * n + k] = v;
+            }
+        for (int i = 0; i < n; ++i)
+            for (int l = 0; l < n; ++l) {
+                double v = 0.0;
+                for (int k = 0; k < n; ++k)
+                    v += T[static_cast<std::size_t>(i) * n + k]
+                         * B(k * n + l, a);
+                Kref(i, l) += v;
+            }
+    }
+    const RealMatrix K = df.k_fitted_from_density(P);
+    for (int i = 0; i < n; ++i)
+        for (int j = 0; j < n; ++j)
+            EXPECT_NEAR(K(i, j), Kref(i, j), 1e-10) << i << "," << j;
 }
 
 // ── Near-singular auxiliary metric throws (two H at 1e-7 Å duplicate

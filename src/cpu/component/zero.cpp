@@ -12,6 +12,8 @@ namespace cpu {
 // ── ZeroForces ───────────────────────────────────────────────────
 
 void ZeroForces::launch(const cpu::LaunchContext& ctx) {
+    if (!ctx.forces_requested)
+        return;
     auto& f = ctx.frame;
     // Zero only the OWNED rows [0, n_local). In multi-rank the backing store
     // is sized to the loaded (global) atom count, so zeroing [0, atoms.size())
@@ -28,7 +30,9 @@ void ZeroForces::launch(const cpu::LaunchContext& ctx) {
     AccReal* __restrict sp_fx = f.span(kAtom_fx);
     AccReal* __restrict sp_fy = f.span(kAtom_fy);
     AccReal* __restrict sp_fz = f.span(kAtom_fz);
-#pragma omp parallel for schedule(static)
+    // A zero sweep is a few ns per row; only a large frame repays the team.
+    constexpr int kParallelMinRows = 32768;
+#pragma omp parallel for schedule(static) if (n >= kParallelMinRows)
     for (int i = 0; i < n; ++i) {
         sp_fx[i] = 0;
         sp_fy[i] = 0;
@@ -66,6 +70,8 @@ void ZeroEnergy::launch(const cpu::LaunchContext& ctx) {
 // ── ZeroStress ───────────────────────────────────────────────────
 
 void ZeroStress::launch(const cpu::LaunchContext& ctx) {
+    if (!ctx.stress_requested)
+        return;
     auto& f = ctx.frame;
     for (int k = 0; k < 6; ++k)
         f.meta.get(kStress)[k] = 0;

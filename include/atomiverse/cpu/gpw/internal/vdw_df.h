@@ -19,6 +19,7 @@
 /// flux) to the KS effective potential; forces reuse that V_nl in veff.
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "atomiverse/cpu/gpw/internal/collocate.h"
@@ -62,12 +63,12 @@ void vdw_df_q0(const std::vector<double>& rho, const std::vector<double>& sigma,
 ///
 /// @param grid       Uniform orthorhombic cell (Bohr).
 /// @param rho        Total density on the grid, length grid.npts().
-/// @param sigma      |∇ρ|² on the grid, same length.
+/// @param grad_rho   Physical Cartesian ∇ρ on the grid [e/Bohr⁴].
 /// @param potential  If true, fill `VdwDfResult::v_r` (SC KS potential).
 /// @return E_c^{nl} [Hartree] and optional V_nl.
 VdwDfResult vdw_df_drsll(const UniformGrid& grid,
                          const std::vector<double>& rho,
-                         const std::vector<double>& sigma,
+                         const std::array<std::vector<double>, 3>& grad_rho,
                          bool potential = false);
 
 /// @brief Nonlocal vdW-DF2 (LMKLL / DF2) energy (+ optional potential).
@@ -76,12 +77,12 @@ VdwDfResult vdw_df_drsll(const UniformGrid& grid,
 ///
 /// @param grid       Uniform orthorhombic cell (Bohr).
 /// @param rho        Total density on the grid, length grid.npts().
-/// @param sigma      |∇ρ|² on the grid, same length.
+/// @param grad_rho   Physical Cartesian ∇ρ on the grid [e/Bohr⁴].
 /// @param potential  If true, fill `VdwDfResult::v_r`.
 /// @return E_c^{nl} [Hartree] and optional V_nl.
 VdwDfResult vdw_df_lmkll(const UniformGrid& grid,
                          const std::vector<double>& rho,
-                         const std::vector<double>& sigma,
+                         const std::array<std::vector<double>, 3>& grad_rho,
                          bool potential = false);
 
 /// @brief Result of a nonlocal vdW evaluation on a uniform grid.

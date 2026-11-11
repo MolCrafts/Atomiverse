@@ -34,7 +34,7 @@ CUDA workflows use an analogous device frame; transfers are explicit
 A component does **one** thing at a **typed stage** of the plan:
 
 - force / energy sources: `PairLJCut`, `cpu::scf::RHF` (and the other
-  concrete Gaussian methods), `PWEvaluator`, …
+  concrete Gaussian methods), `cpu::pw::PW`, …
 - dynamics: `VelocityVerlet`, thermostats, barostats
 - optimizers / movers: `LBFGS`, `TranslateMove`
 - observers / recorders: RDF, Thermo, XYZ
@@ -46,7 +46,7 @@ Registration is ownership-explicit:
 
 ```cpp
 sim.set_evaluator(cpu::PairLJCut{eps, sigma, rcut});  // owns a copy
-sim.on(md::Phase::force).add(cpu::scf::RHF{});         // owns a copy
+sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});         // owns a copy
 sim.on(md::Phase::force).add_ref(my_component);       // borrows
 ```
 
@@ -91,9 +91,9 @@ sim.set_evaluator(cpu::PairLJCut{eps, sigma, rcut});
 sim.set_evaluator(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 ```
 
-A few methods are reached through a thin evaluator component rather than
-directly — `cpu::gpw::GPWEvaluator` is the Frame-shaped door to `GpwDft`. See
-[Methods](methods.md) for which is which.
+PW and Born–Oppenheimer GPW also mount their concrete methods directly.
+`cpu::gpw::GPWEvaluator` remains for electronic propagators and callers
+awaiting migration. See [Methods](methods.md) for the current binding contract.
 
 ## When the loop stops
 

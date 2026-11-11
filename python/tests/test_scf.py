@@ -15,19 +15,19 @@ PySCF, reads a file, or touches the network.
 ===================================  =========================================
 Pinned quantity                      Source (hard-coded golden)
 ===================================  =========================================
-E_RHF/STO-3G(H₂O) = −74.961754 Ha    regressions/scf/h2o_rhf_sto3g/REFERENCE.md
+E_RHF/STO-3G(H₂O) = −74.961754 Ha    regressions/scf/rhf/REFERENCE.md
                                      (LibreTexts §28.2; window 1e-3 Ha)
-E_UHF/6-31G*(N₂⁺) =                  regressions/scf/n2_ionization/REFERENCE.md
+E_UHF/6-31G*(N₂⁺) =                  regressions/scf/uhf/REFERENCE.md
   −108.365971102534 Ha               (PySCF 2.14.0, conv_tol 1e-12)
-E_B3LYP/def2-SVP(H₂O) =              regressions/scf/b3lyp-fused-jk-h2o/
+E_B3LYP/def2-SVP(H₂O) =              regressions/scf/rks/
   −76.35814183099154 Ha              REFERENCE.md (PySCF 2.14.0; window 1e-6 Ha)
-∂E/∂z(O) = −6.142775911808e-02       regressions/scf/h2o_rhf_sto3g_grad/
+∂E/∂z(O) = −6.142775911808e-02       regressions/scf/rhf/
   Ha/Bohr                            REFERENCE.md:34 (PySCF 2.14.0 analytic)
 ===================================  =========================================
 
 Sign convention (verified, not assumed): Atomiverse publishes **forces**
 F = −∂E/∂R in eV/Å — see
-``regressions/scf/h2o_rhf_sto3g_grad/reg_h2o_rhf_sto3g_grad.cpp:69-73``, which
+``regressions/scf/rhf/h2o_rhf_sto3g_grad.cpp:69-73``, which
 negates the reported force to recover the PySCF gradient. The pinned oxygen
 gradient of −6.142775911808e-02 Ha/Bohr is therefore a **positive** z force of
 +3.158742374 eV/Å.
@@ -46,13 +46,12 @@ before the tests run. Nothing here needs ``self`` — the run is handed to the
 tests as a return value, never as an instance attribute.
 
 Capability gate: the SCF methods exist only on an extension built with
-``ATV_BUILD_HF=ON`` (same contract as PW), so the compute classes are guarded
-by ``_HAS_HF``. ``atomiverse.scf`` itself imports on every build.
+``ATV_BUILD_HF=ON``, so the compute classes are guarded by ``_HAS_HF``; on
+an extension without it ``atomiverse.scf`` does not import.
 """
 
 from __future__ import annotations
 
-import importlib
 import math
 
 import numpy as np
@@ -79,22 +78,22 @@ _HARTREE_PER_BOHR_IN_EV_PER_ANGSTROM: float = _HARTREE_IN_EV * _ANGSTROM_IN_BOHR
 
 # ── Hard-coded goldens + their stated windows ───────────────────────
 
-# regressions/scf/h2o_rhf_sto3g/REFERENCE.md (LibreTexts §28.2, PySCF-checked).
+# regressions/scf/rhf/REFERENCE.md (LibreTexts §28.2, PySCF-checked).
 _E_RHF_H2O_STO3G_HA: float = -74.961754
 _TOL_RHF_H2O_HA: float = 1.0e-3  # the regression's own milli-Hartree window
 
-# regressions/scf/n2_ionization/REFERENCE.md (PySCF 2.14.0, conv_tol 1e-12).
+# regressions/scf/uhf/REFERENCE.md (PySCF 2.14.0, conv_tol 1e-12).
 _E_UHF_N2_CATION_HA: float = -108.365971102534
 # The C++ case grades the DERIVED ionization energies at ±1e-3 eV, i.e.
 # 1e-3 / 27.211386245988 = 3.7e-5 Ha on the underlying total energies. 1e-4 Ha
 # is a deliberately looser band on the raw total energy of the cation alone.
 _TOL_UHF_N2_HA: float = 1.0e-4
 
-# regressions/scf/b3lyp-fused-jk-h2o/REFERENCE.md (PySCF 2.14.0, ac-006).
+# regressions/scf/rks/REFERENCE.md (PySCF 2.14.0, ac-006).
 _E_RKS_B3LYP_H2O_DEF2SVP_HA: float = -76.35814183099154
 _TOL_RKS_B3LYP_HA: float = 1.0e-6  # the regression's own window
 
-# regressions/scf/h2o_rhf_sto3g_grad/REFERENCE.md:34 — PySCF analytic dE/dz on
+# regressions/scf/rhf/REFERENCE.md:34 — PySCF analytic dE/dz on
 # oxygen [Ha/Bohr]; F = −∂E/∂R, so the force is positive along +z.
 _GRAD_O_Z_HA_PER_BOHR: float = -6.142775911808e-02
 _FORCE_O_Z_EV_PER_ANGSTROM: float = (
@@ -105,7 +104,7 @@ _TOL_FORCE_EV_PER_ANGSTROM: float = 1.0e-4  # numerical-force tolerance
 
 # ── Geometries ──────────────────────────────────────────────────────
 
-# regressions/scf/h2o_rhf_sto3g/reg_h2o_rhf_sto3g.cpp:22-26 — derived from the
+# regressions/scf/rhf/h2o_rhf_sto3g.cpp:22-26 — derived from the
 # citation geometry with the same formulas (R = 0.95 Å, ∠HOH = 104.5°), NOT
 # from the rounded table in that case's REFERENCE.md.
 _R_OH_ANGSTROM: float = 0.95
@@ -181,19 +180,6 @@ def n2_frame() -> "molpy.Frame":
 # ── The module exists on every build (capability in __all__) ────────
 
 
-def test_scf_module_importable() -> None:
-    """``atomiverse.scf`` imports on every build (PW-style capability
-    module): the wheel reflects what was compiled instead of vanishing."""
-    importlib.import_module("atomiverse.scf")
-
-
-def test_scf_module_exports_track_the_build() -> None:
-    """The four method names are exported iff the extension carries HF."""
-    scf = importlib.import_module("atomiverse.scf")
-    for name in ("RHF", "UHF", "RKS", "UKS"):
-        assert (name in scf.__all__) is _HAS_HF, name
-
-
 # ── RHF: the flagship STO-3G water pin ──────────────────────────────
 
 
@@ -204,11 +190,12 @@ class TestRHF:
     def rhf_h2o() -> tuple["molpy.Frame", "RHF"]:
         """One RHF/STO-3G water single point, shared read-only below.
 
-        Constructor arguments only (iron law 3): ``RHF()`` carries the
-        documented defaults — STO-3G, charge 0, tol 1e-9 Ha, 100 iterations.
+        Constructor arguments only (iron law 3): ``RHF(basis="STO-3G")``
+        carries the documented defaults — charge 0, tol 1e-9 Ha, 100
+        iterations.
         """
         frame = _h2o_libretexts_frame()
-        method = RHF()
+        method = RHF(basis="STO-3G")
         method.run(frame)
         return frame, method
 
@@ -227,7 +214,7 @@ class TestRHF:
     ) -> None:
         """``run()`` writes the total energy [eV] to ``frame.meta["energy"]``;
         converted to Hartree it reproduces the −74.961754 Ha pin of
-        regressions/scf/h2o_rhf_sto3g/REFERENCE.md within its 1e-3 Ha window."""
+        regressions/scf/rhf/REFERENCE.md within its 1e-3 Ha window."""
         frame, _ = rhf_h2o
         energy_ev = frame.meta["energy"]
         assert isinstance(energy_ev, float)
@@ -262,9 +249,11 @@ class TestUHF:
     @pytest.fixture(scope="class")
     @staticmethod
     def uhf_n2_cation() -> "UHF":
-        """N₂⁺ doublet: multiplicity resolves α/β from N_e = ΣZ − charge."""
+        """N₂⁺ doublet: N_e = ΣZ − charge = 13 and M = 2 give α/β = 7/6."""
         frame = _n2_frame()
-        method = UHF(basis="6-31G*", charge=1, multiplicity=2, tol=1e-12, max_iter=400)
+        method = UHF(
+            basis="6-31G*", n_alpha=7, n_beta=6, charge=1, tol=1e-12, max_iter=400
+        )
         method.run(frame)
         return method
 
@@ -273,7 +262,7 @@ class TestUHF:
 
     def test_energy_matches_pyscf_pin(self, uhf_n2_cation: "UHF") -> None:
         """E_UHF(N₂⁺) reproduces the −108.365971102534 Ha PySCF 2.14.0 pin of
-        regressions/scf/n2_ionization/REFERENCE.md within 1e-4 Ha (that case
+        regressions/scf/uhf/REFERENCE.md within 1e-4 Ha (that case
         grades the derived IPs at ±1e-3 eV ≈ 3.7e-5 Ha)."""
         assert uhf_n2_cation.energy() == pytest.approx(
             _E_UHF_N2_CATION_HA, abs=_TOL_UHF_N2_HA
@@ -290,7 +279,7 @@ class TestRKS:
     def rks_b3lyp_h2o() -> "RKS":
         """B3LYP/def2-SVP water — the spherical-d hybrid path."""
         frame = _h2o_pyscf_frame()
-        method = RKS(functional="B3LYP", basis="def2-SVP", tol=1e-10, max_iter=200)
+        method = RKS(basis="def2-SVP", xc="B3LYP", tol=1e-10, max_iter=200)
         method.run(frame)
         return method
 
@@ -299,7 +288,7 @@ class TestRKS:
 
     def test_energy_matches_pyscf_pin(self, rks_b3lyp_h2o: "RKS") -> None:
         """E_B3LYP/def2-SVP(H₂O) reproduces the −76.35814183099154 Ha PySCF
-        2.14.0 pin of regressions/scf/b3lyp-fused-jk-h2o/REFERENCE.md within
+        2.14.0 pin of regressions/scf/rks/REFERENCE.md within
         that case's own 1e-6 Ha window."""
         assert rks_b3lyp_h2o.energy() == pytest.approx(
             _E_RKS_B3LYP_H2O_DEF2SVP_HA, abs=_TOL_RKS_B3LYP_HA
@@ -317,7 +306,8 @@ class TestUKS:
         """Triplet O₂ / LSDA / STO-3G. Smoke only — no pinned oracle for
         this combination exists in-tree, so nothing numeric is asserted."""
         frame = _o2_frame()
-        method = UKS(functional="LSDA", charge=0, multiplicity=3)
+        # N_e = 16, M = 3 ⇒ α/β = 9/7.
+        method = UKS(basis="STO-3G", n_alpha=9, n_beta=7, xc="LSDA", charge=0)
         method.run(frame)
         return frame, method
 
@@ -353,12 +343,12 @@ class TestScfForces:
     def rhf_forces_h2o() -> tuple["molpy.Frame", np.ndarray]:
         """RHF/STO-3G analytic forces at the pinned-gradient geometry.
 
-        tol/max_iter mirror regressions/scf/h2o_rhf_sto3g_grad
+        tol/max_iter mirror regressions/scf/rhf
         (``RHF{STO3G, 0, 1e-12, 200}``) so the comparison is against the pin
         at the settings the pin was taken at.
         """
         frame = _h2o_pyscf_frame()
-        method = RHF(tol=1e-12, max_iter=200)
+        method = RHF(basis="STO-3G", tol=1e-12, max_iter=200)
         forces = method.forces(frame)
         return frame, np.asarray(forces, dtype=np.float64)
 
@@ -393,7 +383,7 @@ class TestScfForces:
         self, rhf_forces_h2o: tuple["molpy.Frame", np.ndarray]
     ) -> None:
         """F_z(O) = −∂E/∂z(O) at the PySCF pin: −(−6.142775911808e-02 Ha/Bohr)
-        = +3.158742374 eV/Å (regressions/scf/h2o_rhf_sto3g_grad/REFERENCE.md:34;
+        = +3.158742374 eV/Å (regressions/scf/rhf/REFERENCE.md:34;
         sign convention read off reg_h2o_rhf_sto3g_grad.cpp:69-73)."""
         _, forces = rhf_forces_h2o
         assert forces[0, 2] == pytest.approx(
@@ -426,12 +416,25 @@ class TestScfFailsLoud:
         """An unsupported functional name fails at construction and lists the
         supported functionals."""
         with pytest.raises(ValueError, match="B3LYP"):
-            RKS(functional="M06-2X")
+            RKS(basis="STO-3G", xc="M06-2X")
 
-    def test_bad_multiplicity_raises_at_run(self, n2_frame: "molpy.Frame") -> None:
-        """A multiplicity of the wrong parity for the electron count is only
+    def test_bad_occupation_raises_at_run(self, n2_frame: "molpy.Frame") -> None:
+        """An α/β split that does not sum to the electron count is only
         detectable once N_e = ΣZ − charge is known, so it fails at ``run``:
-        neutral N₂ has 14 electrons and cannot be a doublet."""
-        method = UHF(multiplicity=2)
-        with pytest.raises(ValueError, match="(?i)multiplicit"):
+        neutral N₂ has 14 electrons, not 7 + 6."""
+        method = UHF(basis="STO-3G", n_alpha=7, n_beta=6)
+        with pytest.raises(ValueError, match="n_alpha"):
             method.run(n2_frame)
+
+    def test_identity_is_read_only(self) -> None:
+        """Identity fields are fixed by the constructor: readable, never
+        assignable (knobs are the only post-construction settings)."""
+        method = UKS(basis="6-31G*", n_alpha=5, n_beta=4, xc="PBE", charge=1)
+        assert method.basis == "6-31G*"
+        assert method.charge == 1
+        assert (method.n_alpha, method.n_beta) == (5, 4)
+        assert method.xc == "PBE"
+        with pytest.raises(AttributeError):
+            method.basis = "STO-3G"
+        with pytest.raises(AttributeError):
+            method.n_alpha = 6

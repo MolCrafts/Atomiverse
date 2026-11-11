@@ -142,8 +142,7 @@ TEST(PathZeroing, SecondBandIterationRepeatsTheFirstForceAtFixedGeometry) {
 
     ASSERT_EQ(iters, kIterations)
         << "no criterion should have stopped an unconverged band";
-    ASSERT_EQ(probe.fx.size(),
-              static_cast<std::size_t>(kIterations * kImages));
+    ASSERT_EQ(probe.fx.size(), static_cast<std::size_t>(kIterations * kImages));
 
     // The geometry never moved, so iteration 1's force IS iteration 0's force.
     for (int i = 0; i < kImages; ++i) {

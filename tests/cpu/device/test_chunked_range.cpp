@@ -59,8 +59,8 @@ TEST(ChunkedRange, ChunkCountNeverExceedsRangeLength) {
 // that consulted the thread count would reintroduce the very defect the type
 // exists to remove.
 TEST(ChunkedRange, BlockReduceChunksFallsWithBlockSize) {
-    EXPECT_EQ(block_reduce_chunks(1024), 64);       // tiny block: full width
-    EXPECT_EQ(block_reduce_chunks(8u << 20), 8);    // 8 MiB block: 64 MiB / 8
-    EXPECT_EQ(block_reduce_chunks(128u << 20), 1);  // over budget: never 0
-    EXPECT_EQ(block_reduce_chunks(0), 64);          // empty block: full width
+    EXPECT_EQ(block_reduce_chunks(1024), 64);      // tiny block: full width
+    EXPECT_EQ(block_reduce_chunks(8u << 20), 8);   // 8 MiB block: 64 MiB / 8
+    EXPECT_EQ(block_reduce_chunks(128u << 20), 1); // over budget: never 0
+    EXPECT_EQ(block_reduce_chunks(0), 64);         // empty block: full width
 }

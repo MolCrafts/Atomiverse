@@ -14,23 +14,18 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-ROKS::ROKS() {
+ROKS::ROKS(BasisSet basis_in, int na, int nb, xc::XCType xc_in, int charge_in)
+    : MeanFieldMethod<ROKS>(basis_in, charge_in), n_alpha(na), n_beta(nb),
+      xc(xc_in) {
     spin_ = SpinType::RestrictedOpen;
     method_ = MeanFieldType::KS;
-    xc_type_ = XCType::LSDA;
-    xc = XCType::LSDA;
+    xc_type_ = xc_in;
     init_guess = InitGuess::MINAO;
     damping_factor = 0.5;
     grid_level = GridLevel::MatchPySCF;
     diis_max_vectors = 6;
     diis_start_iter = 1;
     tol = 1e-8;
-}
-ROKS::ROKS(int na, int nb, XCType xc_in) : ROKS() {
-    n_alpha = na;
-    n_beta = nb;
-    xc = xc_in;
-    xc_type_ = xc_in;
 }
 void ROKS::resolve_occupation(int) {
     if (n_alpha < n_beta)

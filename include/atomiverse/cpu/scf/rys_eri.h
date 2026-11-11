@@ -145,6 +145,16 @@ void rys_eri_block_deriv(const ShellBlock& A, const ShellBlock& B,
                          const ShellBlock& C, const ShellBlock& D,
                          int deriv_center, double* out_axes);
 
+/// @brief Analytic nuclear-center derivative of the erf-attenuated ERI.
+/// Uses the same angular-momentum raising/lowering recurrence as the bare
+/// derivative, with the attenuated Rys parameter used by rys_eri_erf_block.
+/// Parameters, axis-split layout and accumulation semantics match
+/// rys_eri_block_deriv; omega is finite and >= 0 in inverse Bohr. As for
+/// rys_eri_erf_block, zero selects the bare Coulomb operator.
+void rys_eri_erf_block_deriv(const ShellBlock& A, const ShellBlock& B,
+                             const ShellBlock& C, const ShellBlock& D,
+                             int deriv_center, double omega, double* out_axes);
+
 } // namespace native
 } // namespace scf
 } // namespace cpu

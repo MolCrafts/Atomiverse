@@ -2,30 +2,38 @@
 /// @brief Typed TaskSpec registration replay onto MD/Evaluate/Minimize.
 
 #include "atomiverse/cpu/task/task_materializer.h"
+#include <memory>
 
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
 
+#ifdef ATV_HAS_MD
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
+#include "atomiverse/cpu/dynamics/fix_efield.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#endif
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #endif
+#ifdef ATV_HAS_MINIMIZER
 #include "atomiverse/cpu/minimize/cg.h"
 #include "atomiverse/cpu/minimize/lbfgs.h"
+#endif
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #ifdef ATV_HAS_PW
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 #endif
+#include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
@@ -43,16 +51,24 @@
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
 #include "atomiverse/cpu/record/thermo.h"
 #ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/mrec_recorder.h"
+#endif
+#ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
 #endif
-#include "atomiverse/cpu/semiempirical/am1_evaluator.h"
+#ifdef ATV_HAS_SEMIEMPIRICAL
+#include "atomiverse/cpu/semiempirical/am1_solver.h"
+#endif
+#ifdef ATV_HAS_MINIMIZER
 #include "atomiverse/cpu/task/internal/minimize_builders.h"
+#endif
 #include "atomiverse/cpu/task/internal/potential_builders.h"
 
 namespace ATV::cpu::task {
 namespace {
 
-#ifndef ATV_HAS_KSPACE
+// Only the MD replay names it.
+#if defined(ATV_HAS_MD) && !defined(ATV_HAS_KSPACE)
 /// @brief Reject a `KSpacePmeParams` entry in a build without the PME solver.
 ///
 /// PME is smooth Particle-Mesh Ewald, the reciprocal-space half of the
@@ -73,10 +89,11 @@ namespace {
 }
 #endif
 
-#ifndef ATV_HAS_IO
+// Only the MD replay names it.
+#if defined(ATV_HAS_MD) && !defined(ATV_HAS_IO)
 /// @brief Reject an `XyzRecorderParams` entry in a build without the writer.
 ///
-/// `cpu::XyzRecorder` writes through molrs and is therefore behind the
+/// `cpu::XyzRecorder` writes through molpy and is therefore behind the
 /// `ATV_BUILD_IO` build flag, while the wire mirror `XyzRecorderParams` and
 /// its component ID are compiled unconditionally. A payload naming the
 /// recorder therefore still *decodes* on an IO-less build and has to be
@@ -93,13 +110,33 @@ namespace {
 }
 #endif
 
-#ifndef ATV_HAS_PW
-/// @brief Reject a `PwEvaluatorParams` entry in a build without the solver.
+#ifdef ATV_HAS_MD
+/// @brief Build the CPU `*.mrec` recorder from its wire mirror, or refuse it
+///        on a build without the trajectory writer (ATV_BUILD_IO, the
+///        `throw_io_not_built` arrangement: decodable everywhere, refused
+///        where it would be constructed — never a silent trajectory-less run).
+/// @throws std::runtime_error naming the flags when the writer is absent.
+#ifdef ATV_HAS_IO
+cpu::MrecRecorder mrec_recorder(const MrecRecorderParams& p) {
+    return cpu::MrecRecorder{p.path, p.every, p.flush_every, p.durable};
+}
+#else
+[[noreturn]] void throw_mrec_not_built() {
+    throw std::runtime_error(
+        "MrecRecorder requires ATV_BUILD_IO=ON (trajectory writer not "
+        "compiled in)");
+}
+#endif
+#endif
+
+// Only the MD replay names it.
+#if defined(ATV_HAS_MD) && !defined(ATV_HAS_PW)
+/// @brief Reject a `PWParams` entry in a build without the solver.
 ///
 /// `cpu::pw::PW` is plane-wave density-functional theory — the electronic
 /// structure is expanded in plane waves, which needs FFTW3, so the whole
 /// domain sits behind the `ATV_BUILD_PW` build flag while the wire mirror
-/// `PwEvaluatorParams` and its component ID are compiled unconditionally. A
+/// `PWParams` and its component ID are compiled unconditionally. A
 /// payload naming PW therefore still *decodes* on a PW-less build and has to
 /// be refused here, at the point where the component would be constructed:
 /// the alternative is an MD run whose only force source silently vanished.
@@ -109,11 +146,66 @@ namespace {
 ///
 /// @throws std::runtime_error Always, naming the flag to rebuild with.
 [[noreturn]] void throw_pw_not_built() {
-    throw std::runtime_error("PWEvaluator requires ATV_BUILD_PW=ON "
+    throw std::runtime_error("PW requires ATV_BUILD_PW=ON "
                              "(plane-wave solver not compiled in)");
 }
 #endif
 
+#ifndef ATV_HAS_SEMIEMPIRICAL
+/// @brief Reject an `AM1Params` entry, or a `SinglePointTask`, in a
+///        build without the semiempirical domain.
+///
+/// `cpu::semiempirical::AM1` sits behind the `ATV_BUILD_SEMIEMPIRICAL` build
+/// flag, while the wire mirror `AM1Params` is compiled
+/// unconditionally. A payload naming AM1 therefore still *decodes* on an
+/// SE-less build and has to be refused here, at the point where the
+/// component would be constructed. Every AM1 home — explicit binding,
+/// categorical setter, single point — hits this one thrower.
+///
+/// @throws std::runtime_error Always, naming the flag to rebuild with.
+[[noreturn]] void throw_semiempirical_not_built() {
+    throw std::runtime_error("AM1 requires ATV_BUILD_SEMIEMPIRICAL=ON "
+                             "(semiempirical domain not compiled in)");
+}
+#endif
+
+#ifndef ATV_HAS_MD
+/// @brief Reject an `MDTask` in a build without the MD domain.
+///
+/// `TaskSpec` and its wire codec are compiled unconditionally, so an MD
+/// payload still *decodes* on an MD-less build and has to be refused where
+/// the driver would be constructed.
+///
+/// @throws std::runtime_error Always, naming the flag to rebuild with.
+[[noreturn]] void throw_md_not_built() {
+    throw std::runtime_error("MDTask requires ATV_BUILD_MD=ON "
+                             "(molecular dynamics not compiled in)");
+}
+#endif
+
+#ifndef ATV_HAS_EVALUATE
+/// @brief Reject a single-point task when the Evaluate domain is disabled.
+/// @throws std::runtime_error Always, naming the required build flag.
+[[noreturn]] void throw_evaluate_not_built() {
+    throw std::runtime_error("SinglePointTask requires ATV_BUILD_EVALUATE=ON "
+                             "(single-point evaluation not compiled in)");
+}
+#endif
+
+#ifndef ATV_HAS_MINIMIZER
+/// @brief Reject a `MinimizeTask` in a build without the minimizer domain.
+///
+/// Same shape as `throw_md_not_built`: the payload decodes, the driver and
+/// its optimizers were compiled out.
+///
+/// @throws std::runtime_error Always, naming the flag to rebuild with.
+[[noreturn]] void throw_minimizer_not_built() {
+    throw std::runtime_error("MinimizeTask requires ATV_BUILD_MINIMIZER=ON "
+                             "(geometry optimization not compiled in)");
+}
+#endif
+
+#ifdef ATV_HAS_MD
 /// @brief Build a `FixLangevin` with its temperature-ramp span installed.
 ///
 /// A *temperature ramp* moves the thermostat setpoint linearly from
@@ -161,79 +253,78 @@ cpu::md::NoseHooverNPT ramped_nose_hoover_npt(const NoseHooverNptParams& p,
     return nh;
 }
 
-/// @brief Build an `AM1Evaluator` that computes nuclear forces.
+/// @brief Build the `AM1` method an `AM1Params` payload describes.
 ///
-/// The same `AM1EvaluatorParams` payload serves a `SinglePointTask`, where the
-/// caller reads back energy and Mulliken charges, and an `MDTask`, where the
-/// evaluator is a *force* source — Born-Oppenheimer molecular dynamics, one
-/// SCF solve per step with the nuclei moving on the resulting energy surface.
-/// Forces are the point of the MD home, so the flag is spelled out here
-/// rather than inherited from the component default: were that default to
-/// flip, an MD run would keep integrating a frame the SCF never pushed on —
-/// silently, since a force-free evaluator still publishes a plausible
-/// energy.
-///
-/// Both replay paths (explicit binding and categorical setter) go through
-/// this one builder, so neither can drift into registering a gradient-less
-/// AM1 behind the other's back.
+/// The same payload serves a `SinglePointTask`, where the caller reads back
+/// energy and Mulliken charges, and an `MDTask`, where the method is a force
+/// source — Born-Oppenheimer molecular dynamics, one SCF solve per step.
+/// Mounted as a nested node, the method computes forces whenever the phase
+/// requests them; both replay paths (explicit binding and categorical setter)
+/// go through this one builder.
 ///
 /// @param p Typed AM1 params (charge [e], multiplicity, SCF iteration cap,
 ///          density residual tolerance, energy tolerance [eV]).
-/// @return Evaluator with gradients enabled, ready for either registration
-///         path.
-cpu::semiempirical::AM1Evaluator gradient_am1(const AM1EvaluatorParams& p) {
-    cpu::semiempirical::AM1Evaluator evaluator{
-        p.charge, p.multiplicity, p.max_iter, p.density_tol, p.energy_tol};
-    evaluator.with_gradient(true);
-    return evaluator;
+/// @return The method, ready to mount.
+#ifdef ATV_HAS_SEMIEMPIRICAL
+cpu::semiempirical::AM1 am1_method(const AM1Params& p) {
+    return cpu::semiempirical::AM1{p.charge, p.multiplicity, p.max_iter,
+                                   p.density_tol, p.energy_tol};
 }
+#endif
 
 #ifdef ATV_HAS_PW
-/// @brief Build a `PWEvaluator` that computes nuclear forces.
+/// @brief Build the `PW` method a `PWParams` payload describes.
 ///
-/// Plane-wave Born-Oppenheimer dynamics: the electronic structure is
-/// re-converged at every geometry the nuclei reach, and the ionic forces are
-/// analytic (local Hellmann-Feynman + Ewald + Kleinman-Bylander) at the
-/// converged density rather than differenced from energies. A force-producing
-/// step costs two self-consistent-field solves, not one — the energy solve
-/// (`PW::run`), then the force path's own (`pw_forces_analytic`), which is
-/// what publishes the forces.
+/// Plane-wave Born-Oppenheimer dynamics: mounted as a nested node, the method
+/// re-converges the electrons at every geometry and accumulates the analytic
+/// ionic forces (local Hellmann-Feynman + Ewald + Kleinman-Bylander) from that
+/// one SCF whenever the phase requests them.
 ///
-/// Gradients are spelled out here rather than inherited from the component
-/// default (`false`) for the same reason as `gradient_am1`: a force-free
-/// evaluator still publishes a plausible energy, so the MD would integrate a
-/// frame nothing ever pushed on.
-///
-/// The fifteen members are assigned in the params' DECLARATION order — the
-/// order the codec writes and a hand-built twin spells — so a dropped or
-/// swapped field is a visible diff rather than a silent C++ default. The two
-/// enum mirrors are cast back from their wire integers here, the one place
-/// that knows both the flag-gated enums and the flagless wire struct.
+/// Identity fields go to the constructor; the knobs are assigned in the
+/// params' declaration order, so a dropped or swapped field is a visible diff
+/// rather than a silent C++ default. The two enum mirrors are cast back from
+/// their wire integers here, the one place that knows both the flag-gated
+/// enums and the flagless wire struct.
 ///
 /// @param p Typed plane-wave params (cutoff [Ry], k-mesh, SCF tolerance and
 ///          cap, mixing, functional, spin, smearing [Ry]).
-/// @return Evaluator owning a freshly configured solver, gradients enabled,
-///         ready for either registration path.
-cpu::pw::PWEvaluator gradient_pw(const PwEvaluatorParams& p) {
-    cpu::pw::PW pw;
-    pw.upf_path = p.upf_path;
-    pw.gth_name = p.gth_name;
-    pw.ecut_ry = p.ecut_ry;
-    pw.k_mesh = p.k_mesh;
+/// @return The configured method, ready for either registration path.
+cpu::pw::PW pw_method(const PWParams& p) {
+    std::vector<std::shared_ptr<const electronic::NormConservingPotential>>
+        potentials;
+    potentials.reserve(p.potentials.size());
+    for (const auto& input : p.potentials) {
+        switch (input.format) {
+        case PWPotentialFormat::gth:
+            potentials.push_back(std::make_shared<cpu::pw::GthPseudopotential>(
+                static_cast<molrs::Element>(input.atomic_number),
+                input.source));
+            break;
+        case PWPotentialFormat::upf:
+            potentials.push_back(
+                std::make_shared<cpu::pw::UpfPseudopotential>(input.source));
+            if (potentials.back()->atomic_number() != input.atomic_number)
+                throw std::invalid_argument(
+                    "PWParams: UPF atomic number mismatch");
+            break;
+        default:
+            throw std::invalid_argument("PWParams: unknown potential format");
+        }
+    }
+    cpu::pw::PW pw{std::move(potentials), p.ecut_ry, p.k_mesh,
+                   static_cast<cpu::xc::XCType>(p.xc)};
     pw.tol = p.tol;
     pw.max_iter = p.max_iter;
     pw.mix_beta = p.mix_beta;
     pw.pulay_depth = p.pulay_depth;
-    pw.xc = static_cast<cpu::scf::XCType>(p.xc);
     pw.spin_polarized = p.spin_polarized;
     pw.multiplicity = p.multiplicity;
-    pw.smearing = static_cast<cpu::pw::Smearing>(p.smearing);
+    pw.smearing = static_cast<ATV::electronic::Smearing>(p.smearing);
     pw.degauss = p.degauss;
     pw.mp_order = p.mp_order;
     pw.extra_bands = p.extra_bands;
-    // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the
-    // solver moves into the evaluator.
-    return cpu::pw::PWEvaluator{std::move(pw)}.with_gradient(true);
+    // `PW` is move-only (it owns FFTW plans and SCF workspaces).
+    return pw;
 }
 #endif
 
@@ -270,7 +361,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                         .add(std::move(component), entry.binding->order);
                 };
                 if constexpr (std::is_same_v<P, PairLJCutParams>)
-                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    bind(internal::make_pair_lj_cut(p));
                 else if constexpr (std::is_same_v<P, NeighborListParams>)
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, BondHarmonicParams>)
@@ -306,10 +397,16 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                     bind(cpu::DihedralCharmm{p.K, p.n, p.delta});
                 else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                     bind(cpu::ImproperHarmonic{p.K, p.chi0});
+                else if constexpr (std::is_same_v<P, AngleCosineParams>)
+                    bind(cpu::AngleCosine{p.K});
+                else if constexpr (std::is_same_v<P, FixEfieldParams>)
+                    bind(cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
                 else if constexpr (std::is_same_v<P, PairCoulCutParams>)
-                    bind(cpu::PairCoulCut{p.cutoff});
+                    bind(internal::make_pair_coul_cut(p));
                 else if constexpr (std::is_same_v<P, CoulLongParams>)
                     bind(cpu::CoulLong{p.alpha, p.cutoff});
+                else if constexpr (std::is_same_v<P, PairLJCutCoulLongParams>)
+                    bind(internal::make_pair_lj_cut_coul_long(p));
                 else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
 #ifdef ATV_HAS_KSPACE
                     // Move-only (it owns FFTW plans): the prvalue goes
@@ -337,11 +434,15 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                     bind(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
                                            p.bulk_modulus});
-                else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
-                    bind(gradient_am1(p));
-                else if constexpr (std::is_same_v<P, PwEvaluatorParams>) {
+                else if constexpr (std::is_same_v<P, AM1Params>) {
+#ifdef ATV_HAS_SEMIEMPIRICAL
+                    bind(am1_method(p));
+#else
+                    throw_semiempirical_not_built();
+#endif
+                } else if constexpr (std::is_same_v<P, PWParams>) {
 #ifdef ATV_HAS_PW
-                    bind(gradient_pw(p));
+                    bind(pw_method(p));
 #else
                     throw_pw_not_built();
 #endif
@@ -353,14 +454,19 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
 #else
                     throw_io_not_built();
 #endif
+                } else if constexpr (std::is_same_v<P, MrecRecorderParams>) {
+#ifdef ATV_HAS_IO
+                    bind(mrec_recorder(p));
+#else
+                    throw_mrec_not_built();
+#endif
                 } else
                     static_assert(detail::unsupported_component_v<P>);
                 return;
             }
             // Categorical path — no public Driver::add
             if constexpr (std::is_same_v<P, PairLJCutParams>)
-                driver.set_evaluator(
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                driver.set_evaluator(internal::make_pair_lj_cut(p));
             else if constexpr (std::is_same_v<P, NeighborListParams>)
                 driver.set_neighbor(cpu::md::NeighborList<>{p.cutoff, p.skin});
             else if constexpr (std::is_same_v<P, BondHarmonicParams>)
@@ -390,10 +496,18 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 driver.set_evaluator(cpu::DihedralCharmm{p.K, p.n, p.delta});
             else if constexpr (std::is_same_v<P, ImproperHarmonicParams>)
                 driver.set_evaluator(cpu::ImproperHarmonic{p.K, p.chi0});
+            else if constexpr (std::is_same_v<P, AngleCosineParams>)
+                driver.set_evaluator(cpu::AngleCosine{p.K});
+            else if constexpr (std::is_same_v<P, FixEfieldParams>)
+                // A force source on the plural evaluator slot (force phase),
+                // as `cpu::md::FixEfield` documents for categorical use.
+                driver.set_evaluator(cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
             else if constexpr (std::is_same_v<P, PairCoulCutParams>)
-                driver.set_evaluator(cpu::PairCoulCut{p.cutoff});
+                driver.set_evaluator(internal::make_pair_coul_cut(p));
             else if constexpr (std::is_same_v<P, CoulLongParams>)
                 driver.set_evaluator(cpu::CoulLong{p.alpha, p.cutoff});
+            else if constexpr (std::is_same_v<P, PairLJCutCoulLongParams>)
+                driver.set_evaluator(internal::make_pair_lj_cut_coul_long(p));
             else if constexpr (std::is_same_v<P, KSpacePmeParams>) {
 #ifdef ATV_HAS_KSPACE
                 // Move-only (it owns FFTW plans): the prvalue goes straight
@@ -425,11 +539,15 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             else if constexpr (std::is_same_v<P, BerendsenBarostatParams>)
                 driver.set_barostat(cpu::md::Barostat{p.P_target, p.tau_P, p.dt,
                                                       p.bulk_modulus});
-            else if constexpr (std::is_same_v<P, AM1EvaluatorParams>)
-                driver.set_evaluator(gradient_am1(p));
-            else if constexpr (std::is_same_v<P, PwEvaluatorParams>) {
+            else if constexpr (std::is_same_v<P, AM1Params>) {
+#ifdef ATV_HAS_SEMIEMPIRICAL
+                driver.set_evaluator(am1_method(p));
+#else
+                throw_semiempirical_not_built();
+#endif
+            } else if constexpr (std::is_same_v<P, PWParams>) {
 #ifdef ATV_HAS_PW
-                driver.set_evaluator(gradient_pw(p));
+                driver.set_evaluator(pw_method(p));
 #else
                 throw_pw_not_built();
 #endif
@@ -441,12 +559,21 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
 #else
                 throw_io_not_built();
 #endif
+            } else if constexpr (std::is_same_v<P, MrecRecorderParams>) {
+#ifdef ATV_HAS_IO
+                driver.set_record(mrec_recorder(p));
+#else
+                throw_mrec_not_built();
+#endif
             } else
                 static_assert(detail::unsupported_component_v<P>);
         },
         entry.params);
 }
 
+#endif // ATV_HAS_MD
+
+#ifdef ATV_HAS_MINIMIZER
 /// @brief Replay one typed Minimize entry onto the driver.
 ///
 /// Same two paths as `register_md_entry`, minus the ramp wiring: no
@@ -465,7 +592,7 @@ void register_minimize_entry(minimizer::Minimize& driver,
                         .add(std::move(component), entry.binding->order);
                 };
                 if constexpr (std::is_same_v<P, PairLJCutParams>)
-                    bind(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                    bind(internal::make_pair_lj_cut(p));
                 else if constexpr (std::is_same_v<P, NeighborListParams>)
                     bind(cpu::md::NeighborList<>{p.cutoff, p.skin});
                 else if constexpr (std::is_same_v<P, LBFGSParams>)
@@ -488,8 +615,7 @@ void register_minimize_entry(minimizer::Minimize& driver,
                 return;
             }
             if constexpr (std::is_same_v<P, PairLJCutParams>)
-                driver.set_evaluator(
-                    cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+                driver.set_evaluator(internal::make_pair_lj_cut(p));
             else if constexpr (std::is_same_v<P, NeighborListParams>)
                 driver.set_neighbor(cpu::md::NeighborList<>{p.cutoff, p.skin});
             else if constexpr (std::is_same_v<P, LBFGSParams>)
@@ -512,73 +638,110 @@ void register_minimize_entry(minimizer::Minimize& driver,
         },
         entry.params);
 }
+#endif // ATV_HAS_MINIMIZER
 
 } // namespace
 
 TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
     if (kind_ == TaskKind::MD) {
+#ifdef ATV_HAS_MD
         const auto& task = spec.md();
-        budget_ = static_cast<int>(task.n_steps);
+        budget_ = task.n_steps;
         md_.emplace();
+        md_->set_units(units::style_name(task.units));
+        md_->set_capture_buffer_bytes(task.capture_buffer_bytes);
         for (const auto& entry : task.entries)
             register_md_entry(*md_, entry, task.n_steps);
         md_->build();
         return;
+#else
+        throw_md_not_built();
+#endif
     }
 
     if (kind_ == TaskKind::SinglePoint) {
+#ifndef ATV_HAS_EVALUATE
+        throw_evaluate_not_built();
+#elif defined(ATV_HAS_SEMIEMPIRICAL)
         const auto& p = spec.single_point().evaluator;
         eval_.emplace();
         eval_->set_serial_on_replica();
         eval_->on(ATV::evaluate::Phase::evaluate)
-            .add(semiempirical::AM1Evaluator{p.charge, p.multiplicity,
-                                             p.max_iter, p.density_tol,
-                                             p.energy_tol});
+            .add(semiempirical::AM1{p.charge, p.multiplicity, p.max_iter,
+                                    p.density_tol, p.energy_tol});
         eval_->build();
         return;
+#else
+        throw_semiempirical_not_built();
+#endif
     }
 
+#ifdef ATV_HAS_MINIMIZER
     const auto& task = spec.minimize();
-    budget_ = static_cast<int>(task.max_iter);
+    budget_ = task.max_iter;
     minimize_.emplace();
+    minimize_->set_units(units::style_name(task.units));
     internal::add_minimize_criterion(*minimize_, task.convergence);
     for (const auto& entry : task.entries)
         register_minimize_entry(*minimize_, entry);
     minimize_->build();
+#else
+    throw_minimizer_not_built();
+#endif
 }
+
+// The constructor refuses a task kind whose domain is compiled out, so the
+// guarded branches below are the only ones a live materializer can reach.
 
 TaskResult TaskMaterializer::run(cpu::Frame& frame) {
     completed_dd_.reset();
+#ifdef ATV_HAS_MD
     if (kind_ == TaskKind::MD) {
-        const int iterations = md_->run(frame, budget_);
+        const auto iterations = md_->run(frame, budget_);
         return TaskResult{iterations, md_->converged(), md_->stop_reason()};
     }
+#endif
+#ifdef ATV_HAS_EVALUATE
     if (kind_ == TaskKind::SinglePoint) {
         eval_->run(frame);
         return TaskResult{1, false, {}};
     }
-
+#endif
+#ifdef ATV_HAS_MINIMIZER
     auto completed = minimize_->run_detached(frame, budget_);
-    const int iterations = completed.iterations;
+    const auto iterations = completed.iterations;
     completed_dd_ = std::move(completed.decomposition);
     return TaskResult{iterations, minimize_->converged(),
                       minimize_->stop_reason()};
+#else
+    throw_minimizer_not_built();
+#endif
 }
 
 std::unique_ptr<md::mpi::DomainDecomposition> TaskMaterializer::release_dd() {
+#ifdef ATV_HAS_MD
     if (kind_ == TaskKind::MD)
         return md_->release_dd();
+#endif
     if (kind_ == TaskKind::Minimize)
         return std::move(completed_dd_);
     return nullptr;
 }
 
 const Plan<cpu::Component>& TaskMaterializer::plan() const {
+#ifdef ATV_HAS_MD
     if (kind_ == TaskKind::MD)
         return md_->plan();
+#endif
+#ifdef ATV_HAS_EVALUATE
     if (kind_ == TaskKind::SinglePoint)
         return eval_->plan();
+#endif
+#ifdef ATV_HAS_MINIMIZER
     return minimize_->plan();
+#else
+    throw_minimizer_not_built();
+#endif
 }
 
 } // namespace ATV::cpu::task

@@ -8,21 +8,22 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/multiscale/internal/qm_mm_vdw.h"
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
-#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 namespace ATV {
 namespace cpu {
 
 /// @brief Mechanical embedding: E_QM(vacuum) + E_QM–MM^{LJ} + E_QM–MM^{Coul}.
 ///
-/// Any `QmEngine` (embedding never probed). QM region from `kAtomQmZ`.
+/// Any `QmEngine` (embedding never probed). QM region from `kAtomQm`.
 /// Classical cross-Coulomb reads both sides' `kAtom_charge` (QM charges may
 /// be nonzero — unlike electrostatic embedding).
 class QmmmMechanical : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cross_lj QM–MM LJ table (Lorentz–Berthelot fill).
     /// @param lj_cutoff LJ and classical Coulomb cutoff [Å].
     QmmmMechanical(std::vector<LJTypeCoeff> cross_lj, double lj_cutoff);

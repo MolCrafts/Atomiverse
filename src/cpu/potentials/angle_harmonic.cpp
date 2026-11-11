@@ -23,7 +23,8 @@ void AngleHarmonic::build(const BuildContext& ctx) {
 #ifdef _OPENMP
     n_threads = omp_get_max_threads();
 #endif
-    scratch_.build(n_threads, ctx.frame.capacity());
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(n_threads, ctx.frame.capacity());
 }
 
 void AngleHarmonic::compute(const LaunchContext& ctx) {
@@ -34,7 +35,6 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
 
     const md::ResolveView rv(ctx);
     const int nlocal = rv.n_local();
-    const int n_force = rv.n_force();
 
     // Tuple cache: tag→local hash resolution happens only when row
     // indices may have moved (migration / halo full rebuild), not every
@@ -60,39 +60,36 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
         cache_.mark_built(ctx);
         drops_.dropped += cache_.dropped_at_build;
     }
+    cache_.require_complete(ctx, "AngleHarmonic");
     const int n_tuples = static_cast<int>(cache_.flat.size()) / 4;
     if (n_tuples == 0)
         return;
     const int* __restrict tup = cache_.flat.data();
 
-    double energy_total = 0;
     // Angle virial: Σ d_ji ⊗ F_i + d_jk ⊗ F_k (centre force cancels by
     // Newton's 3rd, so this is translation-invariant and PBC-safe).
-    md::Voigt6 vir;
 
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
 
-    // Resolve the frame's force spans ONCE, before the parallel region opens
-    // (never inside it — see BondedForceScratch::bind).
-    scratch_.bind(f);
+    // Open this launch's chunks of the Runtime's accumulators once,
+    // before the parallel region (see md::ForcePass).
+    md::ForcePass forces(ctx);
+    // The virial is only flushed when stress is requested; skip the two
+    // outer products per angle otherwise (LAMMPS vflag).
+    const bool do_virial = ctx.stress_requested;
 
-// Thread-private virial combined under a critical section (no per-step heap
-// alloc, unlike an OMP user-defined reduction on Voigt6).
-#pragma omp parallel if (scratch_.n_threads() > 1) reduction(+ : energy_total)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const md::ThreadForce tf = scratch_.begin_thread(tid, n_force);
+    // Each chunk keeps its own energy and virial and stores them once;
+    // ForcePass sums the chunks in order (deterministic per thread count).
+    forces.for_each_chunk(n_tuples, [&](int c, int t_begin, int t_end,
+                                        md::ForceRows tf) {
+        double energy_total = 0;
         md::Voigt6 vir_local;
 
         // Hot loop over pre-resolved tuples: centre atom `j` owns the
         // angle; partners (i, k) may be owners or ghosts.
-#pragma omp for schedule(static)
-        for (int t = 0; t < n_tuples; ++t) {
+        for (int t = t_begin; t < t_end; ++t) {
             {
                 const int i = tup[4 * t + 0];
                 const int j = tup[4 * t + 1];
@@ -153,29 +150,33 @@ void AngleHarmonic::compute(const LaunchContext& ctx) {
                     c_coeff * (dz_ji / r_ji - cos_theta * dz_jk / r_jk);
 
                 // Force on j: -(fi + fk) (Newton's 3rd law).
-                tf.fx[i] += fi_x;
-                tf.fy[i] += fi_y;
-                tf.fz[i] += fi_z;
-                tf.fx[k] += fk_x;
-                tf.fy[k] += fk_y;
-                tf.fz[k] += fk_z;
-                tf.fx[j] -= fi_x + fk_x;
-                tf.fy[j] -= fi_y + fk_y;
-                tf.fz[j] -= fi_z + fk_z;
+                if (ctx.forces_requested) {
+                    tf.fx[i] += fi_x;
+                    tf.fy[i] += fi_y;
+                    tf.fz[i] += fi_z;
+                    tf.fx[k] += fk_x;
+                    tf.fy[k] += fk_y;
+                    tf.fz[k] += fk_z;
+                    tf.fx[j] -= fi_x + fk_x;
+                    tf.fy[j] -= fi_y + fk_y;
+                    tf.fz[j] -= fi_z + fk_z;
+                }
 
-                vir_local.add_pair(dx_ji, dy_ji, dz_ji, fi_x, fi_y, fi_z);
-                vir_local.add_pair(dx_jk, dy_jk, dz_jk, fk_x, fk_y, fk_z);
+                if (do_virial) {
+                    vir_local.add_pair(dx_ji, dy_ji, dz_ji, fi_x, fi_y, fi_z);
+                    vir_local.add_pair(dx_jk, dy_jk, dz_jk, fk_x, fk_y, fk_z);
+                }
             }
         }
-#pragma omp critical
-        vir += vir_local;
-    }
-
-    scratch_.reduce_into(n_force);
+        forces.store(c, energy_total, vir_local);
+    });
+    const double energy_total = forces.energy();
+    const md::Voigt6 vir = forces.virial();
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyAngle) += energy_total;
-    vir.flush_to(f.meta.get(kStress));
+    if (ctx.stress_requested)
+        vir.flush_to(f.meta.get(kStress));
 
     drops_.evaluated += static_cast<std::uint64_t>(n_tuples);
 }
@@ -184,7 +185,6 @@ void AngleHarmonic::destroy(const DestroyContext& /*ctx*/) {
     drops_.report("AngleHarmonic");
     drops_.reset();
     cache_.clear();
-    scratch_.clear();
     // Owned-tuple cache is owned by the cpu::Angle base.
 }
 

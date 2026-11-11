@@ -36,6 +36,7 @@ class RingPolymerSpring : public Potential {
         return {ATV::make_binding(ATV::md::Phase::force, +20)};
     }
 
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
 
   private:

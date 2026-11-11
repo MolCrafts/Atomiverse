@@ -37,7 +37,7 @@ void run_once(cpu::md::ConstPotBO& conp, cpu::Frame& f) {
 
 double A_self(double eta) {
     constexpr double kSqrt2OverPi = 0.79788456080286535588;
-    return units::coulomb * eta * kSqrt2OverPi;
+    return units::UnitSystem::lj().qqrd2e() * eta * kSqrt2OverPi;
 }
 
 } // namespace
@@ -101,7 +101,8 @@ TEST(ConstPotBOFfield, ElectrolyteEntersB) {
     constexpr double z_i = 15.0;
     constexpr double q_i = 1.0;
     const double r = std::abs(z_e - z_i);
-    const double b = units::coulomb * q_i * std::erf(eta * r) / r;
+    const double b =
+        units::UnitSystem::lj().qqrd2e() * q_i * std::erf(eta * r) / r;
     const double Aii = A_self(eta);
     const double Q_pin = (0.0 - b + Ez * z_e) / Aii;
 

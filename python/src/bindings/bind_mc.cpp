@@ -18,9 +18,9 @@
 ///     and is continuable by contract (block sampling). The handle therefore
 ///     materializes its working frame ONCE and every later `run()` extends the
 ///     same chain; a fresh chain is a fresh handle object.
-///  2. **Variable N.** μVT inserts and deletes atoms, and `cpu::to_molrs`
-///     rejects a changed row count (molrs `RaggedAxis0`). When N changed the
-///     binding rebuilds the molrs `atoms` block through the molrs *Python* API
+///  2. **Variable N.** μVT inserts and deletes atoms, and `cpu::to_molpy`
+///     rejects a changed row count (molpy `RaggedAxis0`). When N changed the
+///     binding rebuilds the molpy `atoms` block through the molpy *Python* API
 ///     before exporting — see `rebuild_atoms_block_`.
 ///  3. **Single rank.** There is no MC task in the launcher protocol, so a run
 ///     under `atomiverse-launcher` is refused instead of silently sampling N
@@ -31,8 +31,9 @@
 
 #ifdef ATV_HAS_MC
 
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 #include "owned_buffer.h"
+#include "units_binding.h"
 
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/optional.h>
@@ -49,7 +50,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/montecarlo/gcmc.h"
 #include "atomiverse/cpu/montecarlo/insert_delete_move.h"
 #include "atomiverse/cpu/montecarlo/mc.h"
@@ -60,6 +61,7 @@
 #include "atomiverse/cpu/montecarlo/volume_move.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -101,15 +103,15 @@ Verb verb_from_name(std::string_view name) {
 /// @brief Copy one Frame column into a fresh, numpy-owned 1-D array.
 ///
 /// The array owns its buffer through the shared `to_owned_array()` primitive
-/// (`owned_buffer.h`): molrs copies the data into its own column storage on
+/// (`owned_buffer.h`): molpy copies the data into its own column storage on
 /// `Block.insert`, and the engine's working frame keeps evolving afterwards,
 /// so nothing may alias either side. This wrapper adds the engine-column
-/// spelling (pointer + row count) and the dtype conversion the molrs schema
+/// spelling (pointer + row count) and the dtype conversion the molpy schema
 /// asks for — the one call site that needs a non-`double` element type, which
 /// is why it cannot go through `result_array.h`.
 ///
 /// @tparam Out numpy element type of the produced array (`double` /
-///         `std::uint32_t`) — the dtype the molrs schema declares for that
+///         `std::uint32_t`) — the dtype the molpy schema declares for that
 ///         column.
 /// @tparam In Element type of the engine column being copied.
 /// @param src First element of the contiguous engine column.
@@ -122,7 +124,7 @@ nb::object numpy_column(const In* src, std::size_t n) {
 }
 
 /// @brief One bound Monte Carlo preset: the driver, its working frame, and the
-///        molrs write-back.
+///        molpy write-back.
 ///
 /// @tparam Preset `cpu::mc::MC`, `cpu::mc::NptMc` or `cpu::mc::Gcmc` — the
 ///         three presets differ only in the `OutcomePolicy` their constructor
@@ -155,18 +157,16 @@ struct McHandle {
     /// @param p Lennard-Jones parameters, as the shared task mirror.
     void set_evaluator(const cpu::task::PairLJCutParams& p) {
         require_configurable_("set_evaluator");
-        driver.set_evaluator(cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff});
+        driver.set_evaluator(cpu::task::internal::make_pair_lj_cut(p));
     }
 
     /// @brief Install the neighbor list in its MC-correct form.
     ///
-    /// delay = 0, NOT the MD params default of 10: a deferred displacement
-    /// check is a correctness bug here. An accepted trial move can push an
-    /// atom past the skin at any trial, and the very next trial's energy would
-    /// then be scored against a stale list — the sampled Hamiltonian would
-    /// silently stop being the one the user configured. MD tolerates
-    /// `delay 10` because its per-step displacement is bounded by dt; a Monte
-    /// Carlo proposal is not.
+    /// delay = 0 (the NeighborList default, spelled out because a deferred
+    /// displacement check is a correctness bug here): an accepted trial move
+    /// can push an atom past the skin at any trial, and the very next trial's
+    /// energy would then be scored against a stale list — the sampled
+    /// Hamiltonian would silently stop being the one the user configured.
     ///
     /// @param p Cutoff [Å] and skin [Å], as the shared task mirror.
     void set_neighbor(const cpu::task::NeighborListParams& p) {
@@ -188,7 +188,7 @@ struct McHandle {
     ///
     /// The FIRST call materializes the working frame from `frame_obj` and
     /// compiles the plan; every later call continues the same chain, so edits
-    /// made to the molrs Frame between calls are ignored.
+    /// made to the molpy Frame between calls are ignored.
     ///
     /// @param frame_obj A `molpy.Frame`; results are written back into it.
     /// @param n_trials Number of trial moves to attempt in this call.
@@ -210,9 +210,9 @@ struct McHandle {
             driver.build();
             built_ = true;
         }
-        auto fref = borrow_molrs_frame(frame_obj);
+        auto fref = borrow_molpy_frame(frame_obj);
         if (!materialized_) {
-            work_ = cpu::from_molrs(*fref);
+            work_ = cpu::from_molpy(*fref);
             materialized_ = true;
         }
         {
@@ -255,7 +255,6 @@ struct McHandle {
     ///         (no chain exists yet, so there is no configuration to count).
     int n_atoms() const { return materialized_ ? work_.nlocal() : 0; }
 
-  private:
     /// @brief Refuse a configuration change once the chain has started.
     ///
     /// The execution plan is compiled exactly once, on the first `run()`
@@ -277,6 +276,7 @@ struct McHandle {
                   "is also what starts a fresh chain.");
     }
 
+  private:
     /// @brief The shared MC loop, for the per-verb tallies.
     /// @return This preset as its `McBase` base.
     const cpu::mc::McBase& base_() const { return driver; }
@@ -296,38 +296,40 @@ struct McHandle {
         return total;
     }
 
-    /// @brief Export the working frame into the molrs Frame it came from.
+    /// @brief Export the working frame into the molpy Frame it came from.
     ///
-    /// `cpu::to_molrs` writes into the EXISTING `atoms` block, so it is valid
-    /// only while the row count still matches; μVT changes it, and molrs
+    /// `cpu::to_molpy` writes into the EXISTING `atoms` block, so it is valid
+    /// only while the row count still matches; μVT changes it, and molpy
     /// rejects a block whose columns disagree in length (`RaggedAxis0`). The
-    /// rebuild below re-establishes the block at the new N first; `to_molrs`
+    /// rebuild below re-establishes the block at the new N first; `to_molpy`
     /// then fills x/v/f, charge, image, tag, the box and the typed metadata as
     /// on every other driver path.
     ///
     /// @param frame_obj The `molpy.Frame` (needed for the Python-API rebuild).
     /// @param fref The same frame borrowed as a CXX handle.
     void write_back_(nb::object frame_obj, molrs::FrameRef& fref) {
-        const auto rows = molrs::frame_block_nrows(fref, "atoms");
+        const auto rows = molrs::frame_block_n_rows(fref, "atoms");
         if (rows != static_cast<std::int64_t>(work_.nlocal()))
             rebuild_atoms_block_(frame_obj);
-        cpu::to_molrs(work_, fref);
+        cpu::to_molpy(work_, fref);
     }
 
-    /// @brief Replace the molrs `atoms` block with one at the chain's current
-    ///        population, through the molrs Python API (GIL held).
+    /// @brief Replace the molpy `atoms` block with one at the chain's current
+    ///        population, through the molpy Python API (GIL held).
     ///
     /// Every column is rebuilt so the new block is internally consistent at
     /// the new N — a partial rebuild would leave the untouched columns at the
-    /// old length and molrs would reject the block. `mass` and
-    /// `atomic_number` are here because `to_molrs` deliberately does NOT write
-    /// them (per-run immutable inputs on the fixed-N path); after an insertion
-    /// they are outputs, stamped on the new row by `InsertDeleteMove`.
+    /// old length and molpy would reject the block. `mass` and the identity
+    /// columns (`atomic_number`, `type_id`) are here because `to_molpy`
+    /// deliberately does NOT write them (per-run immutable inputs on the
+    /// fixed-N path); after an insertion they are outputs, stamped on the new
+    /// row by `InsertDeleteMove`. An identity column the input frame did not
+    /// carry is not invented on the way back.
     ///
     /// @param frame_obj The `molpy.Frame` whose `atoms` block is replaced.
     void rebuild_atoms_block_(nb::object frame_obj) {
         const auto n = static_cast<std::size_t>(work_.nlocal());
-        nb::object block = nb::module_::import_("molrs").attr("Block")();
+        nb::object block = nb::module_::import_("molpy").attr("Block")();
         nb::object insert = block.attr("insert");
         insert("x", numpy_column<double>(work_.span(kAtom_x).data(), n));
         insert("y", numpy_column<double>(work_.span(kAtom_y).data(), n));
@@ -341,11 +343,15 @@ struct McHandle {
         insert("charge",
                numpy_column<double>(work_.span(kAtom_charge).data(), n));
         insert("mass", numpy_column<double>(work_.span(kAtom_mass).data(), n));
-        // Z is the species key on both sides of the boundary: molrs stores it
-        // as an unsigned column, `from_molrs` lands it in `kAtom_type`, and
-        // `InsertDeleteMove(z, mass)` stamps that same int on every insertion.
-        insert("atomic_number",
-               numpy_column<std::uint32_t>(work_.span(kAtom_type).data(), n));
+        // One molpy column per Frame column: species Z <-> atomic_number,
+        // force-field type <-> type_id, each only when the Frame carries it.
+        if (work_.has("atoms", kAtom_atomic_number.key))
+            insert("atomic_number",
+                   numpy_column<std::uint32_t>(
+                       work_.span(kAtom_atomic_number).data(), n));
+        if (work_.has("atoms", kAtom_type.key))
+            insert("type_id", numpy_column<std::uint32_t>(
+                                  work_.span(kAtom_type).data(), n));
         frame_obj["atoms"] = block;
     }
 
@@ -364,6 +370,9 @@ struct McHandle {
 template <typename Preset>
 void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
     using Handle = McHandle<Preset>;
+    ATV::python::bind_units(
+        cls, [](Handle& h) -> Preset& { return h.driver; },
+        [](const Handle& h, const char* s) { h.require_configurable_(s); });
     cls.def(
            "set_evaluator",
            [](Handle& self, const cpu::task::PairLJCutParams& p) {
@@ -391,7 +400,8 @@ void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
             nb::arg("comp"),
             "Install the neighbor list — the cached list of pairs closer than "
             "cutoff + skin, which is what makes a trial energy cost O(N) "
-            "instead of O(N^2). The SKIN [A] is the extra margin the list is "
+            "instead of O(N^2). The SKIN [length] is the extra margin the list "
+            "is "
             "built with beyond the interaction cutoff, so the same list stays "
             "valid while atoms move a little.\n\n"
             "The MC-correct form is built here: every=1, delay=0, check=yes — "
@@ -444,42 +454,43 @@ void bind_mc_common(nb::class_<McHandle<Preset>>& cls) {
             "selector fires exactly ONE child per trial — that is the Monte "
             "Carlo contract, and it is why a mixed ensemble goes through a "
             "MoveSelector instead of two set_mover calls.")
-        .def("run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
-             "Attempt n_trials trial moves on a molpy.Frame. GIL released "
-             "during sampling.\n\n"
-             "n_trials counts SINGLE TRIAL MOVES, not sweeps: each count is "
-             "one proposal (one atom displaced, or one volume change, or one "
-             "insertion/deletion) followed by one accept/reject decision. It "
-             "is NOT the 'one attempted move per particle' sweep some texts "
-             "count in, so a chain of N atoms needs roughly N times more "
-             "trials here than it would sweeps there.\n\n"
-             "Consecutive calls CONTINUE one Markov chain — the standard "
-             "run(equilibrate); run(sample) pattern — so the tallies "
-             "accumulate and the configuration carries over. The frame is "
-             "materialized once, on the first call: edits made to the "
-             "molpy.Frame between calls are ignored, and a fresh chain means "
-             "a fresh sampler object.\n\n"
-             "Results are written back into the SAME molpy.Frame after every "
-             "call: positions [A], the box, and the energy of the last "
-             "accepted configuration in frame.meta['energy'] [eV]. When the "
-             "trial moves changed the particle number the 'atoms' block is "
-             "rebuilt at the new N.\n\n"
-             "Monte Carlo scores energies only — no gradient is ever "
-             "assembled — so the frame's fx/fy/fz come back ZEROED, not as "
-             "physical forces; use an MD or Evaluate driver if you want "
-             "forces. Velocities are left as they were (an inserted atom "
-             "gets zero velocity), because nothing in this sampler moves in "
-             "time.\n\n"
-             "Raises RuntimeError under the MPI launcher (Monte Carlo is "
-             "single-rank by design), and before any sampling when no Mover, "
-             "no energy source, or no neighbor list for a pair style was "
-             "registered.")
+        .def(
+            "run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
+            "Attempt n_trials trial moves on a molpy.Frame. GIL released "
+            "during sampling.\n\n"
+            "n_trials counts SINGLE TRIAL MOVES, not sweeps: each count is "
+            "one proposal (one atom displaced, or one volume change, or one "
+            "insertion/deletion) followed by one accept/reject decision. It "
+            "is NOT the 'one attempted move per particle' sweep some texts "
+            "count in, so a chain of N atoms needs roughly N times more "
+            "trials here than it would sweeps there.\n\n"
+            "Consecutive calls CONTINUE one Markov chain — the standard "
+            "run(equilibrate); run(sample) pattern — so the tallies "
+            "accumulate and the configuration carries over. The frame is "
+            "materialized once, on the first call: edits made to the "
+            "molpy.Frame between calls are ignored, and a fresh chain means "
+            "a fresh sampler object.\n\n"
+            "Results are written back into the SAME molpy.Frame after every "
+            "call: positions [length], the box, and the energy of the last "
+            "accepted configuration in frame.meta['energy'] [energy]. When the "
+            "trial moves changed the particle number the 'atoms' block is "
+            "rebuilt at the new N.\n\n"
+            "Monte Carlo scores energies only — no gradient is ever "
+            "assembled — so the frame's fx/fy/fz come back ZEROED, not as "
+            "physical forces; use an MD or Evaluate driver if you want "
+            "forces. Velocities are left as they were (an inserted atom "
+            "gets zero velocity), because nothing in this sampler moves in "
+            "time.\n\n"
+            "Raises RuntimeError under the MPI launcher (Monte Carlo is "
+            "single-rank by design), and before any sampling when no Mover, "
+            "no energy source, or no neighbor list for a pair style was "
+            "registered.")
         .def(
             "current_energy",
             [](const Handle& self) {
                 return static_cast<double>(self.driver.current_energy());
             },
-            "Energy [eV] of the current (last-accepted) configuration. A "
+            "Energy [energy] of the current (last-accepted) configuration. A "
             "rejected trial's energy never survives — this is the same value "
             "written to frame.meta['energy'].")
         .def("attempts", &Handle::attempts,
@@ -536,12 +547,14 @@ void bind_mc(nb::module_& m) {
         "proposal probabilities cancel in the acceptance ratio and nothing "
         "but the energy is left, which is what makes the plain "
         "min(1, exp(-dE/(k_B T))) Metropolis rule correct here.\n\n"
-        "delta [A] is the knob that sets the acceptance ratio: too large and "
+        "delta [length] is the knob that sets the acceptance ratio: too large "
+        "and "
         "almost every trial overlaps a neighbour and is rejected, too small "
         "and the chain crawls over the configuration space. The usual target "
         "is an acceptance ratio of roughly 0.3-0.5.")
-        .def(nb::init<double>(), nb::arg("delta"),
-             "Construct with the displacement half-width delta [A] (> 0).");
+        .def(
+            nb::init<double>(), nb::arg("delta"),
+            "Construct with the displacement half-width delta [length] (> 0).");
 
     nb::class_<cpu::mc::VolumeMove>(
         m, "VolumeMove",
@@ -558,7 +571,7 @@ void bind_mc(nb::module_& m) {
         "just like any other trial — but it is the only move that samples "
         "the volume, so do not starve it in the MoveSelector weights.")
         .def(nb::init<double>(), nb::arg("dv_max"),
-             "Construct with the volume half-width dv_max [A^3] (> 0).");
+             "Construct with the volume half-width dv_max [volume] (> 0).");
 
     nb::class_<cpu::mc::InsertDeleteMove>(
         m, "InsertDeleteMove",
@@ -566,18 +579,21 @@ void bind_mc(nb::module_& m) {
         "probability either insert one atom at a uniform position in the cell "
         "or delete one uniformly chosen atom.\n\n"
         "A deletion drawn on an empty cell is simply rejected. An inserted "
-        "atom carries the configured species and mass and nothing else: zero "
+        "atom carries the configured identity and mass and nothing else: zero "
         "velocity, zero charge, no bonds, and a freshly allocated atom tag "
         "(never a recycled one). Its mass MUST be the mass GCMC built its "
         "thermal wavelength Lambda from — mixing the two is a silently wrong "
         "chemical potential, and nothing checks it.")
-        .def(nb::init<int, double>(), nb::arg("z"), nb::arg("mass"),
-             "Construct with the atomic number z (dimensionless, > 0) "
-             "stamped on inserted atoms and their mass [amu] (> 0).\n\n"
-             "z is the species key on both sides of the molrs boundary: the "
-             "frame's 'atomic_number' column becomes the engine's atom type, "
-             "so an inserted Ar atom is z = 18 and comes back out in the "
-             "rebuilt 'atomic_number' column.");
+        .def(nb::init<int, int, double>(), nb::arg("type"),
+             nb::arg("atomic_number"), nb::arg("mass"),
+             "Construct with the force-field type (> 0), the species "
+             "atomic_number (Z, 0..118) and the mass [mass] (> 0) stamped on "
+             "inserted atoms.\n\n"
+             "Each identity is written only where the frame carries it: "
+             "type goes to the 'type_id' column and atomic_number to the "
+             "'atomic_number' column, so an inserted Ar atom of LJ type 1 is "
+             "InsertDeleteMove(type=1, atomic_number=18, mass=39.948) and "
+             "comes back out in both rebuilt columns.");
 
     nb::class_<cpu::mc::MoveSelector>(
         m, "MoveSelector",
@@ -633,9 +649,10 @@ void bind_mc(nb::module_& m) {
         "configuration, and the proposal is then either kept (accepted) or "
         "undone (rejected).\n\n"
         "Keeping it with probability min(1, exp(-dE / (k_B T))) — the "
-        "METROPOLIS rule, in which dE [eV] is the trial energy minus the "
+        "METROPOLIS rule, in which dE [energy] is the trial energy minus the "
         "energy of the last accepted configuration, k_B is the Boltzmann "
-        "constant (8.617333e-5 eV/K) and T [K] the temperature — is what "
+        "constant (the run's boltz) and T [temperature] the temperature — is "
+        "what "
         "makes the visited configurations appear with the Boltzmann "
         "probability exp(-E/(k_B T)). A plain average over the chain is then "
         "the NVT ensemble average, with no dynamics and no velocities "
@@ -651,7 +668,8 @@ void bind_mc(nb::module_& m) {
                 McHandle<cpu::mc::MC>(static_cast<AccReal>(temperature), seed);
         },
         nb::arg("temperature"), nb::arg("seed"),
-        "Construct with the ensemble temperature [K] (> 0) and the seed of "
+        "Construct with the ensemble temperature [temperature] (> 0) and the "
+        "seed of "
         "the single RNG stream shared by the movers and the acceptance test "
         "(one seed, one reproducible chain). A temperature <= 0 raises "
         "ValueError: the Boltzmann weight exp(-dE/(k_B T)) is undefined "
@@ -668,7 +686,7 @@ void bind_mc(nb::module_& m) {
         "displacement uses the canonical rule of MC. A volume move from V to "
         "V' is accepted with probability "
         "min(1, exp(-beta[dE + P (V' - V) - N k_B T ln(V'/V)])), where beta = "
-        "1/(k_B T) and dE [eV] is the trial energy minus the last accepted "
+        "1/(k_B T) and dE [energy] is the trial energy minus the last accepted "
         "energy. The P (V' - V) term is the work done against the external "
         "pressure; the N k_B T ln(V'/V) term is entropic — a volume move "
         "rescales every coordinate together with the cell, i.e. it holds the "
@@ -688,18 +706,20 @@ void bind_mc(nb::module_& m) {
                                          static_cast<AccReal>(pressure), seed);
         },
         nb::arg("temperature"), nb::arg("pressure"), nb::arg("seed"),
-        "Construct with the ensemble temperature [K] (> 0), the external "
-        "pressure [eV/A^3] (LAMMPS sign, positive = compressive; 1 bar ~ "
-        "6.2415e-7 eV/A^3) and the RNG seed.");
+        "Construct with the ensemble temperature [temperature] (> 0), the "
+        "external "
+        "pressure [pressure] (LAMMPS sign, positive = compressive; in the "
+        "run's pressure "
+        "unit: metal bar, real atm) and the RNG seed.");
     bind_mc_common(npt);
     npt.def(
         "current_volume",
         [](const McHandle<cpu::mc::NptMc>& self) {
             return self.driver.current_volume();
         },
-        "Volume [A^3] of the current (last-accepted) configuration — the "
+        "Volume [volume] of the current (last-accepted) configuration — the "
         "sampled degree of freedom of this ensemble, and the same cell "
-        "written back to the molrs Frame box.");
+        "written back to the molpy Frame box.");
 
     nb::class_<McHandle<cpu::mc::Gcmc>> gcmc(
         m, "GCMC",
@@ -708,7 +728,8 @@ void bind_mc(nb::module_& m) {
         "particle number N is sampled.\n\n"
         "The cell is treated as being in contact with an infinite reservoir "
         "of one species that it may exchange atoms with. The CHEMICAL "
-        "POTENTIAL mu [eV] is the free-energy change of adding one atom to a "
+        "POTENTIAL mu [energy] is the free-energy change of adding one atom to "
+        "a "
         "system, and the reservoir is held at exactly this value, which makes "
         "it the control knob of the ensemble: raising mu pushes atoms "
         "in, lowering it pulls them out, and the cell settles at whatever <N> "
@@ -716,7 +737,7 @@ void bind_mc(nb::module_& m) {
         "setting for adsorption and vapour-liquid problems, where N — not the "
         "energy — is the answer you want.\n\n"
         "Pair it with a MoveSelector mixing TranslateMove and "
-        "InsertDeleteMove. Because N fluctuates, run() rebuilds the molrs "
+        "InsertDeleteMove. Because N fluctuates, run() rebuilds the molpy "
         "'atoms' block whenever the population changed, and n_atoms() is the "
         "observable to accumulate for <N>.");
     gcmc.def(
@@ -728,13 +749,15 @@ void bind_mc(nb::module_& m) {
                                         static_cast<AccReal>(mu), mass, seed);
         },
         nb::arg("temperature"), nb::arg("mu"), nb::arg("mass"), nb::arg("seed"),
-        "Construct with the ensemble temperature [K] (> 0), the chemical "
-        "potential mu [eV] of the single insertable species, its mass [amu] "
+        "Construct with the ensemble temperature [temperature] (> 0), the "
+        "chemical "
+        "potential mu [energy] of the single insertable species, its mass "
+        "[mass] "
         "(> 0) and the RNG seed.\n\n"
         "mu is the TOTAL chemical potential — the ideal-gas part included, "
         "not the excess part alone. Concretely, the acceptance rule uses mu "
         "only through the ACTIVITY z = exp(beta mu)/Lambda^3 [1/A^3], where "
-        "beta = 1/(k_B T) and Lambda = h/sqrt(2 pi m k_B T) [A] is the "
+        "beta = 1/(k_B T) and Lambda = h/sqrt(2 pi m k_B T) [length] is the "
         "thermal de Broglie wavelength — the quantum length scale of a free "
         "particle of mass m at temperature T, which is what carries the "
         "'per unit volume' in z. z is the ideal-gas number density the "
@@ -742,7 +765,7 @@ void bind_mc(nb::module_& m) {
         "you convert a target density into the argument passed here. Same "
         "convention as Frenkel & Smit eq. (5.6.9); transcribed with the two "
         "acceptance rules in include/atomiverse/cpu/montecarlo/gcmc.h and "
-        "pinned in regressions/mc/gcmc_lj/REFERENCE.md.\n\n"
+        "pinned in regressions/mc/metropolis/REFERENCE.md.\n\n"
         "Because Lambda is built here from `mass`, the InsertDeleteMove that "
         "stamps atoms into the cell MUST carry that same mass — two different "
         "masses mean the sampled chemical potential is not the one requested, "

@@ -1,5 +1,5 @@
 /// @file cpu/planewave/internal/pw_stress.h
-/// @brief Plane-wave cell stress (Nielsen–Martin analytic + strain-FD oracle).
+/// @brief Plane-wave cell stress (one-SCF NSCF strain FD + full-SCF FD oracle).
 #pragma once
 
 #include <array>
@@ -12,25 +12,32 @@ namespace cpu {
 namespace pw {
 namespace internal {
 
-/// @brief Nielsen–Martin analytic stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
+struct PWStrainReference;
+struct PWDensityView;
+
+/// @brief Frozen-density NSCF strain-FD stress σ [eV/Å³], Voigt xx,yy,zz,xy,xz,yz.
 ///
-/// One SCF then Hellmann–Feynman cell derivatives: kinetic (bands), Hartree,
-/// local PP (radial form-factor \(G\)-derivative), Ewald ion–ion, LDA XC
-/// volume term, and Kleinman–Bylander nonlocal (UPF projectors). Sign and
-/// scale match strain-FD: mechanical \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\).
+/// One reference SCF then 12 NSCF evaluations under symmetric strain at
+/// h=2e-3, holding the reference integer PW/density modes and FFT shapes fixed.
+/// Density coefficients scale by Ω₀/Ω. This is the numerical Nielsen–Martin
+/// HF derivative, not a closed-form tensor. Mechanical sign:
+/// \(\sigma=-(1/\Omega)\partial E/\partial\varepsilon\).
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param method Plane-wave method members (ecut, k-mesh, UPF path, …).
-/// @param energy_ry_out Optional: total energy [Ry] from the production SCF.
-std::array<double, 6> pw_stress_analytic_impl(const cpu::Frame& frame,
-                                              const PW& method,
-                                              double* energy_ry_out = nullptr);
+std::array<double, 6> pw_stress_from_density(const cpu::Frame& frame,
+                                             const PW& method,
+                                             PWStrainReference reference,
+                                             PWDensityView density,
+                                             const PWResult& result);
 
 /// @brief Strain finite-difference stress oracle [eV/Å³] (12 SCF solves).
 ///
 /// Central differences of SCF energy under symmetric strain at fixed
 /// fractional coordinates. Used only for dual-gate tests against the
-/// analytic path.
+/// one-SCF frozen-density path.
+/// Off-diagonal Voigt entries divide the symmetric-shear derivative by two
+/// to return the physical σ_xy, σ_xz and σ_yz tensor components.
 ///
 /// @param frame Geometry [Å]; not mutated.
 /// @param method Plane-wave method members.

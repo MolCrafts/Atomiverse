@@ -1,10 +1,10 @@
 /// @file tests/cuda/planewave/test_xc_lda.cu
-/// @brief Verifies cuda::pw::internal::xc_lsda_grid against the CPU per-point
+/// @brief Verifies cuda::xc::xc_lsda_grid against the CPU per-point
 ///        XC that `cpu::pw::internal::XCBuilder::step(ws, XCType::LSDA)`
 ///        evaluates: evaluate_xc(LSDA, rho/2, rho/2) — Slater exchange +
 ///        VWN5 correlation — with the rho < 1e-12 cutoff.
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cuda/planewave/internal/xc_lda.cuh"
+#include "atomiverse/cpu/xc/xc_functional.h"
+#include "atomiverse/cuda/xc/xc_lsda.cuh"
 #include <algorithm>
 #include <cmath>
 #include <cuda_runtime.h>
@@ -12,10 +12,10 @@
 #include <random>
 #include <vector>
 
-using ATV::cpu::scf::evaluate_xc;
-using ATV::cpu::scf::XCType;
-using ATV::cuda::pw::internal::kXcEnergyPartials;
-using ATV::cuda::pw::internal::xc_lsda_grid;
+using ATV::cpu::xc::evaluate_xc;
+using ATV::cpu::xc::XCType;
+using ATV::cuda::xc::kXcEnergyPartials;
+using ATV::cuda::xc::xc_lsda_grid;
 
 namespace {
 void* dmalloc(size_t bytes) {
@@ -24,6 +24,8 @@ void* dmalloc(size_t bytes) {
     return p;
 }
 
+// CPU reference energies are converted to the independent CUDA kernel
+// per-electron test currency; the CPU product kernel returns energy per volume.
 // Host reference: exactly what XCBuilder::step(ws, LSDA) computes per point.
 void host_ref(double rho, double& vxc, double& exc) {
     if (rho < 1e-12) {
@@ -33,7 +35,7 @@ void host_ref(double rho, double& vxc, double& exc) {
     }
     auto out = evaluate_xc(XCType::LSDA, rho / 2.0, rho / 2.0);
     vxc = out.vrho_alpha;
-    exc = out.exc;
+    exc = out.energy_density / rho;
 }
 } // namespace
 
@@ -113,7 +115,8 @@ TEST(CudaPWXcLda, IsVwn5NotPw92) {
         // PBE at sigma = 0 is Slater + PW92 — the functional this kernel used
         // to implement.
         const double exc_pw92 =
-            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).exc;
+            evaluate_xc(XCType::PBE, rho[i] / 2.0, rho[i] / 2.0).energy_density
+            / rho[i];
         max_gap = std::max(max_gap, std::abs(exc[i] - exc_pw92));
     }
     EXPECT_GT(max_gap, 1e-6) << "device eps_xc is indistinguishable from the "
@@ -141,7 +144,7 @@ TEST(CudaPWXcLda, EnergyReduction) {
     cudaMemcpy(d_rho, rho.data(), nr * sizeof(double), cudaMemcpyHostToDevice);
 
     xc_lsda_grid(d_rho, d_vxc, d_exc, nr);
-    ATV::cuda::pw::internal::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
+    ATV::cuda::xc::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     double E_dev = 0;
@@ -165,7 +168,7 @@ TEST(CudaPWXcLda, EnergyReduction) {
 
     // Bitwise reproducibility: same input, same fixed grid, same bits.
     double E_again = 0;
-    ATV::cuda::pw::internal::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
+    ATV::cuda::xc::xc_energy(d_rho, d_exc, nr, dV, d_E, d_scratch);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
     cudaMemcpy(&E_again, d_E, sizeof(double), cudaMemcpyDeviceToHost);
     EXPECT_EQ(E_dev, E_again);
@@ -212,8 +215,7 @@ TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
                          cudaMemcpyHostToDevice),
               cudaSuccess);
 
-    ATV::cuda::pw::internal::xc_lsda_spin_grid(d_ra, d_rb, d_va, d_vb, d_exc,
-                                               nr);
+    ATV::cuda::xc::xc_lsda_spin_grid(d_ra, d_rb, d_va, d_vb, d_exc, nr);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     std::vector<double> va(nr), vb(nr), exc(nr);
@@ -229,7 +231,7 @@ TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
             auto out = evaluate_xc(XCType::LSDA, ra, rb);
             ref_va = out.vrho_alpha;
             ref_vb = out.vrho_beta;
-            ref_exc = out.exc;
+            ref_exc = out.energy_density / (ra + rb);
         }
         const double t = 1e-12 * std::fmax(1.0, std::abs(ref_exc));
         const double ta = 1e-12 * std::fmax(1.0, std::abs(ref_va));
@@ -244,7 +246,8 @@ TEST(CudaPWXcLda, SpinMatchesCpuEvaluateXc) {
 
     // ζ = 0 must reproduce the restricted kernel (v_a == v_b).
     for (int i = 0; i < nr; ++i) {
-        if (std::abs(rho_a[i] - rho_b[i]) < 1e-18 && rho_a[i] + rho_b[i] > 1e-12)
+        if (std::abs(rho_a[i] - rho_b[i]) < 1e-18
+            && rho_a[i] + rho_b[i] > 1e-12)
             EXPECT_NEAR(va[i], vb[i], 1e-14);
     }
 

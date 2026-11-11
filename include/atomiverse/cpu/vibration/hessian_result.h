@@ -69,7 +69,7 @@ struct HessianResult {
     // ── Dipole derivatives / IR intensities (hf-parity-04) ─────────────
     //
     // The atomic polar tensor (APT) ∂μ_a/∂R_x, populated by the analytic
-    // gradient method (RHF::hessian) alongside the Hessian, reusing the CPHF
+    // gradient method (scf::Hessian<RHF>) alongside the Hessian, reusing the CPHF
     // density response. IR intensities per normal mode follow by projecting
     // this tensor onto `normal_modes`. Empty for the finite-difference
     // vib::Hessian driver (which never solves CPHF).

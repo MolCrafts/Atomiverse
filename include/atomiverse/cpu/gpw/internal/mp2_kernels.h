@@ -18,8 +18,8 @@
 #include <vector>
 
 #include "atomiverse/cpu/gpw/internal/collocate.h" // CompactBasisGrid, UniformGrid
-#include "atomiverse/cpu/gpw/internal/kpoints.h"   // KpointBasisGrid, CplxMatrix
-#include "atomiverse/cpu/linalg/matrix.h"          // RealMatrix, CplxMatrix
+#include "atomiverse/cpu/gpw/internal/kpoints.h" // KpointBasisGrid, CplxMatrix
+#include "atomiverse/cpu/linalg/matrix.h"        // RealMatrix, CplxMatrix
 
 namespace ATV {
 namespace cpu {
@@ -76,11 +76,9 @@ std::vector<double> mo_eri_ovov(const UniformGrid& grid,
 /// @param psi_virt Virtual MO values, row-major (n_virt × npts).
 /// @param n_virt   Virtual count.
 /// @return Same layout as `mo_eri_ovov` [Hartree].
-std::vector<double> mo_eri_ovov_ri(const UniformGrid& grid,
-                                   const std::vector<double>& psi_occ,
-                                   int n_occ,
-                                   const std::vector<double>& psi_virt,
-                                   int n_virt);
+std::vector<double>
+mo_eri_ovov_ri(const UniformGrid& grid, const std::vector<double>& psi_occ,
+               int n_occ, const std::vector<double>& psi_virt, int n_virt);
 
 /// @brief Canonical closed-shell MP2 doubles sum (real orbitals).
 ///
@@ -105,29 +103,23 @@ void mp2_rhf_energy(const std::vector<double>& v_ovov,
 /// `(ia|jb) = out[(i·n_virt_a+a)·nov_b + j·n_virt_b+b]`. No
 /// \((ia|jb)=(jb|ia)\) fill — the two spin channels may differ in size.
 /// @param nonperiodic true → MT isolated Poisson; false → periodic FFT.
-std::vector<double> mo_eri_ovov_ab(const UniformGrid& grid,
-                                   const std::vector<double>& psi_occ_a,
-                                   int n_occ_a,
-                                   const std::vector<double>& psi_virt_a,
-                                   int n_virt_a,
-                                   const std::vector<double>& psi_occ_b,
-                                   int n_occ_b,
-                                   const std::vector<double>& psi_virt_b,
-                                   int n_virt_b, bool nonperiodic);
+std::vector<double>
+mo_eri_ovov_ab(const UniformGrid& grid, const std::vector<double>& psi_occ_a,
+               int n_occ_a, const std::vector<double>& psi_virt_a, int n_virt_a,
+               const std::vector<double>& psi_occ_b, int n_occ_b,
+               const std::vector<double>& psi_virt_b, int n_virt_b,
+               bool nonperiodic);
 
 /// @brief Periodic RI-GPW cross-spin \((i_\alpha a_\alpha|j_\beta b_\beta)\).
 ///
 /// Same layout as `mo_eri_ovov_ab`; numerically matches the Poisson path
 /// on a periodic cell (Parseval / PW resolution of the pair density).
-std::vector<double> mo_eri_ovov_ab_ri(const UniformGrid& grid,
-                                      const std::vector<double>& psi_occ_a,
-                                      int n_occ_a,
-                                      const std::vector<double>& psi_virt_a,
-                                      int n_virt_a,
-                                      const std::vector<double>& psi_occ_b,
-                                      int n_occ_b,
-                                      const std::vector<double>& psi_virt_b,
-                                      int n_virt_b);
+std::vector<double>
+mo_eri_ovov_ab_ri(const UniformGrid& grid, const std::vector<double>& psi_occ_a,
+                  int n_occ_a, const std::vector<double>& psi_virt_a,
+                  int n_virt_a, const std::vector<double>& psi_occ_b,
+                  int n_occ_b, const std::vector<double>& psi_virt_b,
+                  int n_virt_b);
 
 /// @brief Canonical unrestricted MP2 doubles sum (real orbitals; Γ).
 ///
@@ -145,14 +137,11 @@ std::vector<double> mo_eri_ovov_ab_ri(const UniformGrid& grid,
 /// @param eps_occ_b / eps_virt_b β orbital energies [Ha].
 /// @param e_os Out: unscaled opposite-spin [Hartree].
 /// @param e_ss Out: unscaled same-spin (αα+ββ) [Hartree].
-void mp2_uhf_energy(const std::vector<double>& v_aa,
-                    const std::vector<double>& v_bb,
-                    const std::vector<double>& v_ab,
-                    const std::vector<double>& eps_occ_a,
-                    const std::vector<double>& eps_virt_a,
-                    const std::vector<double>& eps_occ_b,
-                    const std::vector<double>& eps_virt_b, double& e_os,
-                    double& e_ss);
+void mp2_uhf_energy(
+    const std::vector<double>& v_aa, const std::vector<double>& v_bb,
+    const std::vector<double>& v_ab, const std::vector<double>& eps_occ_a,
+    const std::vector<double>& eps_virt_a, const std::vector<double>& eps_occ_b,
+    const std::vector<double>& eps_virt_b, double& e_os, double& e_ss);
 
 /// @brief Complex Bloch MO values on the density grid from pre-summed
 ///        \(\chi_\mu^k(g)\).
@@ -177,14 +166,14 @@ std::vector<Cplx> mo_on_grid_k(const KpointBasisGrid& kbg, int ik,
 /// @param k_weights Quadrature weights (Σ = 1; equal-weight foothold).
 /// @param e_os Out: unscaled opposite-spin [Hartree].
 /// @param e_ss Out: unscaled same-spin [Hartree].
-void mp2_rhf_energy_kpoints(
-    const UniformGrid& grid,
-    const std::vector<std::vector<Cplx>>& psi_occ_k,
-    const std::vector<std::vector<Cplx>>& psi_virt_k,
-    const std::vector<std::vector<double>>& eps_occ_k,
-    const std::vector<std::vector<double>>& eps_virt_k,
-    const std::vector<std::array<double, 3>>& k_frac,
-    const std::vector<double>& k_weights, double& e_os, double& e_ss);
+void mp2_rhf_energy_kpoints(const UniformGrid& grid,
+                            const std::vector<std::vector<Cplx>>& psi_occ_k,
+                            const std::vector<std::vector<Cplx>>& psi_virt_k,
+                            const std::vector<std::vector<double>>& eps_occ_k,
+                            const std::vector<std::vector<double>>& eps_virt_k,
+                            const std::vector<std::array<double, 3>>& k_frac,
+                            const std::vector<double>& k_weights, double& e_os,
+                            double& e_ss);
 
 /// @brief Multi-k unrestricted RI-GPW MP2 (momentum-conserving; complex
 ///        Bloch α/β).
@@ -207,8 +196,7 @@ void mp2_rhf_energy_kpoints(
 /// @param e_os Out: unscaled opposite-spin [Hartree].
 /// @param e_ss Out: unscaled same-spin (αα+ββ) [Hartree].
 void mp2_uhf_energy_kpoints(
-    const UniformGrid& grid,
-    const std::vector<std::vector<Cplx>>& psi_occ_a_k,
+    const UniformGrid& grid, const std::vector<std::vector<Cplx>>& psi_occ_a_k,
     const std::vector<std::vector<Cplx>>& psi_virt_a_k,
     const std::vector<std::vector<Cplx>>& psi_occ_b_k,
     const std::vector<std::vector<Cplx>>& psi_virt_b_k,
@@ -274,8 +262,7 @@ void direct_rpa_rhf_energy(const std::vector<double>& v_ovov,
 /// @throws std::invalid_argument on shape / weight errors.
 /// @throws std::runtime_error when (A−B) not PD or any \(\Omega^2\le 0\).
 void direct_rpa_rhf_energy_kpoints(
-    const UniformGrid& grid,
-    const std::vector<std::vector<Cplx>>& psi_occ_k,
+    const UniformGrid& grid, const std::vector<std::vector<Cplx>>& psi_occ_k,
     const std::vector<std::vector<Cplx>>& psi_virt_k,
     const std::vector<std::vector<double>>& eps_occ_k,
     const std::vector<std::vector<double>>& eps_virt_k,
@@ -310,8 +297,7 @@ void direct_rpa_rhf_energy_kpoints(
 /// @throws std::invalid_argument on shape / empty both channels.
 /// @throws std::runtime_error when (A−B) not PD or any \(\Omega^2\le 0\).
 void direct_rpa_uhf_energy_kpoints(
-    const UniformGrid& grid,
-    const std::vector<std::vector<Cplx>>& psi_occ_a_k,
+    const UniformGrid& grid, const std::vector<std::vector<Cplx>>& psi_occ_a_k,
     const std::vector<std::vector<Cplx>>& psi_virt_a_k,
     const std::vector<std::vector<Cplx>>& psi_occ_b_k,
     const std::vector<std::vector<Cplx>>& psi_virt_b_k,
@@ -331,11 +317,11 @@ void direct_rpa_uhf_energy_kpoints(
 /// (state s, OV component ia). Same science as molecular
 /// `OrbitalHessian::direct_rpa` (including the \(X,Y\) reconstruction).
 struct DirectRpaAmplitudes {
-    double e_corr = 0.0;           ///< Furche \(E_c\) [Hartree].
-    double tr_A = 0.0;             ///< \(\mathrm{Tr}\,A\) [Hartree].
-    std::vector<double> omega;     ///< \(\Omega_s\) ascending [Hartree].
-    std::vector<double> X;         ///< row-major [s, ia].
-    std::vector<double> Y;         ///< row-major [s, ia].
+    double e_corr = 0.0;       ///< Furche \(E_c\) [Hartree].
+    double tr_A = 0.0;         ///< \(\mathrm{Tr}\,A\) [Hartree].
+    std::vector<double> omega; ///< \(\Omega_s\) ascending [Hartree].
+    std::vector<double> X;     ///< row-major [s, ia].
+    std::vector<double> Y;     ///< row-major [s, ia].
 };
 
 /// @brief dRPA Hermitian reduction with X/Y amplitudes for spectral G0W0.
@@ -372,14 +358,11 @@ void direct_rpa_rhf(const std::vector<double>& v_ovov,
 ///             OV space (α then β).
 /// @throws std::invalid_argument on size mismatch or empty both channels.
 /// @throws std::runtime_error when (A−B) is not PD or any \(\Omega^2\le 0\).
-void direct_rpa_uhf(const std::vector<double>& v_aa,
-                    const std::vector<double>& v_bb,
-                    const std::vector<double>& v_ab,
-                    const std::vector<double>& eps_occ_a,
-                    const std::vector<double>& eps_virt_a,
-                    const std::vector<double>& eps_occ_b,
-                    const std::vector<double>& eps_virt_b,
-                    DirectRpaAmplitudes& out);
+void direct_rpa_uhf(
+    const std::vector<double>& v_aa, const std::vector<double>& v_bb,
+    const std::vector<double>& v_ab, const std::vector<double>& eps_occ_a,
+    const std::vector<double>& eps_virt_a, const std::vector<double>& eps_occ_b,
+    const std::vector<double>& eps_virt_b, DirectRpaAmplitudes& out);
 
 /// @brief Real-space Coulomb potentials \(V_{ia}(r)\) of every OV pair density
 ///        \(\rho_{ia}=\psi_i\psi_a\) (periodic FFT Poisson, G=0 dropped).
@@ -401,8 +384,8 @@ std::vector<double> mo_pair_potentials_ov(const UniformGrid& grid,
 /// @param n_occ  Occupied count.
 /// @return Length-`n_mo` vector of \(\Sigma_{x,p}\) [Hartree].
 std::vector<double> exchange_diag_mt(const UniformGrid& grid,
-                                     const std::vector<double>& psi_mo, int n_mo,
-                                     int n_occ);
+                                     const std::vector<double>& psi_mo,
+                                     int n_mo, int n_occ);
 
 /// @brief Multi-k **finite-\(q\) inter-\(k\)** spectral G0W0 quasiparticle
 ///        energies (product multi-k path).
@@ -432,16 +415,16 @@ std::vector<double> exchange_diag_mt(const UniformGrid& grid,
 /// @param all_converged Out: true when every Newton solve succeeded.
 /// @throws std::invalid_argument on shape / weight errors.
 /// @throws std::runtime_error when dRPA reduction is ill-conditioned.
-void spectral_g0w0_rhf_kpoints(
-    const UniformGrid& grid,
-    const std::vector<std::vector<Cplx>>& psi_mo_k,
-    const std::vector<std::vector<double>>& eps_k,
-    const std::vector<std::array<double, 3>>& k_frac,
-    const std::vector<double>& k_weights, int n_occ, int n_virt,
-    const std::vector<double>& vxc_r,
-    std::vector<std::vector<double>>& qp_energy_k,
-    std::vector<std::vector<double>>& sigma_x_k,
-    std::vector<std::vector<double>>& vxc_diag_k, bool& all_converged);
+void spectral_g0w0_rhf_kpoints(const UniformGrid& grid,
+                               const std::vector<std::vector<Cplx>>& psi_mo_k,
+                               const std::vector<std::vector<double>>& eps_k,
+                               const std::vector<std::array<double, 3>>& k_frac,
+                               const std::vector<double>& k_weights, int n_occ,
+                               int n_virt, const std::vector<double>& vxc_r,
+                               std::vector<std::vector<double>>& qp_energy_k,
+                               std::vector<std::vector<double>>& sigma_x_k,
+                               std::vector<std::vector<double>>& vxc_diag_k,
+                               bool& all_converged);
 
 /// @brief Multi-k **finite-\(q\) inter-\(k\) unrestricted spectral G0W0**
 ///        (UGW) quasiparticle energies on UKS Bloch orbitals.
@@ -461,18 +444,19 @@ void spectral_g0w0_rhf_kpoints(
 /// @param vxc_a_r                 Spin-α local XC potential on the grid [Ha].
 /// @param qp_energy_k / sigma_x_k / vxc_diag_k Out: α-channel [nk][n_mo_a].
 /// @param all_converged Out: true when every α Newton solve succeeded.
-void spectral_g0w0_uhf_kpoints(
-    const UniformGrid& grid,
-    const std::vector<std::vector<Cplx>>& psi_mo_a_k,
-    const std::vector<std::vector<Cplx>>& psi_mo_b_k,
-    const std::vector<std::vector<double>>& eps_a_k,
-    const std::vector<std::vector<double>>& eps_b_k,
-    const std::vector<std::array<double, 3>>& k_frac,
-    const std::vector<double>& k_weights, int n_oa, int n_va, int n_ob,
-    int n_vb, const std::vector<double>& vxc_a_r,
-    std::vector<std::vector<double>>& qp_energy_k,
-    std::vector<std::vector<double>>& sigma_x_k,
-    std::vector<std::vector<double>>& vxc_diag_k, bool& all_converged);
+void spectral_g0w0_uhf_kpoints(const UniformGrid& grid,
+                               const std::vector<std::vector<Cplx>>& psi_mo_a_k,
+                               const std::vector<std::vector<Cplx>>& psi_mo_b_k,
+                               const std::vector<std::vector<double>>& eps_a_k,
+                               const std::vector<std::vector<double>>& eps_b_k,
+                               const std::vector<std::array<double, 3>>& k_frac,
+                               const std::vector<double>& k_weights, int n_oa,
+                               int n_va, int n_ob, int n_vb,
+                               const std::vector<double>& vxc_a_r,
+                               std::vector<std::vector<double>>& qp_energy_k,
+                               std::vector<std::vector<double>>& sigma_x_k,
+                               std::vector<std::vector<double>>& vxc_diag_k,
+                               bool& all_converged);
 
 } // namespace internal
 } // namespace gpw

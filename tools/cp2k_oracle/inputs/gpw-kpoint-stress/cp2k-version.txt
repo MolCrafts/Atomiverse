@@ -1,0 +1,26 @@
+ CP2K version 2026.2
+ Source code revision git:c92cc08
+ cp2kflags: omp libint fftw3 libxc parallel scalapack mpi_f08 no_statm_access
+ compiler: GCC version 16.2.0
+ compiler options:
+   -cpp -I /private/tmp/s-B4pbQ8il/cp2k-20260912-5363-4ozy2d/cp2k-2026.
+   2/src -I /private/tmp/s-B4pbQ8il/cp2k-20260912-5363-4ozy2d/cp2k-2026
+   .2/build/src -I /private/tmp/s-B4pbQ8il/cp2k-20260912-5363-4ozy2d/cp
+   2k-2026.2/src/base -I /private/tmp/s-B4pbQ8il/cp2k-20260912-5363-4oz
+   y2d/cp2k-2026.2/src/common -I /private/tmp/s-B4pbQ8il/cp2k-20260912-
+   5363-4ozy2d/cp2k-2026.2/src/motion -I /private/tmp/s-B4pbQ8il/cp2k-2
+   0260912-5363-4ozy2d/cp2k-2026.2/src/dbm -I /private/tmp/s-B4pbQ8il/c
+   p2k-20260912-5363-4ozy2d/cp2k-2026.2/build/src/mod_files -I /opt/hom
+   ebrew/include -I /opt/homebrew/Cellar/fftw/3.3.11/include -I /opt/ho
+   mebrew/Cellar/open-mpi/5.0.10/include -I /opt/homebrew/Cellar/open-m
+   pi/5.0.10/lib -I /opt/homebrew/opt/openblas/include -iprefix /opt/ho
+   mebrew/Cellar/gcc/16.2.0/bin/../lib/gcc/current/gcc/aarch64-apple-da
+   rwin27/16/ -D__DYNAMIC__ -D USING_Libxc -D __COMPILE_ARCH="arm64" -D
+    __COMPILE_HOST="" -D __DATA_DIR="/opt/homebrew/Cellar/cp2k/2026.2/s
+   hare/cp2k/data" -D __FFTW3 -D __LIBINT -D __LIBXC -D __MACOSX -D __M
+   PI_F08 -D __NO_STATM_ACCESS -D __parallel -D __SHORT_FILE__="start/c
+   p2k.F" -D __NO_STATM_ACCESS -mmacosx-version-min=27.0.0 -mlittle-end
+   ian -mabi=lp64 -mcpu=apple-m1 -g -O3 -O3 -Wno-deprecated-declaration
+   s -Wno-maybe-uninitialized -Wuninitialized -Wuse-without-only -std=f
+   2008 -fPIE -ffree-form -fimplicit-none -fno-omit-frame-pointer -fbac
+   ktrace -fallow-argument-mismatch -funroll-loops -fopenmp

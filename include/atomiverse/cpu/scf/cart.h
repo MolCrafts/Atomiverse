@@ -68,7 +68,7 @@ inline constexpr int kMaxNCartOrbital = n_cart_of(kMaxLOrbital);
 ///              xzzz, yyyy, yyyz, yyzz, yzzz, zzzz.
 ///
 /// The caller must supply `out` with at least `n_cart_of(l)` rows.
-inline void fill_cart_comps(int l, int out[][3]) {
+inline constexpr void fill_cart_comps(int l, int out[][3]) {
     int c = 0;
     for (int nx = l; nx >= 0; --nx) {
         for (int ny = l - nx; ny >= 0; --ny) {

@@ -1,57 +1,48 @@
-# Chapter 15. Cross-Method Workflows
+# Comparing Models
 
-One Driver, different force-phase component.
+Reusable software makes it possible to change an energy evaluator without
+rewriting every numerical loop. A fair scientific comparison requires more:
+the models must describe a common system and the reported quantities must
+have compatible definitions.
 
-```cpp
-// Classical
-sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
-// AM1
-// sim.on(md::Phase::force).add(cpu::semiempirical::AM1Evaluator{}.with_gradient(true));
-// AIMD
-// sim.on(md::Phase::force).add(cpu::scf::RHF{});
-```
+**Learning goals.** Separate interface reuse from physical equivalence,
+design a controlled model comparison, and report reproducible evidence.
 
-The architectural payoff of the whole book: method is a **Component**, never a
-new Driver category.
+**Before you begin.** At least one force model,
+[Geometry Optimization](ch12-geometry-optimization.md), and
+[Trajectory Analysis](ch13-observables.md).
 
-> **Build flags.** The quantum half of every comparison below needs
-> `ATV_BUILD_HF=ON` (**OFF by default**); the AM1 line needs
-> `ATV_BUILD_SEMIEMPIRICAL`, which is ON by default. With `HF` off the
-> `cpu::scf::…` headers are not installed at all.
->
-> ```bash
-> cmake -B build -DCMAKE_BUILD_TYPE=Release \
->       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
-> cmake --build build -j$(nproc)
-> ```
+## What a comparison holds fixed
 
-Every chapter of this book has quietly repeated one sentence: *change method
-by swapping the evaluator, keep the driver.* This closing chapter stops
-repeating it and instead runs it, end to end. We take one molecular system
-and drive it through single-point energy, geometry optimization, and
-molecular dynamics — first with a cheap classical force field, then with a
-quantum-mechanical SCF force provider — changing, in each case, exactly one
-line. The point is not any single result; it is that the architecture makes
-"cheap classical" and "expensive quantum" the *same code with one line
-different*, which is what lets you develop a workflow on fast forces and
-promote it to *ab initio* accuracy when you are ready.
+An argon-like Lennard–Jones evaluator does not become a water model simply
+because it fits the same driver as an electronic evaluator. The inherited
+pair/HF substitution is an interface illustration, not an accuracy
+comparison for a covalent molecule. Choose models intended for the target
+material and distinguish their Hamiltonians and reference energy zeros.
 
-The six questions:
+For water, supported AM1, HF, and DFT descriptions can be compared through
+geometry, dipoles, forces, and consistently defined relative energies.
+Start at one geometry. Then optimize independently and re-evaluate each
+geometry with one common reference method. This separates the effect of
+geometry from the effect of the energy model. A Hessian used as an equilibrium
+spectrum should be evaluated at that method's own stationary geometry.
 
-1. **The concept.** What "method" and "cost vs accuracy" mean once the loop
-   is factored out.
-2. **The Atomiverse representation.** The `Evaluator` component as the single
-   pluggable degree of freedom.
-3. **The C++ API.** `cpu::single_point`, `cpu::Evaluate`, `cpu::md::MD`,
-   `cpu::minimizer::Minimize`, and the `SCF` knobs.
-4. **The expected result.** Matching structure, diverging cost, between
-   classical and quantum runs.
-5. **The validation.** A golden end-to-end run and the composition tests that
-   certify the evaluator coexists with every driver.
-6. **The recurring pattern.** This *is* the recurring pattern — the spine of
-   the whole engine.
+## Moving nuclei on an electronic surface
 
-## The Concept: Method Is a Force Provider, Not a Program
+Born–Oppenheimer dynamics uses an adequately converged electronic state at
+each nuclear step. Its conservative energy is
+$H=\sum_A\mathbf p_A^2/(2m_A)+E_{\mathrm{BO}}(\mathbf R)$.
+Extrapolating earlier electronic states can save iterations but does not
+relax the target force accuracy. Extended-Lagrangian and Car–Parrinello
+schemes add electronic dynamics and require their own parameter analysis;
+they are not merely alternative names for converged BO steps.
+
+Long trajectories are sensitive to tiny numerical differences. Compare
+distributions and correlations with uncertainty, rather than demanding
+pointwise trajectory agreement. Keep physical duration, preparation,
+constraints, and sampling definitions fixed in a comparison.
+
+## Models and interfaces
 
 In most simulation software, "run a classical MD" and "run an *ab initio*
 MD" are different programs with different input decks, different data
@@ -77,7 +68,44 @@ The architecture's payoff is that you choose that trade-off with a single
 constructor, at the last possible moment, without touching the workflow
 around it.
 
-## The Representation: One Pluggable Degree of Freedom
+## Practice plan
+
+Build a water study in stages: fixed-geometry energies and force checks,
+independent optimizations, common-reference re-evaluations, and harmonic
+modes. Add dynamics only after the force consistency tests pass.
+
+Record source revision, inputs, data checksums, commands, settings, and
+stopping reasons. Label analytic expectations, inherited numbers, and new
+measurements separately. Unsupported or failed cases belong in the report,
+not silently outside the table. Begin with the smallest experiment that can
+resolve the physical question; larger calculations are not inherently more informative.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
+
+```cpp
+// Classical
+sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
+// AM1
+// sim.on(md::Phase::force).add(cpu::semiempirical::AM1{});
+// AIMD
+// sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
+```
+
+> **Build flags.** The quantum half of every comparison below needs
+> `ATV_BUILD_HF=ON` (**OFF by default**); the AM1 line needs
+> `ATV_BUILD_SEMIEMPIRICAL`, which is ON by default. With `HF` off the
+> `cpu::scf::…` headers are not installed at all.
+>
+> ``bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ``
+
+## Evaluator composition
 
 The CPU presets have different phase enums, but they share the `force`
 phase as a common socket:
@@ -97,7 +125,7 @@ trick, and it is why this book could teach RHF, UHF, DFT, hybrids, plane
 waves, and classical force fields as *variations on one loop* rather than as
 separate subsystems.
 
-## The C++ API: One System, Every Driver, Two Evaluators
+## Workflow comparison
 
 Take a molecular system in a `cpu::Frame` and walk it through the three
 workflows. Keep the evaluator abstract for a moment by defining two:
@@ -191,7 +219,7 @@ this chapter is really about:
   below). It is a *dynamics* optimization — meaningful only when the geometry
   changes smoothly step to step, which is exactly the MD case.
 
-## Ab Initio MD in Practice: ASPC, Output, and Pitfalls
+## Born–Oppenheimer dynamics
 
 The MD row above is the single most consequential cell in the grid — *ab initio*
 molecular dynamics (AIMD), where a fully converged SCF supplies the forces at
@@ -241,7 +269,7 @@ of freedom after centre-of-mass removal, so its instantaneous temperature can
 swing between 50 K and 700 K even when the ensemble average is 100 K. This is
 correct equilibrium thermodynamics for a tiny system, not a thermostat bug: trust
 ensemble averages over many trajectories, never a single short one. (This is the
-analysis-side lesson of [Chapter 13](ch13-observables.md): an observable is a
+analysis-side lesson of [Trajectory Analysis](ch13-observables.md): an observable is a
 trajectory average, not an instantaneous reading.)
 
 **A design note that shaped the method's force-phase launch.** `VelocityVerlet` wraps
@@ -262,66 +290,10 @@ curve, and wrong-sign forces in an intermediate range. In a hot RHF trajectory
 the molecule appears to "fly apart" once thermal motion samples that region. The
 example runs at 100 K, well below where the RHF curve fails; for hot AIMD, swap
 the SCF configuration to UKS with a GGA functional
-([Chapter 5](ch05-kohn-sham-dft.md)) — *the same code path, one config different*,
+([Density Functional Theory](ch05-kohn-sham-dft.md)) — *the same code path, one config different*,
 which is exactly this chapter's thesis applied to a physics decision.
 
-## The Expected Result: Same Structure, Divergent Cost
-
-Run the *same* molecule through classical and quantum optimization and you
-should see the two hallmarks of this architecture:
-
-- **The workflows are structurally identical.** Both optimizations converge
-  by the same five-criterion rule, return the same `int` iteration count
-  contract, and leave the relaxed geometry on the same `cpu::Frame`. Both MD
-  runs report the same `step / PE / KE / T` thermo lines through the same
-  `cpu::Thermo` component. Nothing downstream of the force phase can tell the
-  two apart.
-- **The cost is worlds apart, and the accuracy tracks it.** The classical
-  step is microseconds; the quantum step is a full SCF. In exchange, the
-  quantum run gets the physics right where the force field's parameters were
-  never fit — the canonical example being bond dissociation, where a
-  fixed-form classical potential cannot break a bond and an SCF (with an
-  appropriate method) can.
-
-The disciplined way to report a cross-method comparison is to name each
-number's class. "Classical and quantum optima differ by X Å" is a
-**physical-approximation** statement about the two *methods*. "The AIMD total
-energy drifts by less than Y eV/atom/ps under NVE" is a
-**numerical-tolerance** statement about the *integrator*, independent of which
-evaluator produced the forces. And "a fresh single point on a mid-trajectory
-snapshot reproduces the propagation force to ~1e-5 eV/Å" is the internal
-consistency check that the evaluator carries no illegal step-to-step state.
-
-## The Validation: A Golden Run and Composition Tests
-
-The cross-method promise is validated at two levels.
-
-**Composition.** The concrete method is tested to coexist, without conflict,
-with every ensemble and driver it is supposed to plug into — Nosé-Hoover,
-Langevin, and Berendsen-barostat MD; L-BFGS and CG minimization; and the
-single-pass evaluate driver. These composition tests are what certify that
-"swap the evaluator" is literally true and not just aspirational: the same
-evaluator instance produces correct forces regardless of the loop it is
-embedded in. A specific state-leakage regression confirms that at any point
-in an ASPC-warmstarted run, a stand-alone single point on the snapshot
-geometry agrees with the propagation force to ~1e-5 eV/Å — catching the one
-failure mode (cached geometry-dependent state) that a pluggable evaluator
-could introduce.
-
-**End-to-end golden run.** The designated cross-method validation is a full
-optimize-then-propagate workflow run once as a golden reference, checking that
-the pipeline — build integrals, minimize, run dynamics, read observables —
-produces the committed energies and geometry within tolerance. This is the
-integration test that the *whole* architecture, not any one component, does
-what the manual claims.
-
-Underneath, each half of the swap stands on its own validated foundation: the
-classical forces against LAMMPS ([Chapter 10](ch10-classical-md.md)), the
-quantum forces against PySCF (Chapters [2](ch02-rhf.md), [6](ch06-hybrid-dft.md),
-[14](ch14-vibrations.md)). Cross-method validation does not re-derive those; it
-certifies that *composing* them changes nothing about either.
-
-## The Recurring Pattern: This Was the Pattern All Along
+## A reusable calculation protocol
 
 There is no new pattern to introduce here, because this chapter *is* the
 pattern the whole book has been building toward. Every earlier "how the
@@ -353,16 +325,80 @@ and quantum chemistry as one subject. You have now seen it hold across every
 method the engine supports. The next method you reach for will be one line
 different from the one you already know.
 
-## Validation Reference
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
+
+## Comparing accuracy and cost
+
+Run the *same* molecule through classical and quantum optimization and you
+should see the two hallmarks of this architecture:
+
+- **The workflows are structurally identical.** Both optimizations converge
+  by the same five-criterion rule, return the same `int` iteration count
+  contract, and leave the relaxed geometry on the same `cpu::Frame`. Both MD
+  runs report the same `step / PE / KE / T` thermo lines through the same
+  `cpu::Thermo` component. Nothing downstream of the force phase can tell the
+  two apart.
+- **The cost is worlds apart, and the accuracy tracks it.** The classical
+  step is microseconds; the quantum step is a full SCF. In exchange, the
+  quantum run gets the physics right where the force field's parameters were
+  never fit — the canonical example being bond dissociation, where a
+  fixed-form classical potential cannot break a bond and an SCF (with an
+  appropriate method) can.
+
+The disciplined way to report a cross-method comparison is to name each
+number's class. "Classical and quantum optima differ by X Å" is a
+**physical-approximation** statement about the two *methods*. "The AIMD total
+energy drifts by less than Y eV/atom/ps under NVE" is a
+**numerical-tolerance** statement about the *integrator*, independent of which
+evaluator produced the forces. And "a fresh single point on a mid-trajectory
+snapshot reproduces the propagation force to ~1e-5 eV/Å" is the internal
+consistency check that the evaluator carries no illegal step-to-step state.
+
+## Reference and composition checks
+
+The cross-method promise is validated at two levels.
+
+**Composition.** The concrete method is tested to coexist, without conflict,
+with every ensemble and driver it is supposed to plug into — Nosé-Hoover,
+Langevin, and Berendsen-barostat MD; L-BFGS and CG minimization; and the
+single-pass evaluate driver. These composition tests are what certify that
+"swap the evaluator" is literally true and not just aspirational: the same
+evaluator instance produces correct forces regardless of the loop it is
+embedded in. A specific state-leakage regression confirms that at any point
+in an ASPC-warmstarted run, a stand-alone single point on the snapshot
+geometry agrees with the propagation force to ~1e-5 eV/Å — catching the one
+failure mode (cached geometry-dependent state) that a pluggable evaluator
+could introduce.
+
+**End-to-end golden run.** The designated cross-method validation is a full
+optimize-then-propagate workflow run once as a golden reference, checking that
+the pipeline — build integrals, minimize, run dynamics, read observables —
+produces the committed energies and geometry within tolerance. This is the
+integration test that the *whole* architecture, not any one component, does
+what the manual claims.
+
+Underneath, each half of the swap stands on its own validated foundation: the
+classical forces against LAMMPS ([Molecular Dynamics](ch10-classical-md.md)), the
+quantum forces against PySCF (Chapters [2](ch02-rhf.md), [6](ch06-hybrid-dft.md),
+[14](ch14-vibrations.md)). Cross-method validation does not re-derive those; it
+certifies that *composing* them changes nothing about either.
+
+## Reference provenance
 
 Evaluator composition — a Gaussian SCF method standing in for a classical
 force field inside the same MD loop — is proved end-to-end by
-[`regressions/architecture/lj_rhf_coupled`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/architecture/lj_rhf_coupled)
+`lj_rhf_coupled`
 and by the AIMD energy-conservation case
-[`regressions/scf/h2_rhf_sto3g_aimd`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2_rhf_sto3g_aimd);
+`h2_rhf_sto3g_aimd`;
 that one driver shape serves several method kinds is
-[`regressions/architecture/harmonic_driver_matrix`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/architecture/harmonic_driver_matrix).
+`harmonic_driver_matrix`.
 the optimizer hot-swap (LBFGS ↔ CG on one `Minimize` driver) in
-[`tests/cpu/test_minimize_driver_swap_optimizer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/test_minimize_driver_swap_optimizer.cpp).
+[`tests/cpu/test_minimize_driver_swap_optimizer.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/test_minimize_driver_swap_optimizer.cpp).
 The end-to-end golden cross-method run is the designated integration
 validation for the "swap the evaluator" workflow.
+
+## Questions for reflection
+
+How would you isolate a geometry effect from a Hamiltonian effect? Why does divergence between two long trajectories not by itself establish an implementation error?

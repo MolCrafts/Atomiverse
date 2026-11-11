@@ -1,0 +1,80 @@
+=== gpw/rks :: gpw-kpoint-stress ===
+[2026-10-25 18:25:21.206] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:21.206] [info] all components built
+  ok: unstrained SCF converged
+  ok: Bloch occupied-orbital payload present
+  energy [Ha] vs CP2K got=-1.534831191288e+01 want=-1.534831294286e+01 tol=1.000e-03 ok
+[2026-10-25 18:25:42.205] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:42.205] [info] all components built
+[2026-10-25 18:25:45.300] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:45.300] [info] all components built
+[2026-10-25 18:25:48.256] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:48.256] [info] all components built
+[2026-10-25 18:25:51.385] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:51.385] [info] all components built
+[2026-10-25 18:25:54.443] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:54.443] [info] all components built
+[2026-10-25 18:25:57.411] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:25:57.411] [info] all components built
+[2026-10-25 18:26:00.284] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:26:00.284] [info] all components built
+  sigma_xx [Ha/Bohr3] vs CP2K got= 8.830009345421e-04 want= 8.830288224302e-04 tol=1.000e-04 ok
+  sigma_xx fixed-P vs relaxed FD got= 8.830009345421e-04 want= 8.830732845373e-04 tol=1.000e-04 ok
+  sigma_yy [Ha/Bohr3] vs CP2K got= 8.830009345059e-04 want= 8.830288224302e-04 tol=1.000e-04 ok
+  sigma_yy fixed-P vs relaxed FD got= 8.830009345059e-04 want= 8.830732845792e-04 tol=1.000e-04 ok
+  sigma_zz [Ha/Bohr3] vs CP2K got= 2.610088523410e-04 want= 2.610133709962e-04 tol=1.000e-04 ok
+  sigma_zz fixed-P vs relaxed FD got= 2.610088523410e-04 want= 2.610217407687e-04 tol=1.000e-04 ok
+  sigma_xy [Ha/Bohr3] vs CP2K got= 0.000000000000e+00 want=-1.200416608108e-17 tol=1.000e-04 ok
+  off-diagonal symmetry [Ha/Bohr3] got= 0.000000000000e+00 want= 0.000000000000e+00 tol=1.000e-08 ok
+  sigma_xz [Ha/Bohr3] vs CP2K got= 0.000000000000e+00 want= 4.151832425841e-16 tol=1.000e-04 ok
+  off-diagonal symmetry [Ha/Bohr3] got= 0.000000000000e+00 want= 0.000000000000e+00 tol=1.000e-08 ok
+  sigma_yz [Ha/Bohr3] vs CP2K got= 0.000000000000e+00 want= 7.390885694089e-18 tol=1.000e-04 ok
+  off-diagonal symmetry [Ha/Bohr3] got= 0.000000000000e+00 want= 0.000000000000e+00 tol=1.000e-08 ok
+  stress magnitude got=8.830009e-04 want=>1e-6 Ha/Bohr3
+  ok: nonzero stress magnitude floor
+  product 20.617223s relaxed-FD 21.559348s total 42.176571s
+  whole section got=42.176594 want<=60 seconds
+  ok: whole section within 60 seconds
+PASS: gpw-kpoint-stress CP2K single-grid tensor and relaxed FD
+
+=== gpw/rks :: gpw-multigrid-kpoints ===
+[2026-10-25 18:26:28.333] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:26:28.333] [info] all components built
+  ok: M2 TR-mesh multigrid SCF converged
+  [wall] M2 TR-mesh done at 1.5 s
+M2: E(4k TR, 40 Ry mg) = -15.801283522 Ha (iters=8)
+[2026-10-25 18:26:29.819] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:26:29.819] [info] all components built
+  ok: M3 single-grid SCF converged
+  [wall] M3 single-grid done at 2.5 s
+M3: E(mg 40) = -15.8012835220 Ha, E(sg 40) = -15.8012584422 Ha, |Δ(mg-sg)| = 2.5080e-05 Ha
+  ok: M3 multigrid vs single-grid |Δ| <= 1e-3 Ha
+[2026-10-25 18:26:30.739] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:26:30.739] [info] all components built
+MAIN: wall 2.0 s (REFERENCE perf twin: CP2K NGRIDS 4 run)
+  ok: M4 MP 2x2x2 multigrid SCF converged
+  ok: M4 finite e_total
+  ok: M4 k payload shapes (4 TR k-points)
+MAIN: E(MP 2x2x2, 150 Ry, NGRIDS 4) = -15.8024626202 Ha (iters=7)
+M5: |E − pin| = 4.621e-05 Ha (pin -15.8024164125)
+  ok: M5 absolute e_tot within 1e-3 Ha of CP2K pin
+[2026-10-25 18:26:33.602] [info] CPU runtime initialized: 8 threads
+[2026-10-25 18:26:33.602] [info] all components built
+  ok: M6 unstrained stress SCF converged
+  ok: M6 Bloch occupied-orbital payload present
+M6 energy [Ha] vs CP2K got=-1.534831194482e+01 want=-1.534831294240e+01 tol=1.000e-03 ok
+M6 sigma_xx [Ha/Bohr3] vs CP2K got= 8.829993550716e-04 want= 8.830288421814e-04 tol=1.000e-04 ok
+M6 sigma_yy [Ha/Bohr3] vs CP2K got= 8.829993586542e-04 want= 8.830288421814e-04 tol=1.000e-04 ok
+M6 sigma_zz [Ha/Bohr3] vs CP2K got= 2.610098495735e-04 want= 2.610133142687e-04 tol=1.000e-04 ok
+M6 sigma_xy [Ha/Bohr3] vs CP2K got= 0.000000000000e+00 want=-2.844103446693e-16 tol=1.000e-04 ok
+M6 off-diagonal symmetry [Ha/Bohr3] got= 0.000000000000e+00 want= 0.000000000000e+00 tol=1.000e-08 ok
+M6 sigma_xz [Ha/Bohr3] vs CP2K got= 0.000000000000e+00 want= 2.379157345532e-16 tol=1.000e-04 ok
+M6 off-diagonal symmetry [Ha/Bohr3] got= 0.000000000000e+00 want= 0.000000000000e+00 tol=1.000e-08 ok
+M6 sigma_yz [Ha/Bohr3] vs CP2K got= 0.000000000000e+00 want= 3.705222108457e-18 tol=1.000e-04 ok
+M6 off-diagonal symmetry [Ha/Bohr3] got= 0.000000000000e+00 want= 0.000000000000e+00 tol=1.000e-08 ok
+M6 stress magnitude got=8.829994e-04 want=>1e-6 Ha/Bohr3
+  ok: M6 nonzero stress magnitude floor
+M6 fixed-P stress product wall 13.235127 s
+Whole section got=17.708007 want<=60 seconds
+  ok: whole section within 60 seconds
+PASS: gpw-multigrid-kpoints — multi-k GPW RKS with REL_CUTOFF multigrid product collocation (TR, grid residual, CP2K energy/stress pins)

@@ -50,28 +50,38 @@ Two policy slots let you change *when* a run ends without writing a driver:
 | Lennard-Jones + bonded styles | `PairLJCut` / `BondHarmonic` / … (`Potential`) | `ATV_BUILD_POTENTIALS` |
 | Reciprocal-space electrostatics | `KSpaceEwald` / `KSpacePME` / `KSpacePPPM` (`Potential`) | `ATV_BUILD_KSPACE` |
 | Gaussian SCF — Hartree-Fock and Kohn-Sham | `cpu::scf::RHF` / `UHF` / `ROHF` / `GHF` / `RKS` / `UKS` / `ROKS` (`HF`) | `ATV_BUILD_HF` |
-| Plane-wave DFT | `cpu::pw::PWEvaluator` (`PlaneWave`) | `ATV_BUILD_PW` |
-| Gaussian-and-plane-waves DFT | `cpu::gpw::GPWEvaluator` (`GPW`) | `ATV_BUILD_GPW` |
-| NDDO semiempirics | `cpu::semiempirical::AM1Evaluator` / `RM1Evaluator` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
-| DFTB | `cpu::semiempirical::DFTB0` / `DFTB2` / `DFTB3` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
+| Plane-wave DFT | `cpu::pw::PW` (nested `Driver<pw::Phase>`) | `ATV_BUILD_PW` |
+| Gaussian-and-plane-waves DFT | `cpu::gpw::GpwDft` (nested `Driver<gpw::Phase>`) | `ATV_BUILD_GPW` |
+| NDDO semiempirics | `cpu::semiempirical::AM1` / `RM1`; CUDA counterparts provide CHNO molecular E/q/analytic F (nested `Driver<nddo::Phase>`) | `ATV_BUILD_SEMIEMPIRICAL`; CUDA additionally `ATV_BUILD_CUDA` |
+| DFTB | `cpu::semiempirical::DFTB0` / `DFTB3` (`Semiempirical`); `DFTB2` is also a nested `Driver<scc::Phase>` | `ATV_BUILD_SEMIEMPIRICAL` |
 | Extended tight binding | `cpu::semiempirical::GFN0` / `GFN1` / `GFN2` / `IPEA` (`Semiempirical`) | `ATV_BUILD_SEMIEMPIRICAL` |
 
 Most methods are a **concrete type** carrying its parameters as constructor
 arguments and public members, with `run(frame)` as the entry point —
 `cpu::scf::RHF`/`UHF`/`RKS`/`UKS` (`cpu/scf/methods.h`), `cpu::pw::PW`
-(`cpu/planewave/pw_solver.h`), `cpu::semiempirical::AM1`/`RM1`
-(`cpu/semiempirical/am1_solver.h`). `PW` and `AM1` want one `build(reference)`
-before the first `run()`; the SCF methods build themselves.
+(`cpu/planewave/pw_solver.h`), `cpu::gpw::GpwDft` (`cpu/gpw/gpw_solver.h`),
+`cpu::semiempirical::AM1`/`RM1` (`cpu/semiempirical/am1_solver.h`). `PW` and
+`GpwDft` want one `build(reference)` before the first `run()`; Gaussian SCF
+and AM1/RM1 build themselves on first use. AM1/RM1 also permit explicit
+`build(reference)` to prepare their workspace.
 
-`cpu::gpw::GpwDft` (`cpu/gpw/gpw_solver.h`) is the exception: its `run()` takes
-a `std::vector<GpwAtom>` — positions in **Bohr**, with the contracted basis and
-the GTH pseudopotential already resolved per atom — not a `Frame`. The
-Frame-shaped entry point for GPW is therefore the `cpu::gpw::GPWEvaluator`
-component (`cpu/gpw/gpw_evaluator.h`), which owns the solver and does that
-translation; use it, not `GpwDft`, from user code.
+`GpwDft` takes one `Kind` (element + contracted Gaussian basis + GTH
+pseudopotential) per element and reads positions [Å], Z (`kAtom_atomic_number`) and the
+orthorhombic box from the Frame; `run(frame)` writes the energy [eV] and
+`forces(frame)` also writes `kAtom_f*` [eV/Å]. For Born–Oppenheimer work,
+mount the method directly on the outer Driver:
 
-Bind the matching evaluator component when a Driver needs energy/forces on a
-Plan slot.
+```cpp
+cpu::gpw::GpwDft dft{{O, H}, 400.0, cpu::gpw::XcKind::PBE};          // cpu::gpw::Kind per element
+cpu::Evaluate driver;
+driver.on(evaluate::Phase::evaluate).add_ref(dft);
+driver.run(frame);
+```
+
+The parent phase requests energy/forces; stress is assembled when the plan
+consumes it. The borrowed method must outlive the Driver.
+`cpu::gpw::GPWEvaluator` remains for electronic propagators (CPMD,
+second-gen CP, XL-BOMD) and callers awaiting migration.
 
 ## Classical molecular dynamics
 
@@ -139,14 +149,13 @@ Open-shell and KS:
 #include "atomiverse/cpu/scf/methods.h"
 using namespace ATV;
 
-cpu::scf::UHF uhf(/*n_alpha=*/5, /*n_beta=*/4);
-uhf.charge = 1;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/4, /*charge=*/1};
 uhf.run(frame);
 
-cpu::scf::RKS rks(cpu::scf::XCType::PBE);
+cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::scf::XCType::PBE};
 rks.run(frame);
 
-cpu::scf::UKS uks(1, 1, cpu::scf::XCType::LSDA);
+cpu::scf::UKS uks{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/1, cpu::scf::XCType::LSDA};
 uks.run(frame);
 ```
 
@@ -166,7 +175,7 @@ using namespace ATV;
 
 cpu::md::MD aimd;
 aimd.set_integrator(cpu::md::VelocityVerlet{0.5});
-aimd.on(md::Phase::force).add(cpu::scf::RHF{});  // concrete method as force component
+aimd.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});  // concrete method as force component
 aimd.build();
 aimd.run(frame, 100);
 ```
@@ -180,24 +189,21 @@ the CP2K-style hybrid — Gaussian orbitals with a plane-wave density — carryi
 in-tree GTH pseudopotentials, MOLOPT basis sets, and DFT-D3 dispersion, so it
 needs no external data files.
 
-A plane-wave run has **no default pseudopotential**: set exactly one of
-`gth_name` (analytic Goedecker-Teter-Hutter, shipped in-tree — H, O, Na, Cl, Ar,
-Si, Ni, Zn) or `upf_path` (a norm-conserving UPF file). Setting neither, or
-both, throws.
+A plane-wave run takes a `shared_ptr<const electronic::NormConservingPotential>`.
+Use `GthPseudopotential(element, name)`, `UpfPseudopotential(path)`, or derive
+the public physical interface in an independent project. The built-ins and
+custom providers use the same CPU NC operators; every Frame atom must match
+the provider's explicit element. See the [independent extension](https://github.com/MolCrafts/Atomiverse/blob/dev/examples/extensions/nc/README.md).
 
 ```cpp
-#include <utility>
-
 #include "atomiverse/cpu/evaluate/single_point.h"
-#include "atomiverse/cpu/planewave/pw_evaluator.h"
+#include "atomiverse/cpu/planewave/pw_solver.h"
 using namespace ATV;
 
-cpu::pw::PW pw;
-pw.gth_name = "GTH-PBE-q4";               // in-tree analytic GTH (Si, 4 valence e⁻)
-pw.ecut_ry = 30.0;                        // wavefunction cutoff [Ry]
-pw.k_mesh = 4;                            // Monkhorst-Pack mesh per dimension
-cpu::pw::PWEvaluator pwe{std::move(pw)};  // PW is move-only
-cpu::single_point(frame, pwe);            // frame.meta.get(ATV::kEnergy) (eV)
+cpu::pw::PW pw{std::make_shared<cpu::pw::GthPseudopotential>(molrs::Element::Si, "GTH-PBE-q4"),  // in-tree analytic GTH (Si, 4 valence e⁻)
+               30.0,                                       // wavefunction cutoff [Ry]
+               4};                                         // Monkhorst-Pack mesh per dimension
+cpu::single_point(frame, pw);             // frame.meta.get(ATV::kEnergy) (eV)
 ```
 
 See [Chapter 8](../tutorial/ch08-plane-wave.md) and
@@ -220,7 +226,7 @@ opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});  // memory, alpha0, max_l
 // Convergence is the criterion's, not the optimizer's. Omit it and Minimize
 // attaches cpu::ForceConverged{} with its defaults.
 opt.add_criterion(cpu::ForceConverged{/*ftol=*/0.05});
-opt.on(minimizer::Phase::force).add(cpu::scf::RHF{});
+opt.on(minimizer::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
 opt.build();
 opt.run(frame, 100);
 ```
@@ -251,23 +257,82 @@ double e = mc.current_energy();            // (eV); mc.acceptance_ratio() in [0,
 
 ## Semiempirical and tight binding
 
-Roughly SCF accuracy at a small fraction of the cost — the right choice when a
-full Gaussian SCF is too expensive per step. Three families, all CPU-only:
+These parameterized electronic models have distinct accuracy and coverage
+limits. All three families have CPU implementations; native CUDA currently
+adds a restricted AM1/RM1 energy/charge/analytic-force path:
 
-- **NDDO** — `AM1` and `RM1`, with analytic nuclear forces and AM1-BCC charge
-  assignment. Pinned against OpenMOPAC.
+- **NDDO** — `AM1` and `RM1`, with analytic nuclear forces from three-direction
+  Cartesian derivatives of the pair integrals, contracted with the converged
+  density. CPU convergence requires both density and energy tolerances. Model
+  parameters are unchanged; executed OpenMOPAC 23.2.5 pins cover energy, heat
+  of formation, charges and full forces for distorted H₂O, CO and NH₃.
 - **DFTB** — `DFTB0` (non-SCC), `DFTB2` (SCC) and `DFTB3` (third order) on the
-  in-tree mio-1-1 and 3ob-3-1 Slater-Koster tables for H/C/N/O. DFTB2 carries
+  shipped Slater-Koster tables for H/C/N/O. DFTB2 supports mio-1-1 and
+  molecular 3ob-3-1. Its implemented variants carry
   analytic forces and analytic cell stress for closed and open shell, at Gamma
-  and on a k-mesh, plus D3 dispersion, DFTB+U, and linear-response TD-DFTB.
-  Pinned against DFTB+.
+  and on a k-mesh. Additional capabilities include two-body D3 dispersion,
+  energy-only DFTB+U (no +U forces/stress), and TD-DFTB excitation energies.
+  DFTB0/2 have external DFTB+ pins within the documented variants; multi-k
+  external evidence remains open. DFTB3 uses a restricted mixed parameter
+  setup with internal snapshots and FD derivative checks, not a completed
+  external DFTB3 Hamiltonian match.
 - **Extended tight binding** — `GFN0`, `GFN1`, `GFN2` and `IPEA`, each with
-  analytic forces and an FD Hessian. Pinned against xtb.
+  analytic forces and an FD Hessian. Existing xtb cases pass; GFN2 still needs
+  tight external full-force-vector validation before its CUDA migration.
 
-Each is a concrete type with its parameters as members; bind the matching
-evaluator (or the method itself, which is a `Semiempirical` component) into any
-Driver that needs energy and forces. See
-[Chapter 17](../tutorial/ch17-semiempirical-am1.md).
+Mount CPU AM1/RM1 directly in the parent phase; their SCF uses the parent's
+Runtime. Standalone `run(Frame&)` overwrites E/q and preserves forces;
+`run(const Frame&)` updates only the method result; `forces(Frame&)` overwrites
+E/q/F. Mounted evaluation adds energy and requested forces and writes charges.
+Both SCF residual criteria must pass, and failed/trial/initial-force solves do
+not replace the accepted electronic guess. CPU methods remain molecular and
+closed shell, with existing charged and s/p-element support; RM1's shipped
+parameters cover H/C/N/O/P/S. Neither supplies periodic NDDO stress or UHF.
+
+`cuda::semiempirical::AM1` and `RM1` expose the same standalone E/q/F semantics
+for neutral closed-shell CHNO isolated molecules in FP64, including heat of
+formation and analytic forces. They explicitly reject stress, nonzero charge,
+open shells, non-CHNO elements and periodic cells. CUDA Evaluate mounts these
+methods directly; standalone/mounted results, additive contributions and
+failure/retry are verified. Both methods pass CUDA MD initial-force preparation,
+2+2 versus four-step continuation and CPU/CUDA four-step agreement at `0.01 fs`.
+Three steepest-descent steps lower energy, without establishing optimization
+convergence. Line-search trial/rejection, host edits between chunks and longer
+NVE/time-step convergence remain unverified.
+Python exposes CPU AM1; RM1 and CUDA NDDO Python parity remain open.
+
+See [Chapter 17](../tutorial/ch17-semiempirical-am1.md) for usage and the
+[method-by-method roadmap](../roadmap/semiempirical.md) for executed evidence
+and variant limits. AM1/RM1 support is not completion of the full SQM method
+set or input compatibility.
+
+### AM1-BCC charges (GAFF / GAFF2)
+
+`AM1BCCCharges` computes molecular AM1-BCC or ABCG2 partial charges.
+The correction family is independent of the GAFF generation.
+
+1. It runs AM1 at the molecular graph's geometry to get the Mulliken base charges.
+2. It averages those charges over topologically equivalent atoms.
+3. It adds the AM1-BCC (`"bcc"`) or ABCG2 (`"abcg2"`) bond charge increments.
+
+The fixed-geometry benchmark compares the result with AmberTools
+`antechamber -c bcc` / `-c abcg2`. The graph must carry the molecule's bonds
+and coordinates; the net charge is the `AM1` constructor argument `charge`.
+
+```cpp
+#include "atomiverse/cpu/semiempirical/am1_bcc_charges.h"
+using namespace ATV::cpu::semiempirical;
+
+AM1 am1{/*charge=*/-1};  // net molecular charge (e)
+auto charges = AM1BCCCharges{am1, "bcc"}.assign(molecule); // owned charges [e]
+```
+
+The geometry is used as given. By default antechamber first optimises the
+structure with sqm. To get the same, run a `Minimize` over a mounted `AM1`
+before calling `assign`. The charge model accepts a chemical molecular graph
+and returns charges in atom order without modifying that graph. Python uses
+`AM1BCCCharges(method=AM1(charge=-1), correction="bcc").assign(molecule)`,
+where `molecule` is a molpy `Atomistic`.
 
 ## Vibrations
 

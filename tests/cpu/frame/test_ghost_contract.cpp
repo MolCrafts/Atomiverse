@@ -180,15 +180,16 @@ TEST(TestGhostContract, OppositeDirectionsOnOneColumnIsAConflict) {
 /// Positions are read at step freshness regardless of what any component
 /// says — producing current ghost positions is what the halo is for. Mirrors
 /// LAMMPS' `default_comm = {"x"}`. Identity does not change while a ghost
-/// lives; forces travel the other way.
+/// lives; forces travel the other way. The force-field type is not an engine
+/// field — a Frame need not carry one — so only a per-type style declares it.
 TEST(TestGhostContract, EngineDeclarationSplitsByAxis) {
     const GhostContract c = base_fields::engine_contract();
     ASSERT_TRUE(c.contains("x"));
     EXPECT_EQ(c.find("x")->freshness, Freshness::step);
     ASSERT_TRUE(c.contains("tag"));
     EXPECT_EQ(c.find("tag")->freshness, Freshness::stable);
-    ASSERT_TRUE(c.contains("type"));
-    EXPECT_EQ(c.find("type")->freshness, Freshness::stable);
+    EXPECT_FALSE(c.contains("type"));
+    EXPECT_FALSE(c.contains("atomic_number"));
     ASSERT_TRUE(c.contains("fx"));
     EXPECT_EQ(c.find("fx")->access, GhostAccess::reduce);
     // and NOT the two the old global table shipped with no consumer
@@ -233,7 +234,7 @@ TEST(TestGhostContract, CoulombReadsGhostChargeAtStableFreshness) {
 /// rank nothing changed (there are no ghosts); at 8 ranks `coul/cut` read
 /// whatever those ghost rows happened to hold and pumped 44% onto the total
 /// energy, with `sum_i F_i` still exactly zero because the bogus `q_i q_j`
-/// is symmetric. `regressions/md/multihop-widebox-parity` caught it; this is
+/// is symmetric. `regressions/md/domain-decomposition` caught it; this is
 /// the unit-level guard.
 TEST(TestGhostContract, EveryGhostChargeReaderDeclaresIt) {
     const cpu::PairCoulCut coul_cut{/*cutoff=*/9.0};
@@ -319,7 +320,7 @@ TEST(TestGhostContract, CheckPassesWhenTheFrameCarriesEverything) {
 }
 
 /// A declared field the Frame does not carry is refused, and the message
-/// names it — the systematic form of CLAUDE.md's per-component rule.
+/// names it — the systematic form of docs/developer/project-contract.md's per-component rule.
 TEST(TestGhostContract, CheckNamesEveryMissingField) {
     cpu::Frame f(4);
     constexpr std::array table = {
@@ -364,7 +365,7 @@ TEST(TestGhostContract, WrongDtypeIsReported) {
 TEST(TestGhostContract, WrongWidthIsReported) {
     cpu::Frame f(4);
     constexpr std::array table = {
-        GhostField::read_stable("image", ColDType::Int8, 1, "NarrowComponent"),
+        GhostField::read_stable("image", ColDType::Image, 1, "NarrowComponent"),
     };
     const auto errors = cpu::validate_ghosts(folded(table), f);
     ASSERT_EQ(errors.size(), 1u);

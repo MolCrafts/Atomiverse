@@ -39,8 +39,9 @@ void TriclinicCellRelax::launch(const LaunchContext& ctx) {
     };
 
     if (ctx.at(ATV::minimizer::Phase::search_direction)) {
-        // ε_αβ = α σ_αβ / B  with σ = s/V
-        const double invVB = alpha0 / (bulk_mod * V);
+        // ε_αβ = α σ_αβ / B  with σ = s/V · nktv2p (the run's pressure
+        // unit, like B).
+        const double invVB = alpha0 * ctx.runtime.units.nktv2p / (bulk_mod * V);
         // Full symmetric strain from Voigt
         eps_(0, 0) = clamp(invVB * s[0]);
         eps_(1, 1) = clamp(invVB * s[1]);

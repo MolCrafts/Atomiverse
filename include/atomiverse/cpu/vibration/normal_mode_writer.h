@@ -8,7 +8,7 @@
 /// along that normal-mode eigenvector through a sinusoidal sweep —
 /// suitable for visualization in any XYZ-trajectory viewer.
 ///
-/// Single responsibility (CLAUDE.md): this component performs I/O only.
+/// Single responsibility (docs/developer/project-contract.md): this component performs I/O only.
 /// The eigenvectors are taken from the shared workspace; un-mass-
 /// weighting (`dx_i = mode_i / sqrt(m_i)`) is the only arithmetic, and
 /// is the standard Cartesian-displacement form PySCF `norm_mode` uses.

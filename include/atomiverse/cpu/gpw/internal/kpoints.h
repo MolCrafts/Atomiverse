@@ -30,11 +30,14 @@
 
 #include <array>
 #include <complex>
+#include <functional>
+#include <span>
+#include <stdexcept>
 #include <vector>
 
 #include <xtensor/containers/xtensor.hpp>
 
-#include "atomiverse/cpu/gpw/gpw_solver.h" // GpwAtom, GridBasisFunction
+#include "atomiverse/cpu/gpw/gpw_solver.h" // internal::GpwAtom, GridBasisFunction
 #include "atomiverse/cpu/linalg/eigensolve.h" // eigh_hermitian
 
 namespace ATV {
@@ -57,6 +60,86 @@ struct KPoint {
 /// @param time_reversal Fold ±κ pairs (keep one, double its weight).
 /// @throws std::invalid_argument when any N_d < 1.
 std::vector<KPoint> monkhorst_pack(const int mesh[3], bool time_reversal);
+
+void validate_k_sampling(const int mesh[3],
+                         std::span<const std::array<double, 3>> points,
+                         std::span<const double> weights);
+
+/// Explicit points keep their order and weights. Otherwise sample the mesh.
+std::vector<KPoint>
+sample_kpoints(const int mesh[3], bool time_reversal,
+               std::span<const std::array<double, 3>> points,
+               std::span<const double> weights);
+
+/// Energy-weighted density from flattened occupied Bloch orbitals.
+CplxMatrix
+energy_weighted_from_occ(const std::vector<std::complex<double>>& C_occ,
+                         const std::vector<double>& eps, int nb, int n_occ,
+                         double occ = 2.0);
+
+CplxMatrix energy_weighted_from_frac(const CplxMatrix& C,
+                                     const std::vector<double>& eps,
+                                     const std::vector<double>& occupations);
+
+/// @brief Physical reciprocal-space data for one AO Fourier-overlap link.
+struct FourierOverlapLink {
+    std::array<double, 3>
+        ket_frac{};                 ///< Ket Bloch k in fractional coordinates.
+    std::array<double, 3> q_bohr{}; ///< Unwrapped ket-minus-bra step [Bohr⁻¹].
+};
+
+/// @brief Exact cross-k AO operators for all requested links in one batch.
+///
+/// S_link(i,j) = Σ_T exp(2πi ket_frac·t)
+///              ∫ a_i(r) b_j(r−T) exp(−i q_bohr·r) d³r.
+/// Links with exactly equal Cartesian q share each image-local primitive
+/// Fourier integral. Each output retains its original image/primitive sum
+/// order. Independent AO rows are parallel; both spin manifolds can borrow
+/// the same operators. There is no persistent cache.
+/// @param basis Contracted Cartesian Gaussian basis, centers [Bohr].
+/// @param radii Per-function Gaussian radii [Bohr].
+/// @param L Orthorhombic cell edges [Bohr].
+/// @param m Per-axis lattice image half-counts.
+/// @param screen Same Gaussian-product pair screen as overlap/kinetic setup.
+/// @param links Physical ket k and short Fourier step for every output.
+/// @return One row-major nb*nb matrix per link, in input order.
+/// @throws std::invalid_argument for incompatible dimensions or invalid
+///         cell/image/link parameters. Primitive-domain errors propagate
+///         after the row workers join.
+std::vector<std::vector<std::complex<double>>>
+build_fourier_overlap_links(const std::vector<GridBasisFunction>& basis,
+                            const std::vector<double>& radii, const double L[3],
+                            const int m[3], double screen,
+                            std::span<const FourierOverlapLink> links);
+
+/// @brief Add one weighted Bloch density into a real-space image-cell stack.
+/// @param P Hermitian row-major density matrix at one sampled k point.
+/// @param weight Physical k-point quadrature weight [dimensionless].
+/// @param phases exp(-2*pi*i*k.t), in the stack's image-cell order.
+/// @param density_stack Accumulator: D[t] += weight * Re(P * phases[t]);
+///        one preallocated row-major nb*nb matrix per image cell.
+/// @throws std::invalid_argument if matrix or stack shapes do not match.
+void accumulate_bloch_density_stack(
+    const CplxMatrix& P, double weight,
+    std::span<const std::complex<double>> phases,
+    std::vector<std::vector<double>>& density_stack);
+
+/// Collocation phases in the order of the supplied k points and image cells.
+std::vector<std::vector<std::complex<double>>>
+build_bloch_cell_phases(std::span<const KPoint> kpoints,
+                        std::span<const std::array<int, 3>> cells);
+
+/// Real-space density stack from the selected rank-local or complete k set.
+std::vector<std::vector<double>>
+build_bloch_density_stack(const GpwGeometry& geometry,
+                          std::span<const CplxMatrix> density,
+                          std::size_t first_k = 0, std::size_t stride = 1);
+
+/// Fold the real-space potential stack with the conjugate collocation phases.
+CplxMatrix
+phase_bloch_potential(const GpwGeometry& geometry,
+                      const std::vector<std::vector<double>>& potential,
+                      int ik);
 
 /// @brief Build S_k and T_k for every k in ONE lattice-image sweep.
 ///
@@ -102,6 +185,13 @@ void add_nonlocal_kb_k(std::vector<CplxMatrix>& V_k,
                        const std::vector<double>& radii, const double L[3],
                        const int mimg[3], double screen,
                        const std::vector<KPoint>& kpts);
+
+/// Contract the derivative of the same separable Bloch operator with P_k.
+void add_nonlocal_kb_k_forces(
+    const GpwGeometry& geometry,
+    const std::vector<std::array<GridBasisFunction, 3>>& derivatives,
+    std::span<const int> owner, const std::vector<CplxMatrix>& density,
+    double screen, std::vector<std::array<double, 3>>& force);
 
 /// @brief Per-k pre-summed complex basis-on-grid values.
 ///
@@ -161,8 +251,21 @@ struct KOrth {
 std::pair<std::vector<double>, CplxMatrix> diagonalize_k(const CplxMatrix& H_k,
                                                          const KOrth& orth);
 
+/// @brief Natural orbitals of a Bloch density: \(P_k S_k c = n c\), solved as
+///        \(X^\dagger (S_k P_k S_k) X\,c' = n\,c'\), \(c = X c'\) — the
+///        complex sibling of `linalg::natural_orbitals`. Diagonalizing \(P_k\)
+///        itself against \(S_k\) would differ by \(S_k^{-1}\).
+/// @param P_k Hermitian Bloch density (dimensionless), nb × nb.
+/// @param S_k Hermitian Bloch overlap (dimensionless), nb × nb.
+/// @param orth Canonical orthogonalizer of `S_k`.
+/// @return Ascending occupations [dimensionless] and S-orthonormal natural
+///         orbitals (nb × m); the most occupied are the rightmost columns.
+std::pair<std::vector<double>, CplxMatrix>
+natural_orbitals_k(const CplxMatrix& P_k, const CplxMatrix& S_k,
+                   const KOrth& orth);
+
 /// @brief k-space DIIS error vector e = X†(H P S − S P H)X — the complex
-///        sibling of `gpw_diis_error`; → 0 at self-consistency.
+///        sibling of `linalg::diis_error`; → 0 at self-consistency.
 CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
                         const CplxMatrix& S, const CplxMatrix& X);
 
@@ -170,12 +273,20 @@ CplxMatrix k_diis_error(const CplxMatrix& H, const CplxMatrix& P,
 ///
 /// One shared extrapolation: B_ij = Σ_k w_k Re Tr(e_i^k† e_j^k) with the
 /// commutator residual e^k = X†(H_k P_k S_k − S_k P_k H_k)X — the standard
-/// k-point generalization of the Γ `GpwDiis`.
+/// k-point generalization of the Γ `linalg::DIISMixer`.
 class KDiis {
   public:
+    using Reducer = std::function<void(double*, int)>;
     /// @param max_vectors History depth (≥ 1). @param weights k weights.
-    KDiis(int max_vectors, std::vector<double> weights)
-        : max_vectors_(max_vectors), weights_(std::move(weights)) {}
+    /// @param sum Optional in-place reduction of the packed Pulay block.
+    /// Empty means local histories; the helper never chooses a communicator.
+    KDiis(int max_vectors, std::vector<double> weights, Reducer sum = {})
+        : max_vectors_(max_vectors), weights_(std::move(weights)),
+          sum_(std::move(sum)) {
+        if (max_vectors < 1)
+            throw std::invalid_argument(
+                "KDiis: history depth must be positive");
+    }
 
     /// @brief Store {H_k}, {e_k} and return the extrapolated {H_k}.
     ///        Latest H during warm-up or on a singular B system.
@@ -185,6 +296,7 @@ class KDiis {
   private:
     int max_vectors_;
     std::vector<double> weights_;
+    Reducer sum_;
     std::vector<std::vector<CplxMatrix>> h_hist_;
     std::vector<std::vector<CplxMatrix>> e_hist_;
 };

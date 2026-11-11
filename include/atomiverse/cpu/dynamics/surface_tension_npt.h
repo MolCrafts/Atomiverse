@@ -17,7 +17,7 @@ namespace md {
 ///
 ///     P_⊥(t) = P_n − n_surf · γ / L_z(t),   P_z = P_n
 ///
-/// (\(P\) [eV/Å³], \(\gamma\) [eV/Å²], \(L_z\) [Å]).
+/// (\(P\) [style pressure], \(\gamma\) [eV/Å²], \(L_z\) [Å]).
 ///
 /// **Replaces** (do not add alongside) `VelocityVerlet`, `NoseHoover`,
 /// `Barostat`, and plain isotropic `NoseHooverNPT`.
@@ -35,7 +35,7 @@ class SurfaceTensionNPT : public NoseHooverNPT {
     /// @brief Construct an NPγT integrator (parameters assigned immediately).
     /// @param T_target   Target temperature [K].
     /// @param tau_T      Thermostat damping [fs] (LAMMPS Tdamp).
-    /// @param P_normal   Target normal pressure \(P_n = P_{zz}\) [eV/Å³]
+    /// @param P_normal   Target normal pressure \(P_n = P_{zz}\) [style pressure]
     ///                   (LAMMPS sign, positive compressive).
     /// @param gamma      Target surface tension [eV/Å²].
     /// @param tau_P      Barostat damping [fs] (LAMMPS Pdamp).

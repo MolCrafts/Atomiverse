@@ -1,0 +1,235 @@
+{
+  "oracle": "CP2K",
+  "version": "2026.2",
+  "revision": "git:c92cc08",
+  "date": "2026-10-25",
+  "binary": "/opt/homebrew/bin/cp2k.psmp",
+  "data_directory": "/opt/homebrew/share/cp2k/data",
+  "stress_algorithm": "ANALYTICAL",
+  "voigt_order": [
+    "xx",
+    "yy",
+    "zz",
+    "xy",
+    "xz",
+    "yz"
+  ],
+  "bar_to_Ha_Bohr3": {
+    "factor": 3.398930921743166e-09,
+    "formula": "1e5 * a0_m**3 / Eh_J",
+    "a0_m": 5.29177210903e-11,
+    "Eh_J": 4.3597447222071e-18,
+    "constants": "CODATA 2018 SI"
+  },
+  "acceptance_bounds": {
+    "fixed_before_external_and_new_Atomiverse_comparisons": true,
+    "system": "Si BCT four atom, a=5.43Angstrom, PBE/DZVP-MOLOPT-GTH/GTH-PBE-q4, MP1x1x2 TR",
+    "CUTOFF_Ry": 100,
+    "variants": [
+      {
+        "NGRIDS": 1
+      },
+      {
+        "NGRIDS": 4,
+        "REL_CUTOFF_Ry": 40
+      }
+    ],
+    "external_engine": "CP2K2026.2 git:c92cc08",
+    "energy_absolute_tolerance_Ha": 0.001,
+    "stress_each_component_absolute_tolerance_Ha_Bohr3": 0.0001,
+    "fixed_P_vs_reconverged_FD_absolute_tolerance_Ha_Bohr3": 0.0001,
+    "symmetry_off_diagonal_absolute_tolerance_Ha_Bohr3": 1e-08,
+    "stress_nonzero_floor_Ha_Bohr3": 1e-06,
+    "reason": "retain original section bounds; replace self-goldens with printed independent results, same bounds for the MG branch",
+    "regression_layout": "Single-grid stress keeps its original relaxed-FD checks; multigrid external energy/full tensor is in the existing multigrid section alongside unchanged 150 Ry energy and 40 Ry identity gates. Each complete section has a 60s bound.",
+    "whole_section_seconds": 60
+  },
+  "runs": [
+    {
+      "variant": "singlegrid",
+      "command": [
+        "/opt/homebrew/bin/cp2k.psmp",
+        "-i",
+        "gpw-kpoint-stress.inp",
+        "-o",
+        "cp2k.out"
+      ],
+      "input_sha256": "f902df13100cb971fe04c6a1e14e166c5eec8a7e18ea16e770637fb13869f38a",
+      "wall_seconds": 63.90360374993179,
+      "exit_code": 0,
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "ngrids": 1,
+      "rel_cutoff_Ry": 40,
+      "scf_iterations": 12,
+      "input": "../gpw-kpoint-stress.inp",
+      "raw_output": "singlegrid.cp2k.txt",
+      "raw_output_sha256": "8f9b38ed84c63fb098c56c8131490a4312e14ff9537dbb04409a8cb76ce75b5c",
+      "energy_Ha": -15.348312942859359,
+      "stress_matrix_bar": [
+        [
+          259796.048452,
+          -3.53174758695e-09,
+          1.2215112697e-07
+        ],
+        [
+          -3.53174758695e-09,
+          259796.048452,
+          2.17447364017e-09
+        ],
+        [
+          1.2215112697e-07,
+          2.17447364017e-09,
+          76792.7848508
+        ]
+      ],
+      "stress_voigt_Ha_Bohr3": [
+        0.0008830288224301885,
+        0.0008830288224301885,
+        0.0002610133709961543,
+        -1.2004166081076166e-17,
+        4.1518324258410863e-16,
+        7.390885694089235e-18
+      ],
+      "energy_output_line": " ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]            -15.348312942859359",
+      "stress_output_lines": [
+        " STRESS| Analytical stress tensor [bar]",
+        " STRESS|                        x                   y                   z",
+        " STRESS|      x        2.59796048452E+05  -3.53174758695E-09   1.22151126970E-07",
+        " STRESS|      y       -3.53174758695E-09   2.59796048452E+05   2.17447364017E-09",
+        " STRESS|      z        1.22151126970E-07   2.17447364017E-09   7.67927848508E+04"
+      ],
+      "regression_section": "gpw/rks:gpw-kpoint-stress"
+    },
+    {
+      "variant": "multigrid",
+      "command": [
+        "/opt/homebrew/bin/cp2k.psmp",
+        "-i",
+        "gpw-kpoint-stress-multigrid.inp",
+        "-o",
+        "cp2k.out"
+      ],
+      "input_sha256": "1d5a7f986152fc207a02970125b239c9c835e0a6f42901e8f32acecf69442fb4",
+      "wall_seconds": 17.833723124931566,
+      "exit_code": 0,
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "ngrids": 4,
+      "rel_cutoff_Ry": 40,
+      "scf_iterations": 12,
+      "input": "../gpw-kpoint-stress-multigrid.inp",
+      "raw_output": "multigrid.cp2k.txt",
+      "raw_output_sha256": "0a9546a87e25529df24f164fcc2bf5248ec8329e7b3d01dd66421d97b54b186f",
+      "energy_Ha": -15.348312942398339,
+      "stress_matrix_bar": [
+        [
+          259796.054263,
+          -8.36764121477e-08,
+          6.99972256074e-08
+        ],
+        [
+          -8.36764121477e-08,
+          259796.054263,
+          1.09011397812e-09
+        ],
+        [
+          6.99972256074e-08,
+          1.09011397812e-09,
+          76792.768161
+        ]
+      ],
+      "stress_voigt_Ha_Bohr3": [
+        0.0008830288421813762,
+        0.0008830288421813762,
+        0.000261013314268677,
+        -2.84410344669343e-16,
+        2.3791573455322444e-16,
+        3.705222108456521e-18
+      ],
+      "energy_output_line": " ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]            -15.348312942398339",
+      "stress_output_lines": [
+        " STRESS| Analytical stress tensor [bar]",
+        " STRESS|                        x                   y                   z",
+        " STRESS|      x        2.59796054263E+05  -8.36764121477E-08   6.99972256074E-08",
+        " STRESS|      y       -8.36764121477E-08   2.59796054263E+05   1.09011397812E-09",
+        " STRESS|      z        6.99972256074E-08   1.09011397812E-09   7.67927681610E+04"
+      ],
+      "regression_section": "gpw/rks:gpw-multigrid-kpoints"
+    }
+  ],
+  "data_file_sha256": {
+    "BASIS_MOLOPT": "686dd72e7601ee41d4a173e4c7c3946f1e750f03095090f44d3821c180a81a61",
+    "GTH_POTENTIALS": "5a9bfbc3b37a55917ade4fb704b80546d210d843759b94e3915e74acfc3fafb2"
+  },
+  "native_validation": [
+    {
+      "section": "gpw/rks:gpw-kpoint-stress",
+      "command": [
+        "/tmp/atv-xc-build/regressions/atv_regressions",
+        "--case",
+        "gpw/rks"
+      ],
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "8"
+      },
+      "date": "2026-10-25",
+      "result": "PASS",
+      "raw_output": "native-validation.txt",
+      "raw_output_sha256": "f25f3b6e92b91bf2ea16f39f5b6387cfe10c60ce75996c373041f8e5afdf6418",
+      "product_wall_seconds": 20.617223,
+      "whole_section_wall_seconds": 42.176594,
+      "energy_Ha": -15.34831191288,
+      "energy_absolute_error_Ha": 1.029979999955799e-06,
+      "stress_Ha_Bohr3": {
+        "xx": 0.0008830009345421,
+        "yy": 0.0008830009345059,
+        "zz": 0.000261008852341,
+        "xy": 0.0,
+        "xz": 0.0,
+        "yz": 0.0
+      },
+      "stress_max_absolute_error_Ha_Bohr3": 2.788792430004957e-08,
+      "parsing_note": "Native numbers are parsed from printed values, not additional reference pins.",
+      "performance_context": "Native shared-process section environment requests OMP_NUM_THREADS=8/OPENBLAS_NUM_THREADS=8; external independent-process environment requests OMP_NUM_THREADS=8/OPENBLAS_NUM_THREADS=1. Actual CP2K internal BLAS width was not queried. Environment requests do not establish a fair matched-width wall ratio or speedup.",
+      "supplemental_relaxed_fd_wall_seconds": 21.559348
+    },
+    {
+      "section": "gpw/rks:gpw-multigrid-kpoints",
+      "command": [
+        "/tmp/atv-xc-build/regressions/atv_regressions",
+        "--case",
+        "gpw/rks"
+      ],
+      "environment": {
+        "OMP_NUM_THREADS": "8",
+        "OPENBLAS_NUM_THREADS": "8"
+      },
+      "date": "2026-10-25",
+      "result": "PASS",
+      "raw_output": "native-validation.txt",
+      "raw_output_sha256": "f25f3b6e92b91bf2ea16f39f5b6387cfe10c60ce75996c373041f8e5afdf6418",
+      "product_wall_seconds": 13.235127,
+      "whole_section_wall_seconds": 17.708007,
+      "energy_Ha": -15.34831194482,
+      "energy_absolute_error_Ha": 9.975799990513678e-07,
+      "stress_Ha_Bohr3": {
+        "xx": 0.0008829993550716,
+        "yy": 0.0008829993586542,
+        "zz": 0.0002610098495735,
+        "xy": 0.0,
+        "xz": 0.0,
+        "yz": 0.0
+      },
+      "stress_max_absolute_error_Ha_Bohr3": 2.9487109800001472e-08,
+      "parsing_note": "Native numbers are parsed from printed values, not additional reference pins.",
+      "performance_context": "Native shared-process section environment requests OMP_NUM_THREADS=8/OPENBLAS_NUM_THREADS=8; external independent-process environment requests OMP_NUM_THREADS=8/OPENBLAS_NUM_THREADS=1. Actual CP2K internal BLAS width was not queried. Environment requests do not establish a fair matched-width wall ratio or speedup."
+    }
+  ],
+  "thread_environment_note": "Recorded OMP_NUM_THREADS and OPENBLAS_NUM_THREADS values are process environment requests. Actual CP2K internal BLAS width was not queried; OPENBLAS_NUM_THREADS=1 does not establish BLAS1 for an OpenMP OpenBLAS build."
+}

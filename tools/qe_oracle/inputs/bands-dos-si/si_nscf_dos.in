@@ -1,4 +1,4 @@
-! Fair-wall twin of regressions/pw/bands-dos-si, step 3 of 4: NSCF DOS mesh.
+! Fair-wall twin of regressions/pw/bands-dos, step 3 of 4: NSCF DOS mesh.
 ! ATV's Dos: MP 4x4x4 (unshifted, 64 k solved without reduction), 8 bands.
 ! QE reduces the mesh to its IBZ set natively.
 &control

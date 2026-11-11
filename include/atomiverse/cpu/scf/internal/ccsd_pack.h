@@ -6,7 +6,6 @@
 
 #include <xtensor/containers/xtensor.hpp>
 
-#include "atomiverse/cpu/scf/cc2.h"
 #include "atomiverse/cpu/scf/ccsd.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
@@ -49,32 +48,14 @@ struct CCSDSolution {
     int n_vir_b = 0;
 };
 
-/// @brief Closed-shell CCSD correlation energy from a converged RHF reference.
-///
-/// Expands the spatial MO ERI tensor to spin-orbitals, builds Gauss–Stanton
-/// intermediates, and iterates T₁/T₂ by plain Jacobi updates until
-/// max|Δt| < `tol` or `max_iter` is exhausted.
-///
-/// Closed-shell RHF routes to the spatial-orbital fast path
-/// (`ccsd_energy_spatial`); the spin-orbital kernel stays the oracle and the
-/// backbone for EOM/(T)/CC2/gradient/UCCSD.
-/// @param ints     Integral pack with the dense ERI tensor materialized.
-/// @param det      Converged closed-shell determinant (MO coeffs, ε, n_e).
-/// @param e_scf_ha Converged SCF total energy [Hartree].
-/// @param tol      Amplitude residual tolerance (dimensionless max-norm).
-/// @param max_iter Jacobi/DIIS iteration budget (dimensionless).
-/// @param use_diis When true, accelerate with `CcAmplitudeDiis`; false → plain
-///                 Jacobi (same fixed point).
-/// @return CCSD correlation and total energies [Hartree].
-/// @throws std::invalid_argument on open-shell / missing ERI / non-aufbau
-///         denominators / non-convergence (no silent fallback).
-CCSDResult ccsd_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                       double e_scf_ha, double tol = 1e-10, int max_iter = 100,
-                       bool use_diis = true);
+/// The closed-shell product energies are `CCSD::run` and `CC2::run`
+/// (`Driver<cc::Phase>` over the spatial cycle; CC2 sets `cc2`).
+/// Spin-orbital `ccsd_solve` remains the amplitude source for CCSD(T) and
+/// EOM, including EOM-CC2 (`cc2=true`).
 
 /// @brief Closed-shell CCSD(T): CCSD amplitudes + non-iterative (T).
 ///
-/// Same CCSD path as `ccsd_energy`, then the spin-orbital (T) formula of
+/// Spin-orbital CCSD (`ccsd_solve`), then the spin-orbital (T) formula of
 /// Watts–Gauss–Bartlett (J. Chem. Phys. **98**, 8718 (1993); PySCF
 /// `gccsd_t.kernel`). Matches PySCF `cc.CCSD(...).ccsd_t()` on RHF.
 ///
@@ -84,33 +65,19 @@ CCSDResult ccsd_energy(const internal::IntegralView& ints, const SlaterDetermina
 /// @param tol      Amplitude residual tolerance (dimensionless max-norm).
 /// @param max_iter Jacobi iteration budget (dimensionless).
 /// @return CCSD(T) correlation pieces and total energy [Hartree].
-/// @throws std::invalid_argument as for `ccsd_energy`.
+/// @throws std::invalid_argument on open-shell / missing ERI / non-convergence.
 CCSDTResult ccsd_t_energy(const internal::IntegralView& ints,
                           const SlaterDeterminant& det, double e_scf_ha,
                           double tol = 1e-10, int max_iter = 100);
 
-/// @brief Same as `ccsd_energy` but also returns amplitudes and SO integral
+/// @brief Spin-orbital CCSD amplitudes and SO integral
 ///        blocks for EOM-EE-CCSD (private). Closed-shell RHF only.
 /// @param cc2 When true, use the CC2 doubles residual (Christiansen 1995)
 ///            instead of full CCSD; singles residual stays full CCSD.
-CCSDSolution ccsd_solve(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                        double e_scf_ha, double tol = 1e-10, int max_iter = 100,
+CCSDSolution ccsd_solve(const internal::IntegralView& ints,
+                        const SlaterDeterminant& det, double e_scf_ha,
+                        double tol = 1e-10, int max_iter = 100,
                         bool cc2 = false);
-
-/// @brief Closed-shell CC2 correlation energy (Christiansen–Koch–Jørgensen).
-///
-/// Same spin-orbital infrastructure as `ccsd_energy` with the CC2 T₂
-/// truncation. Matches PySCF `cc.RCCSD(mf)` with `cc2=True`.
-///
-/// @param ints     Integral pack with the dense ERI tensor materialized.
-/// @param det      Converged closed-shell determinant (MO coeffs, ε, n_e).
-/// @param e_scf_ha Converged SCF total energy [Hartree].
-/// @param tol      Amplitude residual tolerance (dimensionless max-norm).
-/// @param max_iter Jacobi iteration budget (dimensionless).
-/// @return CC2 correlation and total energies [Hartree].
-/// @throws std::invalid_argument as for `ccsd_energy`.
-CC2Result cc2_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha, double tol = 1e-10, int max_iter = 100);
 
 /// @brief Unrestricted (UHF) spin-orbital CCSD — same Gauss–Stanton
 ///        equations as `ccsd_solve`, with independent α/β MO coefficients
@@ -124,9 +91,9 @@ CC2Result cc2_energy(const internal::IntegralView& ints, const SlaterDeterminant
 /// @return Spin-orbital amplitudes + SO integral blocks for EOM-SF.
 /// @throws std::invalid_argument on restricted det / missing ERI / GHF /
 ///         non-aufbau denominators / non-convergence (no silent fallback).
-CCSDSolution uccsd_solve(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                         double e_scf_ha, double tol = 1e-10,
-                         int max_iter = 100);
+CCSDSolution uccsd_solve(const internal::IntegralView& ints,
+                         const SlaterDeterminant& det, double e_scf_ha,
+                         double tol = 1e-10, int max_iter = 100);
 
 } // namespace scf
 } // namespace cpu

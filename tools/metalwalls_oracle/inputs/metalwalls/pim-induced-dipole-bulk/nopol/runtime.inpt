@@ -1,4 +1,4 @@
-# MW twin of ATV regression regressions/md/pim-induced-dipole-bulk
+# MW twin of ATV regression regressions/md/polarizable
 # Two-site bulk PIM: q=+1 alpha=1.0 A^3 at origin; q=-1 alpha=1.5 A^3 at 3 A.
 # Box 50 A cubic.  All values in atomic units (Bohr, Ha, e).
 # alpha = 0 twin: subtract this run's Coulomb energy / forces from the pol/

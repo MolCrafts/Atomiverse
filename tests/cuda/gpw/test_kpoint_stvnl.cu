@@ -19,14 +19,14 @@
 #include <vector>
 #include <xtensor/containers/xtensor.hpp>
 
+using ATV::cpu::gpw::basis_function_radius;
 using ATV::cpu::gpw::GaussianBasis;
 using ATV::cpu::gpw::GridBasisFunction;
 using ATV::cpu::gpw::GthPotential;
-using ATV::cpu::gpw::basis_function_radius;
 using ATV::cpu::gpw::pair_image_counts;
+using ATV::cpu::gpw::internal::build_overlap_kinetic_k;
 using ATV::cpu::gpw::internal::CplxMatrix;
 using ATV::cpu::gpw::internal::KPoint;
-using ATV::cpu::gpw::internal::build_overlap_kinetic_k;
 using ATV::cuda::gpw::internal::KpointStvnlDevice;
 
 namespace {
@@ -37,17 +37,17 @@ void check_cuda(cudaError_t e, const char* what) {
     ASSERT_EQ(e, cudaSuccess) << what << ": " << cudaGetErrorString(e);
 }
 
-std::vector<ATV::cpu::gpw::GpwAtom> h2_atoms() {
+std::vector<ATV::cpu::gpw::internal::GpwAtom> h2_atoms() {
     const auto basis = GaussianBasis(molrs::Element::H, "DZV-GTH-PADE");
     const auto pot = GthPotential(molrs::Element::H, "GTH-PADE-q1");
     const double rA[3] = {5.5, 6.0, 6.0};
     const double rB[3] = {6.5, 6.0, 6.0};
-    return {ATV::cpu::gpw::GpwAtom(rA, basis, pot, 1),
-            ATV::cpu::gpw::GpwAtom(rB, basis, pot, 1)};
+    return {ATV::cpu::gpw::internal::GpwAtom(rA, basis, pot, 1),
+            ATV::cpu::gpw::internal::GpwAtom(rB, basis, pot, 1)};
 }
 
-std::vector<GridBasisFunction>
-flatten_basis_local(const std::vector<ATV::cpu::gpw::GpwAtom>& atoms) {
+std::vector<GridBasisFunction> flatten_basis_local(
+    const std::vector<ATV::cpu::gpw::internal::GpwAtom>& atoms) {
     std::vector<GridBasisFunction> basis;
     for (const auto& a : atoms)
         for (const auto& bf : a.basis)
@@ -126,10 +126,9 @@ TEST(CudaGpwKpointStvnl, MatchesHostST) {
             for (int t = 0; t < nb; ++t) {
                 const Cplx hs = S_host[static_cast<std::size_t>(ik)](u, t);
                 const Cplx ht = T_host[static_cast<std::size_t>(ik)](u, t);
-                const std::size_t idx =
-                    static_cast<std::size_t>(ik) * nb * nb
-                    + static_cast<std::size_t>(u) * nb
-                    + static_cast<std::size_t>(t);
+                const std::size_t idx = static_cast<std::size_t>(ik) * nb * nb
+                                        + static_cast<std::size_t>(u) * nb
+                                        + static_cast<std::size_t>(t);
                 const Cplx ds = S_dev[idx];
                 const Cplx dt = T_dev[idx];
                 const double as = std::abs(ds - hs);
@@ -145,14 +144,12 @@ TEST(CudaGpwKpointStvnl, MatchesHostST) {
         // Hermiticity of device S
         for (int u = 0; u < nb; ++u) {
             for (int t = 0; t <= u; ++t) {
-                const std::size_t iut =
-                    static_cast<std::size_t>(ik) * nb * nb
-                    + static_cast<std::size_t>(u) * nb
-                    + static_cast<std::size_t>(t);
-                const std::size_t itu =
-                    static_cast<std::size_t>(ik) * nb * nb
-                    + static_cast<std::size_t>(t) * nb
-                    + static_cast<std::size_t>(u);
+                const std::size_t iut = static_cast<std::size_t>(ik) * nb * nb
+                                        + static_cast<std::size_t>(u) * nb
+                                        + static_cast<std::size_t>(t);
+                const std::size_t itu = static_cast<std::size_t>(ik) * nb * nb
+                                        + static_cast<std::size_t>(t) * nb
+                                        + static_cast<std::size_t>(u);
                 const Cplx a = S_dev[iut];
                 const Cplx b = std::conj(S_dev[itu]);
                 EXPECT_NEAR(a.real(), b.real(), 1e-12);
@@ -172,7 +169,7 @@ TEST(CudaGpwKpointStvnl, RejectEmpty) {
     KpointStvnlDevice stvnl;
     std::vector<GridBasisFunction> empty;
     std::vector<double> radii;
-    std::vector<ATV::cpu::gpw::GpwAtom> atoms;
+    std::vector<ATV::cpu::gpw::internal::GpwAtom> atoms;
     double cell[3] = {1, 1, 1};
     int mimg[3] = {0, 0, 0};
     double kfrac[3] = {0, 0, 0};

@@ -45,7 +45,7 @@ ecut/k/XC/UPF/spin/FD): C[(0x),(0x)] = (F⁺ − 2F⁰ + F⁻)/h² · 27.2113862
 = **17.3454 eV/Å²** (F⁰ = −7.820593875040 Ha, F± = −7.820306828150 /
 −7.820307232893 Ha; gapped fill ⇒ \|TS\| ~ 1e-15 Ry, F=E; this host,
 2026-08-01, Release, OMP=1). Recorded with the DFPT gates in
-`regressions/response/dfpt-gga-spin-smearing/REFERENCE.md`.
+`regressions/response/dfpt/REFERENCE.md`.
 
 ## Twin settings (match regression)
 

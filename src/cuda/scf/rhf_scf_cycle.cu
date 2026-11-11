@@ -1,8 +1,8 @@
 /// @file cuda/scf/rhf_scf_cycle.cu
-/// @brief internal::RhfScfCycle — private RHF SCF cycle in scf::Phase order.
+/// @brief internal::RhfScfCycle — one-stage RHF helpers for cuda::scf::RHF.
 ///
-/// Phase order (MeanFieldMethod twin): fock → mix → diagonalize → density →
-/// check. Owned only by cuda::scf::RHF (arch-cuda-scf-solver-fold).
+/// The iteration loop lives on `cuda::Driver<scf::Phase>`. Each `step_*`
+/// is one phase. Mix is PySCF `scf.diis.CDIIS.update` (device CDIIS).
 
 #include "atomiverse/cuda/scf/internal/rhf_scf_cycle.cuh"
 
@@ -61,6 +61,7 @@ static void free_workspace_device(SCFWorkspace& workspace_) {
     }
     cudaFree(workspace_.d_scalar_scratch);
     cudaFree(workspace_.d_W);
+    cudaFree(workspace_.d_gradient);
     cudaFree(workspace_.C_prime);
     workspace_ = {};
 }
@@ -69,8 +70,8 @@ RhfScfCycle::RhfScfCycle(xt::xtensor<double, 2> S, xt::xtensor<double, 2> Hcore,
                          xt::xtensor<double, 4> ERI, double V_nuc,
                          int n_electrons, double tol, int max_iter,
                          double level_shift)
-    : path_(Path::RHFHostIntegrals), tol_(tol), max_iter_(max_iter),
-      level_shift_(level_shift) {
+    : path_(Path::RHFHostIntegrals), tol_(tol), level_shift_(level_shift) {
+    (void)max_iter;
     if (n_electrons < 0 || n_electrons % 2 != 0) {
         throw std::invalid_argument(
             "cuda::scf::RHF: closed-shell RHF requires an even, "
@@ -82,9 +83,9 @@ RhfScfCycle::RhfScfCycle(xt::xtensor<double, 2> S, xt::xtensor<double, 2> Hcore,
     const int n_occ = n_electrons / 2;
     eigen_ = std::make_unique<EigenSolver>();
     convergence_ = std::make_unique<ConvergenceCheck>(tol, false);
-    rhf_fock_ = std::make_unique<RHFFock>(std::move(S), std::move(Hcore),
-                                          std::move(ERI), V_nuc, n_occ,
-                                          level_shift_);
+    rhf_fock_ =
+        std::make_unique<RHFFock>(std::move(S), std::move(Hcore),
+                                  std::move(ERI), V_nuc, n_occ, level_shift_);
     rhf_density_ = std::make_unique<RHFDensity>(n_occ);
     diis_ = std::make_unique<DIISMixer>(/*max_vectors=*/8, /*start_iter=*/1,
                                         level_shift_);
@@ -100,8 +101,8 @@ RhfScfCycle::RhfScfCycle(int n_shells_per_atom, int n_prim,
                          const double* alpha_atom, const double* coeff_atom,
                          int n_occ, double tol, int max_iter,
                          double level_shift)
-    : path_(Path::RHFDeviceIntegrals), tol_(tol), max_iter_(max_iter),
-      level_shift_(level_shift) {
+    : path_(Path::RHFDeviceIntegrals), tol_(tol), level_shift_(level_shift) {
+    (void)max_iter;
     if (n_occ < 0) {
         throw std::invalid_argument(
             "cuda::scf::RHF: n_occ must be non-negative (got "
@@ -124,8 +125,8 @@ RhfScfCycle::RhfScfCycle(int n_shells, int n_ao, int n_prim,
                          const double* alpha_mol, const double* coeff_mol,
                          const int* L_mol, const int* atom_of_mol, int n_occ,
                          double tol, int max_iter, double level_shift)
-    : path_(Path::RHFDeviceIntegrals), tol_(tol), max_iter_(max_iter),
-      level_shift_(level_shift) {
+    : path_(Path::RHFDeviceIntegrals), tol_(tol), level_shift_(level_shift) {
+    (void)max_iter;
     if (n_occ < 0) {
         throw std::invalid_argument(
             "cuda::scf::RHF: n_occ must be non-negative (got "
@@ -140,6 +141,34 @@ RhfScfCycle::RhfScfCycle(int n_shells, int n_ao, int n_prim,
     rhf_fock_device_ = std::make_unique<RHFFockDevice>(
         n_shells, n_ao, n_prim, alpha_mol, coeff_mol, L_mol, atom_of_mol, n_occ,
         level_shift_);
+    rhf_density_ = std::make_unique<RHFDensity>(n_occ);
+    diis_ = std::make_unique<DIISMixer>(/*max_vectors=*/8, /*start_iter=*/1,
+                                        level_shift_);
+}
+
+RhfScfCycle::RhfScfCycle(int n_shells, int n_ao, const double* alpha,
+                         const double* coeff, int n_prim_total,
+                         const int* nprim, const int* prim_off,
+                         const int* L_mol, const int* atom_of_mol, int n_occ,
+                         double tol, int max_iter, double level_shift,
+                         bool spherical)
+    : path_(Path::RHFDeviceIntegrals), tol_(tol), level_shift_(level_shift) {
+    (void)max_iter;
+    if (n_occ < 0) {
+        throw std::invalid_argument(
+            "cuda::scf::RHF: n_occ must be non-negative (got "
+            + std::to_string(n_occ) + ").");
+    }
+    if (n_shells < 1 || n_ao < 1 || n_prim_total < 1) {
+        throw std::invalid_argument(
+            "cuda::scf::RHF: ragged Cartesian shells need n_shells, n_ao, "
+            "and primitives ≥ 1");
+    }
+    eigen_ = std::make_unique<EigenSolver>();
+    convergence_ = std::make_unique<ConvergenceCheck>(tol, false);
+    rhf_fock_device_ = std::make_unique<RHFFockDevice>(
+        n_shells, n_ao, alpha, coeff, n_prim_total, nprim, prim_off, L_mol,
+        atom_of_mol, n_occ, level_shift_, spherical);
     rhf_density_ = std::make_unique<RHFDensity>(n_occ);
     diis_ = std::make_unique<DIISMixer>(/*max_vectors=*/8, /*start_iter=*/1,
                                         level_shift_);
@@ -166,89 +195,95 @@ void RhfScfCycle::build(void* stream, cuda::Frame& frame) {
     built_ = true;
 }
 
-void RhfScfCycle::drive(void* stream, cuda::Frame& frame) {
-    if (!built_)
-        build(stream, frame);
-
+void RhfScfCycle::begin(void* stream) {
+    if (!built_) {
+        throw std::runtime_error(
+            "cuda::scf::RHF: RhfScfCycle::begin before build()");
+    }
     auto cu_stream = static_cast<cudaStream_t>(stream);
     auto& scf = workspace_;
-
-    // Zero P before first iteration (absorbed ZeroDensity).
     scf.converged = false;
     scf.iteration = 0;
-    if (scf.n > 0)
+    polishing_ = false;
+    canonicalized_ = false;
+    if (scf.h_converged_mapped)
+        *scf.h_converged_mapped = 0;
+    if (scf.n > 0 && scf.P)
         cudaMemsetAsync(scf.P, 0, scf.n * scf.n * sizeof(cuda::prec_t),
                         cu_stream);
-
-    // scf::Phase order: fock → mix → diagonalize → density → check
-    // (static_assert the enum order cannot silently reorder)
-    static_assert(static_cast<int>(ATV::scf::Phase::fock) == 0);
-    static_assert(static_cast<int>(ATV::scf::Phase::mix) == 1);
-    static_assert(static_cast<int>(ATV::scf::Phase::diagonalize) == 2);
-    static_assert(static_cast<int>(ATV::scf::Phase::density) == 3);
-    static_assert(static_cast<int>(ATV::scf::Phase::check) == 4);
-
-    iterations_ = 0;
     if (diis_)
         diis_->reset();
-    const bool device_no_d2h = (path_ == Path::RHFDeviceIntegrals);
+    convergence_->reset(stream);
+}
 
-    for (int iter = 0; iter < max_iter_; ++iter) {
-        SolverContext ctx{stream, frame, /*step=*/iter};
+void RhfScfCycle::step_fock(void* stream, cuda::Frame& frame, int step) {
+    SolverContext ctx{stream, frame, step};
+    if (path_ == Path::RHFHostIntegrals)
+        rhf_fock_->step(ctx, workspace_);
+    else
+        rhf_fock_device_->step(ctx, workspace_);
+}
 
-        // ATV::scf::Phase::fock
-        if (path_ == Path::RHFHostIntegrals)
-            rhf_fock_->step(ctx, workspace_);
-        else
-            rhf_fock_device_->step(ctx, workspace_);
-
-        // ATV::scf::Phase::mix (CDIIS + level shift)
+void RhfScfCycle::step_mix(void* stream, cuda::Frame& frame, int step) {
+    SolverContext ctx{stream, frame, step};
+    if (polishing_)
+        diis_->canonicalize(ctx, workspace_);
+    else
         diis_->step(ctx, workspace_);
+}
 
-        // ATV::scf::Phase::diagonalize
-        eigen_->step(ctx, workspace_);
+void RhfScfCycle::step_diagonalize(void* stream, cuda::Frame& frame, int step) {
+    SolverContext ctx{stream, frame, step};
+    eigen_->step(ctx, workspace_);
+}
 
-        // ATV::scf::Phase::density
-        rhf_density_->step(ctx, workspace_);
+void RhfScfCycle::step_density(void* stream, cuda::Frame& frame, int step) {
+    SolverContext ctx{stream, frame, step};
+    rhf_density_->step(ctx, workspace_);
+}
 
-        // ATV::scf::Phase::check
+void RhfScfCycle::step_check(void* stream, cuda::Frame& frame, int step) {
+    SolverContext ctx{stream, frame, step};
+    if (path_ == Path::RHFDeviceIntegrals)
+        convergence_->step_hf(ctx, workspace_, diis_->error());
+    else
         convergence_->step(ctx, workspace_);
+}
 
-        ++iterations_;
-        if (device_no_d2h) {
-            cudaStreamSynchronize(cu_stream);
-            if (scf.h_converged_mapped && *scf.h_converged_mapped) {
-                scf.converged = true;
-                scf.iteration = iter;
-                break;
-            }
-        } else if (scf.converged) {
-            break;
+bool RhfScfCycle::poll_converged(void* stream, int step) {
+    auto& scf = workspace_;
+    if (path_ == Path::RHFDeviceIntegrals) {
+        cudaStreamSynchronize(static_cast<cudaStream_t>(stream));
+        const bool accepted =
+            scf.h_converged_mapped && *scf.h_converged_mapped != 0;
+        if (accepted && !polishing_) {
+            // A candidate must survive one ordinary scheduled iteration with
+            // the fresh physical Fock and no DIIS/level shift. Poll changes
+            // control only; the existing five stages own all science.
+            polishing_ = true;
+            *scf.h_converged_mapped = 0;
+            scf.converged = false;
+            return false;
         }
+        canonicalized_ = polishing_ && accepted;
+        polishing_ = false;
+        scf.converged = accepted;
+        if (scf.converged)
+            scf.iteration = step;
     }
+    return scf.converged;
+}
 
-    // Post-calculation host mirrors (device path; never mid-SCF).
-    if (device_no_d2h) {
+void RhfScfCycle::finish(void* stream) {
+    auto cu_stream = static_cast<cudaStream_t>(stream);
+    auto& scf = workspace_;
+    if (path_ == Path::RHFDeviceIntegrals) {
         if (scf.h_converged_mapped)
             scf.converged = (*scf.h_converged_mapped != 0);
-        if (scf.d_residual) {
-            cuda::prec_t h_res = 0;
-            cudaMemcpyAsync(&h_res, scf.d_residual, sizeof(cuda::prec_t),
-                            cudaMemcpyDeviceToHost, cu_stream);
-            cudaStreamSynchronize(cu_stream);
-            scf.residual = static_cast<double>(h_res);
-        }
-        if (scf.d_V_nuc) {
-            cudaMemcpyAsync(&scf.V_nuc, scf.d_V_nuc, sizeof(double),
-                            cudaMemcpyDeviceToHost, cu_stream);
-            cudaStreamSynchronize(cu_stream);
-        }
-        if (!scf.d_residual && !scf.d_V_nuc)
-            cudaStreamSynchronize(cu_stream);
     }
 
-    // Post-convergence de-shift (hf-robust-03).
-    if (scf.converged && std::abs(level_shift_) > 1e-4 && scf.n_occ < scf.n) {
+    if (scf.converged && !canonicalized_ && std::abs(level_shift_) > 1e-4
+        && scf.n_occ < scf.n) {
         const int n_virt = scf.n - scf.n_occ;
         int blocks = cuda::grid_size(n_virt, cuda::kDefaultBlock);
         deshift_virtuals_kernel<<<blocks, cuda::kDefaultBlock, 0, cu_stream>>>(

@@ -46,17 +46,17 @@ product_weight_device(const DeviceProductGeom& g,
     return s * g.k;
 }
 
-__global__ void pack_weights_kernel(const double* __restrict__ P,
-                                    const DeviceProductGeom* __restrict__ geom,
-                                    const DevicePrimRef* __restrict__ prims,
-                                    const DevicePrimContrib* __restrict__ contribs,
-                                    DeviceProduct* __restrict__ prods, int nprod,
-                                    int nb, double eps_drop) {
+__global__ void pack_weights_kernel(
+    const double* __restrict__ P, const DeviceProductGeom* __restrict__ geom,
+    const DevicePrimRef* __restrict__ prims,
+    const DevicePrimContrib* __restrict__ contribs,
+    DeviceProduct* __restrict__ prods, int nprod, int nb, double eps_drop) {
     const int ip = static_cast<int>(blockIdx.x * blockDim.x + threadIdx.x);
     if (ip >= nprod)
         return;
     const DeviceProductGeom g = geom[ip];
-    double w = product_weight_device(g, prims, contribs, nb, P);
+    const double* cell_P = P + static_cast<size_t>(g.cell) * nb * nb;
+    double w = product_weight_device(g, prims, contribs, nb, cell_P);
     if (fabs(w) < eps_drop)
         w = 0.0;
     DeviceProduct q;
@@ -113,12 +113,12 @@ __global__ void group_max_mag_kernel(DeviceProduct* __restrict__ prods,
 /// One thread walks all products so V accumulation is bit-identical to the
 /// host twin (atomicAdd over shared (μ,ν) is non-associative and can thrash
 /// dual-channel O₂ UKS DIIS). Throughput is fine for Γ product lists.
-__global__ void scatter_acc_kernel(const DeviceProductGeom* __restrict__ geom,
-                                   const DevicePrimRef* __restrict__ prims,
-                                   const DevicePrimContrib* __restrict__ contribs,
-                                   const double* __restrict__ acc, int nprod,
-                                   int nb, double w_grid,
-                                   double* __restrict__ V) {
+__global__ void
+scatter_acc_kernel(const DeviceProductGeom* __restrict__ geom,
+                   const DevicePrimRef* __restrict__ prims,
+                   const DevicePrimContrib* __restrict__ contribs,
+                   const double* __restrict__ acc, int nprod, int nb,
+                   double w_grid, double* __restrict__ V) {
     if (blockIdx.x != 0 || threadIdx.x != 0)
         return;
     for (int ip = 0; ip < nprod; ++ip) {
@@ -126,6 +126,7 @@ __global__ void scatter_acc_kernel(const DeviceProductGeom* __restrict__ geom,
         if (ig == 0.0)
             continue;
         const DeviceProductGeom g = geom[ip];
+        double* cell_V = V + static_cast<size_t>(g.cell) * nb * nb;
         const DevicePrimRef A = prims[g.ua];
         const DevicePrimRef B = prims[g.ub];
         const double sw = g.k * w_grid * ig;
@@ -135,7 +136,7 @@ __global__ void scatter_acc_kernel(const DeviceProductGeom* __restrict__ geom,
             for (int j = 0; j < B.cn; ++j) {
                 const DevicePrimContrib cb = contribs[B.cbeg + j];
                 // V(μ,ν) column-major index μ + ν·nb
-                V[ca.mu + cb.mu * nb] += cas * cb.coeff;
+                cell_V[ca.mu + cb.mu * nb] += cas * cb.coeff;
             }
         }
     }
@@ -146,14 +147,15 @@ __global__ void frobenius_kernel(const double* __restrict__ P,
                                  const double* __restrict__ M, long n,
                                  double* __restrict__ out) {
     __shared__ double s[256];
-    const long i =
-        static_cast<long>(blockIdx.x) * blockDim.x + static_cast<long>(threadIdx.x);
+    const long i = static_cast<long>(blockIdx.x) * blockDim.x
+                   + static_cast<long>(threadIdx.x);
     double v = 0.0;
     if (i < n)
         v = P[i] * M[i];
     s[threadIdx.x] = v;
     __syncthreads();
-    for (int stride = static_cast<int>(blockDim.x) / 2; stride > 0; stride >>= 1) {
+    for (int stride = static_cast<int>(blockDim.x) / 2; stride > 0;
+         stride >>= 1) {
         if (static_cast<int>(threadIdx.x) < stride)
             s[threadIdx.x] += s[threadIdx.x + stride];
         __syncthreads();
@@ -166,48 +168,25 @@ constexpr int kBlock = 256;
 
 } // namespace
 
-void ProductWeightPackDevice::build(cudaStream_t stream, int nb, int nprim,
-                                    int ncontrib) {
+void ProductWeightPackDevice::build(cudaStream_t stream, int nb,
+                                    const DevicePrimRef* d_prims,
+                                    const DevicePrimContrib* d_contribs,
+                                    int ncells) {
     destroy();
     if (nb < 1)
         throw std::invalid_argument(
             "ProductWeightPackDevice::build: nb must be >= 1");
-    if (nprim < 1 || ncontrib < 1)
+    if (!d_prims || !d_contribs || ncells < 1)
         throw std::invalid_argument(
-            "ProductWeightPackDevice::build: empty prim/contrib tables");
+            "ProductWeightPackDevice::build: empty primitive tables or cells");
     stream_ = stream;
     nb_ = nb;
-    nprim_ = nprim;
-    ncontrib_ = ncontrib;
-    check_cuda(cudaMalloc(&d_prims_,
-                          static_cast<size_t>(nprim) * sizeof(DevicePrimRef)),
-               "malloc d_prims");
-    check_cuda(cudaMalloc(&d_contribs_, static_cast<size_t>(ncontrib)
-                                            * sizeof(DevicePrimContrib)),
-               "malloc d_contribs");
-    check_cuda(cudaMalloc(&d_V_,
-                          static_cast<size_t>(nb) * nb * sizeof(double)),
-               "malloc d_V");
+    d_prims_ = d_prims;
+    d_contribs_ = d_contribs;
+    v_bytes_ = static_cast<size_t>(ncells) * nb * nb * sizeof(double);
+    check_cuda(cudaMalloc(&d_V_, v_bytes_), "malloc d_V");
     check_cuda(cudaMalloc(&d_reduce_, sizeof(double)), "malloc d_reduce");
     built_ = true;
-}
-
-void ProductWeightPackDevice::upload_tables(
-    const DevicePrimRef* prims_host, int nprim,
-    const DevicePrimContrib* contribs_host, int ncontrib) {
-    ensure_built_();
-    if (nprim != nprim_ || ncontrib != ncontrib_)
-        throw std::invalid_argument(
-            "ProductWeightPackDevice::upload_tables: size mismatch");
-    check_cuda(cudaMemcpyAsync(d_prims_, prims_host,
-                               static_cast<size_t>(nprim) * sizeof(DevicePrimRef),
-                               cudaMemcpyHostToDevice, stream_),
-               "H2D prims");
-    check_cuda(cudaMemcpyAsync(d_contribs_, contribs_host,
-                               static_cast<size_t>(ncontrib)
-                                   * sizeof(DevicePrimContrib),
-                               cudaMemcpyHostToDevice, stream_),
-               "H2D contribs");
 }
 
 void ProductWeightPackDevice::pack_weights(const double* d_P,
@@ -232,8 +211,8 @@ void ProductWeightPackDevice::apply_group_max_mag(DeviceProduct* d_prods,
         || d_task_end == nullptr)
         return;
     const int blocks = (ntask + kBlock - 1) / kBlock;
-    group_max_mag_kernel<<<blocks, kBlock, 0, stream_>>>(
-        d_prods, d_task_beg, d_task_end, ntask);
+    group_max_mag_kernel<<<blocks, kBlock, 0, stream_>>>(d_prods, d_task_beg,
+                                                         d_task_end, ntask);
     check_cuda(cudaGetLastError(), "group_max_mag_kernel");
 }
 
@@ -243,13 +222,11 @@ void ProductWeightPackDevice::scatter_acc_(const DeviceProductGeom* d_geom,
     ensure_built_();
     if (nprod <= 0)
         return;
-    const size_t vbytes =
-        static_cast<size_t>(nb_) * static_cast<size_t>(nb_) * sizeof(double);
     if (zero_first)
-        check_cuda(cudaMemsetAsync(d_V_, 0, vbytes, stream_), "zero d_V");
+        check_cuda(cudaMemsetAsync(d_V_, 0, v_bytes_, stream_), "zero d_V");
     // Single-thread sequential twin of host scatter (see kernel comment).
-    scatter_acc_kernel<<<1, 1, 0, stream_>>>(
-        d_geom, d_prims_, d_contribs_, d_acc, nprod, nb_, w_grid, d_V_);
+    scatter_acc_kernel<<<1, 1, 0, stream_>>>(d_geom, d_prims_, d_contribs_,
+                                             d_acc, nprod, nb_, w_grid, d_V_);
     check_cuda(cudaGetLastError(), "scatter_acc_kernel");
 }
 
@@ -267,9 +244,8 @@ void ProductWeightPackDevice::scatter_acc_add(const DeviceProductGeom* d_geom,
 
 void ProductWeightPackDevice::download_V(double* V_host) const {
     ensure_built_();
-    check_cuda(cudaMemcpyAsync(V_host, d_V_,
-                               static_cast<size_t>(nb_) * nb_ * sizeof(double),
-                               cudaMemcpyDeviceToHost, stream_),
+    check_cuda(cudaMemcpyAsync(V_host, d_V_, v_bytes_, cudaMemcpyDeviceToHost,
+                               stream_),
                "D2H V");
     check_cuda(cudaStreamSynchronize(stream_), "sync D2H V");
 }
@@ -279,12 +255,10 @@ double ProductWeightPackDevice::frobenius(const double* d_P,
     ensure_built_();
     if (d_P == nullptr || d_M == nullptr)
         return 0.0;
-    const long n =
-        static_cast<long>(nb_) * static_cast<long>(nb_);
+    const long n = static_cast<long>(nb_) * static_cast<long>(nb_);
     check_cuda(cudaMemsetAsync(d_reduce_, 0, sizeof(double), stream_),
                "zero d_reduce");
-    const int blocks =
-        static_cast<int>((n + kBlock - 1) / kBlock);
+    const int blocks = static_cast<int>((n + kBlock - 1) / kBlock);
     frobenius_kernel<<<blocks, kBlock, 0, stream_>>>(d_P, d_M, n, d_reduce_);
     check_cuda(cudaGetLastError(), "frobenius_kernel");
     double h = 0.0;
@@ -305,14 +279,8 @@ void ProductWeightPackDevice::upload_matrix(const double* M_host,
 }
 
 void ProductWeightPackDevice::destroy() {
-    if (d_prims_) {
-        cudaFree(d_prims_);
-        d_prims_ = nullptr;
-    }
-    if (d_contribs_) {
-        cudaFree(d_contribs_);
-        d_contribs_ = nullptr;
-    }
+    d_prims_ = nullptr;
+    d_contribs_ = nullptr;
     if (d_V_) {
         cudaFree(d_V_);
         d_V_ = nullptr;
@@ -323,15 +291,13 @@ void ProductWeightPackDevice::destroy() {
     }
     stream_ = nullptr;
     nb_ = 0;
-    nprim_ = 0;
-    ncontrib_ = 0;
+    v_bytes_ = 0;
     built_ = false;
 }
 
 void ProductWeightPackDevice::ensure_built_() const {
     if (!built_)
-        throw std::runtime_error(
-            "ProductWeightPackDevice: build() not called");
+        throw std::runtime_error("ProductWeightPackDevice: build() not called");
 }
 
 } // namespace internal

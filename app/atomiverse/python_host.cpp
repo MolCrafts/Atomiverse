@@ -38,13 +38,12 @@ std::string probe_major_minor(const std::string& python) {
         python + " -c \"import sys;print('%d.%d'%sys.version_info[:2])\"";
     FILE* pipe = ::popen(cmd.c_str(), "r");
     if (pipe == nullptr)
-        throw std::runtime_error("atomiverse: cannot probe interpreter '"
-                                 + python + "'");
+        throw std::runtime_error("cannot probe interpreter '" + python + "'");
     char buf[32] = {};
     const bool got = std::fgets(buf, sizeof(buf), pipe) != nullptr;
     ::pclose(pipe);
     if (!got)
-        throw std::runtime_error("atomiverse: interpreter '" + python
+        throw std::runtime_error("interpreter '" + python
                                  + "' did not report its version");
     std::string v(buf);
     while (!v.empty() && (v.back() == '\n' || v.back() == '\r'))
@@ -73,14 +72,14 @@ int PythonHost::run() {
                                               locator.executable().c_str());
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
-        throw std::runtime_error("atomiverse: PyConfig executable setup "
+        throw std::runtime_error("PyConfig executable setup "
                                  "failed");
     }
     status =
         PyConfig_SetBytesString(&config, &config.run_filename, script_.c_str());
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
-        throw std::runtime_error("atomiverse: PyConfig script setup failed");
+        throw std::runtime_error("PyConfig script setup failed");
     }
     // The script's own argv (sys.argv = [script, args...]); parse_argv
     // stays off — the launcher consumed its argv already.
@@ -88,7 +87,7 @@ int PythonHost::run() {
     status = PyConfig_SetBytesArgv(&config, argc_, argv_);
     if (PyStatus_Exception(status)) {
         PyConfig_Clear(&config);
-        throw std::runtime_error("atomiverse: PyConfig argv setup failed");
+        throw std::runtime_error("PyConfig argv setup failed");
     }
 
     status = Py_InitializeFromConfig(&config);
@@ -97,7 +96,7 @@ int PythonHost::run() {
         if (PyStatus_IsExit(status))
             return status.exitcode;
         throw std::runtime_error(
-            std::string("atomiverse: Python initialization failed: ")
+            std::string("Python initialization failed: ")
             + (status.err_msg != nullptr ? status.err_msg : "unknown"));
     }
 

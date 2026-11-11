@@ -52,23 +52,53 @@ LAMMPS, MetalWalls — or against an analytic result. There are 564 of them.
 
 **Coverage is uneven between the backends, and the CPU side is far ahead.**
 The CUDA backend is a production classical-MD engine and a much narrower
-electronic-structure one: `cuda::scf::RHF` is restricted Hartree-Fock only,
-over STO-3G s/p shells, and it throws rather than falling back when you leave
-that envelope. [`docs/roadmap/`](docs/roadmap/index.md) states this method by
-method — what runs on CPU, what runs on CUDA, and what is not implemented at
-all. Read it before planning work around a method.
+electronic-structure one: `cuda::scf::RHF` and `cuda::scf::UHF` on STO-3G
+s/p shells (l ≤ 1). `UHF` throws outside that envelope (`launch_eri_sp`)
+rather than filling ERIs on the host; `RHF` forces throw there too.
+[`docs/roadmap/`](docs/roadmap/index.md) states this method by method —
+what runs on CPU, what runs on CUDA, and what is not implemented at all.
+Read it before planning work around a method.
 
 ## Quickstart
 
+For development hooks and CI, see [Validation and CI](docs/developer/ci.md).
+
 ```bash
 git clone --recursive <repo-url> && cd Atomiverse
-# or, in an existing clone:  git submodule update --init --recursive molrs
+# Use the local molpy checkout (default ../molpy): export ATV_MOLPY_PATH=/path/to/molpy
 
 cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DATV_BUILD_CUDA=OFF -DATV_BUILD_HF=ON -DATV_BUILD_EXAMPLES=ON
-cmake --build build --target 02_rhf -j
-./build/examples/02_rhf
+cmake --build build --target 01_rhf -j
+./build/examples/01_rhf
 ```
+
+HF uses OpenMP threads by default. `OMP_NUM_THREADS` or `set_threads(n)` sets
+the count. CUDA and MPI default to OFF and are independent build features:
+
+| Build | Options |
+| --- | --- |
+| CPU HF | `-DATV_BUILD_HF=ON` |
+| CPU HF + MPI | `-DATV_BUILD_HF=ON -DATV_USE_MPI=ON` |
+| CPU + CUDA HF | `-DATV_BUILD_HF=ON -DATV_BUILD_CUDA=ON` |
+| CPU + CUDA HF + MPI | `-DATV_BUILD_HF=ON -DATV_BUILD_CUDA=ON -DATV_USE_MPI=ON` |
+
+The Python build CLI supports the same combinations: `python -m atomiverse
+config --hf`, adding `--mpi`, `--cuda`, or both. Positional `hf cuda` also
+remains supported.
+
+CPU molecular HF exposes one automatic exact J/K strategy: eightfold-symmetric
+integrals are cached when the process memory budget permits; otherwise the
+engine contracts screened density differences. `max_memory_mb` defaults to
+4000 MB. The old `integral_mode` and `compute_eri` SCF switches are removed.
+Post-HF methods materialize their required integrals internally after SCF.
+
+With an MPI build, `method.mpi = true` distributes CPU exact HF J/K. Initialize
+MPI first and call the solve on every `MPI_COMM_WORLD` rank with the same full
+molecular Frame and controls. The s8 cache is replicated; J/K work is divided
+between ranks and matrices are summed collectively. Default `mpi = false`
+keeps independent solves local. CUDA HF retains its existing method envelope;
+enabling MPI does not make CUDA HF a distributed GPU implementation.
 
 That prints the restricted Hartree-Fock energy of H₂ at **E_total ≈ -1.1168
 Hartree**, the textbook value (Szabo & Ostlund, Table 3.7) — a complete
@@ -103,13 +133,15 @@ uv run --with zensical --with molcrafts-zensical-theme zensical serve  # live pr
 cmake -B build/docs -DATV_DOCS_ONLY=ON && cmake --build build/docs --target docs
 ```
 
+Project architecture and build conventions: [project contract](docs/developer/project-contract.md).
+
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | `include/atomiverse/`, `src/` | Mirrored header and implementation trees: `core/` (the CUDA-free contract both backends share), `cpu/`, `cuda/` |
 | `tests/` | Unit tests only — one function or method each, the whole suite in seconds |
-| `regressions/` | End-to-end cases, one directory per delivered capability, each citing its oracle |
+| `regressions/` | Archived scientific case sources and oracle records; no executable runner |
 | `benchmarks/` | Standing performance harnesses; never registered with ctest |
 | `examples/` | The numbered tutorial programs |
 | `docs/` | The manual |
@@ -118,32 +150,15 @@ cmake -B build/docs -DATV_DOCS_ONLY=ON && cmake --build build/docs --target docs
 
 ## Example programs
 
-`examples/` is a flat, numbered sequence — one concept per file, read in order.
-Each tutorial chapter is written around the matching example; the table and the
-rules for adding new ones are in [`examples/README.md`](examples/README.md).
-
-| # | File | Method | Build flag |
-|---|------|--------|------------|
-| 01 | `01_scf.cpp` | The bare SCF loop (no chemistry) | — |
-| 02 | `02_rhf.cpp` | Restricted Hartree-Fock (H₂) | `ATV_BUILD_HF` (CUDA twin `02_rhf.cu`) |
-| 03 | `03_uhf.cpp` | Unrestricted Hartree-Fock | `ATV_BUILD_HF` |
-| 04 | `04_uks.cpp` | Kohn-Sham DFT (UKS-LSDA) | `ATV_BUILD_HF` |
-| 05 | `05_geom_opt.cpp` | Geometry optimization (L-BFGS + DFT) | `ATV_BUILD_HF` |
-| 06 | `06_aimd.cpp` | Ab-initio MD (NVT) | `ATV_BUILD_HF` |
-| 07 | `07_md_lj.cpp` | Classical MD (argon, LJ) | — (CUDA twin `07_md_lj.cu`) |
-| 08 | `08_pw.cpp` | Plane-wave DFT (silicon) | `ATV_BUILD_PW` |
-| 09 | `09_gpw.cpp` | GPW DFT (water) | `ATV_BUILD_GPW` |
-| 11 | `11_koopmans.cpp` | Koopmans IP/EA | `ATV_BUILD_HF` |
-| 12 | `12_delta_scf.cpp` | ΔSCF excited state | `ATV_BUILD_HF` |
-| 13 | `13_mp2.cpp` | MP2 correlation | `ATV_BUILD_HF` |
-| 14 | `14_fci.cpp` | Full CI | `ATV_BUILD_HF` |
-| 15 | `15_am1.cpp` | AM1 semiempirical | `ATV_BUILD_SEMIEMPIRICAL` |
-| 16 | `16_density_cube.cpp` | Density cube output | `ATV_BUILD_HF` |
+`examples/` is split by audience: `cpp/` (numbered C++ API examples, one
+concept each), `python/`, `cli/` (input decks) and `extensions/` (out-of-tree
+projects). The full index and the build flag each example needs are in
+[`examples/README.md`](examples/README.md).
 
 ## Requirements
 
 C++20, CMake ≥ 3.18, BLAS/LAPACK (OpenBLAS), and a Rust toolchain for the
-molrs I/O dependency. The Gaussian-SCF kernels need `-march=native`.
+molpy CXX bridge (`molcxx`). The Gaussian-SCF kernels need `-march=native`.
 Plane-wave DFT (`ATV_BUILD_PW`) and reciprocal-space electrostatics
 (`ATV_BUILD_KSPACE`) need FFTW3. The CUDA backend needs the CUDA toolkit and a
 GPU. xtensor is fetched automatically.
@@ -152,13 +167,11 @@ Every method domain has its own `ATV_BUILD_<DOMAIN>` flag, and turning one off
 excludes its sources, headers, tests and regressions rather than merely hiding
 a symbol — so working on one method never means compiling the whole engine.
 
-**molrs** is a hard dependency, vendored as a git submodule at `./molrs`; the
-gitlink pins the commit this tree was verified against, and a CXX API version
-gate (`cmake/MolrsContract.cmake`) rejects a mismatched one. Developers working
-on both repositories at once can point `ATV_MOLRS_PATH` at a sibling checkout
-instead — that is what the presets in `CMakePresets.json` do, and optional
-bridge surfaces present only in that tree are detected per pin and compiled out
-otherwise.
+**molpy** supplies the shared Frame, I/O and analysis APIs. Build against the
+local MolCrafts/molpy checkout (default: the sibling `../molpy`), or point
+`-DATV_MOLPY_PATH=/path/to/molpy` / the `ATV_MOLPY_PATH` environment variable
+at another one. The C++ bridge is `molcxx/`; the Python wheel is `molpy/`. Both must
+come from the same checkout. No molpy source revision or release is pinned.
 
 ## License
 

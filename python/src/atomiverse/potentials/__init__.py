@@ -7,6 +7,10 @@ convenience names keep the LAMMPS compound spelling
 (``atomiverse.PairLJCut``) and are the same classes.
 """
 
+from atomiverse._binding import require_domain
+
+require_domain(__name__, "potentials")
+
 from atomiverse.potentials import angle, bond, dihedral, improper, pair
 
 __all__ = ["pair", "bond", "angle", "dihedral", "improper"]

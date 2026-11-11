@@ -1,60 +1,53 @@
-# Chapter 14. Vibrations
+# Molecular Vibrations
 
-Preset `cpu::vib::Hessian` builds a finite-difference Hessian and harmonic
-thermochemistry. Bind any force component you trust for Minimize.
+Status tables: [MD roadmap](../roadmap/molecular-dynamics.md) · [DFT response](../roadmap/dft.md).
 
-```cpp
-cpu::vib::Hessian vib;
-vib.on(ATV::vib::Phase::force).add(/* Potential or RHF/UHF/RKS/UKS or AM1 */);
-vib.build();
-cpu::vib::HessianResult H = vib.run(frame);
-```
+Near a stable geometry, small displacements are governed by the curvature of
+the energy surface. Normal modes organize those coupled displacements into
+independent harmonic motions. They also reveal when a supposed minimum
+still contains a downhill direction.
 
-> **Build flag.** The ab initio examples below need `ATV_BUILD_HF=ON`, which is
-> **OFF by default** — with it off the `cpu::scf::…` headers are not installed.
-> The `Hessian` preset itself is `ATV_BUILD_VIB`, ON by default.
->
-> ```bash
-> cmake -B build -DCMAKE_BUILD_TYPE=Release \
->       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
-> cmake --build build -j$(nproc)
-> ```
+**Learning goals.** Connect Hessian eigenvalues to frequencies, interpret
+zero and imaginary modes, and state the limits of harmonic thermochemistry.
 
-Frequencies are only as good as the underlying forces: validate analytic vs FD
-forces ([Chapter 1](ch01-foundations.md)) before trusting thermochemistry. The
-in-tree acceptance for this driver is
-`regressions/scf/h2o_rhf_freq`, which pins the three H₂O HF/6-31G* harmonic
-wavenumbers against PySCF 2.14.0 (see "The Validation" below).
+**Before you begin.** [Mathematical Tools](mathematical-tools.md) and
+[Geometry Optimization](ch12-geometry-optimization.md).
 
-A geometry optimization ([Chapter 12](ch12-geometry-optimization.md)) finds a
-stationary point on the potential-energy surface, but it cannot tell you
-*what kind* of stationary point it is, nor what the molecule's thermodynamic
-properties are at finite temperature. Both answers come from the same object:
-the **Hessian**, the matrix of second derivatives of the energy with respect
-to the nuclear coordinates. Diagonalizing the mass-weighted Hessian gives the
-**vibrational normal modes and frequencies**; feeding those frequencies into
-harmonic-oscillator/rigid-rotor statistical mechanics gives the
-**thermochemistry** — zero-point energy, enthalpy, entropy, and Gibbs free
-energy. This chapter shows how Atomiverse computes both through one driver.
+## Curvature, mass, and frequency
 
-The six questions:
+At a stationary geometry,
+$U\simeq U_0+\tfrac12\Delta\mathbf R^T H\Delta\mathbf R$.
+Mass matters as well as stiffness, so form
 
-1. **The concept.** Why the Hessian's eigenvalues are frequencies, and what
-   they tell you.
-2. **The Atomiverse representation.** The `cpu::vib::Hessian` driver and its
-   finite-difference machinery.
-3. **The C++ API.** `cpu::vib::Hessian`, `HessianResult`, and
-   `Thermochem` public members / constructor args.
-4. **The expected result.** `3N−6` real frequencies at a minimum, and a
-   Gibbs free-energy correction.
-5. **The validation.** Frequencies against PySCF — and what is *not* pinned.
-6. **The recurring pattern.** Another loop that reuses any force evaluator,
-   exactly like MD and minimization.
+$$D=M^{-1/2}HM^{-1/2},\qquad D\mathbf q_j=\omega_j^2\mathbf q_j.$$
 
-This chapter assumes the `SCF`-at-the-force-phase pattern from
-Tutorials 6 and 8.
+The diagonal mass matrix repeats each atom's mass over its Cartesian
+coordinates. In coherent units $\omega_j$ is an angular frequency;
+spectroscopic wavenumber is $\widetilde\nu_j=\omega_j/(2\pi c)$.
+Do not diagonalize an unweighted Hessian and label its eigenvalues frequencies.
 
-## The Concept: Curvature Is Frequency
+An isolated nonlinear molecule has three rigid translations and three
+rigid rotations, leaving $3N-6$ vibrations. A linear molecule has $3N-5$.
+Atoms, constraints, and periodic systems require different counting.
+A negative curvature eigenvalue gives an imaginary frequency, not a
+negative oscillation rate. Very small spurious negatives can reflect
+optimization, differentiation, or projection error; inspect the mode itself.
+
+## Derivatives and thermochemistry
+
+Central force differences approximate Hessian elements with truncation
+error proportional to $h^2$ and noise amplified by $1/h$. Analytic electronic
+Hessians require response and basis-derivative terms; they do not eliminate
+the need for a stationary reference.
+
+For stable independent harmonic modes,
+$F_{\mathrm{vib}}=\sum_j[\hbar\omega_j/2+
+k_{\mathrm B}T\ln(1-e^{-\hbar\omega_j/(k_{\mathrm B}T)})]$.
+Translation, rotation, electronic degeneracy, standard state, and solvent
+contributions are separate. Soft torsions can need hindered-rotor treatments,
+and a frequency alone does not provide an infrared intensity.
+
+## Normal-mode theory
 
 Near a minimum $\mathbf{R}_0$ of the potential-energy surface, expand the
 energy to second order:
@@ -92,7 +85,40 @@ vibrations at all — they are the rigid translations and rotations, which have
 zero restoring force. A correct analysis projects those out, leaving $3N-6$
 (or $3N-5$) genuine vibrational modes.
 
-## The Representation: A Fixed-Budget Loop Over Finite Differences
+## Practice plan
+
+Optimize isolated water using the same method and basis as the Hessian.
+Identify its three internal modes and test several displacement sizes and
+electronic tolerances. Inspect Hessian symmetry and rigid-motion projection
+before assigning meaning to a tiny imaginary mode.
+
+The analytic Hessian material formerly in the properties chapter is included
+here with its original code and data. Compare analytic and finite-difference
+results only at identical geometries, Hamiltonians, and mass conventions.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
+
+```cpp
+cpu::vib::Hessian vib;
+vib.on(ATV::vib::Phase::force).add(/* Potential or RHF/UHF/RKS/UKS or AM1 */);
+vib.build();
+cpu::vib::HessianResult H = vib.run(frame);
+```
+
+> **Build flag.** The ab initio examples below need `ATV_BUILD_HF=ON`, which is
+> **OFF by default** — with it off the `cpu::scf::…` headers are not installed.
+> The `Hessian` preset itself is `ATV_BUILD_VIB`, ON by default.
+>
+> ``bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ``
+
+## Numerical Hessians
 
 Computing an *analytic* Hessian is possible but involves second-derivative
 integrals; Atomiverse instead takes the numerically robust route of
@@ -103,8 +129,7 @@ atoms that is $6N$ force evaluations plus one reference — a fixed budget with
 no convergence loop.
 
 That fixed-budget, no-early-stop structure is what
-[`cpu::vib::Hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/vibration/hessian.h)
-is: a preset over the CPU loop node (`cpu::Driver<vib::Phase>`), like
+[`cpu::vib::Hessiancpu::Driver<vib::Phase>`), like
 `MD` and `Minimize`, but with its own phase enum and **no termination
 criterion at all** — the displacement schedule *is* the budget, and there is
 nothing to converge. Its phase order —
@@ -122,7 +147,7 @@ writes the `kAtom_fx/fy/fz` columns; everything else the driver supplies. On ret
 the frame carries the equilibrium geometry again — the displacements are
 transparent to the caller.
 
-## The C++ API: One Driver, One Force Evaluator
+## Computing water vibrations
 
 The recipe mirrors AIMD and geometry optimization: construct the driver,
 register a force-writing evaluator on the `force` phase, `build()`, and
@@ -147,10 +172,7 @@ cpu::vib::HessianResult H = driver.run(frame);   // 6N + 1 force evaluations
 ```
 
 `HessianResult`
-([`hessian_result.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/vibration/hessian_result.h))
-carries the full analysis:
-
-```cpp
+([`hessian_result.h`cpp
 H.hessian;        // [3N, 3N] second derivatives, eV/Å²
 H.frequencies;    // wavenumbers [cm⁻¹], length 3N−6 (or 3N−5), ascending;
                   //   imaginary modes reported as NEGATIVE values
@@ -162,7 +184,7 @@ H.is_linear;      // true ⇒ 3N−5 modes
 Two API details that decide whether your result is meaningful:
 
 - **Start from an optimized geometry.** The harmonic expansion is only valid
-  at a stationary point. Run [Chapter 12](ch12-geometry-optimization.md)'s
+  at a stationary point. Run [Geometry Optimization](ch12-geometry-optimization.md)'s
   minimizer first, at the *same* level of theory you will use for the Hessian.
   A Hessian at a non-stationary geometry has spurious low frequencies from the
   residual gradient.
@@ -171,7 +193,7 @@ Two API details that decide whether your result is meaningful:
   and the second difference magnifies it. An `RHF` with `tol = 1e-12` with
   `conv_tol_grad = 1e-9` above is exactly what the parity tests use so each
   displaced force is gradient-stationary. This is the
-  [Chapter 1](ch01-foundations.md) finite-difference discipline applied one
+  [Systems and Units](ch01-foundations.md) finite-difference discipline applied one
   derivative order higher.
 
 ### Thermochemistry
@@ -209,7 +231,7 @@ you provide the molecule's point-group rotational symmetry number (2 for
 water, 3 for ammonia, 12 for methane).
 
 **The electronic energy $E_0$ is carried as zero** inside the port
-([`thermochem.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/src/cpu/vibration/thermochem.cpp)):
+([`thermochem.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/src/cpu/vibration/thermochem.cpp)):
 `u_tot`, `h_tot` and `g_tot` are the *thermal* parts of $U$, $H$ and $G$, and
 `g_tot == g_thermal` as a result. Add your own SCF total energy to obtain an
 absolute quantity.
@@ -236,62 +258,7 @@ cpu::vib::Hessian quiet{298.15, 101325.0, 1, 2, /*frequency_tsv=*/"",
                         /*mode_xyz_prefix=*/""};   // no files at all
 ```
 
-## The Expected Result: Real Frequencies and a Free-Energy Correction
-
-For a well-optimized closed-shell molecule you should see:
-
-- **`n_imaginary == 0`** and exactly `3N−6` real frequencies (`3N−5` if
-  `is_linear`). Any imaginary frequency at what you believed was a minimum
-  means the geometry was not fully optimized (or you found a saddle).
-- **Frequencies in the right physical ranges.** O–H and C–H stretches near
-  3000–3800 cm⁻¹, bends near 1000–1700 cm⁻¹, and soft modes below that. For
-  water at RHF/6-31G the three modes are the symmetric stretch, the
-  antisymmetric stretch, and the bend — the classic three-line spectrum.
-  (Harmonic RHF frequencies are systematically ~10% too high versus
-  experiment; that overshoot is the *method*, not a bug — a physical
-  approximation, not a numerical error.)
-- **A sensible thermochemistry.** A positive zero-point energy and a Gibbs
-  thermal correction that grows with temperature.
-
-The classes are, as always, distinct: Atomiverse frequencies vs *PySCF at the
-same geometry and basis* is a **numerical-tolerance** claim (finite-difference
-truncation only); Atomiverse frequencies vs *experiment* is a
-**physical-approximation** claim (the harmonic and method errors).
-
-## The Validation: Frequencies vs PySCF
-
-Vibrational analysis is an end-to-end calculation, so its acceptance lives in
-`regressions/`, not in `tests/` (the unit suite holds only single-component
-checks such as the force-accumulator zeroing). One regression owns the
-frequency claim:
-
-- **Frequencies —
-  [`regressions/scf/h2o_rhf_freq`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_freq/reg_h2o_rhf_freq.cpp).**
-  H₂O at HF/6-31G\*, two gates at **1 cm⁻¹**: the full finite-difference
-  pipeline (`Hessian::run` over `cpu::scf::RHF`) against the analytic CPHF
-  Hessian routed through `Hessian::run_from_cartesian`, and that analytic
-  result against pinned PySCF 2.14.0 `hessian.RHF` wavenumbers
-  (1843.7084 / 4036.1737 / 4146.3782 cm⁻¹; provenance in its `REFERENCE.md`).
-  The logic is pleasingly circular in the useful direction: the numerical
-  Hessian is a finite-difference check on the analytic *gradient*, and the
-  analytic Hessian is a check on the numerical one.
-- **Structure —
-  [`regressions/semiempirical/se-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/se-analytic-hessian/reg_se-analytic-hessian.cpp).**
-  The same driver over DFTB2 forces on H₂: the Hessian is symmetric to
-  1e-8 eV/Å², the projected mode count is **exactly** 1 (3N−5 for a linear
-  diatomic — a bit-precise property no tolerance applies to), and the stretch
-  is real. The absolute wavenumber is not pinned there.
-
-**Thermochemistry has no in-tree oracle pin.** The RRHO port is a faithful
-transcription of PySCF `thermo()`, but nothing in the repository currently
-compares `g_thermal` or `s_tot` against a PySCF run; the closest live check is
-the Python suite's closed-form zero-point energy on an LJ dimer
-([`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/dev/python/tests/test_vib.py),
-`0.5 h c ν̃` to 1e-9 Hartree), which validates the constant set rather than the
-statistical mechanics. Treat the thermochemistry as unpinned until that
-regression exists.
-
-## The Recurring Pattern: Another Loop, Same Evaluator
+## Derivative workflows
 
 Vibrational analysis is the clearest proof that Atomiverse's "swap the
 evaluator, keep the driver" architecture is not confined to MD. `cpu::vib::
@@ -299,11 +266,11 @@ Hessian` is its own loop — its own phase enum, its own fixed
 $6N$-displacement schedule, no termination criterion — yet it consumes the
 *identical* concrete method (`cpu::scf::RHF{basis}`) that:
 
-- MD ([Chapter 15](ch15-cross-method.md)) plugs into `cpu::md::MD` for AIMD,
-- the minimizer ([Chapter 12](ch12-geometry-optimization.md)) plugs into
+- MD ([Comparing Models](ch15-cross-method.md)) plugs into `cpu::md::MD` for AIMD,
+- the minimizer ([Geometry Optimization](ch12-geometry-optimization.md)) plugs into
   `cpu::minimizer::Minimize` for geometry optimization,
-- and the hybrid-DFT chapter ([Chapter 6](ch06-hybrid-dft.md)) swaps in
-  `cpu::scf::RKS{XCType::B3LYP}` for hybrid forces.
+- and the hybrid-DFT chapter ([Hybrid Functionals](ch06-hybrid-dft.md)) swaps in
+  `cpu::scf::RKS{basis, XCType::B3LYP}` for hybrid forces.
 
 So the natural workflow — optimize, then characterize — is *one method, two
 drivers*:
@@ -326,19 +293,118 @@ very same driver produces *classical* vibrational frequencies if you register a
 force-field evaluator (`PairLJCut` + bonded terms) instead. The Hessian
 machinery never learns whether its forces are
 empirical or quantum — which is exactly the invariant
-[Chapter 15](ch15-cross-method.md) elevates to a design principle.
+[Comparing Models](ch15-cross-method.md) elevates to a design principle.
 
-## Validation Reference
+## Analytic Hessian and vibrations
+
+### Theory
+
+Second energy derivatives need orbital response \(U^x\) (CPHF):
+
+\[
+{}^1(A+B)\,U^x = -B^x.
+\]
+
+\({}^1(A+B)\) is the same orbital Hessian used in stability analysis and SOSCF.
+Analytic Hessians are currently **RHF only**.
+
+### Practice
+
+```cpp
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Pople631Gs};
+rhf.tol = 1e-12;
+cpu::vib::HessianResult H = cpu::scf::Hessian<cpu::scf::RHF>{rhf}.run(frame); // eV/Å²
+// mass-weight → project TR → diagonalise → frequencies [cm⁻¹]
+```
+
+### Results
+
+H₂O RHF/6-31G* harmonic frequencies / cm⁻¹:
+
+| Mode | Engine | PySCF | Tol. |
+|---|---:|---:|---|
+| Bend | 1843.71 | 1843.71 | 1 |
+| Sym. stretch | 4036.17 | 4036.17 | 1 |
+| Asym. stretch | 4146.38 | 4146.38 | 1 |
+
+Regression: `h2o_rhf_freq`.
+
+---
+
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
+
+## Frequencies and thermochemistry
+
+For a well-optimized closed-shell molecule you should see:
+
+- **`n_imaginary == 0`** and exactly `3N−6` real frequencies (`3N−5` if
+  `is_linear`). Any imaginary frequency at what you believed was a minimum
+  means the geometry was not fully optimized (or you found a saddle).
+- **Frequencies in the right physical ranges.** O–H and C–H stretches near
+  3000–3800 cm⁻¹, bends near 1000–1700 cm⁻¹, and soft modes below that. For
+  water at RHF/6-31G the three modes are the symmetric stretch, the
+  antisymmetric stretch, and the bend — the classic three-line spectrum.
+  (Harmonic RHF frequencies are systematically ~10% too high versus
+  experiment; that overshoot is the *method*, not a bug — a physical
+  approximation, not a numerical error.)
+- **A sensible thermochemistry.** A positive zero-point energy and a Gibbs
+  thermal correction that grows with temperature.
+
+The classes are, as always, distinct: Atomiverse frequencies vs *PySCF at the
+same geometry and basis* is a **numerical-tolerance** claim (finite-difference
+truncation only); Atomiverse frequencies vs *experiment* is a
+**physical-approximation** claim (the harmonic and method errors).
+
+## Frequency validation
+
+Vibrational analysis is an end-to-end calculation, so its acceptance lives in
+end-to-end cases, not in the unit-test suite (the unit suite holds only single-component
+checks such as the force-accumulator zeroing). One regression owns the
+frequency claim:
+
+- **Frequencies —
+  `h2o_rhf_freq`.**
+  H₂O at HF/6-31G\*, two gates at **1 cm⁻¹**: the full finite-difference
+  pipeline (`Hessian::run` over `cpu::scf::RHF`) against the analytic CPHF
+  Hessian routed through `Hessian::run_from_cartesian`, and that analytic
+  result against pinned PySCF 2.14.0 `hessian.RHF` wavenumbers
+  (1843.7084 / 4036.1737 / 4146.3782 cm⁻¹; provenance in its pin notes).
+  The logic is pleasingly circular in the useful direction: the numerical
+  Hessian is a finite-difference check on the analytic *gradient*, and the
+  analytic Hessian is a check on the numerical one.
+- **Structure —
+  `se-analytic-hessian`.**
+  The same driver over DFTB2 forces on H₂: the Hessian is symmetric to
+  1e-8 eV/Å², the projected mode count is **exactly** 1 (3N−5 for a linear
+  diatomic — a bit-precise property no tolerance applies to), and the stretch
+  is real. The absolute wavenumber is not pinned there.
+
+**Thermochemistry has no in-tree oracle pin.** The RRHO port is a faithful
+transcription of PySCF `thermo()`, but nothing in the repository currently
+compares `g_thermal` or `s_tot` against a PySCF run; the closest live check is
+the Python suite's closed-form zero-point energy on an LJ dimer
+([`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/master/python/tests/test_vib.py),
+`0.5 h c ν̃` to 1e-9 Hartree), which validates the constant set rather than the
+statistical mechanics. Treat the thermochemistry as unpinned until that
+regression exists.
+
+## Reference provenance
 
 | What | Where | Gate |
 | --- | --- | --- |
-| H₂O HF/6-31G\* wavenumbers, FD pipeline vs analytic CPHF vs PySCF 2.14.0 | [`regressions/scf/h2o_rhf_freq`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/h2o_rhf_freq/reg_h2o_rhf_freq.cpp) | 1 cm⁻¹ on both gates |
-| H₂ over DFTB2 forces: symmetry, exact 3N−5 mode count, real stretch | [`regressions/semiempirical/se-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/se-analytic-hessian/reg_se-analytic-hessian.cpp) | 1e-8 eV/Å² asymmetry; ω > 100 cm⁻¹ |
-| H₂O GFN1/GFN2 FD Hessian of analytic \(G\) vs xtb 6.7.1 `--hess` | [`regressions/semiempirical/gfn-xtb-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/gfn-xtb-analytic-hessian/reg_gfn-xtb-analytic-hessian.cpp) | ω pin; see REFERENCE |
-| CH₄ IPEA FD Hessian of analytic \(G\) vs xtb 6.7.1 IPEA `--hess` | [`regressions/semiempirical/ipea-xtb-analytic-hessian`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/semiempirical/ipea-xtb-analytic-hessian/reg_ipea-xtb-analytic-hessian.cpp) | ω pin; see REFERENCE |
-| Ar₂ stretch vs the closed-form LJ well curvature, and the ZPE closed form | [`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/dev/python/tests/test_vib.py) | 1e-3 relative; 1e-9 Hartree |
-| Force-accumulator zeroing across the 6N displacement passes (unit) | [`tests/cpu/vibration/test_hessian_zeroing.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/vibration/test_hessian_zeroing.cpp) | exact |
+| H₂O HF/6-31G\* wavenumbers, FD pipeline vs analytic CPHF vs PySCF 2.14.0 | `h2o_rhf_freq` | 1 cm⁻¹ on both gates |
+| H₂ over DFTB2 forces: symmetry, exact 3N−5 mode count, real stretch | `se-analytic-hessian` | 1e-8 eV/Å² asymmetry; ω > 100 cm⁻¹ |
+| H₂O GFN1/GFN2 FD Hessian of analytic \(G\) vs xtb 6.7.1 `--hess` | `gfn-xtb-analytic-hessian` | ω pin; see REFERENCE |
+| CH₄ IPEA FD Hessian of analytic \(G\) vs xtb 6.7.1 IPEA `--hess` | `ipea-xtb-analytic-hessian` | ω pin; see REFERENCE |
+| Ar₂ stretch vs the closed-form LJ well curvature, and the ZPE closed form | [`python/tests/test_vib.py`](https://github.com/MolCrafts/Atomiverse/blob/master/python/tests/test_vib.py) | 1e-3 relative; 1e-9 Hartree |
+| Force-accumulator zeroing across the 6N displacement passes (unit) | [`tests/cpu/vibration/test_hessian_zeroing.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/vibration/test_hessian_zeroing.cpp) | exact |
 
 Pin provenance for the PySCF wavenumbers is recorded in the regression's
-`REFERENCE.md`. The RRHO thermochemistry is not pinned against an external
+pin notes. The RRHO thermochemistry is not pinned against an external
 code anywhere in the tree — see the note at the end of "The Validation".
+
+## Questions for reflection
+
+How does a harmonic frequency change when its effective mass is quadrupled? Why must a rotation-like tiny imaginary mode be tested before declaring a chemical instability?

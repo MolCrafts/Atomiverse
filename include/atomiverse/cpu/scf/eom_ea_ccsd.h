@@ -1,7 +1,7 @@
 /// @file cpu/scf/eom_ea_ccsd.h
 /// @brief EOM-EA-CCSD electron-attachment energies (public API).
 ///
-/// User path: `RHF::eom_ea_ccsd(frame, n_states)` — drives closed-shell RHF,
+/// User path: `CCSD<RHF>{rhf}.eom_ea_ccsd(frame, n_states)` — drives closed-shell RHF,
 /// spin-orbital Gauss–Stanton CCSD, then EOM-EA on the similarity-transformed
 /// Hamiltonian (Nooijen & Bartlett, J. Chem. Phys. **102**, 3629 (1995);
 /// Stanton & Bartlett, J. Chem. Phys. **98**, 7029 (1993)). Matches PySCF

@@ -29,6 +29,15 @@ void PimXlDipole::reset() {
 }
 
 void PimXlDipole::launch(const LaunchContext& ctx) {
+    if (ctx.runtime.exec.initializing_forces
+        || ctx.runtime.exec.trial_evaluation) {
+        // Converge current dipoles without reading or changing the auxiliary
+        // trajectory. Atom-count invalidation waits for the next real step.
+        aux_err_ = 0.0;
+        last_warm_ = false;
+        pim_.launch(ctx);
+        return;
+    }
     const long n = static_cast<long>(ctx.frame.nlocal());
     if (n != n_prev_) {
         // Atom count changed (first launch, deposition, MPI migration, …):
@@ -49,9 +58,8 @@ void PimXlDipole::launch(const LaunchContext& ctx) {
         guess.resize(static_cast<std::size_t>(3 * n));
         for (long i = 0; i < n; ++i)
             for (long c = 0; c < 3; ++c)
-                guess[static_cast<std::size_t>(3 * i + c)] =
-                    aux(static_cast<std::size_t>(i),
-                        static_cast<std::size_t>(c));
+                guess[static_cast<std::size_t>(3 * i + c)] = aux(
+                    static_cast<std::size_t>(i), static_cast<std::size_t>(c));
         pim_.mu_guess = guess;
         last_warm_ = true;
     }

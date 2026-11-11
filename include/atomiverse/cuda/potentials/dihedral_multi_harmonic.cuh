@@ -21,6 +21,7 @@ class DihedralMultiHarmonic : public Dihedral {
     DihedralMultiHarmonic& operator=(DihedralMultiHarmonic&&) noexcept;
 
     std::string name() const override { return "multi_harmonic_dihedral"; }
+    bool graph_capturable() const override { return true; }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

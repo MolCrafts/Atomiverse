@@ -2,8 +2,11 @@
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -22,18 +25,6 @@ namespace cpu {
 namespace md {
 
 namespace {
-
-/// Owner rows of this rank: `dd->n_local` under decomposition, else the whole frame.
-///
-/// `frame.nlocal()` is NOT the owner count under MPI — `partition_atoms` compacts
-/// the owners to the front and leaves the tail as ghost slack, so the array still
-/// spans the global atom count. Iterating it would read stale rows.
-int owner_count(const cpu::Context& ctx, const cpu::Frame& frame) {
-    const auto* dd = ctx.md.dd;
-    if (dd != nullptr && ctx.mpi_size > 1)
-        return dd->n_local;
-    return frame.nlocal();
-}
 
 #ifdef ATV_HAS_MPI
 MPI_Datatype tag_mpi_type() {
@@ -93,7 +84,7 @@ std::vector<FixRattle::Spec>
 FixRattle::discover_local_(const cpu::Context& ctx,
                            const cpu::Frame& frame) const {
     std::vector<Spec> out;
-    const int n_own = owner_count(ctx, frame);
+    const int n_own = frame.nlocal();
     const auto num_bond = frame.span(kAtom_num_bond);
     const auto bond_type = frame.span(kAtom_bond_type);
     const auto bond_atom = frame.span(kAtom_bond_atom);
@@ -141,7 +132,7 @@ int FixRattle::n_constraints(const cpu::Context& ctx,
 void FixRattle::build(const cpu::BuildContext& ctx) {
     const cpu::Context& rt = ctx.runtime;
     const cpu::Frame& frame = ctx.frame;
-    const int n_own = owner_count(rt, frame);
+    const int n_own = frame.nlocal();
     const auto tag = frame.span(kAtom_tag);
     const auto mass = frame.span(kAtom_mass);
 
@@ -239,8 +230,8 @@ void FixRattle::build(const cpu::BuildContext& ctx) {
             "FixRattle: no constraints matched the topology. Did you call "
             "constrain_bond()/constrain_angle() with the right type indices?");
 
-    constraints_.clear();
-    constraints_.reserve(global.size());
+    std::vector<Constraint> table;
+    table.reserve(global.size());
     for (const Spec& s : global) {
         const auto mi = mass_of.find(s.ti);
         const auto mj = mass_of.find(s.tj);
@@ -255,98 +246,169 @@ void FixRattle::build(const cpu::BuildContext& ctx) {
         c.d2 = s.distance * s.distance;
         c.inv_mi = 1.0 / mi->second;
         c.inv_mj = 1.0 / mj->second;
-        constraints_.push_back(c);
+        table.push_back(c);
     }
 
-    const std::size_t cap = static_cast<std::size_t>(frame.capacity());
-    ref_x_.assign(cap, 0.0);
-    ref_y_.assign(cap, 0.0);
-    ref_z_.assign(cap, 0.0);
-    rows_.assign(constraints_.size() * 2, -1);
+    // ── Clusters: connected components over shared atoms (union-find) ────
+    // Every rank sees the same global table in the same order, so every rank
+    // derives the same clusters with the same ids.
+    std::unordered_map<TagInt, int> node;
+    std::vector<int> parent;
+    auto node_of = [&](TagInt t) {
+        const auto [it, fresh] =
+            node.emplace(t, static_cast<int>(parent.size()));
+        if (fresh)
+            parent.push_back(it->second);
+        return it->second;
+    };
+    auto find = [&](int v) {
+        while (parent[static_cast<std::size_t>(v)] != v) {
+            parent[static_cast<std::size_t>(v)] =
+                parent[static_cast<std::size_t>(
+                    parent[static_cast<std::size_t>(v)])];
+            v = parent[static_cast<std::size_t>(v)];
+        }
+        return v;
+    };
+    for (const Constraint& c : table) {
+        const int a = find(node_of(c.ti));
+        const int b = find(node_of(c.tj));
+        if (a != b)
+            parent[static_cast<std::size_t>(std::max(a, b))] = std::min(a, b);
+    }
+    std::unordered_map<int, int> cluster_id; // root -> dense id, table order
+    std::vector<int> cluster_of_constraint(table.size());
+    for (std::size_t k = 0; k < table.size(); ++k) {
+        const int root = find(node_of(table[k].ti));
+        const auto it =
+            cluster_id.emplace(root, static_cast<int>(cluster_id.size())).first;
+        cluster_of_constraint[k] = it->second;
+    }
+    const int n_clusters = static_cast<int>(cluster_id.size());
+    cluster_offset_.assign(static_cast<std::size_t>(n_clusters) + 1, 0);
+    for (int c : cluster_of_constraint)
+        ++cluster_offset_[static_cast<std::size_t>(c) + 1];
+    for (int c = 0; c < n_clusters; ++c)
+        cluster_offset_[static_cast<std::size_t>(c) + 1] +=
+            cluster_offset_[static_cast<std::size_t>(c)];
+    constraints_.assign(table.size(), Constraint{});
+    std::vector<int> fill(cluster_offset_.begin(), cluster_offset_.end() - 1);
+    for (std::size_t k = 0; k < table.size(); ++k)
+        constraints_[static_cast<std::size_t>(
+            fill[static_cast<std::size_t>(cluster_of_constraint[k])]++)] =
+            table[k];
+    cluster_of_tag_.clear();
+    cluster_of_tag_.reserve(node.size());
+    for (const auto& [t, v] : node)
+        cluster_of_tag_.emplace(t, cluster_id.at(find(v)));
+    cluster_seen_.assign(static_cast<std::size_t>(n_clusters), 0);
+    rows_cache_.clear();
 }
 
-void FixRattle::resolve_rows_(const cpu::LaunchContext& ctx) {
+void FixRattle::refresh_local_(const cpu::LaunchContext& ctx) {
+    if (!rows_cache_.stale(ctx))
+        return;
+    const cpu::Frame& f = ctx.frame;
     const auto* dd = ctx.runtime.md.dd;
-    const bool multi = (dd != nullptr && ctx.runtime.mpi_size > 1);
-
-    for (std::size_t k = 0; k < constraints_.size(); ++k) {
-        const Constraint& c = constraints_[k];
-        int i = -1, j = -1;
+    const bool multi = cpu::multi_rank_dd(ctx.runtime);
+    const auto tag = f.span(kAtom_tag);
+    auto row_of = [&](TagInt t) -> int {
         if (multi) {
-            const auto it =
-                dd->tag_to_local.find(static_cast<std::int64_t>(c.ti));
-            const auto jt =
-                dd->tag_to_local.find(static_cast<std::int64_t>(c.tj));
-            if (it != dd->tag_to_local.end())
-                i = it->second;
-            if (jt != dd->tag_to_local.end())
-                j = jt->second;
-        } else {
-            const auto& tag_index = ctx.frame.meta.get(kTagIndex);
-            const auto it = tag_index.find(c.ti);
-            const auto jt = tag_index.find(c.tj);
-            if (it != tag_index.end())
-                i = it->second;
-            if (jt != tag_index.end())
-                j = jt->second;
+            const auto it = dd->tag_to_local.find(static_cast<std::int64_t>(t));
+            return it == dd->tag_to_local.end() ? -1 : it->second;
         }
+        const auto& index = f.meta.get(kTagIndex);
+        const auto it = index.find(t);
+        return it == index.end() ? -1 : it->second;
+    };
 
-        // Neither atom here: the cluster lives entirely on other ranks. Skip it.
-        if (i < 0 && j < 0) {
-            rows_[2 * k] = -1;
-            rows_[2 * k + 1] = -1;
+    // Clusters with an OWNED atom — the rows this rank is responsible for.
+    // A cluster living only in ghost rows is solved by its owners; its ghost
+    // copies here are refreshed by the next halo pass.
+    std::vector<int> clusters;
+    const int n_own = cpu::owned_count(ctx);
+    for (int i = 0; i < n_own; ++i) {
+        const auto it = cluster_of_tag_.find(tag[i]);
+        if (it == cluster_of_tag_.end())
             continue;
+        char& seen = cluster_seen_[static_cast<std::size_t>(it->second)];
+        if (!seen) {
+            seen = 1;
+            clusters.push_back(it->second);
         }
-        // One atom here and the other nowhere: the halo is too thin to hold the whole
-        // cluster, so this rank cannot solve it — and neither can anyone else, because
-        // the solve must be redundant across every rank holding a piece. A dropped
-        // constraint is a molecule that is not rigid: throw rather than approximate.
-        if (i < 0 || j < 0)
-            throw std::runtime_error(
-                "FixRattle: a constrained pair spans ranks but its partner is "
-                "not even "
-                "a ghost here. The halo must cover the whole constrained "
-                "cluster — "
-                "widen the cutoff/skin, use fewer ranks, or use a bigger box.");
-
-        rows_[2 * k] = i;
-        rows_[2 * k + 1] = j;
     }
+    std::sort(clusters.begin(), clusters.end());
+
+    local_offset_.assign(1, 0);
+    local_i_.clear();
+    local_j_.clear();
+    local_d2_.clear();
+    local_imi_.clear();
+    local_imj_.clear();
+    for (int c : clusters) {
+        cluster_seen_[static_cast<std::size_t>(c)] = 0;
+        for (int k = cluster_offset_[static_cast<std::size_t>(c)];
+             k < cluster_offset_[static_cast<std::size_t>(c) + 1]; ++k) {
+            const Constraint& con = constraints_[static_cast<std::size_t>(k)];
+            const int i = row_of(con.ti);
+            const int j = row_of(con.tj);
+            // One atom here and the other nowhere: the halo is too thin to
+            // hold the whole cluster, so this rank cannot solve it. A dropped
+            // constraint is a molecule that is not rigid: throw, never
+            // approximate.
+            if (i < 0 || j < 0)
+                throw std::runtime_error(
+                    "FixRattle: a constrained pair spans ranks but its "
+                    "partner is not even a ghost here. The halo must cover "
+                    "the whole constrained cluster — widen the cutoff/skin, "
+                    "use fewer ranks, or use a bigger box.");
+            local_i_.push_back(i);
+            local_j_.push_back(j);
+            local_d2_.push_back(con.d2);
+            local_imi_.push_back(con.inv_mi);
+            local_imj_.push_back(con.inv_mj);
+        }
+        local_offset_.push_back(static_cast<int>(local_i_.size()));
+    }
+    const std::size_t n = local_i_.size();
+    ref_sx_.assign(n, 0.0);
+    ref_sy_.assign(n, 0.0);
+    ref_sz_.assign(n, 0.0);
+    rows_cache_.mark_built(ctx);
 }
 
 int FixRattle::pack_forward_comm(int n, const int* list, double* buf,
                                  int pbc_flag, const int* pbc) {
     if (!frame_ || n <= 0)
         return 0;
+    // Columns were resolved once in launch(); a forward pass calls this per
+    // swap, and per-swap lookups would count against the resolution budget.
     int m = 0;
     if (comm_mode_ == CommMode::XSHAKE) {
-        const auto x = frame_->span(kAtom_x);
-        const auto y = frame_->span(kAtom_y);
-        const auto z = frame_->span(kAtom_z);
+        // The image translation is the lattice combination H·pbc, which
+        // has off-axis components in a tilted cell.
         double dx = 0.0, dy = 0.0, dz = 0.0;
         if (pbc_flag != 0) {
-            dx = static_cast<double>(pbc[0]) * frame_->box.length(0);
-            dy = static_cast<double>(pbc[1]) * frame_->box.length(1);
-            dz = static_cast<double>(pbc[2]) * frame_->box.length(2);
+            const Vec3 shift = frame_->box.to_cartesian(
+                {static_cast<double>(pbc[0]), static_cast<double>(pbc[1]),
+                 static_cast<double>(pbc[2])});
+            dx = shift[0];
+            dy = shift[1];
+            dz = shift[2];
         }
         for (int i = 0; i < n; ++i) {
             const int j = list[i];
-            buf[m++] = static_cast<double>(x[j]) + dx;
-            buf[m++] = static_cast<double>(y[j]) + dy;
-            buf[m++] = static_cast<double>(z[j]) + dz;
+            buf[m++] = static_cast<double>(col_[0][j]) + dx;
+            buf[m++] = static_cast<double>(col_[1][j]) + dy;
+            buf[m++] = static_cast<double>(col_[2][j]) + dz;
         }
         return m;
     }
-    const auto vx = frame_->span(kAtom_vx);
-    const auto vy = frame_->span(kAtom_vy);
-    const auto vz = frame_->span(kAtom_vz);
-    (void)pbc_flag;
-    (void)pbc;
     for (int i = 0; i < n; ++i) {
         const int j = list[i];
-        buf[m++] = static_cast<double>(vx[j]);
-        buf[m++] = static_cast<double>(vy[j]);
-        buf[m++] = static_cast<double>(vz[j]);
+        buf[m++] = static_cast<double>(col_[3][j]);
+        buf[m++] = static_cast<double>(col_[4][j]);
+        buf[m++] = static_cast<double>(col_[5][j]);
     }
     return m;
 }
@@ -354,203 +416,212 @@ int FixRattle::pack_forward_comm(int n, const int* list, double* buf,
 void FixRattle::unpack_forward_comm(int n, int first, const double* buf) {
     if (!frame_ || n <= 0)
         return;
+    const int base = comm_mode_ == CommMode::XSHAKE ? 0 : 3;
     int m = 0;
-    const int last = first + n;
-    if (comm_mode_ == CommMode::XSHAKE) {
-        auto x = frame_->span(kAtom_x);
-        auto y = frame_->span(kAtom_y);
-        auto z = frame_->span(kAtom_z);
-        for (int i = first; i < last; ++i) {
-            x[i] = static_cast<StorageReal>(buf[m++]);
-            y[i] = static_cast<StorageReal>(buf[m++]);
-            z[i] = static_cast<StorageReal>(buf[m++]);
-        }
-        return;
-    }
-    auto vx = frame_->span(kAtom_vx);
-    auto vy = frame_->span(kAtom_vy);
-    auto vz = frame_->span(kAtom_vz);
-    for (int i = first; i < last; ++i) {
-        vx[i] = static_cast<StorageReal>(buf[m++]);
-        vy[i] = static_cast<StorageReal>(buf[m++]);
-        vz[i] = static_cast<StorageReal>(buf[m++]);
+    for (int i = first; i < first + n; ++i) {
+        col_[base][i] = static_cast<StorageReal>(buf[m++]);
+        col_[base + 1][i] = static_cast<StorageReal>(buf[m++]);
+        col_[base + 2][i] = static_cast<StorageReal>(buf[m++]);
     }
 }
 
-void FixRattle::launch(const cpu::LaunchContext& ctx) {
+void FixRattle::snapshot_(const cpu::LaunchContext& ctx) {
+    const cpu::Frame& f = ctx.frame;
+    const auto x = f.span(kAtom_x);
+    const auto y = f.span(kAtom_y);
+    const auto z = f.span(kAtom_z);
+    const cpu::Box& box = f.box;
+    const int n = static_cast<int>(local_i_.size());
+#pragma omp parallel for schedule(static)
+    for (int k = 0; k < n; ++k) {
+        const int i = local_i_[static_cast<std::size_t>(k)];
+        const int j = local_j_[static_cast<std::size_t>(k)];
+        double sx = x[i] - x[j], sy = y[i] - y[j], sz = z[i] - z[j];
+        box.min_image(sx, sy, sz);
+        ref_sx_[static_cast<std::size_t>(k)] = sx;
+        ref_sy_[static_cast<std::size_t>(k)] = sy;
+        ref_sz_[static_cast<std::size_t>(k)] = sz;
+    }
+}
+
+void FixRattle::solve_positions_(const cpu::LaunchContext& ctx) {
     cpu::Frame& f = ctx.frame;
-    frame_ = &f;
-    const auto* dd = ctx.runtime.md.dd;
-    const bool multi = (dd != nullptr && ctx.runtime.mpi_size > 1);
-    const int n_rows = multi ? (dd->n_local + dd->n_ghost) : f.nlocal();
     auto x = f.span(kAtom_x);
     auto y = f.span(kAtom_y);
     auto z = f.span(kAtom_z);
-    auto vx_col = f.span(kAtom_vx);
-    auto vy_col = f.span(kAtom_vy);
-    auto vz_col = f.span(kAtom_vz);
+    auto vx = f.span(kAtom_vx);
+    auto vy = f.span(kAtom_vy);
+    auto vz = f.span(kAtom_vz);
+    const cpu::Box& box = f.box;
+    const double inv_dt = 1.0 / dt_;
+    const double tol = tol_;
+    const int max_iter = max_iter_;
+    const int n_clusters = static_cast<int>(local_offset_.size()) - 1;
+    int most_iters = 0;
+    double failed_residual = 0.0;
 
-    // ── initial_integrate @ -500: snapshot the reference geometry ────────
-    // Taken BEFORE any integrator moves anything. SHAKE/RATTLE corrects along the
-    // reference bond vector, and VelocityVerlet fuses kick+drift and then wraps, so by
-    // post_integrate the pre-move positions are unrecoverable from the frame.
+#pragma omp parallel for schedule(dynamic, 64)                                 \
+    reduction(max : most_iters, failed_residual)
+    for (int c = 0; c < n_clusters; ++c) {
+        const int k0 = local_offset_[static_cast<std::size_t>(c)];
+        const int k1 = local_offset_[static_cast<std::size_t>(c) + 1];
+        int iter = 0;
+        double worst = 0.0;
+        for (; iter < max_iter; ++iter) {
+            worst = 0.0;
+            for (int k = k0; k < k1; ++k) {
+                const std::size_t q = static_cast<std::size_t>(k);
+                const int i = local_i_[q], j = local_j_[q];
+                double rx = x[i] - x[j], ry = y[i] - y[j], rz = z[i] - z[j];
+                box.min_image(rx, ry, rz);
+                const double sigma = rx * rx + ry * ry + rz * rz - local_d2_[q];
+                const double err = std::fabs(sigma) / local_d2_[q];
+                worst = std::max(worst, err);
+                if (err <= tol)
+                    continue;
+                const double rs =
+                    rx * ref_sx_[q] + ry * ref_sy_[q] + rz * ref_sz_[q];
+                const double denom = 2.0 * (local_imi_[q] + local_imj_[q]) * rs;
+                if (std::fabs(denom) < 1e-12)
+                    continue;
+                const double g = -sigma / denom;
+                const double gi = g * local_imi_[q], gj = g * local_imj_[q];
+                x[i] += gi * ref_sx_[q];
+                y[i] += gi * ref_sy_[q];
+                z[i] += gi * ref_sz_[q];
+                x[j] -= gj * ref_sx_[q];
+                y[j] -= gj * ref_sy_[q];
+                z[j] -= gj * ref_sz_[q];
+                // The constraint force also changed the momentum.
+                vx[i] += gi * ref_sx_[q] * inv_dt;
+                vy[i] += gi * ref_sy_[q] * inv_dt;
+                vz[i] += gi * ref_sz_[q] * inv_dt;
+                vx[j] -= gj * ref_sx_[q] * inv_dt;
+                vy[j] -= gj * ref_sy_[q] * inv_dt;
+                vz[j] -= gj * ref_sz_[q] * inv_dt;
+            }
+            if (worst <= tol)
+                break;
+        }
+        most_iters = std::max(most_iters, iter);
+        if (iter >= max_iter)
+            failed_residual = std::max(failed_residual, worst);
+    }
+    if (failed_residual > 0.0)
+        throw std::runtime_error(
+            "FixRattle: the position stage did not converge in "
+            + std::to_string(max_iter_) + " iterations (last relative residual "
+            + std::to_string(failed_residual)
+            + "). An unconverged constraint is a corrupted molecule, not an "
+              "approximation.");
+    last_pos_iters_ = most_iters;
+}
+
+void FixRattle::solve_velocities_(const cpu::LaunchContext& ctx) {
+    cpu::Frame& f = ctx.frame;
+    const auto x = f.span(kAtom_x);
+    const auto y = f.span(kAtom_y);
+    const auto z = f.span(kAtom_z);
+    auto vx = f.span(kAtom_vx);
+    auto vy = f.span(kAtom_vy);
+    auto vz = f.span(kAtom_vz);
+    const cpu::Box& box = f.box;
+    const double tol = tol_;
+    const int max_iter = max_iter_;
+    const int n_clusters = static_cast<int>(local_offset_.size()) - 1;
+    int most_iters = 0;
+    double failed_residual = 0.0;
+
+#pragma omp parallel for schedule(dynamic, 64)                                 \
+    reduction(max : most_iters, failed_residual)
+    for (int c = 0; c < n_clusters; ++c) {
+        const int k0 = local_offset_[static_cast<std::size_t>(c)];
+        const int k1 = local_offset_[static_cast<std::size_t>(c) + 1];
+        int iter = 0;
+        double worst = 0.0;
+        for (; iter < max_iter; ++iter) {
+            worst = 0.0;
+            for (int k = k0; k < k1; ++k) {
+                const std::size_t q = static_cast<std::size_t>(k);
+                const int i = local_i_[q], j = local_j_[q];
+                double rx = x[i] - x[j], ry = y[i] - y[j], rz = z[i] - z[j];
+                box.min_image(rx, ry, rz);
+                const double rv = rx * (vx[i] - vx[j]) + ry * (vy[i] - vy[j])
+                                  + rz * (vz[i] - vz[j]);
+                const double err = std::fabs(rv) / local_d2_[q];
+                worst = std::max(worst, err);
+                if (err <= tol)
+                    continue;
+                const double k_lag =
+                    -rv / ((local_imi_[q] + local_imj_[q]) * local_d2_[q]);
+                const double ki = k_lag * local_imi_[q];
+                const double kj = k_lag * local_imj_[q];
+                vx[i] += ki * rx;
+                vy[i] += ki * ry;
+                vz[i] += ki * rz;
+                vx[j] -= kj * rx;
+                vy[j] -= kj * ry;
+                vz[j] -= kj * rz;
+            }
+            if (worst <= tol)
+                break;
+        }
+        most_iters = std::max(most_iters, iter);
+        if (iter >= max_iter)
+            failed_residual = std::max(failed_residual, worst);
+    }
+    if (failed_residual > 0.0)
+        throw std::runtime_error(
+            "FixRattle: the velocity stage did not converge in "
+            + std::to_string(max_iter_) + " iterations (last relative residual "
+            + std::to_string(failed_residual) + ").");
+    last_vel_iters_ = most_iters;
+}
+
+void FixRattle::launch(const cpu::LaunchContext& ctx) {
+    frame_ = &ctx.frame;
+    {
+        const ColKey<StorageReal> keys[6] = {kAtom_x,  kAtom_y,  kAtom_z,
+                                             kAtom_vx, kAtom_vy, kAtom_vz};
+        for (int k = 0; k < 6; ++k)
+            col_[k] = ctx.frame.span(keys[k]).data();
+    }
+
+    // ── initial_integrate @ -500: reference bond vectors ─────────────────
+    // Taken BEFORE any integrator moves anything. SHAKE/RATTLE corrects along
+    // the reference bond vector, and VelocityVerlet fuses kick+drift and then
+    // wraps, so by post_integrate the pre-move positions are unrecoverable.
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
-        resolve_rows_(ctx);
-        if (static_cast<int>(ref_x_.size()) < n_rows) {
-            ref_x_.assign(static_cast<std::size_t>(n_rows), 0.0);
-            ref_y_.assign(static_cast<std::size_t>(n_rows), 0.0);
-            ref_z_.assign(static_cast<std::size_t>(n_rows), 0.0);
-        }
-        for (int i = 0; i < n_rows; ++i) {
-            ref_x_[static_cast<std::size_t>(i)] = x[i];
-            ref_y_[static_cast<std::size_t>(i)] = y[i];
-            ref_z_[static_cast<std::size_t>(i)] = z[i];
-        }
+        refresh_local_(ctx);
+        snapshot_(ctx);
         return;
     }
 
-    // Every rank holding any atom of a cluster solves that cluster REDUNDANTLY, from
-    // identical inputs (XSHAKE forward_comm has just re-sent the ghosts' x), and so
-    // arrives at identical corrections. It applies them to all its rows; the ghost-row
-    // writes are local scratch, discarded at the next refresh, while each owner ends up
-    // with exactly the correction its owning rank computed. No extra reverse exchange
-    // is needed — this is LAMMPS's replicated-cluster route.
+    // Every rank holding an owned atom of a cluster solves that cluster
+    // REDUNDANTLY, from identical inputs (XSHAKE forward_comm has just re-sent
+    // the ghosts' x), cluster by cluster, so it takes identical iterations and
+    // arrives at identical corrections. Ghost-row writes are local scratch,
+    // discarded at the next refresh, while each owner ends up with exactly the
+    // correction its owning rank computed — LAMMPS's replicated-cluster route.
     if (ctx.at(ATV::md::Phase::post_integrate)) {
         comm_mode_ = CommMode::XSHAKE;
         if (cpu::Comm* comm = ctx.runtime.md.comm)
             comm->forward_comm(*this);
-        const double inv_dt = 1.0 / dt_;
-        int iter = 0;
-        double last_worst = 0.0;
-        for (; iter < max_iter_; ++iter) {
-            double worst = 0.0;
-            for (std::size_t k = 0; k < constraints_.size(); ++k) {
-                const int ci = rows_[2 * k], cj = rows_[2 * k + 1];
-                if (ci < 0)
-                    continue;
-                const Constraint& c = constraints_[k];
-
-                double rx = x[ci] - x[cj];
-                double ry = y[ci] - y[cj];
-                double rz = z[ci] - z[cj];
-                f.box.min_image(rx, ry, rz);
-                const double sigma = rx * rx + ry * ry + rz * rz - c.d2;
-
-                const double err = std::fabs(sigma) / c.d2;
-                if (err > worst)
-                    worst = err;
-                if (err <= tol_)
-                    continue;
-
-                double sx = ref_x_[static_cast<std::size_t>(ci)]
-                            - ref_x_[static_cast<std::size_t>(cj)];
-                double sy = ref_y_[static_cast<std::size_t>(ci)]
-                            - ref_y_[static_cast<std::size_t>(cj)];
-                double sz = ref_z_[static_cast<std::size_t>(ci)]
-                            - ref_z_[static_cast<std::size_t>(cj)];
-                f.box.min_image(sx, sy, sz);
-
-                const double rs = rx * sx + ry * sy + rz * sz;
-                const double denom = 2.0 * (c.inv_mi + c.inv_mj) * rs;
-                if (std::fabs(denom) < 1e-12)
-                    continue;
-                const double g = -sigma / denom;
-
-                x[ci] += g * c.inv_mi * sx;
-                y[ci] += g * c.inv_mi * sy;
-                z[ci] += g * c.inv_mi * sz;
-                x[cj] -= g * c.inv_mj * sx;
-                y[cj] -= g * c.inv_mj * sy;
-                z[cj] -= g * c.inv_mj * sz;
-
-                // The constraint force also changed the momentum.
-                vx_col[ci] += g * c.inv_mi * sx * inv_dt;
-                vy_col[ci] += g * c.inv_mi * sy * inv_dt;
-                vz_col[ci] += g * c.inv_mi * sz * inv_dt;
-                vx_col[cj] -= g * c.inv_mj * sx * inv_dt;
-                vy_col[cj] -= g * c.inv_mj * sy * inv_dt;
-                vz_col[cj] -= g * c.inv_mj * sz * inv_dt;
-            }
-            last_worst = worst;
-            if (worst <= tol_)
-                break;
-        }
-        if (iter >= max_iter_)
-            throw std::runtime_error(
-                "FixRattle: the position stage did not converge in "
-                + std::to_string(max_iter_)
-                + " iterations (last relative residual "
-                + std::to_string(last_worst)
-                + "). An unconverged constraint is a corrupted "
-                  "molecule, "
-                  "not an approximation.");
-        last_pos_iters_ = iter;
+        solve_positions_(ctx);
         return;
     }
 
     // ── final_integrate @ +200: velocity stage ───────────────────────────
     //   d(sigma)/dt = 2 (r_i - r_j).(v_i - v_j) = 0
-    // The relative velocity must have NO component along the bond. Skip this and the
-    // bond lengths stay right while the molecule quietly absorbs energy along its own
-    // bonds.
+    // `CommBrick` runs at pre_neighbor, between the position stage and this
+    // one, and a full rebuild reshuffles rows — refresh_local_ sees that
+    // through the row-identity cache and re-resolves before solving.
     if (ctx.at(ATV::md::Phase::final_integrate)) {
-        // Re-resolve. `CommBrick` runs at pre_neighbor (phase 3), between the position
-        // stage (1) and this one (8), and a full rebuild RESHUFFLES the ghost slots —
-        // so the rows resolved at initial_integrate are stale by now, and the velocity
-        // stage was silently constraining the wrong atoms. It showed up as a
-        // non-converging solve, which is the good failure mode; had the shuffle been
-        // milder it would simply have produced wrong dynamics.
-        resolve_rows_(ctx);
+        refresh_local_(ctx);
         comm_mode_ = CommMode::VP;
         if (cpu::Comm* comm = ctx.runtime.md.comm)
             comm->forward_comm(*this);
-        int iter = 0;
-        double last_worst = 0.0;
-        for (; iter < max_iter_; ++iter) {
-            double worst = 0.0;
-            for (std::size_t k = 0; k < constraints_.size(); ++k) {
-                const int ci = rows_[2 * k], cj = rows_[2 * k + 1];
-                if (ci < 0)
-                    continue;
-                const Constraint& c = constraints_[k];
-
-                double rx = x[ci] - x[cj];
-                double ry = y[ci] - y[cj];
-                double rz = z[ci] - z[cj];
-                f.box.min_image(rx, ry, rz);
-
-                const double dvx = vx_col[ci] - vx_col[cj];
-                const double dvy = vy_col[ci] - vy_col[cj];
-                const double dvz = vz_col[ci] - vz_col[cj];
-
-                const double rv = rx * dvx + ry * dvy + rz * dvz;
-                const double err = std::fabs(rv) / c.d2;
-                if (err > worst)
-                    worst = err;
-                if (err <= tol_)
-                    continue;
-
-                const double k_lag = -rv / ((c.inv_mi + c.inv_mj) * c.d2);
-
-                vx_col[ci] += k_lag * c.inv_mi * rx;
-                vy_col[ci] += k_lag * c.inv_mi * ry;
-                vz_col[ci] += k_lag * c.inv_mi * rz;
-                vx_col[cj] -= k_lag * c.inv_mj * rx;
-                vy_col[cj] -= k_lag * c.inv_mj * ry;
-                vz_col[cj] -= k_lag * c.inv_mj * rz;
-            }
-            last_worst = worst;
-            if (worst <= tol_)
-                break;
-        }
-        if (iter >= max_iter_)
-            throw std::runtime_error(
-                "FixRattle: the velocity stage did not converge in "
-                + std::to_string(max_iter_)
-                + " iterations (last relative residual "
-                + std::to_string(last_worst) + ").");
-        last_vel_iters_ = iter;
-        return;
+        solve_velocities_(ctx);
     }
 }
 

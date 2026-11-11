@@ -51,6 +51,14 @@ class Frame {
 
     bool has(std::string_view block_key, std::string_view column_key) const;
 
+    /// @brief Give the atoms Block the canonical schema column `id` again,
+    ///        zero-filled, after a boundary left it out (the identity
+    ///        columns `type` / `atomic_number`, see `atom_field_how_to`).
+    ///        A no-op when the column is present. Removing one is
+    ///        `block("atoms").erase(key)`.
+    /// @param id Schema field to (re)create.
+    void insert_field(AtomFieldId id);
+
     void begin_resolution_window(std::size_t budget) const noexcept;
     void end_resolution_window(const char* component) const;
     std::size_t resolution_count() const noexcept;
@@ -64,6 +72,21 @@ class Frame {
 
     void set_nlocal(int n);
     void set_nghost(int n);
+
+    /// @brief Row-identity revision: a process-unique value that changes
+    ///        whenever a row may now hold a different atom.
+    ///
+    /// Every row-identity mutation goes through this class and draws a fresh
+    /// value: `set_nlocal` / `set_nghost` (migration, ghost rebuilds, MC
+    /// insert/delete), `copy_row` / `copy_row_from` (exchange compaction,
+    /// spatial sort), `set_capacity`, `restore_import_order`, construction
+    /// and assignment, and republishing the tag index (`clear_tag_index` /
+    /// `rebuild_tag_index` — how a reorder through raw columns announces
+    /// itself, as `md::notify_sorted` does). Position refreshes leave it
+    /// alone. Caches of resolved row indices (`BondedTupleCache`,
+    /// `FixSettle`) key on it instead of re-reading tags. Permuting raw
+    /// columns without republishing the index is not tracked.
+    std::uint64_t row_revision() const noexcept { return row_revision_; }
 
     /// LAMMPS-shaped chunked capacity growth over the canonical atoms Block.
     void grow(int target_capacity);
@@ -102,6 +125,11 @@ class Frame {
     void add_improper(TagInt ti, TagInt tj, TagInt tk, TagInt tl, int type);
     void build_special_list();
     void reshuffle_topology_to_tags();
+    /// Permute owned rows so row i holds `original[i]`. Returns false and
+    /// leaves the frame unchanged unless `n == nlocal()`, `n > 1`, and the
+    /// two tag lists are the same unique set. Ghost rows are not touched;
+    /// a successful permute rebuilds the tag index for owned rows only.
+    bool restore_import_order(const TagInt* original, int n);
 
     std::size_t memory_bytes() const noexcept;
 
@@ -111,6 +139,9 @@ class Frame {
     Frame clone_structure(int rows) const;
 
   private:
+    void touch_rows_() noexcept;
+    std::uint64_t row_revision_ = 0;
+
     static int cols_for_(const FieldSpec& spec, const MetaMap& meta);
     void bind_resolution_state_() const noexcept;
     Block& atoms_block_() { return block("atoms"); }
@@ -138,7 +169,7 @@ std::vector<SchemaError> validate_ghosts(const GhostContract& required,
                                          const Frame& frame);
 
 /// @brief `validate_ghosts`, but throws a single message listing every
-///        problem. The systematic form of CLAUDE.md's per-component rule:
+///        problem. The systematic form of docs/developer/project-contract.md's per-component rule:
 ///        a missing required field throws with a how-to, never defaults.
 /// @param required Fields the mounted components declared.
 /// @param frame Frame to check.

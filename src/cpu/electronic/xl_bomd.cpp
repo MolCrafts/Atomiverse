@@ -117,9 +117,7 @@ void XlBomd::reset() {
 
 // ── complex (multi-k) path ───────────────────────────────────────────────
 
-XlBomdCplx::XlBomdCplx(int k) : k_(k) {
-    load_table_i(k_, kappa_, alpha_, c_);
-}
+XlBomdCplx::XlBomdCplx(int k) : k_(k) { load_table_i(k_, kappa_, alpha_, c_); }
 
 const linalg::CplxMatrix& XlBomdCplx::aux() const {
     if (!ready_)
@@ -147,8 +145,7 @@ void XlBomdCplx::advance(const linalg::CplxMatrix& d_scf) {
 
     using Cplx = std::complex<double>;
     linalg::CplxMatrix p_next =
-        Cplx(2.0) * hist_[0] - hist_[1]
-        + Cplx(kappa_) * (d_scf - hist_[0]);
+        Cplx(2.0) * hist_[0] - hist_[1] + Cplx(kappa_) * (d_scf - hist_[0]);
     for (std::size_t k = 0; k < c_.size(); ++k)
         p_next += Cplx(alpha_ * c_[k]) * hist_[k];
 

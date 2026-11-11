@@ -140,7 +140,7 @@ struct IntegralWorkspace {
     ///
     /// Out-params only — no pack returned to the caller. Used by CUDA RHF and
     /// any path that must upload dense matrices without owning a bag type.
-    /// @param frame Geometry [Å]; Z from type column.
+    /// @param frame Geometry [Å]; Z from the atomic_number column.
     /// @param basis Basis set.
     /// @param charge Molecular charge [e].
     /// @param compute_eri When true, fill dense ERI [Hartree]; else ERI empty.
@@ -150,8 +150,9 @@ struct IntegralWorkspace {
     /// @param[out] V_nuc Nuclear repulsion [Hartree].
     /// @param[out] n_basis AO dimension.
     /// @param[out] n_electrons Electron count (valence if ECP).
-    static void fill_rhf_matrices(const Frame& frame, BasisSet basis, int charge,
-                                  bool compute_eri, xt::xtensor<double, 2>& S,
+    static void fill_rhf_matrices(const Frame& frame, BasisSet basis,
+                                  int charge, bool compute_eri,
+                                  xt::xtensor<double, 2>& S,
                                   xt::xtensor<double, 2>& Hcore,
                                   xt::xtensor<double, 4>& ERI, double& V_nuc,
                                   int& n_basis, int& n_electrons);
@@ -159,10 +160,10 @@ struct IntegralWorkspace {
     /// @brief Compute integrals for a molecular geometry via native C++.
     ///
     /// Reads atom positions from the `kAtom_x/y/z` columns (Angstrom) and nuclear
-    /// charges from `kAtom_type`. Converts to Bohr internally.
+    /// charges from `kAtom_atomic_number`. Converts to Bohr internally.
     ///
     /// By default the two-electron ERI tensor is NOT computed (`compute_eri=false`).
-    /// The CPU SCF solver uses direct SCF via ShellPairList::g_rhf,
+    /// The CPU SCF solver builds J/K with internal::ExactJK from the shells,
     /// so storing the full O(n^4) ERI tensor is unnecessary for CPU calculations.
     /// Pass `compute_eri=true` when the caller explicitly needs `ERI`:
     ///   - CUDA RHFFock (uploads ERI to device)
@@ -176,7 +177,7 @@ struct IntegralWorkspace {
     /// Atoms absent from the table stay all-electron (def2 convention:
     /// Z ≤ 36). S/T/ERI are untouched by the ECP.
     ///
-    /// @param frame       CPU Frame with atom positions and types (atoms.type = Z).
+    /// @param frame       CPU Frame with atom positions and types (atoms.atomic_number = Z).
     /// @param basis       Which basis set to resolve (STO3G, 6-31G, ...).
     /// @param charge      Molecular charge (0 = neutral, +1 = cation, etc.).
     /// @param compute_eri If true, compute and store the full ERI tensor [default false].
@@ -188,9 +189,9 @@ struct IntegralWorkspace {
     ///                    `W` (needed by scalar-relativistic x2c-1e). Default
     ///                    false keeps the non-relativistic path untouched.
     IntegralWorkspace(const Frame& frame, BasisSet basis, int charge = 0,
-                 bool compute_eri = false, std::string ecp = {},
-                 const std::vector<int>& ghost_atoms = {},
-                 bool compute_pvp = false);
+                      bool compute_eri = false, std::string ecp = {},
+                      const std::vector<int>& ghost_atoms = {},
+                      bool compute_pvp = false);
 
     /// @brief Number of doubly-occupied orbitals (RHF closed-shell).
     /// @return `n_electrons / 2`.
@@ -232,7 +233,8 @@ struct IntegralWorkspace {
     operator IntegralView() const { return view(); }
 
     /// @brief Fused Coulomb + exchange — delegates to `view()`.
-    void coulomb_exchange_fused(const RealMatrix& P_total, RealMatrix& G) const {
+    void coulomb_exchange_fused(const RealMatrix& P_total,
+                                RealMatrix& G) const {
         view().coulomb_exchange_fused(P_total, G);
     }
 

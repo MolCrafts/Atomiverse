@@ -21,12 +21,15 @@ class TriclinicCellRelax : public Optimizer {
   public:
     double alpha0 = 0.02;     ///< Strain gain (dimensionless).
     double max_strain = 0.05; ///< Cap on |ε_αβ| per step.
-    double bulk_mod = 1.0;    ///< Soft modulus [eV/Å³].
+    double bulk_mod = 1.0;    ///< Soft modulus [style pressure].
 
     TriclinicCellRelax() = default;
     explicit TriclinicCellRelax(double alpha, double bulk = 1.0);
 
     std::string name() const override { return "triclinic_cell_relax"; }
+    /// @brief Reads the system stress (kStress) every iteration.
+    /// @return True.
+    bool requires_system_stress() const override { return true; }
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::minimizer::Phase::search_direction, 0),
@@ -43,7 +46,7 @@ class TriclinicCellRelax : public Optimizer {
     Mat3 eps_{}; // strain to apply
     double residual_ = 0;
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
     bool has_prev_ = false;
 };
 

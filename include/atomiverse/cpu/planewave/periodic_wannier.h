@@ -21,11 +21,8 @@
 /// no factories. No metallic smearing / disentanglement in this product path.
 ///
 /// @code
-///   cpu::pw::PW pw;
-///   pw.upf_path = "Si.upf";
-///   pw.ecut_ry = 15.0;
-///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::LSDA;
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf")}, /*ecut_ry=*/15.0,
+///                  /*k_mesh=*/2, cpu::xc::XCType::LSDA};
 ///   pw.spin_polarized = true;
 ///   pw.multiplicity = 1;           // M = 0 closed-shell collinear
 ///
@@ -149,10 +146,10 @@ double mv_pair_weight_cubic(double b_len);
 /// @param M_diag Diagonal \(M_{nn}^{(\mathbf b)}\) phases as complex values.
 /// @return Cartesian center [Å].
 /// @throws std::invalid_argument on size mismatch or empty input.
-std::array<double, 3> center_from_diagonal_phases(
-    const std::vector<std::array<double, 3>>& b_cart,
-    const std::vector<double>& w_b,
-    const std::vector<std::complex<double>>& M_diag);
+std::array<double, 3>
+center_from_diagonal_phases(const std::vector<std::array<double, 3>>& b_cart,
+                            const std::vector<double>& w_b,
+                            const std::vector<std::complex<double>>& M_diag);
 
 } // namespace pw
 } // namespace cpu

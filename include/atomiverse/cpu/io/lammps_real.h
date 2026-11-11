@@ -15,7 +15,7 @@
 namespace ATV {
 namespace cpu {
 
-/// @brief kcal/mol → eV (matches tools/debug_amorphous pin).
+/// @brief kcal/mol → eV.
 inline constexpr double kKcalPerMolInEv = 1.0 / 23.060547830619026;
 
 /// @brief Convert energy from kcal/mol to eV.

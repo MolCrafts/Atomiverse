@@ -2,7 +2,7 @@
 /// @brief Virial -- ZEROING of `stress_kinetic[6]`.
 ///
 /// After cuda-md-review-cleanup-05-reductions-and-atomics the kinetic
-/// stress tensor `Σ m·vα·vβ · ATV::units::mass_v2_to_energy` (eV units, no volume division)
+/// stress tensor `Σ m·vα·vβ · mvv2e (eV units, no volume division)
 /// is computed by `cuda::md::KineticEnergy` via a packed warp-shuffle
 /// reduction fused with the kinetic-energy scalar. That kernel
 /// atomic-adds into `frame.scalars->stress_kinetic[6]`, so this
@@ -20,8 +20,6 @@
 
 namespace ATV {
 namespace cuda {
-
-using cuda::prec_t;
 
 struct Virial::State {};
 
@@ -42,12 +40,12 @@ void Virial::launch(const LaunchContext& ctx) {
     // Overwrite-only: this component clears `stress_kinetic[6]` so that
     // `cuda::md::KineticEnergy` (end_of_step @ -100, runs AFTER this
     // component's post_force @ -50 slot per cuda::md::MD::install_infra_)
-    // can atomic-add the freshly-computed Σ m·vα·vβ · ATV::units::mass_v2_to_energy into a
+    // can atomic-add the freshly-computed Σ m·vα·vβ · mvv2e into a
     // known-zero buffer. The pair / bonded virial (`stress[6]`) is
     // owned by `pair_lj_cut` / `bond_harmonic` / `angle_harmonic` /
     // `dihedral_multi_harmonic` and cleared by `ZeroEnergy` at
     // pre_force @ -999 — NOT touched here.
-    cudaMemsetAsync(f.scalars->stress_kinetic, 0, 6 * sizeof(prec_t), stream);
+    cudaMemsetAsync(f.scalars->stress_kinetic, 0, 6 * sizeof(acc_t), stream);
 }
 
 void Virial::destroy(const DestroyContext& /*ctx*/) {}

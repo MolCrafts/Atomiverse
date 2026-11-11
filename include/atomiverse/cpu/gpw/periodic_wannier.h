@@ -9,28 +9,37 @@
 /// steepest-descent polish. Centers come from the Berry-phase formula
 /// \(\mathbf r_n = -N_k^{-1}\sum_{\mathbf k,\mathbf b} w_b\,\mathbf b\,
 /// \operatorname{Im}\ln M_{nn}\).
+/// Neighbor AO matrices use exact Cartesian Gaussian Fourier overlaps
+/// \(\int a(\mathbf r)b(\mathbf r)e^{-i\mathbf q\cdot\mathbf r}d^3r\),
+/// retaining every angular term. The short unwrapped ket-minus-bra step
+/// \(\mathbf q\) is [Bohr⁻¹] with primitive positions [Bohr]; the exponent
+/// has a negative sign. Neighbor vectors used for centers/weights are [Å⁻¹]
+/// and are converted to [Bohr⁻¹] for this integral.
 ///
 /// **Collinear spin:** when `GpwDft::is_uks()` (`n_alpha`/`n_beta`), α and β
 /// occupied manifolds are localized independently from `C_occ_k` /
 /// `C_occ_k_beta` (fixed occupations; insulator only). Centers are
-/// concatenated α then β; see `PeriodicWannierResult::spin`.
+/// concatenated α then β; see `PeriodicWannierResult::spin`. The geometry's
+/// spin-independent AO Fourier operators are built once per compute call
+/// and borrowed by both channel contractions.
 ///
 /// Product: closed-shell insulator or collinear UKS insulator, orthorhombic
 /// cell, no metallic smearing / disentanglement. Parameters are members of
 /// `PeriodicWannier` — no public `*Config` bag, no factories.
 ///
 /// @code
-///   cpu::gpw::GpwDft dft;
-///   dft.cell[0] = dft.cell[1] = a / std::sqrt(2.0); // BCT Si [Bohr]
-///   dft.cell[2] = a;
-///   dft.cutoff_ry = 100.0;
+///   // frame: Si positions [Å], Z in kAtom_atomic_number,
+///   //        box = Box::orthorhombic(a/√2, a/√2, a) [Å] (BCT Si)
+///   cpu::gpw::GpwDft dft{{{molrs::Element::Si,
+///                          cpu::gpw::GaussianBasis(molrs::Element::Si, "SZV-GTH"),
+///                          cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PADE-q4")}},
+///                        /*cutoff_ry=*/100.0, cpu::xc::XCType::PADE};
 ///   dft.n_alpha = 8;   // collinear UKS (M = 0): 8↑ + 8↓
 ///   dft.n_beta  = 8;
-///   dft.xc = cpu::gpw::XcKind::PADE;
-///   dft.build(atoms);
+///   dft.build(frame);
 ///
 ///   cpu::gpw::PeriodicWannier mlwf;   // members: k_mesh, max_iter, …
-///   auto r = mlwf.compute(dft, atoms);
+///   auto r = mlwf.compute(dft, frame);
 ///   // r.centers[i] [Å], r.spreads[i] [Å²], r.n_wann_up / r.n_wann_dn
 /// @endcode
 #pragma once
@@ -109,21 +118,21 @@ class PeriodicWannier {
     ///        Si-like cells with 8 WFs/channel, else crystal origin replicates.
     std::vector<std::array<double, 3>> trial_centers;
 
-    /// @brief Multi-k SCF + MLWF for the geometry in `atoms`.
+    /// @brief Multi-k SCF + MLWF for the geometry in `frame`.
     ///
     /// Configures `method.k_mesh = {k_mesh,k_mesh,k_mesh}`, disables time
-    /// reversal, runs `method.run(atoms)`, then localizes the occupied Bloch
+    /// reversal, runs `method.run(frame)`, then localizes the occupied Bloch
     /// manifold from `last_result()` (RKS: one channel; UKS: α then β).
     ///
     /// @param method GPW DFT method (members + `build()` already done; k-mesh
     ///               and TR flag are overwritten for the MLWF SCF).
-    /// @param atoms  Atom set at the current geometry [Bohr] (same as `build`).
+    /// @param frame  Geometry (positions [Å], Z, orthorhombic box [Å]); the
+    ///               SCF energy [eV] is written to `frame.meta[kEnergy]`.
     /// @return Owned `PeriodicWannierResult` (centers [Å], spreads [Å²]).
     /// @throws std::invalid_argument on metallic smearing, non-positive
     ///         mesh / step / tol, empty occupied manifold, or `!built`.
     /// @throws std::logic_error when `method` was not `build()`'d.
-    PeriodicWannierResult compute(GpwDft& method,
-                                  const std::vector<GpwAtom>& atoms) const;
+    PeriodicWannierResult compute(GpwDft& method, Frame& frame) const;
 };
 
 /// @brief Eight Si–Si bond midpoints of the diamond BCT 4-atom orthorhombic
@@ -154,10 +163,10 @@ double mv_pair_weight_cubic(double b_len);
 /// @param M_diag Diagonal \(M_{nn}^{(\mathbf b)}\) phases as complex values.
 /// @return Cartesian center [Å].
 /// @throws std::invalid_argument on size mismatch or empty input.
-std::array<double, 3> center_from_diagonal_phases(
-    const std::vector<std::array<double, 3>>& b_cart,
-    const std::vector<double>& w_b,
-    const std::vector<std::complex<double>>& M_diag);
+std::array<double, 3>
+center_from_diagonal_phases(const std::vector<std::array<double, 3>>& b_cart,
+                            const std::vector<double>& w_b,
+                            const std::vector<std::complex<double>>& M_diag);
 
 } // namespace gpw
 } // namespace cpu

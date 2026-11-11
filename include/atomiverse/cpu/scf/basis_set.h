@@ -20,6 +20,7 @@ enum class BasisSet {
     Def2SVP,     ///< def2-SVP (Ahlrichs split-valence polarized).
     Def2TZVP,    ///< def2-TZVP (triple-zeta).
     AugCcPVDZ,   ///< aug-cc-pVDZ (Dunning DZ + diffuse augmentation).
+    CcPVDZ,      ///< cc-pVDZ (Dunning DZ). Table is hydrogen only.
 };
 
 /// @brief Human-readable name for a BasisSet (logs / reports).
@@ -48,7 +49,8 @@ enum class AuxBasis {
 /// @brief Angular convention the basis set is defined with.
 ///
 /// STO-3G / 6-31G / 6-31G* / 6-31+G* are Cartesian (6d by definition);
-/// def2-SVP / def2-TZVP / aug-cc-pVDZ are spherical (5d/7f). Throws on an
+/// def2-SVP / def2-TZVP / aug-cc-pVDZ / cc-pVDZ are spherical (5d/7f).
+/// cc-pVDZ is tabulated for H only. Throws on an
 /// unknown enum value.
 /// @param basis Basis-set identifier.
 /// @return The defining convention (no fallback).

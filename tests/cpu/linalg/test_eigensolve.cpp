@@ -38,11 +38,56 @@
 #include <cmath>
 #include <cstddef>
 
+#include <xtensor/views/xview.hpp>
+
 #include "atomiverse/cpu/linalg/eigensolve.h"
 
 namespace linalg = ATV::cpu::linalg;
 using linalg::RealMatrix;
 using linalg::RealVector;
+
+TEST(GeneralizedEigenSolver, ReusesStorageAndSatisfiesGeneralizedEquation) {
+    linalg::GeneralizedEigenSolver solver(2);
+    RealMatrix h = {{2.0, 0.4}, {0.4, 3.0}};
+    RealMatrix s = {{1.0, 0.1}, {0.1, 1.2}};
+    const auto* values = solver.eigenvalues().data();
+    const auto* vectors = solver.eigenvectors().data();
+    for (int step = 0; step < 3; ++step) {
+        h(0, 0) += 0.1;
+        solver.solve(h, s);
+        EXPECT_EQ(values, solver.eigenvalues().data());
+        EXPECT_EQ(vectors, solver.eigenvectors().data());
+        const auto& c = solver.eigenvectors();
+        const auto& e = solver.eigenvalues();
+        for (int i = 0; i < 2; ++i)
+            for (int j = 0; j < 2; ++j) {
+                double hc = 0, sc = 0, norm = 0;
+                for (int k = 0; k < 2; ++k) {
+                    hc += h(i, k) * c(k, j);
+                    sc += s(i, k) * c(k, j);
+                    for (int l = 0; l < 2; ++l)
+                        norm += c(k, i) * s(k, l) * c(l, j);
+                }
+                EXPECT_NEAR(hc, sc * e(j), 1e-12);
+                EXPECT_NEAR(norm, i == j ? 1.0 : 0.0, 1e-12);
+            }
+    }
+}
+
+TEST(GeneralizedEigenSolver, RejectsInvalidInputsAndCanRetry) {
+    EXPECT_THROW(linalg::GeneralizedEigenSolver(0), std::invalid_argument);
+    linalg::GeneralizedEigenSolver solver(2);
+    RealMatrix h = {{2.0, 0.0}, {0.0, 3.0}};
+    RealMatrix s = {{1.0, 0.0}, {0.0, -1.0}};
+    EXPECT_THROW(solver.solve(h, s), std::runtime_error);
+    s(1, 1) = 1.0;
+    h(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(solver.solve(h, s), std::invalid_argument);
+    h(0, 0) = 2.0;
+    EXPECT_NO_THROW(solver.solve(h, s));
+    EXPECT_DOUBLE_EQ(solver.eigenvalues()(0), 2.0);
+    EXPECT_DOUBLE_EQ(solver.eigenvalues()(1), 3.0);
+}
 
 namespace {
 
@@ -209,4 +254,58 @@ TEST(TestEigensolve, EigNonsymmetricLeavesInputUnchanged) {
         for (std::size_t j = 0; j < 2; ++j)
             EXPECT_EQ(a(i, j), before(i, j))
                 << "A mutated at (" << i << "," << j << ")";
+}
+
+// ── TestEigensolve: natural_orbitals ─────────────────────────────────────
+
+namespace {
+
+/// SPD, non-orthogonal 3×3 overlap (unit diagonal, eigenvalues > 0).
+RealMatrix overlap_3x3() {
+    return RealMatrix{{1.0, 0.4, 0.2}, {0.4, 1.0, 0.3}, {0.2, 0.3, 1.0}};
+}
+
+/// Closed-shell P = 2 C Cᵀ of two S-orthonormal orbitals C = V (VᵀSV)^{-1/2}.
+RealMatrix closed_shell_density(const RealMatrix& S, RealMatrix& C) {
+    const RealMatrix V{{1.0, 0.0}, {0.5, 1.0}, {0.0, 0.3}};
+    const RealMatrix VtSV =
+        xt::linalg::dot(xt::transpose(V), xt::linalg::dot(S, V));
+    C = xt::linalg::dot(V, linalg::sym_power(VtSV, -0.5));
+    return 2.0 * xt::linalg::dot(C, xt::transpose(C));
+}
+
+} // namespace
+
+// [Contract] The occupations of P = 2 C Cᵀ in a non-orthogonal basis are
+// exactly {0, 2, 2}, and the two most occupied natural orbitals rebuild P.
+TEST(TestEigensolve, NaturalOrbitalsRecoverClosedShellDensity) {
+    const RealMatrix S = overlap_3x3();
+    RealMatrix C;
+    const RealMatrix P = closed_shell_density(S, C);
+    const RealMatrix X = linalg::build_orthogonalization_matrix(S);
+
+    auto [occ, nat] = linalg::natural_orbitals(P, S, X);
+    ASSERT_EQ(occ.size(), std::size_t(3));
+    EXPECT_NEAR(occ(0), 0.0, 1e-12);
+    EXPECT_NEAR(occ(1), 2.0, 1e-12);
+    EXPECT_NEAR(occ(2), 2.0, 1e-12);
+
+    const RealMatrix top = xt::view(nat, xt::all(), xt::range(1, 3));
+    const RealMatrix P_rebuilt = 2.0 * xt::linalg::dot(top, xt::transpose(top));
+    for (std::size_t i = 0; i < 3; ++i)
+        for (std::size_t j = 0; j < 3; ++j)
+            EXPECT_NEAR(P_rebuilt(i, j), P(i, j), 1e-12)
+                << "P mismatch at (" << i << "," << j << ")";
+}
+
+// [Pitfall] Diagonalizing P itself against S (P c = n S c) is not the
+// natural-orbital problem once S ≠ I: its spectrum is not {0, 2, 2}.
+TEST(TestEigensolve, NaturalOrbitalsDifferFromDiagonalizingPAgainstS) {
+    const RealMatrix S = overlap_3x3();
+    RealMatrix C;
+    const RealMatrix P = closed_shell_density(S, C);
+    const RealMatrix X = linalg::build_orthogonalization_matrix(S);
+    auto [wrong, unused] = linalg::diagonalize_fock(P, X);
+    (void)unused;
+    EXPECT_GT(std::abs(wrong(2) - 2.0), 1e-3);
 }

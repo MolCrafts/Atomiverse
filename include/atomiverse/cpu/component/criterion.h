@@ -6,8 +6,9 @@
 /// a `Verdict` — `Continue`, `Converged` or `Stop` — and nothing else. It only
 /// ever RETURNS a verdict; it has no field with which to write the loop's
 /// status, so a component still cannot declare its own loop converged. The
-/// driver PULLS every registered criterion's `verdict()`, composes them by
-/// severity (Stop > Converged > Continue), all-reduces once across MPI ranks,
+/// driver PULLS every registered criterion's `verdict()`: any Stop aborts, while
+/// success requires every convergence requirement on every rank to be satisfied.
+/// Stop-only guards are neutral for success. The driver all-reduces once,
 /// and — the driver alone — writes `converged` / `stop_requested`.
 ///
 /// ## Why a Component, and why not a template
@@ -40,9 +41,10 @@
 /// criterion.** Ranks that disagree about when to stop deadlock at the next
 /// collective, and that is a bug no criterion author should have to know about.
 /// Write `verdict()` as if the process were alone; the driver all-reduces the
-/// severity.
+/// stop flags and unsatisfied convergence requirements.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/component.h"
 
@@ -51,7 +53,7 @@ namespace cpu {
 
 /// @brief Everything a criterion is allowed to look at.
 struct LoopState {
-    int iteration;           ///< 0-based index of the iteration just completed.
+    BigInt iteration;        ///< 0-based index of the iteration just completed.
     const cpu::Frame& frame; ///< The system state as it now stands.
     const cpu::Context&
         runtime; ///< Execution context (threads, MPI, service slices).
@@ -62,6 +64,15 @@ struct LoopState {
 /// @brief A termination criterion: a Component the driver polls once per iteration.
 class Criterion : public Component {
   public:
+    /// @brief Whether this criterion is a requirement for successful convergence.
+    ///
+    /// Stop-only guards retain the default false: Continue is neutral and Stop
+    /// aborts. A convergence criterion overrides this with true; its Continue
+    /// blocks success. Returning Converged without declaring this capability is
+    /// a contract error. The declaration must stay fixed while registered.
+    /// @return True for a convergence requirement, false for a stop-only guard.
+    virtual bool contributes_to_convergence() const { return false; }
+
     /// @brief Judge the iteration just completed.
     ///
     /// Non-const (a criterion may update its own measurement state), takes the

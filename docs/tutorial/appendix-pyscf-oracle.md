@@ -1,4 +1,15 @@
-# Appendix. External References
+# External References
+
+Analytic limits, independent implementations, and experiment provide different
+kinds of evidence. The first checks a defined mathematical property, the
+second compares numerical solutions of matched models, and the third tests
+the adequacy of a physical model. None replaces the others.
+
+The source revision, geometry, charge and spin, boundaries, basis or potential
+data, numerical controls, units, and stopping reason belong with every result.
+For sampled quantities, include equilibration and uncertainty analysis.
+Distinguish newly measured values from historical references; the present
+editorial revision does not rerun the inherited result tables.
 
 Rules for the **Results** block of every tutorial chapter: how to cite PySCF
 (or other references) without making them build dependencies.
@@ -6,14 +17,14 @@ Rules for the **Results** block of every tutorial chapter: how to cite PySCF
 ## 1. External codes are not build dependencies
 
 Reference energies, properties, and basis parameters are computed offline by
-developers and written into tables, regression comments, or `REFERENCE.md`
+developers and written into tables, regression comments, or pin notes
 files. CMake, ctest, and unit tests must not import, invoke, or read PySCF or
 its data files. Version strings and provenance in comments are allowed.
 
 Optional local setup for offline comparison:
 
 ```bash
-bash tools/setup_pyscf_env.sh
+bash <pyscf env setup>
 ```
 
 ## 2. Every tabulated reference should be independently reproducible
@@ -49,8 +60,7 @@ Consistency of static basis headers with the PySCF basis library is checked
 with the generator:
 
 ```bash
-python tools/gen_basis_data.py --check \
-    include/atomiverse/cpu/scf/basis_data/sto3g.h sto-3g sto3g H He …
+python <basis-data generator> --check sto-3g sto3g H He …
 ```
 
 When editing tables, prefer regenerating them and keep the generator command

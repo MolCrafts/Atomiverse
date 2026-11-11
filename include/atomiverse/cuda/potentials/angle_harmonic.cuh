@@ -24,6 +24,7 @@ class AngleHarmonic : public Angle {
     AngleHarmonic& operator=(AngleHarmonic&&) noexcept;
 
     std::string name() const override { return "harmonic_angle"; }
+    bool graph_capturable() const override { return true; }
 
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;

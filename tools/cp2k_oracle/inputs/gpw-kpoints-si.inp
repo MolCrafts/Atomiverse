@@ -1,8 +1,8 @@
-! CP2K twin for regressions/gpw/gpw-kpoints-si — Monkhorst-Pack k-point GPW
+! CP2K twin for regressions/gpw/rks — Monkhorst-Pack k-point GPW
 ! RKS on diamond Si in the bct 4-atom cell (DZVP-MOLOPT-GTH + GTH-PBE-q4).
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
 ! Pin: total energy [Ha] -> replace the frozen first-green value in
-! regressions/gpw/gpw-kpoints-si/REFERENCE.md and reg_gpw-kpoints-si.cpp
+! regressions/gpw/rks/REFERENCE.md and reg_gpw-kpoints-si.cpp
 ! (cite the CP2K version). ATV first green: E = -15.8023941333 Ha.
 &GLOBAL
   PROJECT si_kpoints_bct

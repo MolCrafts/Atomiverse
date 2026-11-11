@@ -8,6 +8,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 
 using namespace ATV;
@@ -42,6 +43,29 @@ double dUdr(double A, double rho, double sigma, double C, double D, double r) {
 }
 
 } // namespace
+
+TEST(PairBorn, SpatialHalfRowsMayPointToALowerLocalIndex) {
+    auto frame = dimer(2.5);
+    cpu::md::PairList pairs;
+    pairs.inum = 1;
+    pairs.ilist = {1};
+    pairs.numneigh = {0, 1};
+    pairs.firstneigh = {0, 0};
+    pairs.neighbors = {0};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    cpu::PairBorn born(1000.0, 3.0, 1.0, 50.0, 20.0, 8.0);
+    born.build({context, frame});
+    born.launch({context, frame, 0, 0});
+    EXPECT_NEAR(frame.meta.get(kEnergy),
+                U_un(1000.0, 3.0, 1.0, 50.0, 20.0, 2.5)
+                    - U_un(1000.0, 3.0, 1.0, 50.0, 20.0, 8.0),
+                1e-12);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0],
+                dUdr(1000.0, 3.0, 1.0, 50.0, 20.0, 2.5), 1e-12);
+    born.destroy({context, frame});
+}
 
 // Offline LAMMPS born dimer foothold coeffs (born-repulsion-foothold).
 TEST(PairBorn, AnalyticEnergyAndForceLammpsDimer) {

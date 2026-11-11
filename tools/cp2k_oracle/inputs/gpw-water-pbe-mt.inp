@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/gpw/gpw-water-pbe-mt/
+! Offline CP2K twin for regressions/gpw/rks/
 ! Never launched by ctest. Run manually when a CP2K binary is available.
 ! Pin target: E_tot = -17.21233714458516 Ha (getting-started h2o.inp family).
 !

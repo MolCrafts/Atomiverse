@@ -1,9 +1,9 @@
 /// @file cpu/scf/mp2.h
 /// @brief Canonical MP2 correlation energy (public API).
 ///
-/// User path: `RHF::mp2(frame)` (closed-shell RMP2 / RI-MP2),
-/// `UHF::mp2(frame)` (UMP2), or `ROHF::mp2(frame)` (ROMP2 = UMP2 on ROHF
-/// orbitals with semi-canonical spin-Fock denominators; PySCF convention).
+/// User path: `MP2{rhf}.run(frame)` (closed-shell RMP2 / RI-MP2),
+/// `MP2{uhf}.run(frame)` (UMP2), or `MP2{rohf}.run(frame)` (ROMP2).
+/// Scales live on `MP2`, not on the mean-field method (PySCF `mp.MP2(mf)`).
 /// This header exposes only the `MP2Result` value type; the AO→MO transform
 /// kernels are private workspace declared in `internal/ao2mo.h`.
 #pragma once

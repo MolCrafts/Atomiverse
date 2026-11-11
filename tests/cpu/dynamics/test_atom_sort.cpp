@@ -76,6 +76,35 @@ TEST(AtomSort, NotifyBumpsNeighborGeneration) {
     EXPECT_EQ(dd.tag_to_local.size(), 4u);
 }
 
+TEST(AtomSort, TriclinicSortingKeepsPhysicalCoordinatesAndGhostRows) {
+    cpu::Frame frame(4);
+    Mat3 h = Mat3::diagonal(5, 6, 7);
+    h(0, 1) = -3;
+    h(2, 0) = 2;
+    frame.box.set_cell(h);
+    std::vector<Vec3> positions;
+    for (int i = 0; i < 4; ++i) {
+        positions.push_back(
+            frame.box.to_cartesian({.85 - .2 * i, .1 + .2 * i, .3}));
+        frame.span(kAtom_x)[i] = positions.back()[0];
+        frame.span(kAtom_y)[i] = positions.back()[1];
+        frame.span(kAtom_z)[i] = positions.back()[2];
+        frame.span(kAtom_tag)[i] = i + 1;
+    }
+    frame.grow(8);
+    frame.set_nghost(1);
+    frame.span(kAtom_x)[4] = 123;
+    cpu::md::sort_owned_atoms(frame, 4, 1.0);
+    for (int i = 0; i < 4; ++i) {
+        const auto& expected = positions.at(frame.span(kAtom_tag)[i] - 1);
+        EXPECT_DOUBLE_EQ(frame.span(kAtom_x)[i], expected[0]);
+        EXPECT_DOUBLE_EQ(frame.span(kAtom_y)[i], expected[1]);
+        EXPECT_DOUBLE_EQ(frame.span(kAtom_z)[i], expected[2]);
+    }
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_x)[4], 123);
+    EXPECT_FALSE(cpu::md::sort_owned_atoms(frame, 4, 1.0));
+}
+
 /// The FRAME's own tag index — not just the decomposition's mirror — must name
 /// the post-sort rows. On a single rank that index is the ONLY tag→row map the
 /// constraint solvers have (`FixRattle`, `FixSettle`), so a stale entry means
@@ -149,26 +178,26 @@ TEST(AtomSort, NotifyRepublishesTheFrameTagIndexWithoutADecomposition) {
 TEST(AtomSort, LineSearchReevalDoesNotAdvanceCadence) {
     cpu::md::AtomSortState s;
     s.configure(/*nfreq=*/2);
-    EXPECT_EQ(s.next_sort, 2);
+    EXPECT_EQ(s.next_sort, 0);
 
     s.step = 2;
     EXPECT_TRUE(s.due());
     s.step = 2; // same step again — line-search trial
     EXPECT_TRUE(s.due());
-    EXPECT_EQ(s.next_sort, 2);
+    EXPECT_EQ(s.next_sort, 0);
     s.mark_sorted();
     EXPECT_EQ(s.next_sort, 4);
     s.step = 2;
     EXPECT_FALSE(s.due());
 }
 
-/// Under plain MD the sort fires on the requested nfreq cadence, not on
-/// the first step (LAMMPS `nextsort` init) and not on the in-between steps.
+/// Sort during setup, then on the requested nfreq cadence.
 TEST(AtomSort, FiresOnNfreqCadence) {
     cpu::md::AtomSortState s;
     s.configure(/*nfreq=*/3);
     s.step = 0;
-    EXPECT_FALSE(s.due());
+    EXPECT_TRUE(s.due());
+    s.mark_sorted();
     s.step = 2;
     EXPECT_FALSE(s.due());
     s.step = 3;

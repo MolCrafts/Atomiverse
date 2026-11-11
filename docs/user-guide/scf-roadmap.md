@@ -73,13 +73,6 @@ under `cpu/scf/stages/`.
 
 Pair each tutorial with one code-reading target:
 
-- after Chapter 1, read [`cpu::scf::solve`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/solve.h)
-- after Chapter 2, read [`methods.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/methods.h) (the concrete `RHF` / `UHF` / `RKS` / `UKS`) and the loop they share, [`mean_field_method.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/mean_field_method.h)
-- after Chapter 3, revisit `UHF` — the same class, with `n_alpha` / `n_beta` set as members
-- after Chapter 5, revisit `UKS` and read [`xc_functional.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)
-- after Chapter 8, read [`pw_solver.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/pw_solver.h) and [`internal/pw_workspace.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/planewave/internal/pw_workspace.h)
-
-If you want to understand how the same ideas map onto the runtime system, then
-read the [Developer Manual](../developer/index.md) after finishing Chapter 2.
-That is usually the point where `Driver`, `Plan`, and `Component` start to make
+- after Chapter 1, read [`cpu::scf::solvemethods.h`methods.h) (the concrete `RHF` / `UHF` / `RKS` / `UKS`) and the loop they share, [`mean_field_method.hUHF` — the same class, with `n_alpha` / `n_beta` as constructor arguments
+- after Chapter 5, revisit `UKS` and read [`xc_functional.hpw_solver.h`pw_solver.h) and [`internal/pw_workspace.hDriver`, `Plan`, and `Component` start to make
 sense instead of feeling abstract.

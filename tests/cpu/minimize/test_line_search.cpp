@@ -184,3 +184,29 @@ TEST(LineSearch, SteepestDescentWithWolfeConverges) {
     const Vec g = grad(x);
     EXPECT_LT(std::sqrt(dot(g, g)), 1e-6); // converged to the unique minimizer
 }
+
+TEST(LineSearch, CappedWolfeReturnsOnlyEvaluatedSufficientDecreaseFallback) {
+    // Linear descent cannot meet Wolfe curvature, but the evaluated cap is
+    // an admissible Armijo step. A capped optimizer may safely select it.
+    double last = 0;
+    auto phi = [&](double alpha, bool) {
+        last = alpha;
+        return LsSample{-alpha, -1.0};
+    };
+    const auto result = strong_wolfe(phi, 0.0, -1.0, 1.0, 1.e-4, 0.1, 20, 0.2);
+    EXPECT_FALSE(result.ok);
+    EXPECT_TRUE(result.sufficient_decrease);
+    EXPECT_DOUBLE_EQ(result.alpha, last);
+    EXPECT_DOUBLE_EQ(result.alpha, 0.2);
+}
+
+TEST(LineSearch, ExhaustionDoesNotMarkUnevaluatedOrUphillAlphaAcceptable) {
+    auto uphill = [](double alpha, bool) { return LsSample{alpha, -1.0}; };
+    const auto armijo =
+        armijo_backtrack(uphill, 0., -1., 1., 1.e-4, .5, 1, 1.e-10);
+    EXPECT_FALSE(armijo.ok);
+    EXPECT_FALSE(armijo.sufficient_decrease);
+    const auto wolfe = strong_wolfe(uphill, 0., -1., 1., 1.e-4, .9, 2, 2.);
+    EXPECT_FALSE(wolfe.ok);
+    EXPECT_FALSE(wolfe.sufficient_decrease);
+}

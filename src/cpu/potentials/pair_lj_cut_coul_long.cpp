@@ -1,16 +1,20 @@
 /// @file src/cpu/potentials/pair_lj_cut_coul_long.cpp
-/// @brief Fused multi-type LJ + tabulated coul/long, one neighbor walk.
+/// @brief Fused multi-type LJ + analytic coul/long, one neighbor walk.
 #include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/ewald_erfc.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -24,49 +28,134 @@ namespace ATV {
 namespace cpu {
 
 namespace {
-inline void lorentz_berthelot(double eii, double sii, double ejj, double sjj,
-                              double& eij, double& sij) {
-    eij = std::sqrt(eii * ejj);
-    sij = 0.5 * (sii + sjj);
-}
+
+/// Multi-type LJ (+ optional r⁻⁴ attraction) and the real-space Ewald term
+/// of one pair, LAMMPS `lj/cut/coul/long` with special-bond tiers.
+struct LJCoulLongKernel {
+    const StorageReal* q = nullptr;
+    const int* type = nullptr;
+    const LJPairCoeff* tab = nullptr;
+    const std::uint8_t* tier = nullptr; ///< per CSR slot; null: no specials
+    double t_lj[4] = {1, 1, 1, 1};
+    double t_coul[4] = {1, 1, 1, 1};
+    int ntypes = 0;
+    double rc_sq = 0, coul_sq = 0, qqr2e = 1, alpha = 0;
+    bool has_r4 = false;
+
+    struct Row {
+        double qi_scale; ///< qqr2e · q_i
+        std::size_t ti_base;
+    };
+
+    double cutoff_sq() const { return rc_sq; }
+
+    Row row(int i) const {
+        return {qqr2e * q[i], static_cast<std::size_t>(type[i])
+                                  * static_cast<std::size_t>(ntypes)};
+    }
+
+    /// erfc(αr)/r and its force factor for every survivor, one xsimd batch
+    /// at a time (`ewald_erfc.h`); the walk pads `r2` past `n`.
+    void prepare(const Row& ri, const double* r2, int n,
+                 md::PairChunk& c) const {
+        if (ri.qi_scale != 0.0)
+            md::ewald_pair_factors(r2, n, alpha, c.a, c.b);
+    }
+
+    md::PairTerm operator()(const Row& ri, const md::PairSite& p,
+                            const md::PairChunk& c) const {
+        const int j = p.j, entry = p.entry, k = p.k;
+        const double r2 = p.r2;
+        double fpair = 0.0;
+        double epair = 0.0;
+        const double sl = tier ? t_lj[tier[entry]] : 1.0;
+        if (sl != 0.0) {
+            // LAMMPS: factor_lj * (forcelj, evdwl - offset) inside the
+            // pair's own cut_ljsq.
+            const LJPairCoeff& cf =
+                tab[ri.ti_base + static_cast<std::size_t>(type[j])];
+            if (r2 < cf.cut_ljsq) {
+                const double r2inv = 1.0 / r2;
+                const double r6inv = r2inv * r2inv * r2inv;
+                fpair += sl * r2inv * (cf.lj1 * r6inv * r6inv - cf.lj2 * r6inv);
+                epair +=
+                    sl * (cf.lj3 * r6inv * r6inv - cf.lj4 * r6inv - cf.offset);
+            }
+            if (has_r4 && r2 < cf.r4_cutsq) {
+                const R4Term<double> t =
+                    r4_attraction(r2, cf.r4_a, cf.r4_rc5inv, cf.r4_e0);
+                fpair += sl * t.fpair;
+                epair += sl * t.energy;
+            }
+        }
+        // LAMMPS special convention with a kspace partner: the erfc part is
+        // UNscaled; scaled/excluded bonded pairs subtract (1-f)*qq/r — the
+        // plain-Coulomb share the reciprocal sum added for them.
+        if (ri.qi_scale != 0.0 && r2 < coul_sq) {
+            const double qj = q[j];
+            if (qj != 0.0) {
+                const double qq = ri.qi_scale * qj;
+                double ec = qq * c.a[k];
+                double fc = qq * c.b[k];
+                const double sc = tier ? t_coul[tier[entry]] : 1.0;
+                if (sc != 1.0) {
+                    const double r2i = 1.0 / r2;
+                    const double comp = (1.0 - sc) * qq * std::sqrt(r2i);
+                    ec -= comp;
+                    fc -= comp * r2i;
+                }
+                fpair += fc;
+                epair += ec;
+            }
+        }
+        return {fpair, epair};
+    }
+};
+
 } // namespace
 
 PairLJCutCoulLong::PairLJCutCoulLong(std::vector<LJTypeCoeff> coeffs,
                                      double alpha, double cutoff)
-    : Pair(cutoff), alpha_(alpha), cutoff_sq_(cutoff * cutoff) {
-    if (coeffs.empty())
-        throw std::invalid_argument("PairLJCutCoulLong: empty coeff table");
+    : Pair(cutoff), alpha_(alpha), cut_coul_(cutoff),
+      cut_coulsq_(cutoff * cutoff),
+      // Refuses an empty table and a non-positive cutoff.
+      table_(std::move(coeffs), cutoff) {
     if (!(alpha > 0.0))
         throw std::invalid_argument("PairLJCutCoulLong: alpha must be > 0");
-    if (!(cutoff > 0.0))
-        throw std::invalid_argument("PairLJCutCoulLong: cutoff must be > 0");
-
-    int max_t = 0;
-    for (const auto& c : coeffs) {
-        if (c.type_i < 0 || c.type_j < 0)
-            throw std::invalid_argument("PairLJCutCoulLong: negative type");
-        if (!(c.sigma > 0.0) || !(c.epsilon >= 0.0))
-            throw std::invalid_argument("PairLJCutCoulLong: bad epsilon/sigma");
-        max_t = std::max(max_t, std::max(c.type_i, c.type_j));
-    }
-    n_types_ = max_t + 1;
-    const std::size_t n2 =
-        static_cast<std::size_t>(n_types_) * static_cast<std::size_t>(n_types_);
-    eps_tab_.assign(n2, 0.0);
-    sigma_tab_.assign(n2, 0.0);
-    set_tab_.assign(n2, 0);
-    for (const auto& c : coeffs) {
-        auto put = [&](int a, int b) {
-            const std::size_t ab = static_cast<std::size_t>(a) * n_types_
-                                   + static_cast<std::size_t>(b);
-            eps_tab_[ab] = c.epsilon;
-            sigma_tab_[ab] = c.sigma;
-            set_tab_[ab] = 1;
-        };
-        put(c.type_i, c.type_j);
-        put(c.type_j, c.type_i);
-    }
+    refresh_cutoff_();
     set_special_bonds_amber();
+}
+
+void PairLJCutCoulLong::refresh_cutoff_() {
+    // LAMMPS init_one returns max(cut_lj[i][j], cut_coul); cutforce is the
+    // largest of those, and the neighbor list must cover it.
+    const double rc = std::max(cut_coul_, table_.max_cutoff());
+    cutoff_ = static_cast<AccReal>(rc);
+    cut_sq_ = rc * rc;
+}
+
+PairLJCutCoulLong& PairLJCutCoulLong::set_type_coeff(const LJTypeCoeff& row) & {
+    table_.set_coeff(row);
+    refresh_cutoff_();
+    return *this;
+}
+
+PairLJCutCoulLong PairLJCutCoulLong::set_type_coeff(const LJTypeCoeff& row) && {
+    set_type_coeff(row);
+    return std::move(*this);
+}
+
+PairLJCutCoulLong&
+PairLJCutCoulLong::set_r4_attraction(std::vector<R4TypeCoeff> rows) & {
+    table_.set_r4(std::move(rows));
+    refresh_cutoff_();
+    return *this;
+}
+
+PairLJCutCoulLong
+PairLJCutCoulLong::set_r4_attraction(std::vector<R4TypeCoeff> rows) && {
+    set_r4_attraction(std::move(rows));
+    return std::move(*this);
 }
 
 PairLJCutCoulLong& PairLJCutCoulLong::set_special_bonds_amber() & {
@@ -129,146 +218,97 @@ PairLJCutCoulLong PairLJCutCoulLong::set_tail_correction(bool on) && {
     return std::move(*this);
 }
 
-void PairLJCutCoulLong::finalize_type_table_() {
-    if (n_types_ == 0)
-        return;
-    const double rc = static_cast<double>(pair_cutoff());
-    const std::size_t n2 =
-        static_cast<std::size_t>(n_types_) * static_cast<std::size_t>(n_types_);
-    sig6_tab_.assign(n2, 0.0);
-    shift_tab_.assign(n2, 0.0);
-    lj1_tab_.assign(n2, 0.0);
-    lj2_tab_.assign(n2, 0.0);
-    lj3_tab_.assign(n2, 0.0);
-    lj4_tab_.assign(n2, 0.0);
-    for (int a = 0; a < n_types_; ++a) {
-        for (int b = 0; b < n_types_; ++b) {
-            const std::size_t ab = static_cast<std::size_t>(a) * n_types_
-                                   + static_cast<std::size_t>(b);
-            double e = eps_tab_[ab], s = sigma_tab_[ab];
-            if (!set_tab_[ab]) {
-                const std::size_t aa = static_cast<std::size_t>(a) * n_types_
-                                       + static_cast<std::size_t>(a);
-                const std::size_t bb = static_cast<std::size_t>(b) * n_types_
-                                       + static_cast<std::size_t>(b);
-                if (set_tab_[aa] && set_tab_[bb]) {
-                    lorentz_berthelot(eps_tab_[aa], sigma_tab_[aa],
-                                      eps_tab_[bb], sigma_tab_[bb], e, s);
-                    eps_tab_[ab] = e;
-                    sigma_tab_[ab] = s;
-                } else {
-                    e = 0.0;
-                    s = 1.0;
-                    eps_tab_[ab] = 0.0;
-                    sigma_tab_[ab] = s;
-                }
-            }
-            const double s2 = s * s;
-            const double s6 = s2 * s2 * s2;
-            const double s12 = s6 * s6;
-            sig6_tab_[ab] = s6;
-            // LAMMPS pair_lj_cut: lj1=48εσ¹², lj2=24εσ⁶, lj3=4εσ¹², lj4=4εσ⁶
-            lj1_tab_[ab] = 48.0 * e * s12;
-            lj2_tab_[ab] = 24.0 * e * s6;
-            lj3_tab_[ab] = 4.0 * e * s12;
-            lj4_tab_[ab] = 4.0 * e * s6;
-            if (energy_shift_ && e > 0.0 && rc > 0.0) {
-                const double rc2 = rc * rc;
-                const double r6 = rc2 * rc2 * rc2;
-                const double r6inv = 1.0 / r6;
-                shift_tab_[ab] =
-                    lj3_tab_[ab] * r6inv * r6inv - lj4_tab_[ab] * r6inv;
-            } else {
-                shift_tab_[ab] = 0.0;
-            }
-        }
-    }
-}
-
 void PairLJCutCoulLong::build(const BuildContext& ctx) {
+    scale_source_ = nullptr;
+    loop_.reset();
     n_threads_ = 1;
 #ifdef _OPENMP
     n_threads_ = omp_get_max_threads();
 #endif
-    finalize_type_table_();
-    erfc_.build(alpha_, static_cast<double>(pair_cutoff()));
-
-    const int n = ctx.frame.capacity();
-    if (n_threads_ > 1) {
-        fx_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-        fy_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-        fz_thr_.assign(n_threads_, std::vector<double>(n, 0.0));
-    } else {
-        fx_thr_.clear();
-        fy_thr_.clear();
-        fz_thr_.clear();
+    {
+        // The table must span every type the Frame carries; a type no row
+        // names has no LJ site.
+        const int* type = ctx.frame.span(kAtom_type);
+        int max_type = -1;
+        for (int i = 0; i < ctx.frame.nlocal(); ++i) {
+            if (type[i] < 0)
+                throw std::runtime_error(
+                    "PairLJCutCoulLong: atom types must be >= 0");
+            max_type = std::max(max_type, type[i]);
+        }
+        table_.build(max_type + 1, energy_shift_);
+        n_types_ = table_.n_types();
+        types_source_ = nullptr;
+        // The type counts belong to this build's Frame.
+        tail_ready_ = false;
     }
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(n_threads_, ctx.frame.capacity());
 
-    special_lj_.s12 = lj12_;
-    special_lj_.s13 = lj13_;
-    special_lj_.s14 = lj14_;
-    special_coul_.s12 = c12_;
-    special_coul_.s13 = c13_;
-    special_coul_.s14 = c14_;
-    special_lj_.clear();
-    special_coul_.clear();
+    tier_lj_[1] = lj12_;
+    tier_lj_[2] = lj13_;
+    tier_lj_[3] = lj14_;
+    tier_coul_[1] = c12_;
+    tier_coul_[2] = c13_;
+    tier_coul_[3] = c14_;
     scale_version_ = 0;
-    if (!any_special_)
-        return;
-    const auto* dd = ctx.runtime.md.dd;
-    const int n_owners =
-        (dd && ctx.runtime.mpi_size > 1) ? dd->n_local : ctx.frame.nlocal();
-    special_lj_.rebuild(ctx.frame, n_owners);
-    special_coul_.rebuild(ctx.frame, n_owners);
 }
 
 void PairLJCutCoulLong::rebuild_filtered_list(const Frame& f,
                                               const md::PairList& pairs) {
-    // Fill scale arrays parallel to pairs.neighbors[] — no compact neighbor
-    // copy. Hot path skips pairs with both scales zero (Amber 1–2 / 1–3).
-    //
-    // Always rebuild special tables here: atom spatial sort (and migration)
-    // reorders local rows while n_owners stays fixed, so a size-only cache
-    // would keep stale owner→partner maps and corrupt exclusions.
+    // One byte per pair, parallel to pairs.neighbors[] (no compact copy):
+    // the special tier of (i, j), 0 for an ordinary pair. Rebuilt with the
+    // list because atom sort and migration reorder owner rows.
     const int n = pairs.inum;
-    special_lj_.s12 = lj12_;
-    special_lj_.s13 = lj13_;
-    special_lj_.s14 = lj14_;
-    special_coul_.s12 = c12_;
-    special_coul_.s13 = c13_;
-    special_coul_.s14 = c14_;
-    special_lj_.rebuild(f, n);
-    special_coul_.rebuild(f, n);
+    const auto nspecial = f.span(kAtom_nspecial);
+    const auto special = f.span(kAtom_special);
+    const TagInt* __restrict tag = f.span(kAtom_tag);
 
-    const int np = pairs.total_pairs;
-    scale_lj_.assign(static_cast<std::size_t>(np), 1.0f);
-    scale_coul_.assign(static_cast<std::size_t>(np), 1.0f);
+    // Owner → (partner tag, tier) CSR. kAtom_special lists 1-2, then 1-3,
+    // then 1-4 partners, so a ring atom seen at two tiers keeps the nearer
+    // one (first match below), as LAMMPS does. Tiers whose LJ and Coulomb
+    // weights are both 1 are not listed at all.
+    special_off_.assign(static_cast<std::size_t>(n) + 1, 0);
+    special_tag_.clear();
+    special_tier_.clear();
+    for (int i = 0; i < n; ++i) {
+        const int end[3] = {nspecial(i, 0), nspecial(i, 1), nspecial(i, 2)};
+        int s = 0;
+        for (int tier = 1; tier <= 3; ++tier)
+            for (; s < end[tier - 1]; ++s) {
+                if (tier_lj_[tier] == 1.0 && tier_coul_[tier] == 1.0)
+                    continue;
+                const TagInt tj = special(i, s);
+                if (tj == tag[i])
+                    continue;
+                special_tag_.push_back(tj);
+                special_tier_.push_back(static_cast<std::uint8_t>(tier));
+            }
+        special_off_[static_cast<std::size_t>(i) + 1] =
+            static_cast<int>(special_tag_.size());
+    }
 
+    pair_tier_.assign(static_cast<std::size_t>(pairs.total_pairs), 0);
     const int* __restrict numneigh = pairs.numneigh.data();
     const int* __restrict firstneigh = pairs.firstneigh.data();
     const int* __restrict neighbors = pairs.neighbors.data();
-    const TagInt* __restrict tag = f.span(kAtom_tag);
-    float* __restrict sl_out = scale_lj_.data();
-    float* __restrict sc_out = scale_coul_.data();
-
+    std::uint8_t* __restrict out = pair_tier_.data();
+    const int* __restrict soff = special_off_.data();
+    const TagInt* __restrict stag = special_tag_.data();
+    const std::uint8_t* __restrict stier = special_tier_.data();
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
+        const int s0 = soff[i], s1 = soff[i + 1];
+        if (s0 == s1)
+            continue; // already 0
         const int off = firstneigh[i];
-        const int jn = numneigh[i];
-        const bool no_lj =
-            special_lj_.by_owner[static_cast<std::size_t>(i)].empty();
-        const bool no_c =
-            special_coul_.by_owner[static_cast<std::size_t>(i)].empty();
-        if (no_lj && no_c)
-            continue; // already filled with 1.0f
-        for (int jj = 0; jj < jn; ++jj) {
-            const int j = neighbors[off + jj];
-            const int idx = off + jj;
-            if (!no_lj)
-                sl_out[idx] =
-                    static_cast<float>(special_lj_.scale_owner(i, tag[j]));
-            if (!no_c)
-                sc_out[idx] =
-                    static_cast<float>(special_coul_.scale_owner(i, tag[j]));
+        for (int jj = 0; jj < numneigh[i]; ++jj) {
+            const TagInt tj = tag[neighbors[off + jj]];
+            for (int s = s0; s < s1; ++s)
+                if (stag[s] == tj) {
+                    out[off + jj] = stier[s];
+                    break;
+                }
         }
     }
 }
@@ -280,295 +320,63 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             "PairLJCutCoulLong: runtime.md.pair_list is null");
     }
     const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.box;
 
-    const auto* dd = ctx.runtime.md.dd;
+    const int n_force = cpu::force_count(ctx);
 #ifdef ATV_HAS_MPI
-    const bool mpi = dd && ctx.runtime.mpi_size > 1;
-    const int n_force = mpi ? dd->n_local + dd->n_ghost : f.nlocal();
-#else
-    (void)dd;
-    const int n_force = f.nlocal();
+    const auto* dd = ctx.runtime.md.dd;
+    const bool mpi = cpu::multi_rank_dd(ctx.runtime);
 #endif
 
-    if (n_threads_ > 1
-        && static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size())
-               < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, 0.0);
-            fy_thr_[t].resize(n_force, 0.0);
-            fz_thr_[t].resize(n_force, 0.0);
-        }
+    // Rows (and with them types) change only at a neighbor rebuild. A type
+    // outside the table would index past it; refuse it at that rebuild.
+    if (types_source_ != &pairs || pairs.version != types_version_) {
+        const int* type = f.span(kAtom_type);
+        for (int i = 0; i < n_force; ++i)
+            if (type[i] < 0 || type[i] >= n_types_)
+                throw std::runtime_error(
+                    "PairLJCutCoulLong: atom type " + std::to_string(type[i])
+                    + " is outside the coefficient table (types 0.."
+                    + std::to_string(n_types_ - 1)
+                    + "); name it in a coefficient before build()");
+        types_source_ = &pairs;
+        types_version_ = pairs.version;
     }
 
-    if (any_special_ && pairs.version != scale_version_) {
+    if (any_special_
+        && (scale_source_ != &pairs || pairs.version != scale_version_)) {
         rebuild_filtered_list(f, pairs);
         scale_version_ = pairs.version;
+        scale_source_ = &pairs;
     }
 
-    const int k_inum = pairs.inum;
-    const int* __restrict k_ilist = pairs.ilist.data();
-    const int* __restrict k_numneigh = pairs.numneigh.data();
-    const int* __restrict k_firstneigh = pairs.firstneigh.data();
-    const int* __restrict k_neighbors = pairs.neighbors.data();
-    const float* __restrict k_sl = any_special_ ? scale_lj_.data() : nullptr;
-    const float* __restrict k_sc = any_special_ ? scale_coul_.data() : nullptr;
-    const bool k_has_shifts = pairs.has_shifts;
-    const double* __restrict k_sx =
-        k_has_shifts ? pairs.shift_x.data() : nullptr;
-    const double* __restrict k_sy =
-        k_has_shifts ? pairs.shift_y.data() : nullptr;
-    const double* __restrict k_sz =
-        k_has_shifts ? pairs.shift_z.data() : nullptr;
-
-    const StorageReal* __restrict x_ptr = f.span(kAtom_x);
-    const StorageReal* __restrict y_ptr = f.span(kAtom_y);
-    const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    const StorageReal* __restrict q_ptr = f.span(kAtom_charge);
-    const int* __restrict type_ptr = f.span(kAtom_type);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
-
-    const double rc_sq = cutoff_sq_;
-    const double qqr2e = ATV::units::coulomb;
+    LJCoulLongKernel kernel;
+    kernel.q = f.span(kAtom_charge);
+    kernel.type = f.span(kAtom_type);
+    kernel.tab = table_.pairs().data();
+    kernel.tier = any_special_ ? pair_tier_.data() : nullptr;
+    for (int t = 0; t < 4; ++t) {
+        kernel.t_lj[t] = tier_lj_[t];
+        kernel.t_coul[t] = tier_coul_[t];
+    }
+    kernel.ntypes = n_types_;
+    kernel.rc_sq = cut_sq_;
+    kernel.coul_sq = cut_coulsq_;
+    kernel.qqr2e = ctx.runtime.units.qqrd2e();
+    kernel.alpha = alpha_;
+    kernel.has_r4 = table_.has_r4();
+    const int* __restrict type_ptr = kernel.type;
     const int ntypes = n_types_;
-    const double* __restrict lj1 = lj1_tab_.data();
-    const double* __restrict lj2 = lj2_tab_.data();
-    const double* __restrict lj3 = lj3_tab_.data();
-    const double* __restrict lj4 = lj4_tab_.data();
-    const double* __restrict shift = shift_tab_.data();
-    const double* __restrict e_tab = erfc_.e_tab.data();
-    const double* __restrict f_tab = erfc_.f_tab.data();
-    const double inv_dr2 = erfc_.inv_dr2;
-    const int nbin = erfc_.nbin;
-    const bool do_virial = compute_stress_;
 
-    double energy_total = 0;
-    double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
+    // The style's own stress switch narrows the launch's request.
+    const bool do_virial = compute_stress_ && ctx.stress_requested;
+    LaunchContext walk = ctx;
+    walk.stress_requested = do_virial;
+    const md::PairTotals sums = loop_.run(walk, kernel, "PairLJCutCoulLong");
 
-// if(n_threads_>1): pure serial path skips OpenMP fork (OMP=1 fair vs LAMMPS).
-#pragma omp parallel if (n_threads_ > 1) reduction(+ : energy_total)           \
-    reduction(+ : v_xx) reduction(+ : v_yy) reduction(+ : v_zz)                \
-    reduction(+ : v_xy) reduction(+ : v_xz) reduction(+ : v_yz)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        const bool direct = (n_threads_ == 1);
-        double* __restrict fxt;
-        double* __restrict fyt;
-        double* __restrict fzt;
-        if (direct) {
-            fxt = fx_ptr;
-            fyt = fy_ptr;
-            fzt = fz_ptr;
-        } else {
-            std::fill(fx_thr_[tid].begin(), fx_thr_[tid].begin() + n_force,
-                      0.0);
-            std::fill(fy_thr_[tid].begin(), fy_thr_[tid].begin() + n_force,
-                      0.0);
-            std::fill(fz_thr_[tid].begin(), fz_thr_[tid].begin() + n_force,
-                      0.0);
-            fxt = fx_thr_[tid].data();
-            fyt = fy_thr_[tid].data();
-            fzt = fz_thr_[tid].data();
-        }
-
-        const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
-        const double inv_lx = 1.0 / lx, inv_ly = 1.0 / ly, inv_lz = 1.0 / lz;
-
-        // Survivor-compaction staging, one chunk of a neighbor list at a
-        // time. 4 x 512 doubles + the index list is ~18 KB, so a chunk and
-        // its survivor list stay L1-resident (48 KB/core) alongside the
-        // random position gathers of pass 1.
-        constexpr int kChunk = 512;
-        alignas(64) double dxb[kChunk];
-        alignas(64) double dyb[kChunk];
-        alignas(64) double dzb[kChunk];
-        alignas(64) double r2b[kChunk];
-        alignas(64) int surv[kChunk];
-
-#pragma omp for schedule(static)
-        for (int ii = 0; ii < k_inum; ++ii) {
-            const int i = k_ilist[ii];
-            const double xi = x_ptr[i], yi = y_ptr[i], zi = z_ptr[i];
-            const double qi_scale = qqr2e * q_ptr[i]; // hoist coulomb*qi
-            const int ti = type_ptr[i];
-            const int jnum = k_numneigh[i];
-            const int off = k_firstneigh[i];
-            double fi_x = 0, fi_y = 0, fi_z = 0;
-            const std::size_t ti_base =
-                static_cast<std::size_t>(ti) * static_cast<std::size_t>(ntypes);
-
-            // ~45% of a 2 A-skin list is out of cutoff. Rather than pay a
-            // hard-to-predict early exit inside the force loop, geometry is
-            // computed unconditionally (pass 1, branch-free and
-            // vectorizable), survivors are compacted, and only they reach
-            // the LJ/coulomb body.
-            for (int base = 0; base < jnum; base += kChunk) {
-                const int nc = std::min(kChunk, jnum - base);
-
-                if (k_has_shifts) {
-                    for (int t = 0; t < nc; ++t) {
-                        const int idx = off + base + t;
-                        const int j = k_neighbors[idx];
-                        const double dx = (xi - x_ptr[j]) - k_sx[idx];
-                        const double dy = (yi - y_ptr[j]) - k_sy[idx];
-                        const double dz = (zi - z_ptr[j]) - k_sz[idx];
-                        dxb[t] = dx;
-                        dyb[t] = dy;
-                        dzb[t] = dz;
-                        r2b[t] = dx * dx + dy * dy + dz * dz;
-                    }
-                } else {
-                    // Per-pair min-image is NOT redundant under MPI:
-                    // VelocityVerlet wraps coordinates into the box every
-                    // step, so between neighbor rebuilds a wrapped owner (or
-                    // the ghost copy forwarded from it) sits a full box
-                    // length from its listed partners. Raw dx would silently
-                    // drop those pairs until the next rebuild (slow thermal
-                    // runaway, worse at high rank counts). LAMMPS avoids
-                    // this by wrapping only at reneighbor; until ATV does
-                    // the same, keep the wrap here.
-                    for (int t = 0; t < nc; ++t) {
-                        const int j = k_neighbors[off + base + t];
-                        double dx = xi - x_ptr[j];
-                        double dy = yi - y_ptr[j];
-                        double dz = zi - z_ptr[j];
-                        dx -= lx * std::nearbyint(dx * inv_lx);
-                        dy -= ly * std::nearbyint(dy * inv_ly);
-                        dz -= lz * std::nearbyint(dz * inv_lz);
-                        dxb[t] = dx;
-                        dyb[t] = dy;
-                        dzb[t] = dz;
-                        r2b[t] = dx * dx + dy * dy + dz * dz;
-                    }
-                }
-
-                // Branchless append; ascending order is mandatory so pass 2
-                // accumulates energy/force/virial in exactly the order the
-                // single-pass loop did (bitwise-identical totals).
-                int ns = 0;
-                for (int t = 0; t < nc; ++t) {
-                    const double r2 = r2b[t];
-                    surv[ns] = t;
-                    ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
-                }
-
-                for (int k = 0; k < ns; ++k) {
-                    const int slot = surv[k];
-                    const int idx = off + base + slot;
-                    const int j = k_neighbors[idx];
-                    const double dx = dxb[slot];
-                    const double dy = dyb[slot];
-                    const double dz = dzb[slot];
-                    const double r2 = r2b[slot];
-
-                    double fpair = 0.0;
-                    double epair = 0.0;
-
-                    const double sl =
-                        k_sl ? static_cast<double>(k_sl[idx]) : 1.0;
-                    if (sl != 0.0) {
-                        const std::size_t ab =
-                            ti_base + static_cast<std::size_t>(type_ptr[j]);
-                        const double a1 = lj1[ab];
-                        if (a1 != 0.0) {
-                            const double r2inv = 1.0 / r2;
-                            const double r6inv = r2inv * r2inv * r2inv;
-                            fpair += sl * r2inv
-                                     * (a1 * r6inv * r6inv - lj2[ab] * r6inv);
-                            epair += sl
-                                     * (lj3[ab] * r6inv * r6inv
-                                        - lj4[ab] * r6inv - shift[ab]);
-                        }
-                    }
-                    // LAMMPS special convention with a kspace partner: the
-                    // erfc part is UNscaled; scaled/excluded bonded pairs
-                    // subtract (1-f)*qq/r — the plain-Coulomb share the
-                    // reciprocal sum added for them.
-                    if (qi_scale != 0.0) {
-                        const double qj = q_ptr[j];
-                        if (qj != 0.0) {
-                            double x = r2 * inv_dr2;
-                            int bi = static_cast<int>(x);
-                            if (bi >= nbin)
-                                bi = nbin - 1;
-                            const double t = x - static_cast<double>(bi);
-                            const std::size_t ii2 =
-                                static_cast<std::size_t>(bi);
-                            const double et =
-                                e_tab[ii2] + t * (e_tab[ii2 + 1] - e_tab[ii2]);
-                            const double ft =
-                                f_tab[ii2] + t * (f_tab[ii2 + 1] - f_tab[ii2]);
-                            const double qq = qi_scale * qj;
-                            double ec = qq * et;
-                            double fc = qq * ft;
-                            const double sc =
-                                k_sc ? static_cast<double>(k_sc[idx]) : 1.0;
-                            if (sc != 1.0) {
-                                const double r2i = 1.0 / r2;
-                                const double comp =
-                                    (1.0 - sc) * qq * std::sqrt(r2i);
-                                ec -= comp;
-                                fc -= comp * r2i;
-                            }
-                            fpair += fc;
-                            epair += ec;
-                        }
-                    }
-                    if (fpair == 0.0 && epair == 0.0)
-                        continue;
-
-                    const double fxp = dx * fpair;
-                    const double fyp = dy * fpair;
-                    const double fzp = dz * fpair;
-                    fi_x += fxp;
-                    fi_y += fyp;
-                    fi_z += fzp;
-                    fxt[j] -= fxp;
-                    fyt[j] -= fyp;
-                    fzt[j] -= fzp;
-                    energy_total += epair;
-                    if (do_virial) {
-                        v_xx += dx * fxp;
-                        v_yy += dy * fyp;
-                        v_zz += dz * fzp;
-                        v_xy += dx * fyp;
-                        v_xz += dx * fzp;
-                        v_yz += dy * fzp;
-                    }
-                }
-            }
-            fxt[i] += fi_x;
-            fyt[i] += fi_y;
-            fzt[i] += fi_z;
-        }
-
-        if (!direct) {
-#pragma omp for schedule(static)
-            for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < n_threads_; ++t) {
-                    fx_ptr[i] += fx_thr_[t][i];
-                    fy_ptr[i] += fy_thr_[t][i];
-                    fz_ptr[i] += fz_thr_[t][i];
-                }
-            }
-        }
-    }
-
-    f.meta.get(kEnergy) += energy_total;
-    f.meta.get(kEnergyPair) += energy_total;
-    if (do_virial) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
-    }
+    f.meta.get(kEnergy) += sums.energy;
+    f.meta.get(kEnergyPair) += sums.energy;
+    if (do_virial)
+        sums.virial.flush_to(f.meta.get(kStress));
 
     // ── LJ tail correction (LAMMPS pair_modify tail yes) ─────────────────
     // E_tail = (2π/V)·Σ_i Σ_j N_i N_j ∫_rc^∞ u_ij r² dr = etail_pref_/V,
@@ -577,12 +385,10 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
     // ranks). Volume is re-read every step (barostats move the cell).
     if (tail_) {
         if (!tail_ready_) {
+            // LAMMPS init_one: global per-type counts (Allreduce over the
+            // owned atoms), each pair's tail from its own cut_lj.
             std::vector<double> cnt(static_cast<std::size_t>(ntypes), 0.0);
-#ifdef ATV_HAS_MPI
-            const int n_owned = mpi ? dd->n_local : f.nlocal();
-#else
             const int n_owned = f.nlocal();
-#endif
             for (int i = 0; i < n_owned; ++i) {
                 const int t = type_ptr[i];
                 if (t >= 0 && t < ntypes)
@@ -593,29 +399,9 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
                 MPI_Allreduce(MPI_IN_PLACE, cnt.data(), ntypes, MPI_DOUBLE,
                               MPI_SUM, dd->cart_comm);
 #endif
-            const double rc = std::sqrt(rc_sq);
-            const double rc3 = rc * rc * rc;
-            const double rc6 = rc3 * rc3;
-            const double rc9 = rc6 * rc3;
-            const double c89 = 8.0 * ATV::units::pi / 9.0;
-            etail_pref_ = 0.0;
-            ptail_pref_ = 0.0;
-            for (int a = 0; a < ntypes; ++a) {
-                for (int b = 0; b < ntypes; ++b) {
-                    const std::size_t ab = static_cast<std::size_t>(a) * ntypes
-                                           + static_cast<std::size_t>(b);
-                    const double e = eps_tab_[ab];
-                    if (!(e > 0.0))
-                        continue;
-                    const double s6 = sig6_tab_[ab];
-                    const double s12 = s6 * s6;
-                    const double nn = cnt[static_cast<std::size_t>(a)]
-                                      * cnt[static_cast<std::size_t>(b)];
-                    etail_pref_ += nn * c89 * e * (s12 - 3.0 * s6 * rc6) / rc9;
-                    ptail_pref_ +=
-                        nn * c89 * e * (4.0 * s12 - 6.0 * s6 * rc6) / rc9;
-                }
-            }
+            const LJTail t = table_.tail(cnt);
+            etail_pref_ = t.energy;
+            ptail_pref_ = t.virial;
             tail_ready_ = true;
         }
 #ifdef ATV_HAS_MPI
@@ -638,30 +424,20 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
 }
 
 void PairLJCutCoulLong::destroy(const DestroyContext&) {
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
-    special_lj_.clear();
-    special_coul_.clear();
-    erfc_.clear();
-    scale_lj_.clear();
-    scale_coul_.clear();
+    special_off_.clear();
+    special_tag_.clear();
+    special_tier_.clear();
+    pair_tier_.clear();
     scale_version_ = 0;
-    any_special_ = false;
+    scale_source_ = nullptr;
+    // any_special_ is configuration (set_special_bonds), not build state: a
+    // destroy → build cycle must keep the exclusions.
 }
 
 std::size_t PairLJCutCoulLong::memory_bytes() const {
     std::size_t b = 0;
-    for (const auto& v : fx_thr_)
-        b += v.capacity() * sizeof(double);
-    for (const auto& v : fy_thr_)
-        b += v.capacity() * sizeof(double);
-    for (const auto& v : fz_thr_)
-        b += v.capacity() * sizeof(double);
-    b += scale_lj_.capacity() * sizeof(float);
-    b += scale_coul_.capacity() * sizeof(float);
-    b += erfc_.e_tab.capacity() * sizeof(double);
-    b += erfc_.f_tab.capacity() * sizeof(double);
+    b += pair_tier_.capacity();
+    b += special_tag_.capacity() * sizeof(TagInt);
     return b;
 }
 

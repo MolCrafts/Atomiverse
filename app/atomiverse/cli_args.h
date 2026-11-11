@@ -37,19 +37,18 @@ inline CliArgs parse_cli_args(int argc, char** argv) {
         }
         if (std::strcmp(arg, "-in") == 0 || std::strcmp(arg, "--in") == 0) {
             if (i + 1 >= argc)
-                throw std::runtime_error("atomiverse: -in requires a file");
+                throw std::runtime_error("-in requires a file");
             a.in_path = argv[++i];
             continue;
         }
         if (std::strcmp(arg, "-log") == 0 || std::strcmp(arg, "--log") == 0) {
             if (i + 1 >= argc)
-                throw std::runtime_error("atomiverse: -log requires a file");
+                throw std::runtime_error("-log requires a file");
             a.log_path = argv[++i];
             continue;
         }
         if (arg[0] == '-')
-            throw std::runtime_error(std::string("atomiverse: unknown flag ")
-                                     + arg);
+            throw std::runtime_error(std::string("unknown flag ") + arg);
         // Positional: .py → Python host; anything else → native input.
         if (ends_with(arg, ".py")) {
             a.py_script = arg;
@@ -65,7 +64,8 @@ inline CliArgs parse_cli_args(int argc, char** argv) {
 inline const char* cli_help() {
     return "atomiverse — native driver (LAMMPS-shaped CLI)\n"
            "\n"
-           "  atomiverse -in in.lj                 run a native input script\n"
+           "  atomiverse -in in.lj                 run a native input script "
+           "(needs ATV_BUILD_MD)\n"
            "  atomiverse -in in.lj -log log.atv    same, write log file\n"
            "  atomiverse in.lj                     positional input file\n"
            "  atomiverse script.py [args…]         run a Python script "

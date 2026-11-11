@@ -3,7 +3,7 @@
 ///
 /// Multi-rank tests for `ctx.md.comm` (`CommBrick` borders / reverse).
 /// Launched via `mpirun -n N`. Verifies:
-///   - Forward populates `dd->n_ghost > 0`.
+///   - Forward populates `frame.nghost() > 0`.
 ///   - Symmetry: my +x send count to my +x neighbor equals my +x neighbor's
 ///     -x send count to me (count exchange handshake is consistent).
 ///   - PBC shift: ghosts received from across a periodic-edge face land
@@ -142,8 +142,8 @@ ForwardResult run_forward(double box_len, int n_per_side, double cutoff) {
     comm->borders(lctx);
 
     ForwardResult r{};
-    r.n_local = dd->n_local;
-    r.n_ghost = dd->n_ghost;
+    r.n_local = frame.nlocal();
+    r.n_ghost = frame.nghost();
     for (int f = 0; f < 6; ++f)
         r.face_neighbors[f] = dd->face_neighbors[f];
     for (int d = 0; d < 3; ++d) {
@@ -154,13 +154,13 @@ ForwardResult run_forward(double box_len, int n_per_side, double cutoff) {
     r.Ly = frame.box.cell()(1, 1);
     r.Lz = frame.box.cell()(2, 2);
 
-    r.ghost_x.assign(static_cast<std::size_t>(dd->n_ghost), 0.0);
-    r.ghost_y.assign(static_cast<std::size_t>(dd->n_ghost), 0.0);
-    r.ghost_z.assign(static_cast<std::size_t>(dd->n_ghost), 0.0);
-    for (int g = 0; g < dd->n_ghost; ++g) {
-        r.ghost_x[g] = frame.span(ATV::kAtom_x)[dd->n_local + g];
-        r.ghost_y[g] = frame.span(ATV::kAtom_y)[dd->n_local + g];
-        r.ghost_z[g] = frame.span(ATV::kAtom_z)[dd->n_local + g];
+    r.ghost_x.assign(static_cast<std::size_t>(frame.nghost()), 0.0);
+    r.ghost_y.assign(static_cast<std::size_t>(frame.nghost()), 0.0);
+    r.ghost_z.assign(static_cast<std::size_t>(frame.nghost()), 0.0);
+    for (int g = 0; g < frame.nghost(); ++g) {
+        r.ghost_x[g] = frame.span(ATV::kAtom_x)[frame.nlocal() + g];
+        r.ghost_y[g] = frame.span(ATV::kAtom_y)[frame.nlocal() + g];
+        r.ghost_z[g] = frame.span(ATV::kAtom_z)[frame.nlocal() + g];
     }
 
     backend.shutdown();
@@ -175,13 +175,6 @@ TEST(HaloForward, GhostsPopulatedAtModerateCutoff) {
     // 64 atoms on 4x4x4 grid in a 10 Å box. With 2x2x2 ranks, each slab is
     // 5 Å, so a cutoff of 2.0 Å captures the inner-face atoms.
     const auto r = run_forward(10.0, 4, 2.0);
-
-    int world_size = 0;
-    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
-    if (world_size <= 1) {
-        EXPECT_EQ(r.n_ghost, 0);
-        return;
-    }
 
     EXPECT_GT(r.n_ghost, 0)
         << "expected ghost atoms after Forward halo exchange at cutoff 2.0";
@@ -225,8 +218,8 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     comm->setup(lctx);
     comm->borders(lctx);
 
-    for (int g = 0; g < dd->n_ghost; ++g) {
-        const int row = dd->n_local + g;
+    for (int g = 0; g < frame.nghost(); ++g) {
+        const int row = frame.nlocal() + g;
         const int source =
             static_cast<int>(frame.span(kAtom_tag)[row] - tag_base);
         ASSERT_GE(source, 0);
@@ -235,13 +228,13 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
         EXPECT_EQ(frame.span(kHaloAux)(row, 1), StorageReal(-200 - source));
     }
 
-    for (int i = 0; i < dd->n_local; ++i) {
+    for (int i = 0; i < frame.nlocal(); ++i) {
         frame.span(kHaloAux)(i, 0) += StorageReal(1000);
         frame.span(kHaloAux)(i, 1) -= StorageReal(1000);
     }
     comm->forward_comm(lctx); // steady comm plan, same ghost slots
-    for (int g = 0; g < dd->n_ghost; ++g) {
-        const int row = dd->n_local + g;
+    for (int g = 0; g < frame.nghost(); ++g) {
+        const int row = frame.nlocal() + g;
         const int source =
             static_cast<int>(frame.span(kAtom_tag)[row] - tag_base);
         EXPECT_EQ(frame.span(kHaloAux)(row, 0), StorageReal(1100 + source));
@@ -249,7 +242,7 @@ TEST(HaloForward, RecvCountsConsistentWithSendLists) {
     }
 
     ASSERT_NE(backend.context().md.comm, nullptr);
-    EXPECT_GT(dd->n_ghost, 0);
+    EXPECT_GT(frame.nghost(), 0);
 
     backend.shutdown();
 }
@@ -298,11 +291,11 @@ TEST(HaloForward, ScalarEveryStepFieldIsCreatedThenRefreshed) {
     ASSERT_EQ(wires.find("ghost_speed")->freshness, ATV::Freshness::step);
     comm->setup(lctx);
     comm->borders(lctx);
-    ASSERT_GT(dd->n_ghost, 0);
+    ASSERT_GT(frame.nghost(), 0);
 
     // Straight out of borders(): the creation wire carried it.
-    for (int g = 0; g < dd->n_ghost; ++g) {
-        const int row = dd->n_local + g;
+    for (int g = 0; g < frame.nghost(); ++g) {
+        const int row = frame.nlocal() + g;
         const int src = static_cast<int>(frame.span(kAtom_tag)[row] - tag_base);
         ASSERT_GE(src, 0);
         ASSERT_LT(src, 64);
@@ -311,11 +304,11 @@ TEST(HaloForward, ScalarEveryStepFieldIsCreatedThenRefreshed) {
 
     // Owners move on; the refresh pass carries the new values without a
     // rebuild — the guarantee a `stable` declaration would not give.
-    for (int i = 0; i < dd->n_local; ++i)
+    for (int i = 0; i < frame.nlocal(); ++i)
         frame.span(kGhostSpeed)[i] += StorageReal(500);
     comm->forward_comm(lctx);
-    for (int g = 0; g < dd->n_ghost; ++g) {
-        const int row = dd->n_local + g;
+    for (int g = 0; g < frame.nghost(); ++g) {
+        const int row = frame.nlocal() + g;
         const int src = static_cast<int>(frame.span(kAtom_tag)[row] - tag_base);
         EXPECT_EQ(frame.span(kGhostSpeed)[row], StorageReal(507 + src));
     }
@@ -391,17 +384,17 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
 
     // Plant a known force pattern on every atom (owners + ghosts).
     // Owner forces start at 1.0, 2.0, 3.0; ghost forces add 10.0 each.
-    for (int i = 0; i < dd->n_local; ++i) {
+    for (int i = 0; i < frame.nlocal(); ++i) {
         frame.span(ATV::kAtom_fx)[i] = 1.0;
         frame.span(ATV::kAtom_fy)[i] = 2.0;
         frame.span(ATV::kAtom_fz)[i] = 3.0;
         frame.span(kHaloReverseAux)[i] = StorageReal(4.0);
     }
-    for (int g = 0; g < dd->n_ghost; ++g) {
-        frame.span(ATV::kAtom_fx)[dd->n_local + g] = 10.0;
-        frame.span(ATV::kAtom_fy)[dd->n_local + g] = 10.0;
-        frame.span(ATV::kAtom_fz)[dd->n_local + g] = 10.0;
-        frame.span(kHaloReverseAux)[dd->n_local + g] = StorageReal(7.0);
+    for (int g = 0; g < frame.nghost(); ++g) {
+        frame.span(ATV::kAtom_fx)[frame.nlocal() + g] = 10.0;
+        frame.span(ATV::kAtom_fy)[frame.nlocal() + g] = 10.0;
+        frame.span(ATV::kAtom_fz)[frame.nlocal() + g] = 10.0;
+        frame.span(kHaloReverseAux)[frame.nlocal() + g] = StorageReal(7.0);
     }
 
     comm->reverse_comm(lctx);
@@ -416,7 +409,7 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
     //   Σ owner fx = base_x·N_owners + 10·N_ghosts   (likewise fy, fz),
     // with base = (1,2,3) on owners and 10 on every ghost.
     double local_f[4] = {0.0, 0.0, 0.0, 0.0};
-    for (int i = 0; i < dd->n_local; ++i) {
+    for (int i = 0; i < frame.nlocal(); ++i) {
         local_f[0] += frame.span(ATV::kAtom_fx)[i];
         local_f[1] += frame.span(ATV::kAtom_fy)[i];
         local_f[2] += frame.span(ATV::kAtom_fz)[i];
@@ -429,7 +422,7 @@ TEST(HaloReverse, ReverseAddsGhostForcesBackToOwners) {
             << "owner " << i << " fx offset " << off
             << " is not a clean multiple of the 10.0 ghost force";
     }
-    long long local_counts[2] = {dd->n_local, dd->n_ghost};
+    long long local_counts[2] = {frame.nlocal(), frame.nghost()};
     double global_f[4] = {0.0, 0.0, 0.0, 0.0};
     long long global_counts[2] = {0, 0};
     MPI_Allreduce(local_f, global_f, 4, MPI_DOUBLE, MPI_SUM, dd->cart_comm);
@@ -461,11 +454,3 @@ TEST(HaloForward, OneCommPerRuntime) {
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
 // CTest reads the GoogleTest "[  PASSED  ]" summary line to determine
 // pass/fail, bypassing any prterun exit-code wobble.
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

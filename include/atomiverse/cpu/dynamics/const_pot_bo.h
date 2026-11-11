@@ -17,6 +17,7 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/component.h"
+#include "atomiverse/cpu/dynamics/electrode_rows.h"
 #include "atomiverse/cpu/electrodes/charge_aspc.h"
 
 namespace ATV {
@@ -80,6 +81,7 @@ struct ElectrodeGroup {
 /// @endcode
 class ConstPotBO : public cpu::Component {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param eta Gaussian charge width \(\eta\) [1/Å] (shared default for
     ///            every electrode group registered without its own width).
     explicit ConstPotBO(double eta);
@@ -127,7 +129,11 @@ class ConstPotBO : public cpu::Component {
     }
 
     void build(const BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
+    /// @brief Electrode sites are re-resolved by tag after atom sorting.
+    /// @return true.
+    bool requires_tag_index() const override { return true; }
     void destroy(const DestroyContext& ctx) override;
 
     /// @brief Total charge on electrode group `ie` [e] after last launch.
@@ -203,10 +209,10 @@ class ConstPotBO : public cpu::Component {
     /// therefore grows with \((z/L)^2\). Measured against MetalWalls c8ad175d:
     /// - 20 Å electrode gap over a 4.07 Å lateral cell — \(R=200\) is still
     ///   ~1.2 % off, \(R=1280\) is 0.18 % off
-    ///   (`regressions/md/thomas-fermi-electrode/REFERENCE.md`);
+    ///   (`regressions/md/thomas-fermi/REFERENCE.md`);
     /// - two 2×2 walls in a 4 Å cell at a 5 Å gap — residual charge error
     ///   1.5 % at \(R=100\), 1.2 % at 200, 0.09 % at 1600
-    ///   (`regressions/md/per-electrode-eta`).
+    ///   (`regressions/md/constant-potential`).
     ///
     /// Choose \(R\) from the accuracy you need — there is no "large enough"
     /// value. Cost \(\propto N_{\mathrm{elec}}^2 \times R^2\).
@@ -253,6 +259,7 @@ class ConstPotBO : public cpu::Component {
     std::vector<double> site_volume;
 
   private:
+    double qqrd2e_ = 1.0; ///< The run's qqrd2e, cached at build().
     /// `ConstPotMaZe` (mass-zero constrained dynamics) reuses the elastance
     /// build / RHS / write-back internals instead of duplicating them.
     friend class ConstPotMaZe;
@@ -261,6 +268,7 @@ class ConstPotBO : public cpu::Component {
 
     // Maps: electrode local index → frame atom row; group id per electrode atom.
     std::vector<int> elec_atoms_;
+    ElectrodeRows sites_; ///< tag order; rows follow sorts
     std::vector<int> elec_group_;
     std::vector<double> psi_vec_; ///< \(\Psi_i\) per electrode atom [V].
     std::vector<double> eta_vec_; ///< \(\eta_i\) per electrode atom [1/Å].
@@ -285,9 +293,9 @@ class ConstPotBO : public cpu::Component {
     void collect_electrodes_(const cpu::Frame& frame);
     void build_matrix_(const cpu::Frame& frame);
     void build_rhs_(const cpu::Frame& frame);
-    void solve_();
+    void solve_(bool use_history = true);
     void solve_dense_();
-    void solve_cg_();
+    void solve_cg_(bool use_history);
     /// @brief True if any registered group is constant-charge (conq).
     bool has_const_charge_() const;
     /// @brief One \(y = A^{-1} v\) application on the active path

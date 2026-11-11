@@ -6,15 +6,17 @@
 /// to the **centroid**. Second real consumer of IdentityReplication after REMD.
 ///
 /// Free-particle path: program builder may install nothing (springs only).
-/// Optional external isotropic harmonic trap k_ext (eV/Å²) about the origin.
+/// Optional external isotropic harmonic trap k_ext (style energy / length²).
 ///
 /// Out of scope (v1 skeleton): RPMD estimators, PILE thermostat, ring-polymer
 /// contraction, multi-rank bead parallel, Trotter-factor tables.
 ///
-/// Spring constant (Tuckerman / Ceriotti form):
-///   k = (m / β² ℏ²) · P    [converted to eV/Å² via mass_v2_to_energy]
-/// with ℏ = h/(2π), β = 1/(k_B T).
+/// Spring constant (Tuckerman / Ceriotti), lj row:
+///   k = m_eff * P / (β² ℏ²),  m_eff = mvv2e * m,  ℏ = hplanck/(2π),
+///   β = 1/(boltz * T), in the factors of `units`.
 #pragma once
+
+#include "atomiverse/core/unit_system.h"
 
 #include <cstdint>
 #include <memory>
@@ -38,15 +40,17 @@ class Pimd {
   public:
     /// @brief Trotter number P (≥ 2).
     int n_beads = 4;
-    /// @brief Physical temperature [K] (> 0).
+    /// @brief Temperature in the lj style (> 0).
     double temperature = 300.0;
-    /// @brief Nested MD timestep [fs] (> 0).
+    /// @brief LAMMPS `units` of every bead program (default lj).
+    units::UnitSystem units = units::UnitSystem::lj();
+    /// @brief Nested MD timestep in the lj style (> 0).
     double dt = 0.5;
     /// @brief MD steps between outer bookkeeping.
     int steps_per_block = 10;
     /// @brief InitVelocity seeds.
     std::uint64_t seed = 1;
-    /// @brief Optional external harmonic trap k |r|²/2 [eV/Å²]; 0 = free particle.
+    /// @brief Optional external harmonic trap k |r|²/2 in the lj style; 0 = free.
     double k_external = 0.0;
 
     /// @param n_beads Trotter number P (≥ 2).
@@ -77,7 +81,8 @@ class Pimd {
     void propagate_();
     void collapse_centroid_(cpu::Frame& out);
     static double compute_k_spring_(double temperature_K, int n_beads,
-                                    double mass_amu);
+                                    double mass_amu,
+                                    const units::UnitSystem& u);
 
     ProgramBuilder builder_ = nullptr;
     void* builder_user_ = nullptr;

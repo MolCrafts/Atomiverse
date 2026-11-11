@@ -1,14 +1,32 @@
 /// @file cpu/potentials/pair_lj_cut.cpp
 /// @brief CPU PairLJCut — LJ 12-6 shifted, xsimd ket-loop, OMP force reduction.
+///
+/// The tail correction follows LAMMPS `PairLJCut::init_one`
+/// (`src/pair_lj_cut.cpp`, etail_ij / ptail_ij via `core/lj_type_table.h`),
+/// `src/compute_pe.cpp` (etail/V) and `ComputePressure::virial_compute`
+/// (`src/compute_pressure.cpp`, ptail/V on the diagonal). LAMMPS checkout
+/// `e8c4c278a8`:
+///
+///   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+///   https://www.lammps.org/, Sandia National Laboratories
+///   LAMMPS development team: developers@lammps.org
+///
+///   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+///   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+///   certain rights in this software.  This software is distributed under
+///   the GNU General Public License.
 
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/force_scratch.h"
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -58,60 +76,48 @@ PairLJCut::PairLJCut(std::vector<LJTypeCoeff> coeffs, double cutoff)
     // kernel silently computed nothing and every energy came back exactly 0.0.)
     sigma6_ = 0.0;
     v_shift_ = 0.0;
-    cutoff_sq_ = cutoff * cutoff;
-    per_type_mode_ = true;
-
-    for (const LJTypeCoeff& c : coeffs)
-        set_type_coeff(c.type_i, c.type_j, c.epsilon, c.sigma);
+    table_.emplace(std::move(coeffs), cutoff);
+    refresh_cutoff_();
 }
 
-PairLJCut& PairLJCut::set_type_coeff(int type_i, int type_j, double epsilon,
-                                     double sigma) & {
-    if (!per_type_mode_)
+void PairLJCut::refresh_cutoff_() {
+    // LAMMPS cutforce: the largest per-pair cutoff. The neighbor list must
+    // cover it; the hot loop's outer test uses it before the per-pair one.
+    const double rc = table_->max_cutoff();
+    cutoff_ = static_cast<AccReal>(rc);
+    cutoff_sq_ = rc * rc;
+}
+
+PairLJCut& PairLJCut::set_type_coeff(const LJTypeCoeff& row) & {
+    if (!table_)
         throw std::logic_error(
             "PairLJCut::set_type_coeff: this PairLJCut was built with a single "
             "epsilon/sigma and has no type table. Construct it from a "
             "coefficient list "
             "instead.");
-    if (type_i < 0 || type_j < 0)
-        throw std::invalid_argument(
-            "PairLJCut::set_type_coeff: types must be >= 0");
-    if (sigma <= 0.0)
-        throw std::invalid_argument(
-            "PairLJCut::set_type_coeff: sigma must be > 0");
-
-    const int need = std::max(type_i, type_j) + 1;
-    if (need > n_types_) {
-        // Grow the square tables, preserving what is already set.
-        std::vector<double> e(static_cast<std::size_t>(need) * need, 0.0);
-        std::vector<double> s(static_cast<std::size_t>(need) * need, 0.0);
-        std::vector<char> f(static_cast<std::size_t>(need) * need, 0);
-        for (int a = 0; a < n_types_; ++a)
-            for (int b = 0; b < n_types_; ++b) {
-                const std::size_t old =
-                    static_cast<std::size_t>(a) * n_types_ + b;
-                const std::size_t nw = static_cast<std::size_t>(a) * need + b;
-                e[nw] = eps_tab_[old];
-                s[nw] = sigma_tab_[old];
-                f[nw] = set_tab_[old];
-            }
-        eps_tab_.swap(e);
-        sigma_tab_.swap(s);
-        set_tab_.swap(f);
-        n_types_ = need;
-    }
-
-    const std::size_t ij = static_cast<std::size_t>(type_i) * n_types_ + type_j;
-    const std::size_t ji = static_cast<std::size_t>(type_j) * n_types_ + type_i;
-    eps_tab_[ij] = eps_tab_[ji] = epsilon;
-    sigma_tab_[ij] = sigma_tab_[ji] = sigma;
-    set_tab_[ij] = set_tab_[ji] = 1;
+    table_->set_coeff(row);
+    refresh_cutoff_();
     return *this;
 }
 
-PairLJCut PairLJCut::set_type_coeff(int type_i, int type_j, double epsilon,
-                                    double sigma) && {
-    set_type_coeff(type_i, type_j, epsilon, sigma);
+PairLJCut PairLJCut::set_type_coeff(const LJTypeCoeff& row) && {
+    set_type_coeff(row);
+    return std::move(*this);
+}
+
+PairLJCut& PairLJCut::set_r4_attraction(std::vector<R4TypeCoeff> rows) & {
+    if (!table_)
+        throw std::logic_error(
+            "PairLJCut::set_r4_attraction: this PairLJCut was built with a "
+            "single epsilon/sigma and has no type table; the r^-4 term is "
+            "per type pair. Construct it from a coefficient list instead.");
+    table_->set_r4(std::move(rows));
+    refresh_cutoff_();
+    return *this;
+}
+
+PairLJCut PairLJCut::set_r4_attraction(std::vector<R4TypeCoeff> rows) && {
+    set_r4_attraction(std::move(rows));
     return std::move(*this);
 }
 
@@ -129,6 +135,17 @@ PairLJCut PairLJCut::set_special_bonds(double s12, double s13, double s14) && {
     return std::move(*this);
 }
 
+PairLJCut& PairLJCut::set_tail_correction(bool on) & {
+    tail_ = on;
+    tail_ready_ = false;
+    return *this;
+}
+
+PairLJCut PairLJCut::set_tail_correction(bool on) && {
+    set_tail_correction(on);
+    return std::move(*this);
+}
+
 PairLJCut& PairLJCut::set_compute_stress(bool on) & {
     compute_stress_ = on;
     return *this;
@@ -139,35 +156,46 @@ PairLJCut PairLJCut::set_compute_stress(bool on) && {
     return std::move(*this);
 }
 
+PairLJCut& PairLJCut::set_energy_shift(bool on) & {
+    energy_shift_ = on;
+    return *this;
+}
+
+PairLJCut PairLJCut::set_energy_shift(bool on) && {
+    energy_shift_ = on;
+    return std::move(*this);
+}
+
 void PairLJCut::build(const BuildContext& ctx) {
+    filtered_source_ = nullptr;
+    loop_.reset();
     // No "did you remember to set coefficients?" check is needed: the per-type
     // constructor refuses an empty list, so a PairLJCut cannot exist in that state.
     // That is the point of moving the table into the constructor.
-    finalize_type_table_();
-    n_threads_ = 1;
-#ifdef _OPENMP
-    n_threads_ = omp_get_max_threads();
-#endif
-    // Size to the backing-store capacity, not the owned count: the per-thread
-    // accumulators are indexed up to n_force = n_local + n_ghost, and ghost
-    // rows live in [n_local, nmax). (compute() grows them further if a halo
-    // overflow later enlarges the frame.)
-    int n = ctx.frame.capacity();
-    fx_thr_.resize(n_threads_);
-    fy_thr_.resize(n_threads_);
-    fz_thr_.resize(n_threads_);
-    // Single-thread (pure-MPI) fast path accumulates straight into the frame's
-    // force arrays, so no per-thread scratch is needed — leave the buffers
-    // empty. The multi-thread path needs one private buffer set per thread to
-    // avoid the cross-thread write race on shared force rows.
-    if (n_threads_ > 1) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n, double(0));
-            fy_thr_[t].resize(n, double(0));
-            fz_thr_[t].resize(n, double(0));
+    if (table_) {
+        // The kernel indexes the table by (type_i, type_j) of every pair, so
+        // it must span every type the Frame carries. A type no coefficient
+        // names is an unset pair like any other: it does not interact.
+        const int* type = ctx.frame.span(kAtom_type);
+        int max_type = -1;
+        for (int i = 0; i < ctx.frame.nlocal(); ++i) {
+            if (type[i] < 0)
+                throw std::runtime_error(
+                    "PairLJCut: atom types must be >= 0 for a per-type table");
+            max_type = std::max(max_type, type[i]);
         }
+        table_->build(max_type + 1, energy_shift_);
+        n_types_ = table_->n_types();
     }
-
+    types_source_ = nullptr;
+    if (!table_) {
+        const double r2inv = 1.0 / cutoff_sq_;
+        const double r6inv = r2inv * r2inv * r2inv * sigma6_;
+        v_shift_ =
+            energy_shift_ ? 4.0 * epsilon_ * (r6inv * r6inv - r6inv) : 0.0;
+    }
+    // The tail's type counts belong to this build's Frame.
+    tail_ready_ = false;
     special_.s12 = s12_;
     special_.s13 = s13_;
     special_.s14 = s14_;
@@ -178,9 +206,7 @@ void PairLJCut::build(const BuildContext& ctx) {
     special_.clear();
     if (!any_special_)
         return;
-    const auto* dd = ctx.runtime.md.dd;
-    const int n_owners =
-        (dd && ctx.runtime.mpi_size > 1) ? dd->n_local : ctx.frame.nlocal();
+    const int n_owners = ctx.frame.nlocal();
     special_.rebuild(ctx.frame, n_owners);
 }
 
@@ -192,33 +218,21 @@ void PairLJCut::rebuild_filtered_list(const Frame& f,
     special_.s12 = s12_;
     special_.s13 = s13_;
     special_.s14 = s14_;
-    special_.rebuild(f, n);
+    special_.rebuild(f, f.nlocal());
     filtered_inum_ = n;
-    filtered_numneigh_.assign(n, 0);
-    filtered_firstneigh_.assign(n, 0);
+    filtered_numneigh_.assign(f.n_total(), 0);
+    filtered_firstneigh_.assign(f.n_total(), 0);
     filtered_neighbors_.clear();
     filtered_scale_.clear();
     filtered_neighbors_.reserve(pairs.total_pairs);
     filtered_scale_.reserve(pairs.total_pairs);
-    filtered_has_shifts_ = pairs.has_shifts;
-    if (filtered_has_shifts_) {
-        filtered_shift_x_.clear();
-        filtered_shift_y_.clear();
-        filtered_shift_z_.clear();
-        filtered_shift_x_.reserve(pairs.total_pairs);
-        filtered_shift_y_.reserve(pairs.total_pairs);
-        filtered_shift_z_.reserve(pairs.total_pairs);
-    }
-
     const int* numneigh = pairs.numneigh.data();
     const int* firstneigh = pairs.firstneigh.data();
     const int* neighbors = pairs.neighbors.data();
-    const double* sx = filtered_has_shifts_ ? pairs.shift_x.data() : nullptr;
-    const double* sy = filtered_has_shifts_ ? pairs.shift_y.data() : nullptr;
-    const double* sz = filtered_has_shifts_ ? pairs.shift_z.data() : nullptr;
     const TagInt* __restrict tag = f.span(kAtom_tag);
 
-    for (int i = 0; i < n; ++i) {
+    for (int ii = 0; ii < n; ++ii) {
+        const int i = pairs.ilist[ii];
         const int off = firstneigh[i];
         const int jn = numneigh[i];
         filtered_firstneigh_[i] = static_cast<int>(filtered_neighbors_.size());
@@ -230,11 +244,6 @@ void PairLJCut::rebuild_filtered_list(const Frame& f,
                 continue;
             filtered_neighbors_.push_back(j);
             filtered_scale_.push_back(sc);
-            if (filtered_has_shifts_) {
-                filtered_shift_x_.push_back(sx[off + jj]);
-                filtered_shift_y_.push_back(sy[off + jj]);
-                filtered_shift_z_.push_back(sz[off + jj]);
-            }
             ++kept;
         }
         filtered_numneigh_[i] = kept;
@@ -242,265 +251,123 @@ void PairLJCut::rebuild_filtered_list(const Frame& f,
 }
 
 namespace {
-/// Lorentz-Berthelot: arithmetic mean of sigma, geometric mean of epsilon. The
-/// standard combining rule, and the one LAMMPS uses by default (`pair_modify mix
-/// geometric` is the alternative; this is `mix arithmetic`).
-inline void lorentz_berthelot(double eii, double sii, double ejj, double sjj,
-                              double& eij, double& sij) {
-    eij = std::sqrt(eii * ejj);
-    sij = 0.5 * (sii + sjj);
-}
-} // namespace
 
-/// Fill the off-diagonal from the diagonal by Lorentz-Berthelot, and precompute
-/// sigma^6 and the per-pair energy shift. Called once, from build().
-void PairLJCut::finalize_type_table_() {
-    if (n_types_ == 0)
-        return;
-    const double rc = static_cast<double>(this->pair_cutoff());
+/// lj/cut per-pair physics: LAMMPS `PairLJCut::compute` with the
+/// `init_one` per-pair cutoff and offset (per-type form), the ATV r⁻⁴ term
+/// (`ATV::r4_attraction`) and the special weight of the walked CSR slot.
+struct LJCutKernel {
+    const int* type = nullptr;        ///< force-field types (per-type form)
+    const LJPairCoeff* tab = nullptr; ///< (type_i, type_j) records; null on
+                                      ///< the single-type form
+    const double* scales = nullptr;   ///< per CSR slot; null: weight 1
+    int ntypes = 0;
+    double rc_sq = 0, sig6 = 0, eps4 = 0, eps24 = 0, vshift = 0;
 
-    sig6_tab_.assign(static_cast<std::size_t>(n_types_) * n_types_, 0.0);
-    shift_tab_.assign(static_cast<std::size_t>(n_types_) * n_types_, 0.0);
+    struct Row {
+        std::size_t ti_base; ///< type_i · ntypes (per-type form)
+    };
 
-    for (int a = 0; a < n_types_; ++a) {
-        for (int b = 0; b < n_types_; ++b) {
-            const std::size_t ab = static_cast<std::size_t>(a) * n_types_ + b;
-            double e = eps_tab_[ab], s = sigma_tab_[ab];
+    double cutoff_sq() const { return rc_sq; }
 
-            if (!set_tab_[ab]) {
-                const std::size_t aa =
-                    static_cast<std::size_t>(a) * n_types_ + a;
-                const std::size_t bb =
-                    static_cast<std::size_t>(b) * n_types_ + b;
-                if (set_tab_[aa] && set_tab_[bb]) {
-                    lorentz_berthelot(eps_tab_[aa], sigma_tab_[aa],
-                                      eps_tab_[bb], sigma_tab_[bb], e, s);
-                    eps_tab_[ab] = e;
-                    sigma_tab_[ab] = s;
-                } else {
-                    // No diagonal to mix from: this type pair simply does not
-                    // interact. eps = 0 is the honest encoding (TIP3P hydrogens have
-                    // no LJ site at all), NOT a fallback to the single-sigma value —
-                    // which would silently reintroduce the very bug this exists to fix.
-                    e = 0.0;
-                    s = 1.0;
-                }
+    Row row(int i) const {
+        return {tab ? static_cast<std::size_t>(type[i])
+                          * static_cast<std::size_t>(ntypes)
+                    : 0};
+    }
+
+    md::PairTerm term(const Row& ri, int j, int entry, double r2) const {
+        const double sc = (scales != nullptr) ? scales[entry] : double(1);
+        double fpair, epair;
+        if (tab) {
+            // LAMMPS init_one record of (type_i, type_j): its own LJ cutoff
+            // and offset, plus the r^-4 term. A pair with no LJ site has
+            // cut_ljsq = 0 and is skipped here, which is why an unset pair
+            // resolves to eps = 0 rather than silently falling back to the
+            // single-sigma value.
+            const LJPairCoeff& c =
+                tab[ri.ti_base + static_cast<std::size_t>(type[j])];
+            fpair = 0.0;
+            epair = 0.0;
+            if (r2 < c.cut_ljsq) {
+                const double r2inv = double(1) / r2;
+                const double r6inv = r2inv * r2inv * r2inv;
+                fpair = r2inv * r6inv * (c.lj1 * r6inv - c.lj2);
+                epair = r6inv * (c.lj3 * r6inv - c.lj4) - c.offset;
             }
-            const double s2 = s * s;
-            const double s6 = s2 * s2 * s2;
-            sig6_tab_[ab] = s6;
-
-            const double r2inv = 1.0 / (rc * rc);
-            const double r6inv = r2inv * r2inv * r2inv * s6;
-            shift_tab_[ab] = 4.0 * e * (r6inv * r6inv - r6inv);
-        }
-    }
-}
-
-void PairLJCut::compute(const LaunchContext& ctx) {
-    auto& f = ctx.frame;
-    if (!ctx.runtime.md.pair_list) {
-        throw std::runtime_error(
-            "PairLJCut::compute: runtime.md.pair_list is null. Did you add a "
-            "NeighborList component to the force phase ahead of LJ?");
-    }
-    const auto& pairs = *ctx.runtime.md.pair_list;
-    const auto& box = f.box;
-    int n_force = f.nlocal();
-    const auto* dd = ctx.runtime.md.dd;
-    if (dd && ctx.runtime.mpi_size > 1) {
-        n_force = dd->n_local + dd->n_ghost;
-    }
-    // Ensure the per-thread force accumulators cover [0, n_force). They are
-    // sized at build() from the then-current atom count, but n_force grows with
-    // the ghost count (and the frame capacity can itself grow on a thin-
-    // subdomain halo overflow). Previously every rank kept nlocal == global N,
-    // so the build-time size always dominated; with right-sized per-rank
-    // storage that no longer holds, so grow here on demand (rare — only when
-    // the ghost region expands; matches the neighbor-list growth contract).
-    if (n_threads_ > 1
-        && static_cast<int>(fx_thr_.empty() ? 0 : fx_thr_[0].size())
-               < n_force) {
-        for (int t = 0; t < n_threads_; ++t) {
-            fx_thr_[t].resize(n_force, double(0));
-            fy_thr_[t].resize(n_force, double(0));
-            fz_thr_[t].resize(n_force, double(0));
-        }
-    }
-    double energy_total = 0;
-
-    // Exclusion-filtered CSR (built once per NL rebuild). See
-    // `rebuild_filtered_list` for the invariant. When no exclusions are
-    // configured we iterate the upstream CSR directly — no copy, no
-    // allocation, no per-pair branch.
-    const bool use_filtered = any_special_;
-    if (use_filtered && pairs.version != filtered_version_) {
-        rebuild_filtered_list(f, pairs);
-        filtered_version_ = pairs.version;
-    }
-    const double* __restrict k_scales =
-        use_filtered ? filtered_scale_.data() : nullptr;
-    const int k_inum = use_filtered ? filtered_inum_ : pairs.inum;
-    const int* __restrict k_ilist = use_filtered ? nullptr // contiguous 0..n-1
-                                                 : pairs.ilist.data();
-    const int* __restrict k_numneigh =
-        use_filtered ? filtered_numneigh_.data() : pairs.numneigh.data();
-    const int* __restrict k_firstneigh =
-        use_filtered ? filtered_firstneigh_.data() : pairs.firstneigh.data();
-    const int* __restrict k_neighbors =
-        use_filtered ? filtered_neighbors_.data() : pairs.neighbors.data();
-
-    // Per-pair PBC shift fast path: d = xi - (xj + shift), skipping the
-    // per-pair min-image. Bit-identical to the min-image path because the
-    // stored shift is, by construction, `xi - dx - xj` where `dx` is the
-    // exact displacement the neighbor build computed (`shift = (shx,shy,shz)`
-    // on the half-stencil path; the full min-image displacement otherwise) --
-    // it is the same integer image, stable for the list's lifetime under the
-    // neighbor skin. This holds under MPI as well: extended-axis ghosts carry
-    // a zero shift (they are already at their real, halo-resolved position, so
-    // min-image is a no-op) and only the non-decomposed wrapped pairs carry a
-    // nonzero shift, which the neighbor build already encoded correctly. The
-    // shift array is populated only on the serial neighbor-build path, so
-    // `has_shifts` is false (and this falls back to min-image) under OMP>1.
-    const bool k_has_shifts =
-        (use_filtered ? filtered_has_shifts_ : pairs.has_shifts);
-    const double* __restrict k_shift_x =
-        !k_has_shifts
-            ? nullptr
-            : (use_filtered ? filtered_shift_x_.data() : pairs.shift_x.data());
-    const double* __restrict k_shift_y =
-        !k_has_shifts
-            ? nullptr
-            : (use_filtered ? filtered_shift_y_.data() : pairs.shift_y.data());
-    const double* __restrict k_shift_z =
-        !k_has_shifts
-            ? nullptr
-            : (use_filtered ? filtered_shift_z_.data() : pairs.shift_z.data());
-
-    // Pair virial accumulators (Voigt order: xx yy zz xy xz yz). Reduced
-    // across OpenMP threads via OMP reduction; cross-rank reduction is
-    // handled by Reduce at end_of_step.
-    double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
-
-    // LAMMPS-style vflag gating: skip the 6-component pair virial when no
-    // stress consumer is active (plain NVE). Loop-invariant, so the
-    // compiler unswitches the inner loop; forces/energy are unaffected.
-    const bool do_virial = compute_stress_;
-
-    // Resolve every schema column ONCE, before the OMP parallel region opens
-    // (never inside it — the span resolution counter is not thread-safe, and
-    // every thread would otherwise resolve the same key).
-    const StorageReal* __restrict x_ptr = f.span(kAtom_x);
-    const StorageReal* __restrict y_ptr = f.span(kAtom_y);
-    const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    const int* __restrict k_type = f.span(kAtom_type);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
-
-#pragma omp parallel reduction(+ : energy_total) reduction(+ : v_xx)           \
-    reduction(+ : v_yy) reduction(+ : v_zz) reduction(+ : v_xy)                \
-    reduction(+ : v_xz) reduction(+ : v_yz)
-    {
-        int tid = 0;
-#ifdef _OPENMP
-        tid = omp_get_thread_num();
-#endif
-        // Single-thread (pure-MPI): accumulate straight into the frame's force
-        // arrays — already cleared by ZeroForces (owned rows) +
-        // CommBrick::zero_ghost_forces (ghost rows). Elides the per-step
-        // zero-fill below AND the reduce sweep at the end of the region, two
-        // O(n_force) passes LAMMPS never pays. The multi-thread path keeps each
-        // thread's writes in a private buffer to avoid the shared-row race.
-        const bool direct = (n_threads_ == 1);
-        double* __restrict fxt_ptr;
-        double* __restrict fyt_ptr;
-        double* __restrict fzt_ptr;
-        if (direct) {
-            fxt_ptr = fx_ptr;
-            fyt_ptr = fy_ptr;
-            fzt_ptr = fz_ptr;
+            if (r2 < c.r4_cutsq) {
+                const R4Term<double> t =
+                    r4_attraction(r2, c.r4_a, c.r4_rc5inv, c.r4_e0);
+                fpair += t.fpair;
+                epair += t.energy;
+            }
+            fpair *= sc;
+            epair *= sc;
         } else {
-            auto& fxt = fx_thr_[tid];
-            auto& fyt = fy_thr_[tid];
-            auto& fzt = fz_thr_[tid];
-            std::fill(fxt.begin(), fxt.begin() + n_force, double(0));
-            std::fill(fyt.begin(), fyt.begin() + n_force, double(0));
-            std::fill(fzt.begin(), fzt.begin() + n_force, double(0));
-            fxt_ptr = fxt.data();
-            fyt_ptr = fyt.data();
-            fzt_ptr = fzt.data();
+            const double r2inv = double(1) / r2;
+            const double r6inv = r2inv * r2inv * r2inv * sig6;
+            fpair = sc * eps24 * r2inv * (double(2) * r6inv * r6inv - r6inv);
+            epair = sc * (eps4 * (r6inv * r6inv - r6inv) - vshift);
         }
+        return {fpair, epair};
+    }
 
-        // Hoist box edges + LJ constants to locals so the inner loop keeps
-        // them in registers instead of reloading the Mat3 / member fields
-        // on every pair.
-        const double lx = box.length(0), ly = box.length(1), lz = box.length(2);
-        const double half_lx = double(0.5) * lx;
-        const double half_ly = double(0.5) * ly;
-        const double half_lz = double(0.5) * lz;
-        const double rc_sq = cutoff_sq_;
-        const double sig6 = sigma6_;
-        const double eps4 = double(4) * epsilon_;
-        const double eps24 = double(24) * epsilon_;
+    md::PairTerm operator()(const Row& ri, const md::PairSite& p,
+                            const md::PairChunk&) const {
+        return term(ri, p.j, p.entry, p.r2);
+    }
+};
 
-        // Per-type coefficients. When the table is active the coefficients depend on
-        // (type_i, type_j) and cannot be hoisted out of the inner loop, so the SIMD ket
-        // loop is skipped entirely and every neighbour goes down the scalar path. The
-        // single-epsilon path — the one benchmarked against LAMMPS — is untouched.
-        const bool k_multi = (n_types_ > 0);
-        // Partial special scales force scalar path (per-pair weight).
-        const bool use_simd = !k_multi && !has_partial_special_;
-        const int k_ntypes = n_types_;
-        const double* k_eps = k_multi ? eps_tab_.data() : nullptr;
-        const double* k_sig6 = k_multi ? sig6_tab_.data() : nullptr;
-        const double* k_shift = k_multi ? shift_tab_.data() : nullptr;
-        const double vshift = v_shift_;
+/// lj/cut with its xsimd ket loop as the `md::PairLoop` row walk: the
+/// hoisted single-type loop, or — under a per-type table without r⁻⁴ rows,
+/// or with partial special weights — the gathered loop, then the scalar
+/// tail (`LJCutKernel::term`).
+///
+/// Track B.2 — xsimd ket-loop vectorization of the inner pair loop.
+///
+/// Strategy: pack W=batch_t::size neighbors into vector registers,
+/// run all distance / cutoff / polynomial / force math through
+/// SIMD (NEON64 W=2 on Apple silicon, AVX2 W=4, AVX-512 W=8).
+/// Excluded / out-of-cutoff lanes are masked to zero contributions
+/// via xsimd::select — branch-free.
+///
+/// Bit-identicality: per-lane SIMD ops on NEON / AVX use plain
+/// (non-FMA) multiplies and adds (xsimd 11.2.0 routes operator*/+
+/// to vmulq/vaddq, not vfmaq), and division uses vdivq_f64 (full
+/// IEEE divide). The horizontal accumulation into per-atom force
+/// (`fi_x`), per-thread force buffers (`fxt_ptr[j]`), energy and
+/// virial is performed by extracting lanes one at a time and
+/// adding them in the *same* linear order as the original scalar
+/// loop. This preserves the exact summation tree, so per-pair
+/// contributions are bit-identical iff the per-lane intermediates
+/// (`r2`, `fpair`, `fxp`, etc.) are bit-identical to scalar.
+///
+/// The one residual ULP risk is `-ffp-contract=on` (clang default):
+/// the *scalar* baseline may emit a fused multiply-add for
+/// `dx*dx + dy*dy + dz*dz` written in a single statement, while
+/// xsimd's batch operator+ stays unfused. We measure and report
+/// the actual delta; if it exceeds 1e-12 the spec acceptance gate
+/// (ac-012) will need a tolerance refinement (caller's call).
+struct LJCutSimdKernel : LJCutKernel {
+    const StorageReal* px = nullptr;
+    const StorageReal* py = nullptr;
+    const StorageReal* pz = nullptr;
+    bool gather = false; ///< per-pair coefficients / weights: gathered loop
 
-        // x_ptr/y_ptr/z_ptr are the schema spans resolved once above, before
-        // the parallel region opened (the 13.7x rule) — every thread shares
-        // the same read-only pointers.
-
-        // Track B.2 — xsimd ket-loop vectorization of the inner pair loop.
-        //
-        // Strategy: pack W=batch_t::size neighbors into vector registers,
-        // run all distance / cutoff / polynomial / force math through
-        // SIMD (NEON64 W=2 on Apple silicon, AVX2 W=4, AVX-512 W=8).
-        // Excluded / out-of-cutoff lanes are masked to zero contributions
-        // via xsimd::select — branch-free.
-        //
-        // Bit-identicality: per-lane SIMD ops on NEON / AVX use plain
-        // (non-FMA) multiplies and adds (xsimd 11.2.0 routes operator*/+
-        // to vmulq/vaddq, not vfmaq), and division uses vdivq_f64 (full
-        // IEEE divide). The horizontal accumulation into per-atom force
-        // (`fi_x`), per-thread force buffers (`fxt_ptr[j]`), energy and
-        // virial is performed by extracting lanes one at a time and
-        // adding them in the *same* linear order as the original scalar
-        // loop. This preserves the exact summation tree, so per-pair
-        // contributions are bit-identical iff the per-lane intermediates
-        // (`r2`, `fpair`, `fxp`, etc.) are bit-identical to scalar.
-        //
-        // The one residual ULP risk is `-ffp-contract=on` (clang default):
-        // the *scalar* baseline may emit a fused multiply-add for
-        // `dx*dx + dy*dy + dz*dz` written in a single statement, while
-        // xsimd's batch operator+ stays unfused. We measure and report
-        // the actual delta; if it exceeds 1e-12 the spec acceptance gate
-        // (ac-012) will need a tolerance refinement (caller's call).
+    void walk(const md::PairRows& L, int ii_begin, int ii_end,
+              md::ForceRows rows, md::PairAcc& acc, bool do_forces,
+              bool do_virial) const {
+        // Restrict-qualified locals: the scatter must not alias the
+        // coordinates for the loads to stay hoisted.
+        const StorageReal* __restrict x = px;
+        const StorageReal* __restrict y = py;
+        const StorageReal* __restrict z = pz;
+        double* __restrict fx = rows.fx;
+        double* __restrict fy = rows.fy;
+        double* __restrict fz = rows.fz;
+        const bool multi = tab != nullptr;
         using batch_t = xsimd::batch<double>;
         constexpr std::size_t W = batch_t::size;
 
-        const batch_t v_lx(lx), v_ly(ly), v_lz(lz);
-        const batch_t v_half_lx(half_lx), v_half_ly(half_ly),
-            v_half_lz(half_lz);
-        const batch_t v_neg_half_lx(-half_lx), v_neg_half_ly(-half_ly),
-            v_neg_half_lz(-half_lz);
-        // Floor-form min-image constants. The legacy single-`select` pair
-        // form below only handled |Δ| ≤ L; cross-PBC ghosts at ±2L are
-        // silently dropped by the cutoff filter. The floor form
-        // `Δ -= L · round(Δ/L)` is correct for arbitrary |Δ| in one
-        // SIMD op without a branch (see Box::min_image fix).
-        const batch_t v_inv_lx(1.0 / lx), v_inv_ly(1.0 / ly),
-            v_inv_lz(1.0 / lz);
         const batch_t v_rc_sq(rc_sq);
         const batch_t v_sig6(sig6);
         const batch_t v_eps4(eps4), v_eps24(eps24), v_vshift(vshift);
@@ -510,26 +377,22 @@ void PairLJCut::compute(const LaunchContext& ctx) {
         // alignas(64) keeps store_aligned legal on AVX-512 boxes; on NEON
         // 16-byte alignment suffices but 64 is cheap and harmless.
         alignas(64) double xj_buf[16], yj_buf[16], zj_buf[16];
-        alignas(64) double dx_buf[16], dy_buf[16], dz_buf[16];
         alignas(64) double fxp_buf[16], fyp_buf[16], fzp_buf[16];
         alignas(64) double r2_buf[16], r6inv_buf[16];
+        alignas(64) double lj1_buf[16], lj2_buf[16], lj3_buf[16];
+        alignas(64) double lj4_buf[16], offset_buf[16], cutsq_buf[16];
         alignas(64) std::int32_t mask_buf[16];
 
-#pragma omp for schedule(static)
-        for (int ii = 0; ii < k_inum; ++ii) {
-            // Filtered path: i == ii (neighbors are already pruned of
-            // excluded partners). Upstream path: `k_ilist[ii]` gives the
-            // owner atom index when NL builds a sparse subset.
-            const int i = use_filtered ? ii : k_ilist[ii];
-            const int jnum = k_numneigh[i];
-            const int off = k_firstneigh[i];
-            // Atom-i state hoisted into registers for the inner loop.
-            // `fi_*` accumulates Σ_j F_ij once; we store back to `fxt_ptr[i]`
-            // a single time at the end -- removes an `fxt[i] += ...` memory
-            // RMW per pair (~50 ns bubble per iter on Apple Silicon).
-            const double xi = x_ptr[i];
-            const double yi = y_ptr[i];
-            const double zi = z_ptr[i];
+        for (int ii = ii_begin; ii < ii_end; ++ii) {
+            const int i = L.ilist[ii];
+            const Row ri = row(i);
+            const int jnum = L.numneigh[i];
+            const int entry0 = L.firstneigh[i];
+            const int* __restrict nb = L.neighbors + entry0;
+
+            const double xi = x[i];
+            const double yi = y[i];
+            const double zi = z[i];
             const batch_t v_xi(xi), v_yi(yi), v_zi(zi);
             double fi_x = 0, fi_y = 0, fi_z = 0;
             // Batch accumulators for the i-force, virial and energy. Masked
@@ -549,7 +412,7 @@ void PairLJCut::compute(const LaunchContext& ctx) {
             // ── SIMD ket loop: W neighbors per iteration ────────────
             // Skipped wholesale under a per-type table: the coefficients vary per pair,
             // so nothing hoists and the scalar tail below handles every neighbour.
-            for (; use_simd && jj + static_cast<int>(W) <= jnum;
+            for (; !gather && jj + static_cast<int>(W) <= jnum;
                  jj += static_cast<int>(W)) {
                 // Manual gather: pack the next W neighbor coords into the
                 // aligned stack buffers. j-indices are non-contiguous (NL
@@ -558,11 +421,10 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                 // no double-precision gather, so the scalar-load loop is
                 // the right thing here.
                 for (std::size_t lane = 0; lane < W; ++lane) {
-                    const int j =
-                        k_neighbors[off + jj + static_cast<int>(lane)];
-                    xj_buf[lane] = x_ptr[j];
-                    yj_buf[lane] = y_ptr[j];
-                    zj_buf[lane] = z_ptr[j];
+                    const int j = nb[jj + static_cast<int>(lane)];
+                    xj_buf[lane] = x[j];
+                    yj_buf[lane] = y[j];
+                    zj_buf[lane] = z[j];
                 }
                 batch_t v_xj = batch_t::load_aligned(xj_buf);
                 batch_t v_yj = batch_t::load_aligned(yj_buf);
@@ -571,46 +433,6 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                 batch_t v_dx = v_xi - v_xj;
                 batch_t v_dy = v_yi - v_yj;
                 batch_t v_dz = v_zi - v_zj;
-                if (k_has_shifts) {
-                    // Pre-stored image: d = xi - (xj + shift). Contiguous
-                    // load (shifts parallel to neighbors). Bit-identical to
-                    // the floor-form below for the (stable) chosen image.
-                    v_dx = v_dx - batch_t::load_unaligned(&k_shift_x[off + jj]);
-                    v_dy = v_dy - batch_t::load_unaligned(&k_shift_y[off + jj]);
-                    v_dz = v_dz - batch_t::load_unaligned(&k_shift_z[off + jj]);
-                    (void)v_half_lx;
-                    (void)v_neg_half_lx;
-                    (void)v_half_ly;
-                    (void)v_neg_half_ly;
-                    (void)v_half_lz;
-                    (void)v_neg_half_lz;
-                } else {
-                    // Branch-free minimum image: select(dx > +L/2, dx-L, dx);
-                    // then select(dx < -L/2, dx+L, dx). Hoisted constants
-                    // (v_lx, v_half_lx, ...) keep the compiler from reloading
-                    // box members across the inner loop -- swapping this for
-                    // box.min_image_batch costs ~7% per-step (member loads
-                    // through `this` are not hoisted under aliasing analysis).
-                    // Floor-form min-image (single shot, handles |Δ| up to
-                    // any integer multiple of L). The legacy single-`select`
-                    // pair form was correct for `|Δ| ≤ L` but silently left
-                    // `|Δ| = L` for cross-PBC ghosts at ±2L (then the
-                    // cutoff filter dropped legitimate pairs).
-                    v_dx = v_dx - v_lx * xsimd::round(v_dx * v_inv_lx);
-                    v_dy = v_dy - v_ly * xsimd::round(v_dy * v_inv_ly);
-                    v_dz = v_dz - v_lz * xsimd::round(v_dz * v_inv_lz);
-                    // Suppress unused-variable warnings for the legacy
-                    // half-L locals which are now reserved for the v3
-                    // hot-path microbench (`bench_md_step` v_half_*
-                    // sensitivity).
-                    (void)v_half_lx;
-                    (void)v_neg_half_lx;
-                    (void)v_half_ly;
-                    (void)v_neg_half_ly;
-                    (void)v_half_lz;
-                    (void)v_neg_half_lz;
-                }
-
                 // r2 with parenthesized addition tree to keep order
                 // matching scalar `(dx*dx + dy*dy) + dz*dz`.
                 batch_t v_dxsq = v_dx * v_dx;
@@ -690,18 +512,104 @@ void PairLJCut::compute(const LaunchContext& ctx) {
                 v_fyp.store_aligned(fyp_buf);
                 v_fzp.store_aligned(fzp_buf);
                 for (std::size_t lane = 0; lane < W; ++lane) {
-                    const int j =
-                        k_neighbors[off + jj + static_cast<int>(lane)];
-                    fxt_ptr[j] -= fxp_buf[lane];
-                    fyt_ptr[j] -= fyp_buf[lane];
-                    fzt_ptr[j] -= fzp_buf[lane];
+                    const int j = nb[jj + static_cast<int>(lane)];
+                    if (do_forces) {
+                        fx[j] -= fxp_buf[lane];
+                        fy[j] -= fyp_buf[lane];
+                        fz[j] -= fzp_buf[lane];
+                    }
                 }
                 (void)mask_buf;
-                (void)dx_buf;
-                (void)dy_buf;
-                (void)dz_buf;
                 (void)r2_buf;
                 (void)r6inv_buf;
+            }
+
+            // ── Gathered SIMD ket loop: per-type table and/or per-pair special
+            // weights. Same arithmetic as the scalar tail below, W lanes at a
+            // time: each lane's init_one record (lj1..lj4, offset, own LJ
+            // cutoff) is gathered from the table row of type_i by type_j, and
+            // its weight read from the filtered list (contiguous). Lanes
+            // outside their pair's cutoff are masked to 0.
+            const std::size_t g_row = ri.ti_base;
+            for (; gather && jj + static_cast<int>(W) <= jnum;
+                 jj += static_cast<int>(W)) {
+                for (std::size_t lane = 0; lane < W; ++lane) {
+                    const int j = nb[jj + static_cast<int>(lane)];
+                    xj_buf[lane] = x[j];
+                    yj_buf[lane] = y[j];
+                    zj_buf[lane] = z[j];
+                    if (multi) {
+                        const LJPairCoeff& c =
+                            tab[g_row + static_cast<std::size_t>(type[j])];
+                        lj1_buf[lane] = c.lj1;
+                        lj2_buf[lane] = c.lj2;
+                        lj3_buf[lane] = c.lj3;
+                        lj4_buf[lane] = c.lj4;
+                        offset_buf[lane] = c.offset;
+                        cutsq_buf[lane] = c.cut_ljsq;
+                    }
+                }
+                const batch_t v_dx = v_xi - batch_t::load_aligned(xj_buf);
+                const batch_t v_dy = v_yi - batch_t::load_aligned(yj_buf);
+                const batch_t v_dz = v_zi - batch_t::load_aligned(zj_buf);
+                const batch_t v_r2 = (v_dx * v_dx + v_dy * v_dy) + v_dz * v_dz;
+                // A pair with no LJ site has cut_ljsq = 0: always masked.
+                const auto mask =
+                    v_r2 < (multi ? batch_t::load_aligned(cutsq_buf) : v_rc_sq);
+                const batch_t v_r2inv =
+                    v_one / xsimd::select(mask, v_r2, v_one);
+                const batch_t v_sc =
+                    (scales != nullptr)
+                        ? batch_t::load_unaligned(scales + entry0 + jj)
+                        : v_one;
+
+                batch_t v_fpair, v_epair;
+                if (multi) {
+                    const batch_t v_r6inv = (v_r2inv * v_r2inv) * v_r2inv;
+                    v_fpair = (v_r2inv * v_r6inv)
+                              * (batch_t::load_aligned(lj1_buf) * v_r6inv
+                                 - batch_t::load_aligned(lj2_buf));
+                    v_epair = v_r6inv
+                                  * (batch_t::load_aligned(lj3_buf) * v_r6inv
+                                     - batch_t::load_aligned(lj4_buf))
+                              - batch_t::load_aligned(offset_buf);
+                    v_fpair = v_sc * v_fpair;
+                    v_epair = v_sc * v_epair;
+                } else {
+                    const batch_t v_r6inv =
+                        ((v_r2inv * v_r2inv) * v_r2inv) * v_sig6;
+                    v_fpair = ((v_sc * v_eps24) * v_r2inv)
+                              * (v_two * v_r6inv * v_r6inv - v_r6inv);
+                    v_epair =
+                        v_sc
+                        * (v_eps4 * (v_r6inv * v_r6inv - v_r6inv) - v_vshift);
+                }
+                v_fpair = xsimd::select(mask, v_fpair, v_zero);
+                const batch_t v_fxp = v_fpair * v_dx;
+                const batch_t v_fyp = v_fpair * v_dy;
+                const batch_t v_fzp = v_fpair * v_dz;
+                acc_fix = acc_fix + v_fxp;
+                acc_fiy = acc_fiy + v_fyp;
+                acc_fiz = acc_fiz + v_fzp;
+                // Unconditional, as in the hoisted loop above (see there).
+                acc_vxx = acc_vxx + v_dx * v_fxp;
+                acc_vyy = acc_vyy + v_dy * v_fyp;
+                acc_vzz = acc_vzz + v_dz * v_fzp;
+                acc_vxy = acc_vxy + v_dx * v_fyp;
+                acc_vxz = acc_vxz + v_dx * v_fzp;
+                acc_vyz = acc_vyz + v_dy * v_fzp;
+                acc_e = acc_e + xsimd::select(mask, v_epair, v_zero);
+                v_fxp.store_aligned(fxp_buf);
+                v_fyp.store_aligned(fyp_buf);
+                v_fzp.store_aligned(fzp_buf);
+                if (do_forces) {
+                    for (std::size_t lane = 0; lane < W; ++lane) {
+                        const int j = nb[jj + static_cast<int>(lane)];
+                        fx[j] -= fxp_buf[lane];
+                        fy[j] -= fyp_buf[lane];
+                        fz[j] -= fzp_buf[lane];
+                    }
+                }
             }
 
             // Horizontal-reduce the batch accumulators into the per-atom /
@@ -709,131 +617,211 @@ void PairLJCut::compute(const LaunchContext& ctx) {
             fi_x += xsimd::reduce_add(acc_fix);
             fi_y += xsimd::reduce_add(acc_fiy);
             fi_z += xsimd::reduce_add(acc_fiz);
+            double a_xx = 0, a_yy = 0, a_zz = 0, a_xy = 0, a_xz = 0, a_yz = 0;
             if (do_virial) {
-                v_xx += xsimd::reduce_add(acc_vxx);
-                v_yy += xsimd::reduce_add(acc_vyy);
-                v_zz += xsimd::reduce_add(acc_vzz);
-                v_xy += xsimd::reduce_add(acc_vxy);
-                v_xz += xsimd::reduce_add(acc_vxz);
-                v_yz += xsimd::reduce_add(acc_vyz);
+                a_xx = xsimd::reduce_add(acc_vxx);
+                a_yy = xsimd::reduce_add(acc_vyy);
+                a_zz = xsimd::reduce_add(acc_vzz);
+                a_xy = xsimd::reduce_add(acc_vxy);
+                a_xz = xsimd::reduce_add(acc_vxz);
+                a_yz = xsimd::reduce_add(acc_vyz);
             }
-            energy_total += xsimd::reduce_add(acc_e);
+            double e_i = xsimd::reduce_add(acc_e);
 
             // ── Scalar tail (last jnum % W neighbors) ──────────────
             for (; jj < jnum; ++jj) {
-                const int j = k_neighbors[off + jj];
-                double dx, dy, dz;
-                if (k_has_shifts) {
-                    dx = xi - (x_ptr[j] + k_shift_x[off + jj]);
-                    dy = yi - (y_ptr[j] + k_shift_y[off + jj]);
-                    dz = zi - (z_ptr[j] + k_shift_z[off + jj]);
-                } else {
-                    dx = xi - x_ptr[j];
-                    dy = yi - y_ptr[j];
-                    dz = zi - z_ptr[j];
-                    // Inlined branchy min-image: matches the SIMD ket-loop
-                    // form above. Multi-wrap to handle cross-PBC ghosts at
-                    // ±2L on small Cartesian grids (see Box::min_image fix).
-                    while (dx > half_lx)
-                        dx -= lx;
-                    while (dx < -half_lx)
-                        dx += lx;
-                    while (dy > half_ly)
-                        dy -= ly;
-                    while (dy < -half_ly)
-                        dy += ly;
-                    while (dz > half_lz)
-                        dz -= lz;
-                    while (dz < -half_lz)
-                        dz += lz;
-                }
+                const int j = nb[jj];
+                const double dx = xi - x[j];
+                const double dy = yi - y[j];
+                const double dz = zi - z[j];
                 const double r2 = dx * dx + dy * dy + dz * dz;
                 if (r2 >= rc_sq)
                     continue;
-
-                // Per-pair coefficients under a type table; the hoisted scalars
-                // otherwise. An eps of exactly 0 (a type pair with no LJ site, e.g.
-                // TIP3P hydrogens) contributes no force and no energy — which is the
-                // point, and is why an unset pair mixes to eps = 0 rather than silently
-                // falling back to the single-sigma value.
-                double p_sig6 = sig6, p_eps24 = eps24, p_eps4 = eps4,
-                       p_shift = vshift;
-                if (k_multi) {
-                    const int ti = k_type[i], tj = k_type[j];
-                    const std::size_t ab =
-                        static_cast<std::size_t>(ti) * k_ntypes + tj;
-                    p_sig6 = k_sig6[ab];
-                    const double e = k_eps[ab];
-                    p_eps24 = double(24) * e;
-                    p_eps4 = double(4) * e;
-                    p_shift = k_shift[ab];
-                }
-
-                const double r2inv = double(1) / r2;
-                const double r6inv = r2inv * r2inv * r2inv * p_sig6;
-                const double sc =
-                    (k_scales != nullptr) ? k_scales[off + jj] : double(1);
-                const double fpair =
-                    sc * p_eps24 * r2inv * (double(2) * r6inv * r6inv - r6inv);
-
-                const double fxp = fpair * dx;
-                const double fyp = fpair * dy;
-                const double fzp = fpair * dz;
+                const md::PairTerm t = term(ri, j, entry0 + jj, r2);
+                const double fxp = t.fpair * dx;
+                const double fyp = t.fpair * dy;
+                const double fzp = t.fpair * dz;
                 fi_x += fxp;
                 fi_y += fyp;
                 fi_z += fzp;
-                fxt_ptr[j] -= fxp;
-                fyt_ptr[j] -= fyp;
-                fzt_ptr[j] -= fzp;
-
+                if (do_forces) {
+                    fx[j] -= fxp;
+                    fy[j] -= fyp;
+                    fz[j] -= fzp;
+                }
                 if (do_virial) {
-                    v_xx += dx * fxp;
-                    v_yy += dy * fyp;
-                    v_zz += dz * fzp;
-                    v_xy += dx * fyp;
-                    v_xz += dx * fzp;
-                    v_yz += dy * fzp;
+                    a_xx += dx * fxp;
+                    a_yy += dy * fyp;
+                    a_zz += dz * fzp;
+                    a_xy += dx * fyp;
+                    a_xz += dx * fzp;
+                    a_yz += dy * fzp;
                 }
-
-                energy_total +=
-                    sc * (p_eps4 * (r6inv * r6inv - r6inv) - p_shift);
+                e_i += t.energy;
             }
-            fxt_ptr[i] += fi_x;
-            fyt_ptr[i] += fi_y;
-            fzt_ptr[i] += fi_z;
-        }
-
-        // Reduce per-thread forces into frame (skipped in single-thread direct
-        // mode — the kernel already wrote straight into the frame arrays).
-        if (!direct) {
-#pragma omp for schedule(static)
-            for (int i = 0; i < n_force; ++i) {
-                for (int t = 0; t < n_threads_; ++t) {
-                    fx_ptr[i] += fx_thr_[t][i];
-                    fy_ptr[i] += fy_thr_[t][i];
-                    fz_ptr[i] += fz_thr_[t][i];
-                }
+            if (do_forces) {
+                fx[i] += fi_x;
+                fy[i] += fi_y;
+                fz[i] += fi_z;
             }
+            acc.energy += e_i;
+            acc.virial.v[0] += a_xx;
+            acc.virial.v[1] += a_yy;
+            acc.virial.v[2] += a_zz;
+            acc.virial.v[3] += a_xy;
+            acc.virial.v[4] += a_xz;
+            acc.virial.v[5] += a_yz;
         }
     }
+};
+
+} // namespace
+
+void PairLJCut::compute(const LaunchContext& ctx) {
+    auto& f = ctx.frame;
+    if (!ctx.runtime.md.pair_list) {
+        throw std::runtime_error(
+            "PairLJCut::compute: runtime.md.pair_list is null. Did you add a "
+            "NeighborList component to the force phase ahead of LJ?");
+    }
+    const auto& pairs = *ctx.runtime.md.pair_list;
+    const int n_force = cpu::force_count(ctx);
+    // Exclusion-filtered CSR (built once per NL rebuild). See
+    // `rebuild_filtered_list` for the invariant. When no exclusions are
+    // configured we iterate the upstream CSR directly — no copy, no
+    // allocation, no per-pair branch.
+    // Rows (and with them types) change only at a neighbor rebuild. A type
+    // outside the table, e.g. one an MC insertion introduced after build(),
+    // would index past it; refuse it at the rebuild that brings it in.
+    if (n_types_ > 0
+        && (types_source_ != &pairs || pairs.version != types_version_)) {
+        const int* type = f.span(kAtom_type);
+        for (int i = 0; i < n_force; ++i)
+            if (type[i] < 0 || type[i] >= n_types_)
+                throw std::runtime_error(
+                    "PairLJCut: atom type " + std::to_string(type[i])
+                    + " is outside the coefficient table (types 0.."
+                    + std::to_string(n_types_ - 1)
+                    + "); name it in a coefficient before build()");
+        types_source_ = &pairs;
+        types_version_ = pairs.version;
+    }
+
+    const bool use_filtered = any_special_;
+    if (use_filtered
+        && (filtered_source_ != &pairs || pairs.version != filtered_version_)) {
+        rebuild_filtered_list(f, pairs);
+        filtered_version_ = pairs.version;
+        filtered_source_ = &pairs;
+    }
+
+    // LAMMPS-style vflag gating: skip the 6-component pair virial when no
+    // stress consumer is active (plain NVE); forces/energy are unaffected.
+    const bool do_virial = compute_stress_ && ctx.stress_requested;
+    LaunchContext walk = ctx;
+    walk.stress_requested = do_virial;
+
+    // The exclusion-filtered CSR (scale-0 pairs dropped, weights per slot),
+    // or the upstream CSR directly — no copy, no per-pair branch.
+    const md::PairRows rows = use_filtered
+                                  ? md::PairRows{filtered_inum_,
+                                                 pairs.ilist.data(),
+                                                 filtered_numneigh_.data(),
+                                                 filtered_firstneigh_.data(),
+                                                 filtered_neighbors_.data(),
+                                                 &filtered_neighbors_,
+                                                 pairs.version}
+                                  : md::PairRows::of(pairs);
+
+    // Only the per-type table indexes by the force-field type.
+    const int* __restrict k_type =
+        n_types_ > 0 ? f.span(kAtom_type).data() : nullptr;
+    LJCutKernel base;
+    base.type = k_type;
+    base.tab = table_ ? table_->pairs().data() : nullptr;
+    base.scales = use_filtered ? filtered_scale_.data() : nullptr;
+    base.ntypes = n_types_;
+    base.rc_sq = cutoff_sq_;
+    base.sig6 = sigma6_;
+    base.eps4 = double(4) * epsilon_;
+    base.eps24 = double(24) * epsilon_;
+    base.vshift = v_shift_;
+
+    md::PairTotals sums;
+    if (table_ && table_->has_r4()) {
+        // The r^-4 term has its own cutoff and formula per pair: the
+        // generic survivor walk with the scalar kernel.
+        sums = loop_.run(walk, rows, base);
+    } else {
+        LJCutSimdKernel simd{base};
+        simd.px = f.span(kAtom_x);
+        simd.py = f.span(kAtom_y);
+        simd.pz = f.span(kAtom_z);
+        // Per-type coefficients, or partial special weights, vary per pair:
+        // the gathered loop packs each lane's record next to its coordinates.
+        simd.gather = table_.has_value() || has_partial_special_;
+        sums = loop_.run(walk, rows, simd);
+    }
+    const double energy_total = sums.energy;
 
     f.meta.get(kEnergy) += energy_total;
     f.meta.get(kEnergyPair) += energy_total;
-    if (do_virial) {
-        f.meta.get(kStress)[0] += v_xx;
-        f.meta.get(kStress)[1] += v_yy;
-        f.meta.get(kStress)[2] += v_zz;
-        f.meta.get(kStress)[3] += v_xy;
-        f.meta.get(kStress)[4] += v_xz;
-        f.meta.get(kStress)[5] += v_yz;
+    if (do_virial)
+        sums.virial.flush_to(f.meta.get(kStress));
+
+    // ── LJ tail correction (LAMMPS pair_modify tail yes) ─────────────────
+    // A global constant over the fixed type counts: it lands on the first
+    // rank only (the energy/virial reductions sum ranks). The volume is read
+    // every step because barostats move the cell.
+    if (tail_) {
+#ifdef ATV_HAS_MPI
+        const bool mpi = cpu::multi_rank_dd(ctx.runtime);
+#else
+        const bool mpi = false;
+#endif
+        if (!tail_ready_) {
+            const int n_owned = f.nlocal();
+            LJTail t;
+            if (table_) {
+                std::vector<double> cnt(static_cast<std::size_t>(n_types_),
+                                        0.0);
+                for (int i = 0; i < n_owned; ++i)
+                    cnt[static_cast<std::size_t>(k_type[i])] += 1.0;
+#ifdef ATV_HAS_MPI
+                if (mpi)
+                    MPI_Allreduce(MPI_IN_PLACE, cnt.data(), n_types_,
+                                  MPI_DOUBLE, MPI_SUM,
+                                  ctx.runtime.md.dd->cart_comm);
+#endif
+                t = table_->tail(cnt);
+            } else {
+                // Single-type form: every atom is the one LJ type.
+                double n = static_cast<double>(n_owned);
+#ifdef ATV_HAS_MPI
+                if (mpi)
+                    MPI_Allreduce(MPI_IN_PLACE, &n, 1, MPI_DOUBLE, MPI_SUM,
+                                  ctx.runtime.md.dd->cart_comm);
+#endif
+                t = lj_tail_pair(epsilon_, sigma_, std::sqrt(cutoff_sq_), n, n);
+            }
+            etail_pref_ = t.energy;
+            ptail_pref_ = t.virial;
+            tail_ready_ = true;
+        }
+        const bool first_rank = !mpi || ctx.runtime.mpi_rank == 0;
+        if (first_rank) {
+            const double vol = f.box.volume();
+            f.meta.get(kEnergy) += etail_pref_ / vol;
+            f.meta.get(kEnergyPair) += etail_pref_ / vol;
+            if (do_virial)
+                for (int d = 0; d < 3; ++d)
+                    f.meta.get(kStress)[d] += ptail_pref_ / vol;
+        }
     }
 }
 
 void PairLJCut::destroy(const DestroyContext& ctx) {
     (void)ctx;
-    fx_thr_.clear();
-    fy_thr_.clear();
-    fz_thr_.clear();
     special_.clear();
     filtered_neighbors_.clear();
     filtered_scale_.clear();
@@ -841,6 +829,9 @@ void PairLJCut::destroy(const DestroyContext& ctx) {
     filtered_firstneigh_.clear();
     filtered_inum_ = 0;
     filtered_version_ = 0;
+    filtered_source_ = nullptr;
+    loop_.reset();
+    types_source_ = nullptr;
     any_special_ = false;
     has_partial_special_ = false;
 }
@@ -848,18 +839,10 @@ void PairLJCut::destroy(const DestroyContext& ctx) {
 std::size_t PairLJCut::memory_bytes() const {
     // `size()` (live elements) ≈ resident pages — see PairList::bytes.
     std::size_t n = 0;
-    for (const auto& v : fx_thr_)
-        n += v.size() * sizeof(double);
-    for (const auto& v : fy_thr_)
-        n += v.size() * sizeof(double);
-    for (const auto& v : fz_thr_)
-        n += v.size() * sizeof(double);
     n += (filtered_neighbors_.size() + filtered_numneigh_.size()
           + filtered_firstneigh_.size())
          * sizeof(int);
-    n += (filtered_shift_x_.size() + filtered_shift_y_.size()
-          + filtered_shift_z_.size() + filtered_scale_.size())
-         * sizeof(double);
+    n += filtered_scale_.size() * sizeof(double);
     for (const auto& list : special_.by_owner)
         n += list.capacity() * sizeof(std::pair<std::int64_t, double>);
     n += special_.tag_to_owner.size()

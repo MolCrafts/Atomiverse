@@ -23,19 +23,15 @@ __host__ __device__ inline uint32_t morton_3d(uint32_t x, uint32_t y,
 }
 
 /// @brief Compute Morton code from fractional coordinates in [0,1).
-template <typename work_t>
-__host__ __device__ inline uint32_t morton_from_frac(work_t fx, work_t fy,
-                                                     work_t fz) {
+template <typename T>
+__host__ __device__ inline uint32_t morton_from_frac(T fx, T fy, T fz) {
     const uint32_t resolution = 1023; // 10-bit per axis
-    auto clamp = [](work_t v, work_t lo, work_t hi) {
+    auto clamp = [](T v, T lo, T hi) {
         return v < lo ? lo : (v > hi ? hi : v);
     };
-    uint32_t ix =
-        static_cast<uint32_t>(clamp(fx * 1024, work_t(0), work_t(resolution)));
-    uint32_t iy =
-        static_cast<uint32_t>(clamp(fy * 1024, work_t(0), work_t(resolution)));
-    uint32_t iz =
-        static_cast<uint32_t>(clamp(fz * 1024, work_t(0), work_t(resolution)));
+    uint32_t ix = static_cast<uint32_t>(clamp(fx * 1024, T(0), T(resolution)));
+    uint32_t iy = static_cast<uint32_t>(clamp(fy * 1024, T(0), T(resolution)));
+    uint32_t iz = static_cast<uint32_t>(clamp(fz * 1024, T(0), T(resolution)));
     return morton_3d(ix, iy, iz);
 }
 

@@ -22,6 +22,7 @@
 #include "atomiverse/core/ghost_contract.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -79,8 +80,7 @@ class PairCoulSoft : public Pair {
     double inv_rc_ = 0;
     double dU_dlambda_ = 0;
 
-    int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

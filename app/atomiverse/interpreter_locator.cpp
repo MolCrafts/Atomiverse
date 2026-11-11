@@ -50,7 +50,7 @@ InterpreterLocator::InterpreterLocator(const char* atv_python_override,
         const std::string overridden = atv_python_override;
         if (!is_executable(overridden))
             throw std::runtime_error(
-                "atomiverse: ATV_PYTHON='" + overridden
+                "ATV_PYTHON='" + overridden
                 + "' does not name an executable interpreter");
         executable_ = overridden;
         return;
@@ -62,7 +62,7 @@ InterpreterLocator::InterpreterLocator(const char* atv_python_override,
         executable_ = search_path(path, "python");
     if (executable_.empty())
         throw std::runtime_error(
-            "atomiverse: no Python interpreter found (search order: "
+            "no Python interpreter found (search order: "
             "ATV_PYTHON override, then python3 on PATH, then python on "
             "PATH). Activate the environment the wheel was installed "
             "into, or set ATV_PYTHON to its interpreter.");
@@ -72,7 +72,7 @@ void InterpreterLocator::check_abi(const std::string& probed_major_minor,
                                    const std::string& built_major_minor) {
     if (probed_major_minor != built_major_minor)
         throw std::runtime_error(
-            "atomiverse: interpreter Python " + probed_major_minor
+            "interpreter Python " + probed_major_minor
             + " does not match the libpython " + built_major_minor
             + " this launcher was built against (same minor version "
               "required). Point ATV_PYTHON at a Python "

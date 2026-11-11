@@ -5,13 +5,18 @@
 ///
 /// There is no bag named `SCFSolver` / freestanding integral bag / `SCFConfig`.
 /// Each method is a concrete class; parameters are **constructor arguments**
-/// (e.g. `RHF{BasisSet::STO3G, charge, tol}`); **never** `rhf.basis = …`
-/// after default construction. The only I/O currency is `Frame`. Integral
+/// (e.g. `RHF{BasisSet::STO3G, charge, tol}`), fixed after construction;
+/// SCF knobs are public members. The only I/O currency is `Frame`. Integral
 /// **fields** live as method-private members; engines take
 /// `internal::IntegralView` (non-owning refs).
 ///
 /// SCF self-consistency is a **Driver loop**: `MeanFieldMethod<D>` derives
 /// `cpu::Driver<ATV::scf::Phase>` and the pure tag `HF` (not a Component).
+/// Post-HF (`post_hf.h`), CIS(D) (`cisd.h`), spectral G0W0 (`g0w0.h`),
+/// ADC (`adc.h`), direct RPA (`rpa.h`), BSE (`bse.h`), one-shot GF2
+/// (`gf2.h`), TDHF (`tdhf.h`), continuum solvent (`solvent.h`), the nuclear
+/// FD Hessian (`nuclear_hessian.h`), and CPHF response (`response.h`) are
+/// separate types — not methods here.
 /// Nested under an outer MD/Evaluate/Minimize force or energy phase it runs
 /// via `run_nested` → `drive_scf_`. Standalone entry is `run(frame)`. Integrals
 /// and AO workspaces are private. The concrete methods live in `rhf.h` /
@@ -27,7 +32,6 @@
 #pragma once
 
 #include <array>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -44,21 +48,12 @@
 #include "atomiverse/cpu/electronic/xl_bomd.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/scf/basis_set.h"
-#include "atomiverse/cpu/scf/casci.h"
-#include "atomiverse/cpu/scf/casscf.h"
-#include "atomiverse/cpu/scf/cc2.h"
-#include "atomiverse/cpu/scf/ccsd.h"
 #include "atomiverse/cpu/scf/dense_matrix.h"
-#include "atomiverse/cpu/scf/fci.h"
 #include "atomiverse/cpu/scf/gradient_result.h"
 #include "atomiverse/cpu/scf/grid.h"
-#include "atomiverse/cpu/scf/mp2.h"
-#include "atomiverse/cpu/scf/mp3.h"
-#include "atomiverse/cpu/scf/mp4.h"
 #include "atomiverse/cpu/scf/internal/integral_view.h"
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
-#include "atomiverse/cpu/scf/nevpt2.h"
 #include "atomiverse/cpu/scf/scf_enums.h"
 #include "atomiverse/cpu/scf/scf_guess.h"
 #include "atomiverse/cpu/scf/slater_determinant.h"
@@ -68,21 +63,76 @@
 #include "atomiverse/cpu/scf/stages/mix_stage.h"
 #include "atomiverse/cpu/scf/stages/rohf_couple_stage.h"
 #include "atomiverse/cpu/scf/stages/scf_converged.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
-#include "atomiverse/cpu/vibration/hessian_result.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 namespace ATV {
 namespace cpu {
 
 namespace electronic {
 class ASPCPredictor; // Kolafa density extrapolator (aspc_predictor.h)
-}
+template <typename Method>
+class CarParrinelloMethod;
+template <typename Method>
+class XlBomdMethod;
+} // namespace electronic
 
 namespace scf {
 
 namespace internal {
 class Pcm; // continuum solvent private workspace (pcm.h)
 }
+
+// Post-HF, solvent, and response are friends so they can read the converged
+// reference. They are not methods of this class (PySCF: MP2(mf),
+// SCFWithSolvent, cphf.solve).
+template <typename Method>
+class MP2;
+template <typename Method>
+class MP3;
+template <typename Method>
+class MP4;
+template <typename Method>
+class FCI;
+template <typename Method>
+class CASCI;
+template <typename Method>
+class CASSCF;
+template <typename Method>
+class NEVPT2;
+template <typename Method>
+class CCSD;
+template <typename Method>
+class CC2;
+template <typename Method>
+class WithSolvent;
+template <typename Method>
+class Hessian;
+template <typename Method>
+class Polarizability;
+template <typename Method>
+class Stability;
+template <typename Method>
+class TDA;
+template <typename Method>
+class TDHF;
+template <typename Method>
+class TDDFT;
+template <typename Method>
+class SfTDA;
+template <typename Method>
+class SfTDHF;
+template <typename Method>
+class CISD;
+template <typename Method>
+class G0W0;
+template <typename Method>
+class ADC;
+template <typename Method>
+class DirectRPA;
+template <typename Method>
+class BSE;
+template <typename Method>
+class GF2;
 
 /// @brief Shared view for observers/recorders after a method run.
 ///
@@ -123,9 +173,85 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
                         public cpu::QmEngine,
                         public cpu::EmbeddingEngine {
   public:
-    // ── Geometry / basis (inputs from Frame + these members) ──────────
-    BasisSet basis = BasisSet::STO3G;
-    int charge = 0;
+    /// @brief Set OpenMP threads for both integral setup and SCF stages.
+    /// @param n Positive thread count; zero keeps the runtime default.
+    void set_threads(int n);
+    bool requires_full_frame() const override { return true; }
+    bool provides_energy() const override { return true; }
+    bool provides_force() const override { return compute_force; }
+    cpu::TimestepConsumer* timestep_consumer() override { return this; }
+    /// @brief A minimizer may keep this method's accepted line-search trial.
+    ///
+    /// Line-search trials and committed solves share the plain warm-start
+    /// density, so a kept trial is the converged SCF at the accepted geometry
+    /// and differs from a replay only through its starting guess (inside the
+    /// SCF tolerance). A guess owner that ticks with the nuclear clock — the
+    /// ASPC predictor, XL-BOMD or Car–Parrinello — makes trials and commits
+    /// differ, so any of them disables reuse.
+    bool trial_invariant() const override {
+        return !cpmd && !xl_bomd && !use_predictor_;
+    }
+
+  private:
+    template <typename Method>
+    friend class ATV::cpu::electronic::CarParrinelloMethod;
+    template <typename Method>
+    friend class ATV::cpu::electronic::XlBomdMethod;
+    template <typename Method>
+    friend class MP2;
+    template <typename Method>
+    friend class MP3;
+    template <typename Method>
+    friend class MP4;
+    template <typename Method>
+    friend class FCI;
+    template <typename Method>
+    friend class CASCI;
+    template <typename Method>
+    friend class CASSCF;
+    template <typename Method>
+    friend class NEVPT2;
+    template <typename Method>
+    friend class CCSD;
+    template <typename Method>
+    friend class CC2;
+    template <typename Method>
+    friend class WithSolvent;
+    template <typename Method>
+    friend class Hessian;
+    template <typename Method>
+    friend class Polarizability;
+    template <typename Method>
+    friend class Stability;
+    template <typename Method>
+    friend class TDA;
+    template <typename Method>
+    friend class TDHF;
+    template <typename Method>
+    friend class TDDFT;
+    template <typename Method>
+    friend class SfTDA;
+    template <typename Method>
+    friend class SfTDHF;
+    template <typename Method>
+    friend class CISD;
+    template <typename Method>
+    friend class G0W0;
+    template <typename Method>
+    friend class ADC;
+    template <typename Method>
+    friend class DirectRPA;
+    template <typename Method>
+    friend class BSE;
+    template <typename Method>
+    friend class GF2;
+
+  public:
+    // ── Identity (constructor arguments, fixed after construction) ────
+    /// @brief Gaussian basis set.
+    const BasisSet basis;
+    /// @brief Molecular charge [e] (electrons = ΣZ − charge).
+    const int charge;
 
     /// @brief Local atom indices treated as ghosts (BSSE counterpoise).
     ///
@@ -133,7 +259,7 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// zero nuclear charge and contribute no electrons (Boys–Bernardi
     /// counterpoise: basis-only sites). Empty = no ghosts (default;
     /// bit-identical to the pre-ghost path). Ghost markers live on the
-    /// method, never on Frame (Frame purity; molrs Element forbids Z ≤ 0).
+    /// method, never on Frame (Frame purity; molpy Element forbids Z ≤ 0).
     /// Non-empty + Kohn–Sham (RKS/UKS) throws — KS grid radii key off Z
     /// and are not wired for ghosts in this link.
     std::vector<int> ghost_atoms;
@@ -158,7 +284,9 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// Combining x2c with an ECP-carrying atom throws at run(): relativistic
     /// ECPs already bake scalar relativity into their parameterization, so
     /// stacking x2c on top would double-count it (per-element gate).
-    /// Analytic forces with x2c=true throw (h^X2C gradient not derived).
+    /// Analytic forces replace Tr[P·(dT+dV)] by Tr[P·dh^X2C]
+    /// (`pyscf.x2c.sfx2c1e_grad`, contracted basis). Property operators
+    /// are not picture-change transformed. Car–Parrinello with x2c throws.
     ///
     /// **Picture-change warning:** expectation values of property operators
     /// (dipole, ESP, multipoles) evaluated on x2c orbitals with the
@@ -211,28 +339,6 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        `ri == RI::None`). An element without a JKFIT table row
     ///        throws at Fock-build setup — no fallback.
     AuxBasis aux_basis = AuxBasis::Def2JKFIT;
-
-    /// @brief Number of lowest occupied spatial MOs excluded from the MP2
-    ///        correlation sum (frozen core). Default 0 = correlate all
-    ///        occupied orbitals. Matches PySCF `mp.MP2(mf, frozen=N)`.
-    ///        Closed-shell RMP2 / RI-MP2 only; UMP2 throws if `frozen > 0`.
-    int frozen = 0;
-
-    /// @brief Opposite-spin scale for MP2 correlation (dimensionless).
-    ///
-    /// Default 1.0 recovers plain RMP2/UMP2/RI-MP2. Grimme SCS-MP2 uses
-    /// 1.2 (with `mp2_ss_scale = 1/3`); SOS-MP2 uses 1.3 (with
-    /// `mp2_ss_scale = 0`). Applied as
-    /// \(E_{\mathrm{corr}}=c_{\mathrm{OS}}E_{\mathrm{OS}}+c_{\mathrm{SS}}E_{\mathrm{SS}}\);
-    /// unscaled channels remain on `MP2Result::e_corr_os` /
-    /// `e_corr_ss`.
-    double mp2_os_scale = 1.0;
-
-    /// @brief Same-spin scale for MP2 correlation (dimensionless).
-    ///
-    /// Default 1.0 = plain MP2; SCS-MP2 = 1/3; SOS-MP2 = 0.
-    /// See `mp2_os_scale`.
-    double mp2_ss_scale = 1.0;
 
     // ── Coulomb algorithm (CFMM) — hf-capability-gaps-21-cfmm ─────────
     /// @brief J-matrix algorithm. `Coulomb::Direct` (default) keeps the
@@ -291,18 +397,17 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     double hybrid_alpha_override = -1.0;
     const MolecularGrid* fixed_grid = nullptr;
 
-    /// @brief When true, materialize the dense ERI tensor (MP2/FCI/CUDA).
-    bool compute_eri = false;
+    /// @brief Process memory budget [MB], using PySCF's 95% cache admission.
+    /// The exact J/K engine streams screened quartets when s8 does not fit.
+    double max_memory_mb = 4000.0;
+
+    /// @brief Distribute exact HF J/K over MPI_COMM_WORLD (default false).
+    /// Requires ATV_USE_MPI and initialized MPI; every rank calls the solve
+    /// with identical controls and a complete replicated molecular Frame.
+    bool mpi = false;
 
     /// @brief When true (default), nested force-slot runs write forces.
     bool compute_force = true;
-
-    /// @brief Accelerate the closed-shell CCSD amplitude iteration with Pulay
-    ///        amplitude DIIS (`internal::CcAmplitudeDiis`). Default true.
-    ///        When false the closed-shell energy path (`RHF::ccsd`) uses plain
-    ///        Jacobi updates — the same fixed point, only slower — which is the
-    ///        DIIS-vs-Jacobi parity leg of the CCSD regression. Dimensionless.
-    bool cc_diis = true;
 
     /// @brief Maximum-overlap occupation selection for ΔSCF (default Off =
     ///        energy Aufbau; bit-identical to the pre-MOM path). Set to
@@ -364,28 +469,6 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// "ionize"). Zero field = vacuum path (bit-identical).
     std::array<double, 3> external_field{{0.0, 0.0, 0.0}};
 
-    // ── Implicit solvent (hf-capability-gaps-16-solvent) ───────────────
-    /// @brief Solvent dielectric constant ε (dimensionless). Default 0
-    ///        disables continuum solvent entirely (bit-identical vacuum
-    ///        path). Typical water: 78.4.
-    double solvent_eps = 0.0;
-
-    /// @brief Multiplier on Bondi vdW radii for the cavity spheres
-    ///        (dimensionless; default 1.2, Q-Chem / PySCF convention).
-    double solvent_radii_scale = 1.2;
-
-    /// @brief Dielectric scaling convention in f(ε)=(ε−1)/(ε+x) for
-    ///        conductor-like models: 0 → C-PCM (Barone–Cossi / PySCF
-    ///        default); 0.5 → original COSMO (Klamt). Ignored when
-    ///        `solvent_model == SolventModel::IEFPCM` (which uses
-    ///        f=(ε−1)/(ε+1)). Dimensionless.
-    double solvent_x = 0.0;
-
-    /// @brief Continuum model. Default `CPCM` (conductor-like). Set
-    ///        `IEFPCM` for integral-equation-formalism PCM (Cancès–
-    ///        Mennucci–Tomasi; PySCF `method='IEF-PCM'`).
-    SolventModel solvent_model = SolventModel::CPCM;
-
     // ── Dispersion (molecular DFT-D3 BJ / DFT-D4) ─────────────────────
     /// @brief When true, add PBE-D3(BJ) dispersion (Grimme et al. 2011) to
     ///        the total energy after SCF. Geometry-only additive term —
@@ -398,7 +481,6 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     ///        if both set — prefer one). Public evaluator: `scf::D4`.
     bool d4 = false;
 
-
     /// @brief True when Car–Parrinello electronic dynamics is enabled (via wrapper).
     bool is_cpmd() const { return cpmd; }
     /// @brief True when XL-BOMD auxiliary-density dynamics is enabled.
@@ -406,7 +488,8 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
     /// @brief XL-BOMD dissipation order K (meaningful when `is_xl_bomd()`).
     int xl_bomd_order() const { return xl_bomd_k; }
 
-protected:
+  protected:
+    int requested_threads_ = 0;
     // ── Car–Parrinello molecular dynamics (esmm-cpmd-04) ──────────────
     /// @brief Propagate the occupied orbitals with a fictitious mass instead
     ///        of re-converging the SCF at every nuclear step (Car &
@@ -492,7 +575,7 @@ protected:
     /// Changing it between runs re-seats the propagators (history dropped).
     int xl_bomd_k = 5;
 
-public:
+  public:
     /// @brief XL-BOMD auxiliary-density propagation steps taken (one per
     ///        converged nested run). @return Count; 0 under BOMD.
     int xl_advances() const { return xl_advances_; }
@@ -518,10 +601,13 @@ public:
     /// @throws std::invalid_argument when `dt_fs` is not finite and > 0.
     void set_timestep(double dt_fs) override;
 
-    MeanFieldMethod();
+    /// @brief Fix the method identity; concrete methods set their defaults.
+    /// @param basis Gaussian basis set.
+    /// @param charge Molecular charge [e].
+    MeanFieldMethod(BasisSet basis, int charge);
     ~MeanFieldMethod() override;
-    MeanFieldMethod(MeanFieldMethod&&) noexcept;
-    MeanFieldMethod& operator=(MeanFieldMethod&&) noexcept;
+    MeanFieldMethod(MeanFieldMethod&&);
+    MeanFieldMethod& operator=(MeanFieldMethod&&) = delete;
     MeanFieldMethod(const MeanFieldMethod&) = delete;
     MeanFieldMethod& operator=(const MeanFieldMethod&) = delete;
 
@@ -547,7 +633,7 @@ public:
     ///        `frame.meta[kEnergy]`; Hartree internals via `energy()`,
     ///        loop state via `converged()`/`stop_reason()`/`iterations()`,
     ///        wavefunction via `determinant()`.
-    /// @param frame  Geometry (Å) + Z in type column.
+    /// @param frame  Geometry (Å) + Z in the atomic_number column.
     /// @param guess  Optional density guess.
     /// @throws std::logic_error when `cpmd` is set — Car–Parrinello is a
     ///         nested-MD-force-slot method (there is no nuclear trajectory
@@ -568,152 +654,6 @@ public:
     ///         see `run`).
     GradientResult forces(Frame& frame, const SCFInitialGuess* guess = nullptr);
 
-    /// @brief Canonical MP2 on top of a fresh SCF run (materializes ERI).
-    ///
-    /// Closed-shell `RHF` → RMP2 (or RI-MP2 when `ri != RI::None`);
-    /// unrestricted `UHF` → UMP2 (spin-orbital, unprojected);
-    /// restricted-open `ROHF` → ROMP2 (PySCF: shared spatial MOs +
-    /// semi-canonical \(\varepsilon_i^\sigma = (C^\dagger F_\sigma C)_{ii}\),
-    /// then the UMP2 doubles sum). Closed-shell `RKS` with a double-hybrid
-    /// XC (e.g. `XCType::B2PLYP`) is the same RMP2 kernel on the KS
-    /// orbitals — set `mp2_os_scale = mp2_ss_scale = hybrid_pt2_fraction(xc)`
-    /// so \(E_{\mathrm{tot}}=E_{\mathrm{KS}}+a_c E_{\mathrm{MP2}}\)
-    /// (Grimme B2PLYP: a_c = 0.27). GHF throws. Optional density guess is
-    /// forwarded to the reference SCF (needed for multi-minima cases such as
-    /// triplet O₂ UHF). Member `frozen` excludes the lowest N occupied spatial
-    /// MOs from the correlation sum (RMP2 / RI-MP2); UMP2/ROMP2 reject
-    /// `frozen > 0`. Members `mp2_os_scale` / `mp2_ss_scale` apply Grimme
-    /// spin-component scaling (defaults 1 / 1 = plain MP2; SCS-MP2 = 1.2 / ⅓;
-    /// B2PLYP = 0.27 / 0.27).
-    /// @param frame  Geometry; drives a fresh SCF then adds the correction.
-    /// @param guess  Optional density-matrix guess for the reference SCF.
-    /// @return MP2 correlation + total energy [Hartree]; unscaled OS/SS on
-    ///         the result fields.
-    MP2Result mp2(Frame& frame, const SCFInitialGuess* guess = nullptr);
-
-    /// @brief Analytic nuclear forces on the total MP2 energy E_HF + E_corr
-    ///        [eV/Å]. Canonical RMP2 (RHF) or UMP2 (UHF); no frozen core, no
-    ///        RI, Cartesian AO. Drives a fresh SCF (materializes ERI), builds
-    ///        the MP2 Lagrangian densities + Z-vector response, and contracts
-    ///        with skeleton integral derivatives. Matches PySCF
-    ///        `mp.MP2` / `mp.UMP2` `.nuc_grad_method().kernel()` on the same
-    ///        geometry.
-    /// @param frame  Geometry; forces written to fx/fy/fz; energy to meta.
-    /// @param guess  Optional density-matrix guess for the reference SCF
-    ///               (needed for multi-minima UHF cases such as triplet O₂).
-    /// @return Forces [eV/Å] and total MP2 energy [eV].
-    /// @throws std::invalid_argument on ROHF / RI / frozen>0 / SCS scales /
-    ///         non-converged SCF / spherical basis (no fallback).
-    GradientResult mp2_forces(Frame& frame,
-                              const SCFInitialGuess* guess = nullptr);
-
-    /// @brief Canonical closed-shell MP3 on top of a fresh RHF run
-    ///        (materializes ERI). \(E_{\mathrm{corr}}=E^{(2)}+E^{(3)}\)
-    ///        in the spin-orbital Szabo–Ostlund / Psi4 diagram sum. Open-shell,
-    ///        RI, and SCS scales are rejected (no fallback). Member `frozen`
-    ///        freezes the lowest N occupied spatial MOs.
-    /// @param frame  Geometry; drives a fresh SCF then adds the correction.
-    /// @param guess  Optional density-matrix guess for the reference SCF.
-    /// @return MP3 correlation pieces + total energy [Hartree].
-    MP3Result mp3(Frame& frame, const SCFInitialGuess* guess = nullptr);
-
-    /// @brief Canonical closed-shell MP4(SDTQ) on top of a fresh RHF run
-    ///        (materializes ERI). \(E_{\mathrm{corr}}=E^{(2)}+E^{(3)}+E^{(4)}\)
-    ///        with fourth-order singles, doubles, triples, and renormalization
-    ///        (disconnected-Q) channels. Open-shell, RI, and SCS scales are
-    ///        rejected (no fallback). Member `frozen` freezes the lowest N
-    ///        occupied spatial MOs.
-    /// @param frame  Geometry; drives a fresh SCF then adds the correction.
-    /// @param guess  Optional density-matrix guess for the reference SCF.
-    /// @return MP4 correlation pieces + total energy [Hartree].
-    MP4Result mp4(Frame& frame, const SCFInitialGuess* guess = nullptr);
-
-    /// @brief Tiny full-CI on top of a fresh RHF-style run (materializes ERI).
-    /// @param frame  Geometry; drives a fresh SCF then adds the correction.
-    /// @return Full-CI correlation + total energy.
-    FCIResult fci(Frame& frame);
-
-    /// @brief Closed-shell CASCI on top of a fresh RHF run (materializes ERI).
-    ///
-    /// Dense complete-active-space CI: frozen doubly-occupied core + full CI
-    /// in `ncas` spatial orbitals with `nelecas` active electrons. Matches
-    /// PySCF `mcscf.CASCI(mf, ncas, nelecas)` on the same RHF orbitals.
-    /// Open-shell (UHF/ROHF/GHF) throws — no silent fallback.
-    /// @param frame   Geometry; drives a fresh SCF then the active-space CI.
-    /// @param ncas    Number of active spatial orbitals (dimensionless).
-    /// @param nelecas Number of active electrons (even; closed-shell).
-    /// @return CASCI total + correlation energy [Hartree].
-    CASCIResult casci(Frame& frame, int ncas, int nelecas);
-
-    /// @brief Closed-shell CASSCF on top of a fresh RHF run (materializes ERI).
-    ///
-    /// Dense complete-active-space CI with orbital optimization: frozen
-    /// doubly-occupied core + full CI in `ncas` spatial orbitals; non-redundant
-    /// orbital rotations (core–active, active–virtual, core–virtual) by
-    /// diagonal Newton on the generalized Fock gradient. Matches PySCF
-    /// `mcscf.CASSCF(mf, ncas, nelecas)` on the same closed-shell foothold.
-    /// Open-shell (UHF/ROHF/GHF) throws — no silent fallback.
-    /// @param frame   Geometry; drives a fresh SCF then the CASSCF macro loop.
-    /// @param ncas    Number of active spatial orbitals (dimensionless).
-    /// @param nelecas Number of active electrons (even; closed-shell).
-    /// @return CASSCF total + correlation energy [Hartree].
-    CASSCFResult casscf(Frame& frame, int ncas, int nelecas);
-
-    /// @brief Closed-shell strongly contracted NEVPT2 on a fresh RHF→CASSCF
-    ///        reference (materializes ERI).
-    ///
-    /// Runs CASSCF(ncas, nelecas) then the eight Angeli SC-NEVPT2 perturber
-    /// classes (PySCF `mrpt.NEVPT`). On a full-valence CAS with no external
-    /// orbitals the PT2 correction is identically zero. Open-shell
-    /// (UHF/ROHF/GHF) throws — no silent fallback.
-    /// @param frame   Geometry; drives a fresh SCF then CASSCF + NEVPT2.
-    /// @param ncas    Number of active spatial orbitals (dimensionless).
-    /// @param nelecas Number of active electrons (even; closed-shell).
-    /// @return NEVPT2 total + PT2 correlation [Hartree] vs CASSCF.
-    NEVPT2Result nevpt2(Frame& frame, int ncas, int nelecas);
-
-    /// @brief Closed-shell CCSD on top of a fresh RHF run (materializes ERI).
-    ///
-    /// Spin-orbital Gauss–Stanton CCSD (Stanton et al. 1991; Gauss & Stanton
-    /// 1995). Matches PySCF `cc.CCSD` on the same RHF reference. Open-shell
-    /// (UHF/ROHF/GHF) throws — no silent fallback.
-    /// @param frame Geometry; drives a fresh SCF then the amplitude solve.
-    /// @return CCSD correlation + total energy [Hartree], iteration count.
-    CCSDResult ccsd(Frame& frame);
-
-    /// @brief Nuclear forces on the total closed-shell CCSD energy
-    ///        E_HF + E_CCSD [eV/Å]. Drives a fresh RHF (materializes ERI) then
-    ///        forms forces by central finite difference of the analytic CCSD
-    ///        energy (h = 1e-4 Bohr). Matches PySCF
-    ///        `cc.CCSD.nuc_grad_method().kernel()` force values on the same
-    ///        geometry (Cartesian AO, no frozen core) to the regression gate.
-    ///        Open-shell / RI / frozen-core throw — no silent fallback.
-    /// @param frame Geometry; forces written to fx/fy/fz; energy to meta.
-    /// @param guess Optional density-matrix guess for the reference SCF.
-    /// @return Forces [eV/Å] and total CCSD energy [eV].
-    GradientResult ccsd_forces(Frame& frame,
-                               const SCFInitialGuess* guess = nullptr);
-
-    /// @brief Closed-shell CC2 on top of a fresh RHF run (materializes ERI).
-    ///
-    /// Approximate CC doubles (Christiansen, Koch, Jørgensen, Chem. Phys.
-    /// Lett. **243**, 409 (1995)): full singles residual, doubles residual
-    /// truncated to ≤ linear in T₂ with the T₁-dressed Fock. Matches PySCF
-    /// `cc.RCCSD` with `cc2=True`. Open-shell throws — no silent fallback.
-    /// @param frame Geometry; drives a fresh SCF then the amplitude solve.
-    /// @return CC2 correlation + total energy [Hartree], iteration count.
-    CC2Result cc2(Frame& frame);
-
-    /// @brief Closed-shell CCSD(T) on top of a fresh RHF run (materializes ERI).
-    ///
-    /// Runs the same CCSD amplitude solve as `ccsd`, then the non-iterative
-    /// (T) correction (Raghavachari 1989; Watts–Gauss–Bartlett 1993). Matches
-    /// PySCF `cc.CCSD(...).ccsd_t()` on the same RHF reference. Open-shell
-    /// throws — no silent fallback.
-    /// @param frame Geometry; drives a fresh SCF then CCSD + (T).
-    /// @return CCSD(T) correlation pieces + total energy [Hartree].
-    CCSDTResult ccsd_t(Frame& frame);
-
     /// @brief The wavefunction of the most recent run (last iterate when not
     ///        converged). Empty (0 electrons, 0 orbitals) before any run.
     /// @return The owned Slater determinant (Hartree internals).
@@ -721,12 +661,6 @@ public:
     /// @brief Total SCF energy of the most recent run.
     /// @return E_total [Hartree] (includes E_disp when `d3bj`/`d4` is set).
     double energy() const { return e_total_; }
-    /// @brief Electrostatic continuum free-energy contribution of the most
-    ///        recent run (ΔG_el = ½ Σ_k q_k V_k). Zero when
-    ///        `solvent_eps == 0`. Non-electrostatic terms are not included.
-    ///        Valid for C-PCM, COSMO, and IEF-PCM.
-    /// @return ΔG_el [Hartree].
-    double e_solvent() const { return e_solvent_; }
     /// @brief DFT-D3(BJ)/DFT-D4 dispersion contribution of the most recent run.
     ///        Zero when both `d3bj` and `d4` are false.
     /// @return E_disp [Hartree].
@@ -748,10 +682,11 @@ public:
     /// @brief Observer handle (shared_ptrs survive driver ownership moves).
     /// @return Shared view of determinant / shells for cube writers.
     MeanFieldOutputs result_handle() const {
-        return {det_sp_,
-                std::shared_ptr<const std::vector<native::Shell>>(ints_shells_sp_),
-                has_result_sp_,
-                std::shared_ptr<const xt::xtensor<double, 2>>(ints_c2s_sp_)};
+        return {
+            det_sp_,
+            std::shared_ptr<const std::vector<native::Shell>>(ints_shells_sp_),
+            has_result_sp_,
+            std::shared_ptr<const xt::xtensor<double, 2>>(ints_c2s_sp_)};
     }
 
     Derived& with_gradient(bool enabled) & noexcept {
@@ -774,7 +709,22 @@ public:
         return static_cast<Derived&&>(*this);
     }
 
+    /// @brief Immutable XC provider retained by this method (null for HF/ROKS).
+    /// @return Shared provider for independent geometry evaluations.
+    const std::shared_ptr<const ATV::electronic::XcFunctional>&
+    xc_functional() const {
+        return xc_functional_;
+    }
+
   protected:
+    /// @brief Admit a CPU molecular XC provider and retain its lifetime.
+    /// @param functional Immutable provider. @param spin Method spin convention.
+    /// @return Built-in identity or Custom for an external semi-local provider.
+    xc::XCType select_functional_(
+        std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+        ATV::electronic::XcSpin spin);
+    std::shared_ptr<const ATV::electronic::XcFunctional> xc_functional_;
+
     void set_predictor_(int order, int corrector_steps, double corrector_tol,
                         bool fallback);
 
@@ -785,16 +735,21 @@ public:
     /// @brief Fixed by the concrete subclass (RHF/UHF/RKS/UKS).
     SpinType spin_ = SpinType::Restricted;
     MeanFieldType method_ = MeanFieldType::HF;
-    XCType xc_type_ = XCType::LSDA;
+    xc::XCType xc_type_ = xc::XCType::LSDA;
     int n_alpha_ = 0;
     int n_beta_ = 0;
 
     /// @brief Set n_alpha/n_beta from electron count (and subclass rules).
     virtual void resolve_occupation(int n_electrons) = 0;
 
+    /// @brief Materialize working-basis ERIs only for a post-HF consumer.
+    void materialize_eri_();
+    /// Borrow the current molecular RHF Coulomb cache after convergence.
+    [[nodiscard]] const internal::ExactJK* post_hf_coulomb_cache_() const;
+
     /// @brief Non-owning view of this method's private integral **members**
     ///        (shells, S, c2s, dense ERI when materialized) for derived
-    ///        post-run analyses (e.g. `RHF::stability()`). Not a bag type —
+    ///        post-run analyses (`Stability`, `TDA`). Not a bag type —
     ///        only binds refs to the expanded fields below. Never public.
     [[nodiscard]] internal::IntegralView integral_view_() const {
         return internal::IntegralView{
@@ -824,37 +779,6 @@ public:
             ints_shell_data_,
         };
     }
-
-    /// @brief Central finite-difference nuclear Hessian [eV/Å²] from analytic
-    ///        forces — the shared skeleton of the RKS/UKS/ROHF FD Hessian.
-    ///
-    /// Snapshots the reference geometry r0, then loops atoms (outer) × axes
-    /// (inner) with the atom-major/axis-minor column index `col = 3A+d`.
-    /// For each column it evaluates the caller's forces functor at +h then
-    /// −h (step **h = 1e-4 Bohr**, frozen to the offline PySCF pin), central-
-    /// differences `H_{row,col} = −(F(+h)−F(−h))/(2h)` with the eV/Å↔Ha/Bohr
-    /// unit constants, restores the geometry to r0, and symmetrizes
-    /// `½(H+Hᵀ)` to absorb FD noise. The displacement loop is serial (no
-    /// added parallelism — the float reduction order is a frozen replay
-    /// invariant). Constructing a fresh solver per ±h displacement (no
-    /// DIIS/MO warm-start bleed) and throwing on non-convergence are the
-    /// **functor's** responsibility; this skeleton only differences forces.
-    /// @param frame     Geometry (Å, atom-major); mutated during the sweep and
-    ///                  restored to r0 on return. The reference wavefunction /
-    ///                  meta energy is the caller's to rebuild after return.
-    /// @param forces_at Analytic forces at the frame's current geometry
-    ///                  [eV/Å]; called 2·3N times (fresh solver each call).
-    /// @return Symmetric nuclear Hessian [eV/Å²], shape [3N, 3N], `col = 3A+d`.
-    vib::HessianResult central_difference_nuclear_hessian(
-        Frame& frame, const std::function<GradientResult(Frame&)>& forces_at);
-
-    /// @brief Throw if the converged reference cannot support an analytic
-    ///        second derivative: SCF non-convergence, spherical AOs, or ECP.
-    /// @param method_name Fully-qualified method label, e.g. "RHF::hessian".
-    /// @param ints        View of this method's integral members.
-    /// @throws std::runtime_error on non-convergence / spherical / ECP.
-    void check_hessian_preconditions(std::string_view method_name,
-                                     const internal::IntegralView& ints) const;
 
   private:
     // ── Per-run SCF iteration state — plainly-named private members ────────────
@@ -892,8 +816,13 @@ public:
     double e_coulomb_ = 0;         ///< Coulomb (J) energy [Hartree].
     double e_xc_grid_ = 0;         ///< Grid XC energy [Hartree].
     double e_exact_exchange_ = 0;  ///< Hybrid exact-exchange energy [Hartree].
-    double e_solvent_ = 0;         ///< Continuum ΔG_el [Hartree] (0 when off).
-    double e_disp_ = 0; ///< DFT-D3(BJ)/D4 E_disp [Hartree] (0 when off).
+    /// Bound by `WithSolvent` only. Vacuum is eps 0.
+    double solvent_eps_ = 0.0;
+    double solvent_radii_scale_ = 1.2;
+    double solvent_x_ = 0.0;
+    SolventModel solvent_model_ = SolventModel::CPCM;
+    double e_solvent_ = 0; ///< Continuum ΔG_el [Hartree] (0 when off).
+    double e_disp_ = 0;    ///< DFT-D3(BJ)/D4 E_disp [Hartree] (0 when off).
     double e_pcm_fock_half_ = 0; ///< ½ Tr[V_pcm P] [Hartree] for energy peel.
     double int_n_alpha_ = 0;     ///< Grid-integrated α electron count.
     double int_n_beta_ = 0;      ///< Grid-integrated β electron count.
@@ -922,15 +851,20 @@ public:
         int max_iter = -1;         ///< Budget override; <0 ⇒ member `max_iter`.
         double tol_override = -1;  ///< |ΔE| tol override; <0 ⇒ member `tol`.
         bool apply_aspc = true; ///< ASPC front/back; false on recursive call.
-        bool nested = false;    ///< Entered from an outer loop's force/energy
-                                ///< slot (the nuclear clock ticks) — XL-BOMD
-                                ///< propagates only on these entries.
+        /// Read and update the plain last-density warm start. Independent of
+        /// `apply_aspc`: a minimizer's line-search trial warm-starts (and
+        /// leaves its density for the next solve) without touching the
+        /// ASPC / XL histories.
+        bool warm_start = true;
+        bool nested = false; ///< Entered from an outer loop's force/energy
+                             ///< slot (the nuclear clock ticks) — XL-BOMD
+                             ///< propagates only on these entries.
         /// Accumulate (`+=`) into `kEnergy` / `kEnergyElectronic` / `kAtom_f*`
         /// instead of overwriting. True on the **in-plan** entry
         /// (`run_nested_erased`), where the hosting driver owns zeroing and
         /// this method is one co-author among however many sources the loop
         /// binds. False on the **standalone** entries (`run`, `forces`,
-        /// `mp2_forces`, `ccsd_forces`): "the mutating entry always writes" is
+        /// post-HF forces): "the mutating entry always writes" is
         /// their documented Frame-out contract, and overwrite is the correct
         /// self-zeroing for a sole author that cannot have a co-author.
         bool accumulate = false;
@@ -979,7 +913,8 @@ public:
     ///        `cpmd_step_`. Returns a view bound to those members.
     /// @param frame Geometry [Å]; already position-guarded by the caller.
     /// @param compute_pvp When true, assemble ⟨∇|V|∇⟩ (x2c).
-    internal::IntegralView rebuild_integrals_(const Frame& frame, bool compute_pvp);
+    internal::IntegralView rebuild_integrals_(const Frame& frame,
+                                              bool compute_pvp);
 
     /// @brief Lazily wire the five stages + `ScfConverged` and compile the Plan.
     ///        Deferred to first `drive_scf_` so member config (grid, level
@@ -1054,6 +989,14 @@ public:
     bool driver_built_ = false;
     /// Address the stages were wired to; a mismatch on `this` flags a move.
     const void* wired_self_ = nullptr;
+    /// Parent Runtime of a nested mount (`build_on`); the SCF stage plan runs
+    /// on it instead of a private backend. Null for standalone entries.
+    cpu::Runtime* host_runtime_ = nullptr;
+    /// The stage plan is registered on `host_runtime_` for the solve in
+    /// progress (built at its start, released at its end or on unwind).
+    bool host_registered_ = false;
+    /// @brief Release the stage plan from the parent Runtime, if registered.
+    void release_host_plan_();
 
     // Most recent analytic gradient (forces() return + force-slot write).
     GradientResult last_grad_;
@@ -1116,7 +1059,9 @@ public:
     ///        electrons one velocity-Verlet/RATTLE step.
     /// @param frame Geometry in / forces + energies out (accumulated with
     ///        `+=`, since MD zeroes them at `pre_force`).
-    void cpmd_step_(Frame& frame);
+    /// @param advance_electrons False for force preparation: evaluate a copy
+    ///        of the electronic state without transport/history mutations.
+    void cpmd_step_(Frame& frame, bool advance_electrons);
 
     // ASPC (density extrapolation across outer MD steps)
     bool use_predictor_ = false;

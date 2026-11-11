@@ -8,9 +8,12 @@
 /// Collinear spin-GGA (same as GPW `xc_grid_gga_spin`):
 ///   v_σ = vrho_σ − div[ 2 vσ_σσ ∇ρ_σ + vσ_αβ ∇ρ_σ̄ ].
 #include "atomiverse/cpu/planewave/internal/xc_builder.h"
+#include "atomiverse/cpu/planewave/internal/xc_quadrature.h"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
+#include <stdexcept>
 
 namespace ATV {
 namespace cpu {
@@ -77,13 +80,118 @@ inline void unpack_half_to_sphere(const GVectorList& gv, int ng, int nx, int ny,
     }
 }
 
+// One point prescription for ordinary XC and its finite-difference response.
+// Gradients retain their spectral definition when a density sample is clipped.
+struct XcPointInput {
+    double rho[2]{};
+    double gradient[2][3]{};
+};
+struct XcPointOutput {
+    AccReal energy = 0;
+    AccReal potential[2]{};
+    AccReal flux[2][3]{};
+};
+XcPointOutput evaluate_point(cpu::xc::XCType xc, bool gga,
+                             const XcPointInput& input) {
+    XcPointOutput result;
+    const double ra = std::max(input.rho[0], 0.0);
+    const double rb = std::max(input.rho[1], 0.0);
+    if (ra + rb < 1e-12)
+        return result;
+    double aa = 0, ab = 0, bb = 0;
+    if (gga)
+        for (int d = 0; d < 3; ++d) {
+            aa += input.gradient[0][d] * input.gradient[0][d];
+            ab += input.gradient[0][d] * input.gradient[1][d];
+            bb += input.gradient[1][d] * input.gradient[1][d];
+        }
+    const auto point = cpu::xc::evaluate_xc(xc, ra, rb, aa, ab, bb);
+    result.energy = static_cast<AccReal>(point.energy_density);
+    result.potential[0] =
+        input.rho[0] > 0 ? static_cast<AccReal>(point.vrho_alpha) : AccReal(0);
+    result.potential[1] =
+        input.rho[1] > 0 ? static_cast<AccReal>(point.vrho_beta) : AccReal(0);
+    if (gga)
+        for (int d = 0; d < 3; ++d) {
+            result.flux[0][d] =
+                static_cast<AccReal>(2 * point.vsigma_aa * input.gradient[0][d]
+                                     + point.vsigma_ab * input.gradient[1][d]);
+            result.flux[1][d] =
+                static_cast<AccReal>(2 * point.vsigma_bb * input.gradient[1][d]
+                                     + point.vsigma_ab * input.gradient[0][d]);
+        }
+    return result;
+}
+
+// Explicit cell derivative of the same point energy. Raw density partials
+// already carry the positive-part chain rule; gradients retain the existing
+// unclipped spectral definition, including a clipped channel's GGA flux.
+void add_point_virial(const XcPointInput& input, const XcPointOutput& point,
+                      AccReal dV, std::array<AccReal, 6>& virial) {
+    constexpr int aa[6] = {0, 1, 2, 0, 0, 1};
+    constexpr int bb[6] = {0, 1, 2, 1, 2, 2};
+    AccReal isotropic = -point.energy;
+    for (int spin = 0; spin < 2; ++spin) {
+        isotropic += input.rho[spin] * point.potential[spin];
+        for (int d = 0; d < 3; ++d)
+            isotropic += input.gradient[spin][d] * point.flux[spin][d];
+    }
+    for (int lane = 0; lane < 6; ++lane) {
+        AccReal value = lane < 3 ? isotropic : AccReal(0);
+        for (int spin = 0; spin < 2; ++spin)
+            value +=
+                input.gradient[spin][aa[lane]] * point.flux[spin][bb[lane]];
+        virial[lane] += dV * value;
+    }
+}
+
+// The physical density sphere must be strictly below every even-grid
+// Nyquist plane. This is the PW setup contract; folding two distinct edge
+// modes into one real-grid sample would not be an adjoint projection.
+void validate_density_modes(const PWWorkspace& ws) {
+    if (!ws.gvec || ws.n_g < 1 || ws.nr != ws.fft_nx * ws.fft_ny * ws.fft_nz
+        || !(ws.omega > 0) || !std::isfinite(ws.omega))
+        throw std::invalid_argument("PW XC: invalid grid, G-sphere or volume");
+    const auto& gv = *ws.gvec;
+    const auto ng = static_cast<std::size_t>(ws.n_g);
+    if (gv.g.size() != ng || gv.h.size() != ng || gv.k.size() != ng
+        || gv.l.size() != ng)
+        throw std::invalid_argument("PW XC: inconsistent G-sphere sizes");
+    for (int ig = 0; ig < ws.n_g; ++ig)
+        if (2 * std::abs(gv.h[ig]) >= ws.fft_nx
+            || 2 * std::abs(gv.k[ig]) >= ws.fft_ny
+            || 2 * std::abs(gv.l[ig]) >= ws.fft_nz)
+            throw std::invalid_argument("PW XC: density modes must lie below "
+                                        "the base-grid Nyquist plane");
+}
+
 } // namespace
 
 void XCBuilder::prepare(const PWWorkspace& ws) {
     if (ws.nr <= 0)
         return;
-    const auto nr = static_cast<std::size_t>(ws.nr);
-    const auto nc = static_cast<std::size_t>(ws.nc);
+    // Fractional powers and low-density behaviour make both LDA and GGA
+    // non-polynomial. Use fixed numerical oversampling on both paths, with
+    // more points for the GGA gradient dependence. Keep these grids fixed
+    // throughout energy/potential evaluation and response differences.
+    const int lx = xc_quadrature_dimension(ws.fft_nx, false),
+              ly = xc_quadrature_dimension(ws.fft_ny, false),
+              lz = xc_quadrature_dimension(ws.fft_nz, false);
+    if (!local_quadrature_fft_ || local_quadrature_fft_->nx() != lx
+        || local_quadrature_fft_->ny() != ly
+        || local_quadrature_fft_->nz() != lz)
+        local_quadrature_fft_ = std::make_unique<FFTPlan3D>(lx, ly, lz);
+    const int gx = xc_quadrature_dimension(ws.fft_nx, true),
+              gy = xc_quadrature_dimension(ws.fft_ny, true),
+              gz = xc_quadrature_dimension(ws.fft_nz, true);
+    if (!gradient_quadrature_fft_ || gradient_quadrature_fft_->nx() != gx
+        || gradient_quadrature_fft_->ny() != gy
+        || gradient_quadrature_fft_->nz() != gz)
+        gradient_quadrature_fft_ = std::make_unique<FFTPlan3D>(gx, gy, gz);
+    // One scratch allocation serves both plans; the GGA grid is larger.
+    const auto nr = static_cast<std::size_t>(gradient_quadrature_fft_->nr());
+    const auto nc = static_cast<std::size_t>(gradient_quadrature_fft_->nc());
+    restricted_vxc_r_.resize(nr);
     rho_g_half_.resize(nc);
     rho_r_.resize(nr);
     vxc_g_half_.resize(nc);
@@ -111,7 +219,38 @@ void XCBuilder::prepare(const PWWorkspace& ws) {
     }
 }
 
-void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
+void XCBuilder::check_prepared(const PWWorkspace& ws) const {
+    if (!local_quadrature_fft_ || !gradient_quadrature_fft_
+        || local_quadrature_fft_->nx()
+               != xc_quadrature_dimension(ws.fft_nx, false)
+        || local_quadrature_fft_->ny()
+               != xc_quadrature_dimension(ws.fft_ny, false)
+        || local_quadrature_fft_->nz()
+               != xc_quadrature_dimension(ws.fft_nz, false)
+        || gradient_quadrature_fft_->nx()
+               != xc_quadrature_dimension(ws.fft_nx, true)
+        || gradient_quadrature_fft_->ny()
+               != xc_quadrature_dimension(ws.fft_ny, true)
+        || gradient_quadrature_fft_->nz()
+               != xc_quadrature_dimension(ws.fft_nz, true)
+        || (ws.nspin == 2
+            && rho_up_r_.size()
+                   < static_cast<std::size_t>(gradient_quadrature_fft_->nr())))
+        throw std::logic_error(
+            "PW XC: call prepare after changing the grid or spin layout");
+}
+
+void XCBuilder::project_to_base(
+    const PWWorkspace& ws, const xt::xarray<std::complex<AccReal>>& potential,
+    std::span<AccReal> output) {
+    auto* work = work_g_half_.data();
+    pack_sphere_to_half(*ws.gvec, ws.n_g, ws.fft_nx, ws.fft_ny, ws.fft_nz,
+                        ws.fft_nx / 2 + 1, ws.nc, work,
+                        [&](int ig) { return potential[ig]; });
+    ws.fft->c2r(work, output.data());
+}
+
+void XCBuilder::step(PWWorkspace& ws, cpu::xc::XCType xc) {
     const int ng = ws.n_g;
 
     if (!ws.fft || ws.nr <= 0) {
@@ -120,12 +259,18 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
         return;
     }
 
-    const int nr = ws.nr;
-    const int nc = ws.nc;
-    const int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
+    validate_density_modes(ws);
+    const bool gga = cpu::xc::is_gga(xc);
+    check_prepared(ws);
+    if (ws.rho_G.size() != static_cast<std::size_t>(ng))
+        throw std::invalid_argument("PW XC: density does not match G-sphere");
+    FFTPlan3D& fft = gga ? *gradient_quadrature_fft_ : *local_quadrature_fft_;
+    const int nr = fft.nr(), nc = fft.nc();
+    const int nx = fft.nx(), ny = fft.ny(), nz = fft.nz();
     const int nxc = nx / 2 + 1;
     auto& gv = *ws.gvec;
-    const bool gga = cpu::scf::is_gga(xc);
+    if (ws.V_xc_G.size() != static_cast<std::size_t>(ng))
+        ws.V_xc_G.resize({static_cast<std::size_t>(ng)});
 
     // ── 1. FFT ρ(G) → ρ(r) ──────────────────────────────────────────
     auto* rho_g_half = rho_g_half_.data();
@@ -136,12 +281,9 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                                     static_cast<double>(ws.rho_G[ig].imag()));
     });
     // FFTW does NOT normalize: c2r output = Σ_G input[G] exp(iGr)
-    ws.fft->c2r(rho_g_half, rho_r);
+    fft.c2r(rho_g_half, rho_r);
 
-    if (ws.V_xc_r.size() != static_cast<std::size_t>(nr))
-        ws.V_xc_r.resize({static_cast<std::size_t>(nr)});
-    if (ws.exc_r.size() != static_cast<std::size_t>(nr))
-        ws.exc_r.resize({static_cast<std::size_t>(nr)});
+    auto* vxc_r = restricted_vxc_r_.data();
 
     // ── 1b. GGA: spectral ∇ρ from i G ρ(G) ──────────────────────────
     if (gga) {
@@ -156,51 +298,39 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                     static_cast<double>(ws.rho_G[ig].imag()));
                 return std::complex<double>(0.0, gd) * rho;
             });
-            ws.fft->c2r(work, grad_comp[d]);
+            fft.c2r(work, grad_comp[d]);
         }
     }
 
     // ── 2. Pointwise XC (+ flux for GGA) ─────────────────────────────
     const AccReal dV = ws.omega / static_cast<AccReal>(nr);
     AccReal E_xc = 0;
+    AccReal energy_compensation = 0;
+    std::array<AccReal, 6> virial{};
     auto* fx = flux_x_.data();
     auto* fy = flux_y_.data();
     auto* fz = flux_z_.data();
 
+    const AccReal* gradients[3] = {grad_x_.data(), grad_y_.data(),
+                                   grad_z_.data()};
+    AccReal* fluxes[3] = {fx, fy, fz};
     for (int i = 0; i < nr; ++i) {
-        const AccReal rho = rho_r[i];
-        if (rho < AccReal(1e-12)) {
-            ws.V_xc_r[i] = 0;
-            ws.exc_r[i] = 0;
-            if (gga)
-                fx[i] = fy[i] = fz[i] = AccReal(0);
-            continue;
-        }
-
-        double sigma_aa = 0, sigma_ab = 0, sigma_bb = 0;
-        double gx = 0, gy = 0, gz = 0;
-        if (gga) {
-            gx = static_cast<double>(grad_x_.data()[i]);
-            gy = static_cast<double>(grad_y_.data()[i]);
-            gz = static_cast<double>(grad_z_.data()[i]);
-            const double sigma = gx * gx + gy * gy + gz * gz;
-            // Spin-unpolarized: σ_aa = σ_ab = σ_bb = |∇ρ|²/4
-            sigma_aa = sigma_ab = sigma_bb = 0.25 * sigma;
-        }
-
-        const auto out = cpu::scf::evaluate_xc(
-            xc, static_cast<double>(rho) / 2.0, static_cast<double>(rho) / 2.0,
-            sigma_aa, sigma_ab, sigma_bb);
-        ws.V_xc_r[i] = static_cast<AccReal>(out.vrho_alpha);
-        ws.exc_r[i] = static_cast<AccReal>(out.exc);
-        E_xc += rho * static_cast<AccReal>(out.exc) * dV;
-
-        if (gga) {
-            const double vsig_eff = out.vsigma_aa + 0.5 * out.vsigma_ab;
-            fx[i] = static_cast<AccReal>(vsig_eff * gx);
-            fy[i] = static_cast<AccReal>(vsig_eff * gy);
-            fz[i] = static_cast<AccReal>(vsig_eff * gz);
-        }
+        XcPointInput input;
+        input.rho[0] = input.rho[1] = static_cast<double>(rho_r[i]) / 2;
+        if (gga)
+            for (int d = 0; d < 3; ++d)
+                input.gradient[0][d] = input.gradient[1][d] =
+                    static_cast<double>(gradients[d][i]) / 2;
+        const auto point = evaluate_point(xc, gga, input);
+        add_point_virial(input, point, dV, virial);
+        vxc_r[i] = point.potential[0];
+        const AccReal contribution = point.energy * dV - energy_compensation;
+        const AccReal updated_energy = E_xc + contribution;
+        energy_compensation = (updated_energy - E_xc) - contribution;
+        E_xc = updated_energy;
+        if (gga)
+            for (int d = 0; d < 3; ++d)
+                fluxes[d][i] = point.flux[0][d];
     }
     ws.E_xc = E_xc;
 
@@ -216,7 +346,7 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
             ws.V_xc_G[ig] = std::complex<AccReal>(0, 0);
 
         for (int d = 0; d < 3; ++d) {
-            ws.fft->r2c(flux_comp[d], work);
+            fft.r2c(flux_comp[d], work);
             for (int ig = 0; ig < ng; ++ig) {
                 bool conj = false;
                 const int idx = pack_half_index(gv.h[ig], gv.k[ig], gv.l[ig],
@@ -238,91 +368,26 @@ void XCBuilder::step(PWWorkspace& ws, cpu::scf::XCType xc) {
                 static_cast<double>(ws.V_xc_G[ig].real()),
                 static_cast<double>(ws.V_xc_G[ig].imag()));
         });
-        ws.fft->c2r(work, div_r_.data());
+        fft.c2r(work, div_r_.data());
         for (int i = 0; i < nr; ++i)
-            ws.V_xc_r[i] -= div_r_.data()[i];
+            vxc_r[i] -= div_r_.data()[i];
     }
 
     // ── 3. FFT V_xc(r) → V_xc(G) ─────────────────────────────────────
     auto* vxc_g_half = vxc_g_half_.data();
-    ws.fft->r2c(ws.V_xc_r.data(), vxc_g_half);
+    fft.r2c(vxc_r, vxc_g_half);
 
     const AccReal inv_nr = AccReal(1) / static_cast<AccReal>(nr);
     unpack_half_to_sphere(gv, ng, nx, ny, nz, nxc, nc, vxc_g_half, inv_nr,
                           ws.V_xc_G);
 
-    ws.V_xc_G[0] = std::complex<AccReal>(ws.V_xc_G[0].real(), AccReal(0));
+    ws.V_xc_r.resize({static_cast<std::size_t>(ws.nr)});
+    project_to_base(ws, ws.V_xc_G,
+                    {ws.V_xc_r.data(), static_cast<std::size_t>(ws.nr)});
+    virial_ha_ = virial;
 }
 
-void fft_rho_g_to_r(const PWWorkspace& ws,
-                    const xt::xarray<std::complex<AccReal>>& rho_G,
-                    fftw_complex* rho_g_half, AccReal* rho_r) {
-    int ng = ws.n_g;
-    int nc = ws.nc;
-    int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
-    int nxc = nx / 2 + 1;
-    auto& gv = *ws.gvec;
-    for (int i = 0; i < nc; ++i)
-        rho_g_half[i][0] = rho_g_half[i][1] = 0;
-    for (int ig = 0; ig < ng; ++ig) {
-        int h = gv.h[ig], k = gv.k[ig], l = gv.l[ig];
-        int kx = ((h % nx) + nx) % nx;
-        int ky = ((k % ny) + ny) % ny;
-        int kz = ((l % nz) + nz) % nz;
-        bool conj = false;
-        if (kx > nx / 2) {
-            kx = nx - kx;
-            ky = (ny - ky) % ny;
-            kz = (nz - kz) % nz;
-            conj = true;
-        }
-        int idx = kx + nxc * (ky + ny * kz);
-        if (idx >= 0 && idx < nc) {
-            rho_g_half[idx][0] = static_cast<double>(rho_G[ig].real());
-            rho_g_half[idx][1] = static_cast<double>(conj ? -rho_G[ig].imag()
-                                                          : rho_G[ig].imag());
-        }
-    }
-    ws.fft->c2r(rho_g_half, rho_r);
-}
-
-void fft_vxc_r_to_g(const PWWorkspace& ws, AccReal* vxc_r,
-                    fftw_complex* vxc_g_half,
-                    xt::xarray<std::complex<AccReal>>& V_xc_G) {
-    int ng = ws.n_g;
-    int nc = ws.nc;
-    int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
-    int nxc = nx / 2 + 1;
-    auto& gv = *ws.gvec;
-    ws.fft->r2c(vxc_r, vxc_g_half);
-    AccReal inv_nr = AccReal(1) / static_cast<AccReal>(ws.nr);
-    for (int ig = 0; ig < ng; ++ig) {
-        int h = gv.h[ig], k = gv.k[ig], l = gv.l[ig];
-        int kx = ((h % nx) + nx) % nx;
-        int ky = ((k % ny) + ny) % ny;
-        int kz = ((l % nz) + nz) % nz;
-        bool conj = false;
-        if (kx > nx / 2) {
-            kx = nx - kx;
-            ky = (ny - ky) % ny;
-            kz = (nz - kz) % nz;
-            conj = true;
-        }
-        int idx = kx + nxc * (ky + ny * kz);
-        if (idx >= 0 && idx < nc) {
-            V_xc_G[ig] = std::complex<AccReal>(
-                static_cast<AccReal>(vxc_g_half[idx][0]) * inv_nr,
-                static_cast<AccReal>(conj ? -vxc_g_half[idx][1]
-                                          : vxc_g_half[idx][1])
-                    * inv_nr);
-        } else {
-            V_xc_G[ig] = std::complex<AccReal>(0, 0);
-        }
-    }
-    V_xc_G[0] = std::complex<AccReal>(V_xc_G[0].real(), AccReal(0));
-}
-
-void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
+void XCBuilder::step_spin(PWWorkspace& ws, cpu::xc::XCType xc) {
     int ng = ws.n_g;
     if (!ws.fft || ws.nr <= 0 || ws.nspin != 2 || ws.rho_spin_G.size() != 2) {
         for (int i = 0; i < ng; ++i)
@@ -332,12 +397,20 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
         return;
     }
 
-    const int nr = ws.nr;
-    const int nc = ws.nc;
-    const int nx = ws.fft_nx, ny = ws.fft_ny, nz = ws.fft_nz;
+    validate_density_modes(ws);
+    const bool gga = cpu::xc::is_gga(xc);
+    check_prepared(ws);
+    for (const auto& channel : ws.rho_spin_G)
+        if (channel.size() != static_cast<std::size_t>(ng))
+            throw std::invalid_argument(
+                "PW XC: spin density does not match G-sphere");
+    FFTPlan3D& fft = gga ? *gradient_quadrature_fft_ : *local_quadrature_fft_;
+    const int nr = fft.nr(), nc = fft.nc();
+    const int nx = fft.nx(), ny = fft.ny(), nz = fft.nz();
     const int nxc = nx / 2 + 1;
     auto& gv = *ws.gvec;
-    const bool gga = cpu::scf::is_gga(xc);
+    if (ws.V_xc_G.size() != static_cast<std::size_t>(ng))
+        ws.V_xc_G.resize({static_cast<std::size_t>(ng)});
 
     auto* rho_g_half = rho_g_half_.data();
     auto* rho_up = rho_up_r_.data();
@@ -345,8 +418,11 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
     auto* vxc_up = vxc_up_r_.data();
     auto* vxc_dn = vxc_dn_r_.data();
 
-    fft_rho_g_to_r(ws, ws.rho_spin_G[0], rho_g_half, rho_up);
-    fft_rho_g_to_r(ws, ws.rho_spin_G[1], rho_g_half, rho_dn);
+    for (int spin = 0; spin < 2; ++spin) {
+        pack_sphere_to_half(gv, ng, nx, ny, nz, nxc, nc, rho_g_half,
+                            [&](int ig) { return ws.rho_spin_G[spin][ig]; });
+        fft.c2r(rho_g_half, spin == 0 ? rho_up : rho_dn);
+    }
 
     if (ws.V_xc_spin_G.size() != 2) {
         ws.V_xc_spin_G.resize(2);
@@ -354,11 +430,9 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
         ws.V_xc_spin_G[1].resize({static_cast<std::size_t>(ng)});
     }
     for (int s = 0; s < 2; ++s) {
-        if (ws.V_xc_spin_r[s].size() != static_cast<std::size_t>(nr))
-            ws.V_xc_spin_r[s].resize({static_cast<std::size_t>(nr)});
+        if (ws.V_xc_spin_G[s].size() != static_cast<std::size_t>(ng))
+            ws.V_xc_spin_G[s].resize({static_cast<std::size_t>(ng)});
     }
-    if (ws.exc_r.size() != static_cast<std::size_t>(nr))
-        ws.exc_r.resize({static_cast<std::size_t>(nr)});
 
     // ── Spectral ∇ρ_σ from i G ρ_σ(G) (true spin-GGA) ────────────────
     // α → grad_*; β → grad_dn_*.
@@ -379,13 +453,15 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                             static_cast<double>(rhoG[ig].imag()));
                         return std::complex<double>(0.0, gd) * rho;
                     });
-                ws.fft->c2r(work, gcomp[d]);
+                fft.c2r(work, gcomp[d]);
             }
         }
     }
 
     AccReal dV = ws.omega / static_cast<AccReal>(nr);
     AccReal E_xc = 0;
+    AccReal energy_compensation = 0;
+    std::array<AccReal, 6> virial{};
     auto* fx_up = flux_x_.data();
     auto* fy_up = flux_y_.data();
     auto* fz_up = flux_z_.data();
@@ -393,65 +469,31 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
     auto* fy_dn = flux_dn_y_.data();
     auto* fz_dn = flux_dn_z_.data();
 
+    const AccReal* gradients[2][3] = {
+        {grad_x_.data(), grad_y_.data(), grad_z_.data()},
+        {grad_dn_x_.data(), grad_dn_y_.data(), grad_dn_z_.data()}};
+    AccReal* fluxes[2][3] = {{fx_up, fy_up, fz_up}, {fx_dn, fy_dn, fz_dn}};
     for (int i = 0; i < nr; ++i) {
-        AccReal ra = rho_up[i];
-        AccReal rb = rho_dn[i];
-        // Floor negatives from FFT ringing so LSDA/GGA stay defined.
-        if (ra < AccReal(0))
-            ra = AccReal(0);
-        if (rb < AccReal(0))
-            rb = AccReal(0);
-        AccReal rtot = ra + rb;
-        if (rtot < AccReal(1e-12)) {
-            vxc_up[i] = 0;
-            vxc_dn[i] = 0;
-            ws.V_xc_spin_r[0][i] = 0;
-            ws.V_xc_spin_r[1][i] = 0;
-            ws.exc_r[i] = 0;
-            if (gga) {
-                fx_up[i] = fy_up[i] = fz_up[i] = AccReal(0);
-                fx_dn[i] = fy_dn[i] = fz_dn[i] = AccReal(0);
-            }
-            continue;
-        }
-
-        double saa = 0, sab = 0, sbb = 0;
-        double gax = 0, gay = 0, gaz = 0;
-        double gbx = 0, gby = 0, gbz = 0;
-        if (gga) {
-            gax = static_cast<double>(grad_x_.data()[i]);
-            gay = static_cast<double>(grad_y_.data()[i]);
-            gaz = static_cast<double>(grad_z_.data()[i]);
-            gbx = static_cast<double>(grad_dn_x_.data()[i]);
-            gby = static_cast<double>(grad_dn_y_.data()[i]);
-            gbz = static_cast<double>(grad_dn_z_.data()[i]);
-            saa = gax * gax + gay * gay + gaz * gaz;
-            sbb = gbx * gbx + gby * gby + gbz * gbz;
-            sab = gax * gbx + gay * gby + gaz * gbz;
-        }
-
-        // True spin-GGA when gga; σ=0 for pure LDA.
-        const auto out =
-            cpu::scf::evaluate_xc(xc, static_cast<double>(ra),
-                                  static_cast<double>(rb), saa, sab, sbb);
-        vxc_up[i] = static_cast<AccReal>(out.vrho_alpha);
-        vxc_dn[i] = static_cast<AccReal>(out.vrho_beta);
-        ws.exc_r[i] = static_cast<AccReal>(out.exc);
-        E_xc += rtot * static_cast<AccReal>(out.exc) * dV;
-
-        if (gga) {
-            // flux_α = 2 vσ_αα ∇ρ_α + vσ_αβ ∇ρ_β
-            // flux_β = 2 vσ_ββ ∇ρ_β + vσ_αβ ∇ρ_α
-            const double caa = 2.0 * out.vsigma_aa;
-            const double cbb = 2.0 * out.vsigma_bb;
-            const double cab = out.vsigma_ab;
-            fx_up[i] = static_cast<AccReal>(caa * gax + cab * gbx);
-            fy_up[i] = static_cast<AccReal>(caa * gay + cab * gby);
-            fz_up[i] = static_cast<AccReal>(caa * gaz + cab * gbz);
-            fx_dn[i] = static_cast<AccReal>(cbb * gbx + cab * gax);
-            fy_dn[i] = static_cast<AccReal>(cbb * gby + cab * gay);
-            fz_dn[i] = static_cast<AccReal>(cbb * gbz + cab * gaz);
-        }
+        XcPointInput input;
+        input.rho[0] = static_cast<double>(rho_up[i]);
+        input.rho[1] = static_cast<double>(rho_dn[i]);
+        if (gga)
+            for (int spin = 0; spin < 2; ++spin)
+                for (int d = 0; d < 3; ++d)
+                    input.gradient[spin][d] =
+                        static_cast<double>(gradients[spin][d][i]);
+        const auto point = evaluate_point(xc, gga, input);
+        add_point_virial(input, point, dV, virial);
+        vxc_up[i] = point.potential[0];
+        vxc_dn[i] = point.potential[1];
+        const AccReal contribution = point.energy * dV - energy_compensation;
+        const AccReal updated_energy = E_xc + contribution;
+        energy_compensation = (updated_energy - E_xc) - contribution;
+        E_xc = updated_energy;
+        if (gga)
+            for (int spin = 0; spin < 2; ++spin)
+                for (int d = 0; d < 3; ++d)
+                    fluxes[spin][d][i] = point.flux[spin][d];
     }
     ws.E_xc = E_xc;
 
@@ -471,7 +513,7 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                 ws.V_xc_spin_G[s][ig] = std::complex<AccReal>(0, 0);
 
             for (int d = 0; d < 3; ++d) {
-                ws.fft->r2c(flux[d], work);
+                fft.r2c(flux[d], work);
                 for (int ig = 0; ig < ng; ++ig) {
                     bool conj = false;
                     const int idx = pack_half_index(
@@ -495,35 +537,210 @@ void XCBuilder::step_spin(PWWorkspace& ws, cpu::scf::XCType xc) {
                     static_cast<double>(ws.V_xc_spin_G[s][ig].real()),
                     static_cast<double>(ws.V_xc_spin_G[s][ig].imag()));
             });
-            ws.fft->c2r(work, div_buf[s]);
+            fft.c2r(work, div_buf[s]);
             for (int i = 0; i < nr; ++i)
                 vxc[s][i] -= div_buf[s][i];
         }
     }
 
-    // Double-counting ∫(ρ↑ Vxc↑ + ρ↓ Vxc↓) uses the full functional derivative
-    // (local + div term for GGA), matching restricted G-space e_xc_int.
-    AccReal e_xc_int = 0;
-    for (int i = 0; i < nr; ++i) {
-        AccReal ra = rho_up[i];
-        AccReal rb = rho_dn[i];
-        if (ra < AccReal(0))
-            ra = AccReal(0);
-        if (rb < AccReal(0))
-            rb = AccReal(0);
-        ws.V_xc_spin_r[0][i] = vxc_up[i];
-        ws.V_xc_spin_r[1][i] = vxc_dn[i];
-        e_xc_int += (ra * vxc_up[i] + rb * vxc_dn[i]) * dV;
-    }
-    ws.e_xc_int_spin = e_xc_int;
-
     auto* vxc_g_half = vxc_g_half_.data();
-    fft_vxc_r_to_g(ws, vxc_up, vxc_g_half, ws.V_xc_spin_G[0]);
-    fft_vxc_r_to_g(ws, vxc_dn, vxc_g_half, ws.V_xc_spin_G[1]);
+    AccReal* potentials[2] = {vxc_up, vxc_dn};
+    for (int spin = 0; spin < 2; ++spin) {
+        fft.r2c(potentials[spin], vxc_g_half);
+        unpack_half_to_sphere(gv, ng, nx, ny, nz, nxc, nc, vxc_g_half,
+                              AccReal(1) / nr, ws.V_xc_spin_G[spin]);
+        ws.V_xc_spin_r[spin].resize({static_cast<std::size_t>(ws.nr)});
+        project_to_base(
+            ws, ws.V_xc_spin_G[spin],
+            {ws.V_xc_spin_r[spin].data(), static_cast<std::size_t>(ws.nr)});
+    }
+    // Double counting uses the physical spectral density and the same
+    // projected derivative as the Hamiltonian, including negative ringing.
+    // Parseval is the exact weighted adjoint of the fine-grid interpolation.
+    AccReal e_xc_int = 0;
+    for (int spin = 0; spin < 2; ++spin)
+        for (int ig = 0; ig < ng; ++ig)
+            e_xc_int += ws.omega
+                        * (std::conj(ws.rho_spin_G[spin][ig])
+                           * ws.V_xc_spin_G[spin][ig])
+                              .real();
+    ws.e_xc_int_spin = e_xc_int;
     // Restricted-compatible total Vxc (not used by spin Davidson).
     for (int ig = 0; ig < ng; ++ig)
         ws.V_xc_G[ig] =
             AccReal(0.5) * (ws.V_xc_spin_G[0][ig] + ws.V_xc_spin_G[1][ig]);
+    virial_ha_ = virial;
+}
+
+void XCBuilder::cache_response_reference(
+    const PWWorkspace& ws, cpu::xc::XCType xc,
+    std::span<const ResponseChannel> channels) {
+    FFTPlan3D& fft = cpu::xc::is_gga(xc) ? *gradient_quadrature_fft_
+                                         : *local_quadrature_fft_;
+    const std::array<int, 3> shape{fft.nx(), fft.ny(), fft.nz()};
+    const auto& gv = *ws.gvec;
+    bool same = response_channels_ == static_cast<int>(channels.size())
+                && response_shape_ == shape && response_h_ == gv.h
+                && response_k_ == gv.k && response_l_ == gv.l
+                && response_metric_.size() == gv.g.size();
+    if (same)
+        for (std::size_t g = 0; g < gv.g.size(); ++g)
+            for (int d = 0; d < 3; ++d)
+                if (response_metric_[g][d] != gv.g[g][d])
+                    same = false;
+    if (same)
+        for (std::size_t spin = 0; spin < channels.size(); ++spin)
+            if (response_reference_[spin].size()
+                    != channels[spin].reference.size()
+                || !std::equal(response_reference_[spin].begin(),
+                               response_reference_[spin].end(),
+                               channels[spin].reference.begin()))
+                same = false;
+    if (same)
+        return;
+    // Commit the cache key only after every reference transform succeeds.
+    response_channels_ = 0;
+    const auto nr = static_cast<std::size_t>(fft.nr());
+    auto* work = work_g_half_.data();
+    for (std::size_t spin = 0; spin < channels.size(); ++spin) {
+        response_density_[spin].resize(nr);
+        pack_sphere_to_half(gv, ws.n_g, fft.nx(), fft.ny(), fft.nz(),
+                            fft.nx() / 2 + 1, fft.nc(), work,
+                            [&](int g) { return channels[spin].reference[g]; });
+        fft.c2r(work, response_density_[spin].data());
+        if (cpu::xc::is_gga(xc))
+            for (int d = 0; d < 3; ++d) {
+                response_gradient_[spin][d].resize(nr);
+                pack_sphere_to_half(
+                    gv, ws.n_g, fft.nx(), fft.ny(), fft.nz(), fft.nx() / 2 + 1,
+                    fft.nc(), work, [&](int g) {
+                        return std::complex<AccReal>(0, gv.g[g][d])
+                               * channels[spin].reference[g];
+                    });
+                fft.c2r(work, response_gradient_[spin][d].data());
+            }
+        response_reference_[spin].assign(channels[spin].reference.begin(),
+                                         channels[spin].reference.end());
+    }
+    response_shape_ = shape;
+    response_h_ = gv.h;
+    response_k_ = gv.k;
+    response_l_ = gv.l;
+    response_metric_ = gv.g;
+    response_channels_ = static_cast<int>(channels.size());
+}
+
+void XCBuilder::response(const PWWorkspace& ws, cpu::xc::XCType xc,
+                         std::span<const ResponseChannel> channels,
+                         AccReal epsilon) {
+    validate_density_modes(ws);
+    check_prepared(ws);
+    if ((channels.size() != 1 && channels.size() != 2)
+        || channels.size() != static_cast<std::size_t>(ws.nspin)
+        || !std::isfinite(epsilon) || epsilon <= 0)
+        throw std::invalid_argument(
+            "PW XC response: invalid channels or epsilon");
+    for (const auto& channel : channels) {
+        if (channel.reference.size() != static_cast<std::size_t>(ws.n_g)
+            || channel.variation.size() != static_cast<std::size_t>(ws.n_g)
+            || channel.potential.size() != static_cast<std::size_t>(ws.nr))
+            throw std::invalid_argument(
+                "PW XC response: channel shape mismatch");
+        for (std::size_t g = 0; g < channel.reference.size(); ++g)
+            if (!std::isfinite(channel.reference[g].real())
+                || !std::isfinite(channel.reference[g].imag())
+                || !std::isfinite(channel.variation[g].real())
+                || !std::isfinite(channel.variation[g].imag()))
+                throw std::invalid_argument(
+                    "PW XC response: nonfinite Fourier coefficient");
+    }
+    cache_response_reference(ws, xc, channels);
+    const bool gga = cpu::xc::is_gga(xc);
+    FFTPlan3D& fft = gga ? *gradient_quadrature_fft_ : *local_quadrature_fft_;
+    const int nr = fft.nr(), nc = fft.nc(), ng = ws.n_g;
+    const int nx = fft.nx(), ny = fft.ny(), nz = fft.nz(), nxc = nx / 2 + 1;
+    const auto& gv = *ws.gvec;
+    const bool spin = channels.size() == 2;
+    AccReal* density_delta[2] = {spin ? rho_up_r_.data() : rho_r_.data(),
+                                 rho_dn_r_.data()};
+    AccReal* gradient_delta[2][3] = {
+        {grad_x_.data(), grad_y_.data(), grad_z_.data()},
+        {grad_dn_x_.data(), grad_dn_y_.data(), grad_dn_z_.data()}};
+    AccReal* potential_delta[2] = {
+        spin ? vxc_up_r_.data() : restricted_vxc_r_.data(), vxc_dn_r_.data()};
+    AccReal* flux_delta[2][3] = {
+        {flux_x_.data(), flux_y_.data(), flux_z_.data()},
+        {flux_dn_x_.data(), flux_dn_y_.data(), flux_dn_z_.data()}};
+    auto* work = work_g_half_.data();
+    for (std::size_t s = 0; s < channels.size(); ++s) {
+        pack_sphere_to_half(gv, ng, nx, ny, nz, nxc, nc, work,
+                            [&](int g) { return channels[s].variation[g]; });
+        fft.c2r(work, density_delta[s]);
+        if (gga)
+            for (int d = 0; d < 3; ++d) {
+                pack_sphere_to_half(
+                    gv, ng, nx, ny, nz, nxc, nc, work, [&](int g) {
+                        return std::complex<AccReal>(0, gv.g[g][d])
+                               * channels[s].variation[g];
+                    });
+                fft.c2r(work, gradient_delta[s][d]);
+            }
+    }
+    const AccReal inverse = AccReal(1) / (2 * epsilon);
+    for (int i = 0; i < nr; ++i) {
+        XcPointInput plus, minus;
+        for (int s = 0; s < 2; ++s) {
+            const int source = spin ? s : 0;
+            const double weight = spin ? 1.0 : .5;
+            const double r0 = response_density_[source].data()[i];
+            const double dr = epsilon * density_delta[source][i];
+            plus.rho[s] = weight * (r0 + dr);
+            minus.rho[s] = weight * (r0 - dr);
+            if (gga)
+                for (int d = 0; d < 3; ++d) {
+                    const double g0 = response_gradient_[source][d].data()[i];
+                    const double dg = epsilon * gradient_delta[source][d][i];
+                    plus.gradient[s][d] = weight * (g0 + dg);
+                    minus.gradient[s][d] = weight * (g0 - dg);
+                }
+        }
+        const auto positive = evaluate_point(xc, gga, plus);
+        const auto negative = evaluate_point(xc, gga, minus);
+        for (std::size_t s = 0; s < channels.size(); ++s) {
+            potential_delta[s][i] =
+                (positive.potential[s] - negative.potential[s]) * inverse;
+            if (gga)
+                for (int d = 0; d < 3; ++d)
+                    flux_delta[s][d][i] =
+                        (positive.flux[s][d] - negative.flux[s][d]) * inverse;
+        }
+    }
+    const AccReal inv_nr = AccReal(1) / nr;
+    for (std::size_t s = 0; s < channels.size(); ++s) {
+        auto& potential = response_potential_G_[s];
+        potential.resize({static_cast<std::size_t>(ng)});
+        fft.r2c(potential_delta[s], work);
+        unpack_half_to_sphere(gv, ng, nx, ny, nz, nxc, nc, work, inv_nr,
+                              potential);
+        if (gga)
+            for (int d = 0; d < 3; ++d) {
+                fft.r2c(flux_delta[s][d], work);
+                for (int g = 0; g < ng; ++g) {
+                    bool conjugate = false;
+                    const int index = pack_half_index(
+                        gv.h[g], gv.k[g], gv.l[g], nx, ny, nz, nxc, conjugate);
+                    const AccReal re =
+                        static_cast<AccReal>(work[index][0]) * inv_nr;
+                    const AccReal im =
+                        static_cast<AccReal>(conjugate ? -work[index][1]
+                                                       : work[index][1])
+                        * inv_nr;
+                    const AccReal gd = gv.g[g][d];
+                    potential[g] -= std::complex<AccReal>(-gd * im, gd * re);
+                }
+            }
+        project_to_base(ws, potential, channels[s].potential);
+    }
 }
 
 } // namespace internal

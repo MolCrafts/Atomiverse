@@ -2,30 +2,29 @@
 /// @brief Multi-rank Stillinger-Weber: decomposed 3-body forces vs a brute-force
 ///        O(N^3) serial reference.
 ///
-/// SW's multi-rank story is DIFFERENT from EAM's, and the difference is the claim under
-/// test here. EAM needs a ghost-of-ghost halo (2 * cutoff) because a ghost's embedding
-/// density is a sum over that ghost's OWN neighbours. SW needs no such thing: every
-/// triplet is enumerated at its VERTEX, a triplet whose vertex is a ghost belongs to
-/// the rank that owns that vertex, and one cutoff of ghosts supplies every j and k an
-/// owned vertex can reach. Forces landing on ghost j/k ride home on the existing
-/// reverse halo.
-///
-/// That reasoning was asserted in code and in a commit message before it was ever run.
-/// This test runs it.
+/// Every SW triplet is enumerated at its owned vertex, with ghost j/k
+/// forces returned through the reverse halo. The mixed case adds LJ through
+/// the half list derived from SW's full list and compares the summed energy
+/// and forces against brute force. Kernels are invoked directly, without MD.
 
 #include <gtest/gtest.h>
 
 #include <mpi.h>
 
 #include <cmath>
+#include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/cpu/communication/comm.h"
+#include "atomiverse/cpu/communication/domain_runtime.h"
 #include "atomiverse/cpu/communication/gather.h"
-#include "atomiverse/cpu/dynamics/md.h"
-#include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/frame/pbc.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/sw.h"
 
 using namespace ATV;
@@ -65,7 +64,9 @@ cpu::Frame silicon(int n_cell) {
 
 } // namespace
 
-TEST(SWMultiRank, ForcesMatchBruteForce) {
+class SWMultiRank : public ::testing::TestWithParam<bool> {};
+
+TEST_P(SWMultiRank, ForcesAndEnergyMatchBruteForce) {
     int rank = 0, size = 1;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -76,17 +77,44 @@ TEST(SWMultiRank, ForcesMatchBruteForce) {
     cpu::Frame frame = silicon(n_cell);
     const int n = frame.nlocal();
 
-    cpu::md::MD sim;
-    sim.set_neighbor(cpu::md::NeighborList<>{rc, 0.3, 1, 0, true});
-    sim.set_integrator(cpu::md::VelocityVerlet{0.0}); // dt = 0: geometry frozen
-    sim.on(md::Phase::force).add(cpu::StillingerWeber{pot});
-    sim.enable_timing(false);
-    sim.build();
-    sim.run(frame, 1);
-
-    auto dd = sim.release_dd();
-    ASSERT_NE(dd, nullptr);
-    const auto g = cpu::md::mpi::gather_to_root(frame, *dd);
+    const bool mixed_lj = GetParam();
+    constexpr double epsilon = 0.1, sigma = 2.0;
+    cpu::Context context;
+    context.mpi_rank = rank;
+    context.mpi_size = size;
+    cpu::communication::DomainRuntime domain;
+    domain.allocate(context);
+    cpu::md::wrap_owned(frame, n);
+    domain.bind_frame(frame, context);
+    cpu::md::NeighborList<> neighbors{rc, 0.3, 1, 0, true};
+    neighbors.configure_lists(mixed_lj, true);
+    domain.comm()->set_ghost_cutoff(neighbors.neighbor_reach());
+    const cpu::LaunchContext launch{context, frame, 0, 0, true, true};
+    domain.comm()->setup(launch);
+    domain.comm()->borders(launch);
+    neighbors.build({context, frame});
+    neighbors.launch(launch);
+    cpu::StillingerWeber sw{pot};
+    sw.build({context, frame});
+    sw.launch(launch);
+    if (mixed_lj) {
+        cpu::PairLJCut lj{epsilon, sigma, rc};
+        lj.build({context, frame});
+        lj.launch(launch);
+        lj.destroy({context, frame});
+    }
+    domain.comm()->reverse_comm(launch);
+    const auto g = cpu::md::mpi::gather_to_root(frame, *domain.dd());
+    const double local_energy = frame.meta.get(kEnergy);
+    double total_energy = 0.0;
+    MPI_Allreduce(&local_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    double total_stress[6] = {};
+    MPI_Allreduce(frame.meta.get(kStress).data(), total_stress, 6, MPI_DOUBLE,
+                  MPI_SUM, MPI_COMM_WORLD);
+    sw.destroy({context, frame});
+    neighbors.destroy({context, frame});
+    domain.release_comm(context);
 
     if (rank != 0) {
         SUCCEED();
@@ -100,6 +128,10 @@ TEST(SWMultiRank, ForcesMatchBruteForce) {
     const double cos0 = pot.cos_theta0();
     const double le = pot.lambda_eps();
     std::vector<double> fx(n, 0.0), fy(n, 0.0), fz(n, 0.0);
+    double energy = 0.0;
+    double stress[6] = {};
+    const double cutoff_s6 = std::pow(sigma / rc, 6);
+    const double lj_shift = 4.0 * epsilon * (cutoff_s6 * cutoff_s6 - cutoff_s6);
 
     const auto delta = [&](int i, int j, double& dx, double& dy, double& dz) {
         dx = ref.span(ATV::kAtom_x)[i] - ref.span(ATV::kAtom_x)[j];
@@ -119,10 +151,22 @@ TEST(SWMultiRank, ForcesMatchBruteForce) {
             if (r2 >= rc2)
                 continue;
             const double r = std::sqrt(r2);
-            const double fpair = -pot.dphi2(r) / r;
+            double fpair = -pot.dphi2(r) / r;
+            energy += 0.5 * pot.phi2(r);
+            if (mixed_lj) {
+                const double s6 = std::pow(sigma / r, 6);
+                energy += 0.5 * (4.0 * epsilon * (s6 * s6 - s6) - lj_shift);
+                fpair += 24.0 * epsilon * (2.0 * s6 * s6 - s6) / r2;
+            }
             fx[i] += fpair * dx;
             fy[i] += fpair * dy;
             fz[i] += fpair * dz;
+            stress[0] += 0.5 * dx * fpair * dx;
+            stress[1] += 0.5 * dy * fpair * dy;
+            stress[2] += 0.5 * dz * fpair * dz;
+            stress[3] += 0.5 * dx * fpair * dy;
+            stress[4] += 0.5 * dx * fpair * dz;
+            stress[5] += 0.5 * dy * fpair * dz;
         }
         // three-body, vertex at i
         for (int j = 0; j < n; ++j) {
@@ -148,6 +192,7 @@ TEST(SWMultiRank, ForcesMatchBruteForce) {
                 const double dg1 = pot.dg(r1), dg2 = pot.dg(r2);
                 const double cs = (ax * bx + ay * by + az * bz) / (r1 * r2);
                 const double dl = cs - cos0;
+                energy += le * dl * dl * g1 * g2;
 
                 const double dcos = 2.0 * le * dl * g1 * g2;
                 const double dE_dr1 = le * dl * dl * dg1 * g2;
@@ -176,10 +221,20 @@ TEST(SWMultiRank, ForcesMatchBruteForce) {
                 fx[i] -= fjx + fkx;
                 fy[i] -= fjy + fky;
                 fz[i] -= fjz + fkz;
+                stress[0] -= ax * fjx + bx * fkx;
+                stress[1] -= ay * fjy + by * fky;
+                stress[2] -= az * fjz + bz * fkz;
+                stress[3] -= ax * fjy + bx * fky;
+                stress[4] -= ax * fjz + bx * fkz;
+                stress[5] -= ay * fjz + by * fkz;
             }
         }
     }
 
+    EXPECT_NEAR(total_energy, energy, 1.0e-9);
+    for (int d = 0; d < 6; ++d)
+        EXPECT_NEAR(total_stress[d], stress[d], 1.0e-8)
+            << "virial component " << d;
     double worst = 0.0;
     for (int i = 0; i < n; ++i) {
         worst = std::max(worst, std::fabs(g.fx[i] - fx[i]));
@@ -194,11 +249,100 @@ TEST(SWMultiRank, ForcesMatchBruteForce) {
            "boundary";
 }
 
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
+TEST_P(SWMultiRank, SkinImageBeyondHalfBoxDoesNotBecomeAnotherInteraction) {
+    int rank = 0, size = 1;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    if (size != 4)
+        GTEST_SKIP()
+            << "the skin-image case requires a four-way x decomposition";
+
+    const char* previous = std::getenv("ATV_FORCE_DIMS");
+    const bool had_previous = previous != nullptr;
+    const std::string previous_value = previous ? previous : "";
+    ::setenv("ATV_FORCE_DIMS", "4,1,1", 1);
+    cpu::Frame frame(2);
+    frame.box = cpu::Box::orthorhombic(7.6, 20.0, 20.0);
+    frame.span(kAtom_x)[0] = 0.2;
+    frame.span(kAtom_x)[1] = 3.8;
+    for (int i = 0; i < 2; ++i) {
+        frame.span(kAtom_y)[i] = frame.span(kAtom_z)[i] = 10.0;
+        frame.span(kAtom_mass)[i] = 28.0855;
+    }
+    const cpu::SWPotential pot{molrs::Element::Si, "stillinger-weber"};
+    const double rc = pot.cutoff();
+    cpu::Context context;
+    context.mpi_rank = rank;
+    context.mpi_size = size;
+    cpu::communication::DomainRuntime domain;
+    domain.allocate(context);
+    domain.bind_frame(frame, context);
+    if (had_previous)
+        ::setenv("ATV_FORCE_DIMS", previous_value.c_str(), 1);
+    else
+        ::unsetenv("ATV_FORCE_DIMS");
+    cpu::md::NeighborList<> neighbors{rc, 0.3, 1, 0, true};
+    neighbors.configure_lists(GetParam(), true);
+    domain.comm()->set_ghost_cutoff(neighbors.neighbor_reach());
+    const cpu::LaunchContext launch{context, frame, 0, 0, true, true};
+    domain.comm()->setup(launch);
+    domain.comm()->borders(launch);
+    neighbors.build({context, frame});
+    neighbors.launch(launch);
+    const auto& full = *context.md.full_pair_list;
+    ASSERT_GT(frame.nghost(), 0);
+    int far_local = 0, far_total = 0;
+    for (int ii = 0; ii < full.inum; ++ii) {
+        const int i = full.ilist[ii];
+        for (int k = 0; k < full.numneigh[i]; ++k) {
+            const int j = full.neighbors[full.firstneigh[i] + k];
+            const double distance =
+                std::abs(frame.span(kAtom_x)[i] - frame.span(kAtom_x)[j]);
+            if (distance > rc && distance < rc + 0.3)
+                ++far_local;
+        }
+    }
+    MPI_Allreduce(&far_local, &far_total, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    EXPECT_GE(far_total, 2)
+        << "the list must actually retain the far skin images";
+    cpu::StillingerWeber sw{pot};
+    sw.build({context, frame});
+    sw.launch(launch);
+    if (GetParam()) {
+        cpu::PairLJCut lj{0.1, 2.0, rc};
+        lj.build({context, frame});
+        lj.launch(launch);
+        lj.destroy({context, frame});
+    }
+    domain.comm()->reverse_comm(launch);
+    const auto gathered = cpu::md::mpi::gather_to_root(frame, *domain.dd());
+    double energy = 0.0, stress[6] = {};
+    const double local_energy = frame.meta.get(kEnergy);
+    MPI_Allreduce(&local_energy, &energy, 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(frame.meta.get(kStress).data(), stress, 6, MPI_DOUBLE,
+                  MPI_SUM, MPI_COMM_WORLD);
+    sw.destroy({context, frame});
+    neighbors.destroy({context, frame});
+    domain.release_comm(context);
+    if (rank != 0)
+        return;
+
+    // Exactly one near neighbor per vertex: no three-body term is possible.
+    constexpr double r = 3.6;
+    double expected_energy = pot.phi2(r), derivative = pot.dphi2(r);
+    if (GetParam()) {
+        const double s6 = std::pow(2.0 / r, 6), c6 = std::pow(2.0 / rc, 6);
+        expected_energy += 0.4 * (s6 * s6 - s6 - c6 * c6 + c6);
+        derivative -= 2.4 * (2 * s6 * s6 - s6) / r;
+    }
+    EXPECT_NEAR(energy, expected_energy, 1e-12);
+    ASSERT_EQ(gathered.fx.size(), 2u);
+    EXPECT_NEAR(gathered.fx[0], derivative, 1e-12);
+    EXPECT_NEAR(gathered.fx[1], -derivative, 1e-12);
+    EXPECT_NEAR(stress[0], -r * derivative, 1e-12);
+    for (int d = 1; d < 6; ++d)
+        EXPECT_NEAR(stress[d], 0.0, 1e-12);
 }
+
+INSTANTIATE_TEST_SUITE_P(NeighborCounting, SWMultiRank, ::testing::Bool());

@@ -7,10 +7,22 @@ equations are solved by iterating — build the field, diagonalize, rebuild —
 until the total energy and the residual stop changing. The orbitals are
 expanded in a fixed set of Gaussian functions, the *basis set*.
 
-The surface is the **concrete method** — ``RHF``, ``UHF``, ``RKS``, ``UKS``.
+The surface is the **concrete method** — ``RHF``, ``UHF``, ``ROHF``, ``GHF``,
+``RKS``, ``UKS``; CUDA builds additionally carry ``CudaRHF`` and ``CudaUHF``.
 There is no ``SCF`` facade, no ``SCFConfig`` bag and no factory: every
-parameter is a constructor argument, and the only I/O currency is a
+identity parameter is a constructor argument — the identity
+(``basis``, ``charge``, ``n_alpha`` / ``n_beta``,
+``xc``) is read-only afterwards, and the only I/O currency is a
 ``molpy.Frame``.
+
+CPU HF uses one automatic exact J/K strategy with eightfold integral caching
+within ``max_memory_mb`` (4000 MB by default). OpenMP uses the runtime thread
+count by default; ``set_threads(n)`` overrides it. Other controls include
+``init_guess`` (``"hcore"`` or ``"minao"``),
+``damping``, ``level_shift``, ``conv_tol_grad``, ``diis_space`` and
+``diis_start_cycle``. They forward native controls; unsupported method/control
+combinations raise in the native solver. CUDA controls retain their native
+constructor settings rather than claiming unsupported CPU controls.
 
 Two letters name each method. ``R`` (restricted) means the spin-up (alpha)
 and spin-down (beta) electrons share one set of spatial orbitals, i.e. a
@@ -20,7 +32,7 @@ what an open-shell system with unpaired electrons needs. ``HF``
 (Hartree-Fock) treats electron exchange exactly and leaves out electron
 correlation; ``KS`` (Kohn-Sham density-functional theory) replaces both by
 an approximate exchange-correlation *functional* — a recipe mapping the
-electron density to an energy — chosen by the ``functional`` argument.
+electron density to an energy — chosen by the ``xc`` argument.
 
 Example::
 
@@ -35,37 +47,73 @@ Example::
 Constructors
 ------------
 
-``RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)``
+``RHF(basis, charge=0, tol=1e-9, max_iter=100)``
     Closed-shell Hartree-Fock.
 
-``UHF(basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)``
-    Open-shell Hartree-Fock. ``multiplicity`` is M = 2S + 1 with S the total
-    spin — 1 singlet (all electrons paired), 2 doublet (one unpaired), 3
-    triplet (two unpaired). The alpha / beta split is resolved at ``run`` /
-    ``forces`` time, once the frame fixes the electron count
+``UHF(basis, n_alpha, n_beta, charge=0, tol=1e-8, max_iter=100)``
+    Open-shell Hartree-Fock with ``n_alpha`` spin-up and ``n_beta``
+    spin-down electrons. For spin multiplicity M = 2S + 1 (S the total spin —
+    1 singlet, 2 doublet, 3 triplet) and electron count
     N_e = sum(Z) - charge: n_alpha = (N_e + M - 1)/2 and
-    n_beta = (N_e - M + 1)/2. Those are integers only for an even N_e with an
-    odd M or an odd N_e with an even M; any other pairing, or M > N_e + 1,
-    raises ``ValueError`` there rather than at construction.
+    n_beta = (N_e - M + 1)/2. ``n_alpha + n_beta`` must equal the frame's
+    N_e; a mismatch raises ``ValueError`` at ``run`` / ``forces``, once the
+    frame fixes N_e.
 
-``RKS(functional="PBE", basis="STO-3G", charge=0, tol=1e-9, max_iter=100)``
+``RKS(basis, xc, charge=0, tol=1e-9, max_iter=100)``
     Closed-shell Kohn-Sham DFT.
 
-``UKS(functional="LSDA", basis="STO-3G", charge=0, multiplicity=1,
-tol=1e-8, max_iter=100)``
-    Open-shell Kohn-Sham DFT; ``multiplicity`` as for ``UHF``.
+``UKS(basis, n_alpha, n_beta, xc="LSDA", charge=0, tol=1e-8, max_iter=100)``
+    Open-shell Kohn-Sham DFT; ``n_alpha`` / ``n_beta`` as for ``UHF``.
+
+``ROHF(basis, n_alpha, n_beta, charge=0, tol=1e-10, max_iter=200)``
+    Restricted open-shell HF with shared spatial orbitals and split occupation.
+
+``GHF(basis, n_electrons, tol=1e-10, max_iter=200, spin_rotation=0.2)``
+    Real two-component spinor HF. ``spin_rotation`` forwards the native per-AO
+    initial moment rotation [radians]. After convergence,
+    ``spin_density_block("alpha", "beta")`` returns an owned AO density block.
+
+``MP2(rhf, frozen=0)``
+    Canonical CPU MP2 on an ``RHF`` reference. Each ``run(frame)`` performs
+    fresh RHF followed by MP2. It returns an ``MP2Result`` with total,
+    correlation, opposite-spin and same-spin energies in Hartree and writes
+    the correlated total in eV to ``frame.meta["energy"]``. ``rhf.energy()``
+    gives the RHF reference energy in Hartree. ``frozen`` excludes that many
+    of the lowest occupied orbitals from the correlation sum.
+
+``MP3(rhf, frozen=0)``
+    Canonical CPU MP3 on an ``RHF`` reference. Each ``run(frame)`` performs
+    fresh RHF followed by MP3. It returns an ``MP3Result`` with total energy,
+    total correlation energy and its second- and third-order contributions
+    in Hartree. The correlated total is written to ``frame.meta["energy"]``
+    in eV. ``frozen`` excludes the lowest occupied orbitals as in ``MP2``.
+
+``CudaRHF`` / ``CudaUHF`` take the same constructor arguments as ``RHF`` /
+``UHF``. They forward the existing public CUDA methods; unsupported basis,
+element or force envelopes raise without a CPU fallback. ``run`` computes
+energy only, ``forces`` explicitly computes analytic forces, and both complete
+``cudaDeviceSynchronize`` before returning. CUDA nonconvergence raises and
+does not publish the failed candidate to the supplied Frame.
+
+``backend_info()`` reports the actual CPU compiler, OpenMP maximum team size
+and the team size observed by a parallel region in the calling process.
+``cuda_backend_info()`` reports GPU identities, CUDA driver/runtime versions,
+current-device free/total memory snapshots, and completed synchronization.
+``cuda_synchronize()`` completes work on the current device, for timing or
+explicit cleanup boundaries. The CUDA functions exist only on CUDA HF builds;
+memory snapshots are not peak-memory measurements.
 
 ``basis`` is one of ``STO-3G``, ``6-31G``, ``6-31G*``, ``6-31+G*``,
-``def2-SVP``, ``def2-TZVP``, ``aug-cc-pVDZ``; ``functional`` is one of
+``def2-SVP``, ``def2-TZVP``, ``aug-cc-pVDZ``, ``cc-pVDZ``; ``xc`` is one of
 ``LSDA``, ``PBE``, ``PBEsol``, ``RevPBE``, ``RPBE``, ``BLYP``,
-``OptB88VdW``, ``B3LYP``, ``PBE0``, ``B2PLYP``. An unsupported name raises
+``OptB88VdW``, ``B3LYP``, ``PBE0``, ``B2PLYP``, ``CAMB3LYP``, ``PADE``. An unsupported name raises
 ``ValueError`` listing the supported ones — there is no fallback basis or
 functional.
 
 Convergence
 -----------
 
-``tol`` is the threshold on |dE|, the total-energy change between two
+For CPU methods, ``tol`` is the threshold on |dE|, the total-energy change between two
 successive iterations [Hartree]. ``converged()`` is True only when that
 *and* a second measure are met: the Frobenius norm of the DIIS error matrix
 below sqrt(``tol``). DIIS (*direct inversion of the iterative subspace*) is
@@ -92,28 +140,46 @@ These methods drive their own SCF loop, so they are used directly rather
 than through ``single_point`` — but ``single_point(frame, rhf)`` accepts
 them for symmetry with the AM1 evaluator and simply calls ``run``.
 
-Capability gate: the methods exist only on an extension built with
-``ATV_BUILD_HF=ON``. This module imports on every build and exports what
-was compiled, so ``__all__`` reflects the real capability instead of
-pretending an unavailable method exists.
+Capability gate: the methods exist only on an extension built with the
+``hf`` module (``ATV_BUILD_HF=ON``). On one built without it, importing this
+module raises ``MissingDomainError`` (an ``ImportError``) naming the flag.
 
 Pinned numbers behind this surface: ``python/tests/test_scf.py`` grades
 RHF/STO-3G water against the -74.961754 Ha value of
-``regressions/scf/h2o_rhf_sto3g/REFERENCE.md`` (1e-3 Ha window), UHF/6-31G*
-N2+ against ``regressions/scf/n2_ionization``, B3LYP/def2-SVP water against
-``regressions/scf/b3lyp-fused-jk-h2o``, and the oxygen force against
-``regressions/scf/h2o_rhf_sto3g_grad``.
+``regressions/scf/rhf/REFERENCE.md`` (1e-3 Ha window), UHF/6-31G*
+N2+ against ``regressions/scf/uhf``, B3LYP/def2-SVP water against
+``regressions/scf/rks``, and the oxygen force against
+``regressions/scf/rhf``.
 """
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, require_domain
 
-if hasattr(_cpp, "RHF"):
-    RHF = _cpp.RHF
-    UHF = _cpp.UHF
-    RKS = _cpp.RKS
-    UKS = _cpp.UKS
-    __all__ = ["RHF", "UHF", "RKS", "UKS"]
-else:
-    __all__: list[str] = []
+require_domain(__name__, "hf")
+
+RHF = _cpp.RHF
+UHF = _cpp.UHF
+RKS = _cpp.RKS
+UKS = _cpp.UKS
+ROHF = _cpp.ROHF
+GHF = _cpp.GHF
+backend_info = _cpp.hf_backend_info
+__all__ = ["RHF", "UHF", "ROHF", "GHF", "RKS", "UKS", "backend_info"]
+
+if hasattr(_cpp, "MP2") and hasattr(_cpp, "MP2Result"):
+    MP2 = _cpp.MP2
+    MP2Result = _cpp.MP2Result
+    __all__ += ["MP2", "MP2Result"]
+
+if hasattr(_cpp, "MP3") and hasattr(_cpp, "MP3Result"):
+    MP3 = _cpp.MP3
+    MP3Result = _cpp.MP3Result
+    __all__ += ["MP3", "MP3Result"]
+
+if hasattr(_cpp, "CudaRHF"):
+    CudaRHF = _cpp.CudaRHF
+    CudaUHF = _cpp.CudaUHF
+    cuda_backend_info = _cpp.cuda_hf_backend_info
+    cuda_synchronize = _cpp.cuda_hf_synchronize
+    __all__ += ["CudaRHF", "CudaUHF", "cuda_backend_info", "cuda_synchronize"]

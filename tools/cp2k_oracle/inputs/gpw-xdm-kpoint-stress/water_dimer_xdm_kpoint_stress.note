@@ -54,4 +54,4 @@ Provenance cross-check at pin time: the unstrained value **bit-reproduces**
 the shipped `gpw-xdm-ice` / `gpw-xdm-stress` periodic pin
 (−2.1148157612879029e-03 Ha).
 
-See `regressions/gpw/gpw-xdm-kpoint-stress/REFERENCE.md`.
+See `regressions/gpw/xdm/REFERENCE.md`.

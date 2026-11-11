@@ -46,7 +46,6 @@
 #include <type_traits>
 
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
 #include "atomiverse/cpu/communication/reduce.h"
 #include "atomiverse/cpu/component/bias.h"
 #include "atomiverse/cpu/component/gpw.h"
@@ -60,8 +59,8 @@
 #include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/driver/criteria.h"
 #include "atomiverse/cpu/driver/driver.h"
-#ifdef ATV_HAS_MOLRS
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#ifdef ATV_HAS_MOLPY
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #endif
 
 namespace ATV {
@@ -70,9 +69,9 @@ namespace minimizer {
 
 /// @brief Energy-minimization driver — convergence-aware Optimize loop.
 ///
-/// Auto-adds ZeroForces and ZeroEnergy at force phase. Wires the shared
-/// `cpu::Publish` into `end_of_step @ +10` so async observers
-/// see snapshots. `install_defaults()` injects the MPI infrastructure
+/// Auto-adds ZeroForces and ZeroEnergy at force phase. Asynchronous
+/// observers (`cpu::minimizer::AsyncObserver`) read their iterations from
+/// the driver's shared capture buffer. `install_defaults()` injects the MPI infrastructure
 /// documented in the file header (single-rank: structural no-ops).
 ///
 /// `validate_components()` requires ≥ 1 `Optimizer` component (e.g. `LBFGS`,
@@ -89,7 +88,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
   public:
     /// @brief Completed run plus the still-live owner decomposition.
     struct DetachedRun {
-        int iterations = 0;
+        BigInt iterations = 0;
         std::unique_ptr<cpu::md::mpi::DomainDecomposition> decomposition;
     };
 
@@ -105,7 +104,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// @param frame Host-resident system state, updated in place.
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
-    int run(cpu::Frame& frame, int max_iter) {
+    BigInt run(cpu::Frame& frame, BigInt max_iter) {
         return run_impl_(frame, max_iter, false).iterations;
     }
 
@@ -114,19 +113,19 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// Task orchestration uses this entry point to gather the final distributed
     /// Frame after component destruction. The decomposition is detached before
     /// Runtime shutdown, so its Cartesian communicator remains valid for gather.
-    DetachedRun run_detached(cpu::Frame& frame, int max_iter) {
+    DetachedRun run_detached(cpu::Frame& frame, BigInt max_iter) {
         return run_impl_(frame, max_iter, true);
     }
 
-    /// @brief User-facing entry — optimize the system stored in a molrs.Frame.
-    /// @param frame molrs.Frame handle (input geometry + output sink).
+    /// @brief User-facing entry — optimize the system stored in a molpy.Frame.
+    /// @param frame molpy.Frame handle (input geometry + output sink).
     /// @param max_iter Iteration budget.
     /// @return Number of iterations actually executed (≤ `max_iter`).
-#ifdef ATV_HAS_MOLRS
-    int run(molrs::FrameRef& frame, int max_iter) {
-        cpu::Frame work = cpu::from_molrs(frame);
-        const int iters = run(work, max_iter);
-        cpu::to_molrs(work, frame);
+#ifdef ATV_HAS_MOLPY
+    BigInt run(molrs::FrameRef& frame, BigInt max_iter) {
+        cpu::Frame work = cpu::from_molpy(frame);
+        const BigInt iters = run(work, max_iter);
+        cpu::to_molpy(work, frame);
         return iters;
     }
 #endif
@@ -141,7 +140,6 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
             .add(cpu::ZeroForces{}, -1000)
             .add(cpu::ZeroEnergy{}, -999)
             .add(cpu::ZeroStress{}, -998);
-        this->on(ATV::minimizer::Phase::end_of_step).add(cpu::Publish{}, 10);
     }
 
     // ─── Minimizer-specific categorical setters ─────────────────────
@@ -174,7 +172,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     }
 
     void install_defaults() override {
-        // A Minimize with no criterion would never stop early — the optimizer publishes
+        // A Minimize with only stop guards would never converge — the optimizer publishes
         // metrics and nobody judges them. So the PRESET supplies the policy it is a
         // preset for. This is what "MD-style pipelines become a default-constructed
         // driver + criterion" means in practice: the class contributes a default, not a
@@ -182,7 +180,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         //
         // Textbook LAMMPS/ASE-ish defaults; override wholesale with
         // `opt.add_criterion(cpu::ForceConverged{ftol, ...})` before build().
-        if (!this->has_criterion())
+        if (!this->has_convergence_criterion())
             this->add_criterion(cpu::ForceConverged{});
 
         const auto s = this->scan_pending_infra_();
@@ -201,11 +199,30 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
         this->throw_if_missing_neighbor_list_(
             s, "Minimize",
             "Add `opt.set_neighbor(cpu::md::NeighborList<>{cutoff, skin})`.");
+        // LAMMPS carries its per-atom minimizer vectors through FixMinimize
+        // when `atom_modify sort` fires inside Min::energy_force. CG / L-BFGS
+        // here keep row-indexed histories (x_prev, g_prev, s/y pairs), so a
+        // sort at a rebuild or a line-search replay would silently scramble
+        // the search direction. Drop sorting for this provider's life, as MC
+        // does for its row transactions.
+        this->for_each_pending_mut([](cpu::Component& c) {
+            if (cpu::NeighborProvider* np = c.neighbor_provider())
+                np->forbid_row_reordering();
+        });
+    }
+
+    void clear_singular_on_unfix_(std::string_view name) override {
+        if (optimizer_set_ && *optimizer_set_ == name)
+            optimizer_set_.reset();
     }
 
   private:
-    DetachedRun run_impl_(cpu::Frame& frame, int max_iter, bool detach_dd) {
+    DetachedRun run_impl_(cpu::Frame& frame, BigInt max_iter, bool detach_dd) {
+        if (max_iter < 0)
+            throw std::invalid_argument(
+                "Minimize iteration budget must be nonnegative");
         setup_pass(frame);
+        this->backend_->prepare_run();
         // Publish the re-entrant force re-eval handle so an Optimizer component can
         // evaluate trial geometries during the line_search phase. Replays the force
         // phase (zeroing → evaluator → reduce) on the frame's current geometry.
@@ -214,15 +231,32 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
             [this](bool /*need_grad*/) {
                 this->backend_->run_stage(Traits::eval_phase, /*step_idx=*/0);
             };
-        int iters = 0;
-        for (int s = 0; s < max_iter; ++s) {
+        // LAMMPS src/min.cpp Min::setup → Output::setup, e8c4c278a8
+        // (Copyright (2003) Sandia Corporation, GPL-2.0-only): the initial
+        // state is written as step 0; iteration s then ends at completed
+        // iteration s + 1 (`ntimestep = ++update->ntimestep` in iterate()).
+        this->backend_->setup_output(0);
+        auto& md_ctx = this->backend_->context().md;
+        BigInt iters = 0;
+        bool stopped = false;
+        for (BigInt s = 0; s < max_iter; ++s) {
             mutable_outer_status().reset();
+            // The budget's last iteration is LAMMPS `update->laststep`:
+            // thermo prints it whatever the cadence.
+            md_ctx.is_last_step = (s == max_iter - 1);
             step_once(s);
             ++iters;
             // The optimizer publishes metrics; criteria alone judge convergence.
-            if (poll_criteria_(s) != Verdict::Continue)
+            if (poll_criteria_(s) != Verdict::Continue) {
+                stopped = true;
                 break;
+            }
         }
+        md_ctx.is_last_step = false;
+        // LAMMPS Min::run: a stop before MAXITER forces output of the final
+        // state (dumps and thermo, each unless that step is already written).
+        if (stopped)
+            this->backend_->final_output(iters);
 
         DetachedRun result;
         result.iterations = iters;

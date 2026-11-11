@@ -10,8 +10,7 @@
 ///
 /// Usage:
 /// @code
-///   cuda::scf::RHF rhf;
-///   rhf.basis = cpu::scf::BasisSet::STO3G;
+///   cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 ///   cuda::single_point(frame, rhf);
 ///   // frame.meta.get(kEnergy) [eV] populated.
 /// @endcode

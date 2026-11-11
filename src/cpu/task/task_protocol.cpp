@@ -1,5 +1,5 @@
 /// @file cpu/task/task_protocol.cpp
-/// @brief RUN_TASK/SHUTDOWN command loop, handshake, and the shared
+/// @brief RUN_TASK/SHUTDOWN command loop and the shared
 ///        post-broadcast execution path (contract in task_protocol.h).
 
 #include "atomiverse/cpu/task/task_protocol.h"
@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/core/log.h"
 #include "atomiverse/cpu/communication/bcast_frame.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/communication/gather.h"
@@ -23,19 +24,6 @@ namespace cpu {
 namespace task {
 
 namespace {
-
-/// Collective version handshake: MAX/MIN allreduce the local version so
-/// EVERY rank learns both ends of a mismatch and can name them.
-void handshake(MPI_Comm comm, std::int32_t version) {
-    std::int32_t vmax = 0;
-    std::int32_t vmin = 0;
-    MPI_Allreduce(&version, &vmax, 1, MPI_INT32_T, MPI_MAX, comm);
-    MPI_Allreduce(&version, &vmin, 1, MPI_INT32_T, MPI_MIN, comm);
-    if (vmax != vmin)
-        throw std::runtime_error(
-            "task_protocol: protocol version mismatch across ranks (min "
-            + std::to_string(vmin) + ", max " + std::to_string(vmax) + ")");
-}
 
 /// MAX-allreduce a local status code; any rank's failure fails all.
 int combine_status(MPI_Comm comm, int local) {
@@ -136,8 +124,7 @@ void validate_common(MPI_Comm comm) {
 
 // ── WorkerLoop ────────────────────────────────────────────────────────────
 
-WorkerLoop::WorkerLoop(MPI_Comm comm, std::int32_t version)
-    : comm_(comm), version_(version) {
+WorkerLoop::WorkerLoop(MPI_Comm comm) : comm_(comm) {
     validate_common(comm_);
     int rank = 0;
     MPI_Comm_rank(comm_, &rank);
@@ -145,18 +132,12 @@ WorkerLoop::WorkerLoop(MPI_Comm comm, std::int32_t version)
         throw std::runtime_error(
             "task_protocol: WorkerLoop is for ranks != 0 (rank 0 owns the "
             "TaskDispatcher)");
-    handshake(comm_, version_);
 }
 
 void WorkerLoop::run() {
     for (;;) {
         CommandHeader hdr{};
         MPI_Bcast(&hdr, sizeof(CommandHeader), MPI_BYTE, 0, comm_);
-        if (hdr.version != version_)
-            throw std::runtime_error(
-                "task_protocol: corrupt command header (version "
-                + std::to_string(hdr.version) + ", expected "
-                + std::to_string(version_) + ")");
         if (hdr.command == static_cast<std::int32_t>(Command::SHUTDOWN))
             return;
         if (hdr.command != static_cast<std::int32_t>(Command::RUN_TASK))
@@ -190,17 +171,13 @@ void WorkerLoop::run() {
 
 // ── TaskDispatcher ────────────────────────────────────────────────────────
 
-TaskDispatcher::TaskDispatcher(MPI_Comm comm, std::int32_t version,
-                               bool do_handshake)
-    : comm_(comm), version_(version) {
+TaskDispatcher::TaskDispatcher(MPI_Comm comm) : comm_(comm) {
     validate_common(comm_);
     int rank = 0;
     MPI_Comm_rank(comm_, &rank);
     if (rank != 0)
         throw std::runtime_error(
             "task_protocol: TaskDispatcher must be constructed on rank 0");
-    if (do_handshake)
-        handshake(comm_, version_);
 }
 
 DispatchResult TaskDispatcher::dispatch(const TaskSpec& spec,
@@ -209,11 +186,13 @@ DispatchResult TaskDispatcher::dispatch(const TaskSpec& spec,
     MPI_Comm_size(comm_, &world);
     if (world <= 1) {
         // Serial degrade: no workers, no collectives — materialize and run
-        // locally (gather_to_root's own single-rank path is equivalent to
-        // returning the frame as-is).
+        // locally. The result still goes through the owner gather: the run
+        // may have spatially sorted the rows, and the result-frame contract
+        // is tag order at every rank count.
         TaskMaterializer mat(spec);
         TaskResult control = mat.run(frame);
-        return DispatchResult{std::move(frame), std::move(control)};
+        return DispatchResult{assemble_result(comm_, mat, frame),
+                              std::move(control)};
     }
 
     std::vector<std::byte> bytes = pack(spec);
@@ -222,7 +201,6 @@ DispatchResult TaskDispatcher::dispatch(const TaskSpec& spec,
                                  + std::to_string(bytes.size())
                                  + " bytes exceeds the broadcast limit");
     CommandHeader hdr{};
-    hdr.version = version_;
     hdr.command = static_cast<std::int32_t>(Command::RUN_TASK);
     hdr.payload_bytes = static_cast<std::int64_t>(bytes.size());
     MPI_Bcast(&hdr, sizeof(CommandHeader), MPI_BYTE, 0, comm_);
@@ -247,7 +225,6 @@ void TaskDispatcher::shutdown() {
     if (world <= 1)
         return; // no workers to release
     CommandHeader hdr{};
-    hdr.version = version_;
     hdr.command = static_cast<std::int32_t>(Command::SHUTDOWN);
     MPI_Bcast(&hdr, sizeof(CommandHeader), MPI_BYTE, 0, comm_);
 }

@@ -1,67 +1,45 @@
-# Chapter 3. Unrestricted Hartree–Fock
+# Open-Shell Systems
 
-Restricted Hartree-Fock is a good first model because it explains molecular
-orbitals, density matrices, and self-consistency with the least amount of
-machinery. It also fails in exactly the situations that matter most for open
-shells and bond breaking. This chapter is about that failure and about the
-smallest change that repairs it: allow the $\alpha$ and $\beta$ electrons
-to occupy different spatial orbitals.
+Status tables: [Hartree–Fock roadmap](../roadmap/hartree-fock.md).
 
-Dissociation limit: \(2\times E(\mathrm{H})=-0.9332\) Ha.
+A hydrogen atom has an unpaired electron. Oxygen has a ground state with
+unpaired electrons, and stretched hydrogen challenges the assumption that
+opposite spins should share the same spatial orbital. These examples
+separate electron counting from the more subtle question of spin symmetry.
 
-## Live Result: H₂ Dissociation
+**Learning goals.** Count spin populations, understand UHF, and distinguish
+an energy improvement from recovery of a definite spin state.
 
-RHF cannot dissociate to two neutral H atoms; UHF can. The scan below is the
-actual dissociation scan (columns: \(R\), \(E_\mathrm{RHF}\),
-\(E_\mathrm{UHF}\), \(\langle S^2\rangle\)).
+**Before you begin.** The density matrix and determinant of
+[Hartree–Fock Theory](ch02-rhf.md).
 
-```molplot preset="molplot" theme="auto" width="100%" aspect="16:9"
-mark: {type: line, point: true, tooltip: true, strokeWidth: 2}
-data:
-  values:
-    - {R: 0.50, method: RHF, E: -1.042996}
-    - {R: 0.75, method: RHF, E: -1.116151}
-    - {R: 1.00, method: RHF, E: -1.066109}
-    - {R: 1.25, method: RHF, E: -0.989114}
-    - {R: 1.50, method: RHF, E: -0.910874}
-    - {R: 1.75, method: RHF, E: -0.841349}
-    - {R: 2.00, method: RHF, E: -0.783793}
-    - {R: 2.50, method: RHF, E: -0.702944}
-    - {R: 3.00, method: RHF, E: -0.656048}
-    - {R: 3.50, method: RHF, E: -0.629820}
-    - {R: 4.00, method: RHF, E: -0.614870}
-    - {R: 0.50, method: UHF, E: -1.042996}
-    - {R: 0.75, method: UHF, E: -1.116151}
-    - {R: 1.00, method: UHF, E: -1.066109}
-    - {R: 1.25, method: UHF, E: -0.994190}
-    - {R: 1.50, method: UHF, E: -0.957707}
-    - {R: 1.75, method: UHF, E: -0.943080}
-    - {R: 2.00, method: UHF, E: -0.937213}
-    - {R: 2.50, method: UHF, E: -0.933867}
-    - {R: 3.00, method: UHF, E: -0.933285}
-    - {R: 3.50, method: UHF, E: -0.933182}
-    - {R: 4.00, method: UHF, E: -0.933166}
-encoding:
-  x: {field: R, type: quantitative, title: "R (Å)", scale: {zero: false}}
-  y:
-    field: E
-    type: quantitative
-    title: "E (Hartree)"
-    scale: {zero: false, nice: true}
-  color: {field: method, type: nominal, title: null}
-  tooltip:
-    - {field: method, type: nominal}
-    - {field: R, type: quantitative, format: ".2f"}
-    - {field: E, type: quantitative, format: ".6f"}
-```
+## Spin populations and total spin
 
-At \(R=4\) Å, UHF sits at **−0.933166 Ha** — within \(3\times 10^{-5}\) Ha of
-the exact one-electron limit \(2\times E(\mathrm{H})=-0.9332\) Ha. RHF is still
-**−0.61487 Ha**, more than 0.3 Ha too high. Spin contamination
-\(\langle S^2\rangle\) rises from 0 near equilibrium toward 1 as the UHF
-solution becomes two separate radicals.
+For molecular charge $q$ in units of positive elementary charge,
+$N_e=\sum_A Z_A-q$. The populations satisfy
+$N_\alpha+N_\beta=N_e$ and $M_S=(N_\alpha-N_\beta)/2$.
+Multiplicity is $2S+1$. Fixing the projection $M_S$ does not guarantee a
+wavefunction with definite total spin $S$.
 
-## Why RHF Stops Being Enough
+UHF permits separate alpha and beta spatial orbitals. For each spin,
+$P^\sigma=C_{\mathrm{occ}}^\sigma(C_{\mathrm{occ}}^\sigma)^T$, with no
+factor of two. Both channels see the total Coulomb density, but exchange
+acts within a spin channel:
+
+$$F^\alpha=h+J[P^\alpha+P^\beta]-K[P^\alpha],\qquad
+F^\beta=h+J[P^\alpha+P^\beta]-K[P^\beta].$$
+
+The enlarged variational freedom can lower the optimized energy. It can
+also break spin symmetry. A pure spin state has
+$\langle\hat S^2\rangle=S(S+1)$ in units of $\hbar^2$; compare that value
+with the intended state rather than inferring spin purity from occupations alone.
+
+Restricted open-shell and generalized HF impose different spin and orbital
+constraints. They are not simply successive accuracy settings. Their
+stability and compatibility with downstream methods must be checked for
+the physical state being studied.
+
+## The restricted approximation
 
 The central RHF assumption is that one spatial orbital is occupied by two
 electrons of opposite spin. Near equilibrium, that is often a reasonable
@@ -81,7 +59,7 @@ spatial orbital with opposite spin. That is why the UHF example in this
 repository begins with the hydrogen atom: it is the smallest case that forces
 you to abandon the restricted ansatz.
 
-## What UHF Changes And What It Keeps
+## Spin-resolved equations
 
 UHF keeps the mean-field Hartree-Fock idea. The electrons still move in an
 average field built from the current density, and the calculation is still an
@@ -119,20 +97,104 @@ Once those matrices are built, the logic is completely familiar. Diagonalize
 each spin channel, occupy the lowest orbitals in that channel, rebuild the two
 densities, and iterate until they stop moving.
 
-## Reading The Example
+## Spin contamination
+
+The price of unrestricted flexibility is that the UHF determinant is usually
+not an exact eigenfunction of $\hat S^2$. That is what the spin
+contamination number measures. In the usual notation, the contaminated amount is
+
+$$
+\Delta\langle \hat S^2 \rangle
+= \langle \hat S^2 \rangle_{\mathrm{UHF}} - S(S+1).
+$$
+
+Near equilibrium in a closed-shell singlet, this number should be close to
+zero. When $\mathrm{H}_2$ is stretched and the unrestricted solution breaks
+spin symmetry, the contamination rises. That is not automatically a bug. In the
+bond-breaking regime it is part of the mechanism by which UHF escapes the
+artificially restricted RHF picture.
+
+The repository example makes this tangible. Near equilibrium, RHF and UHF stay
+close because the electrons still behave like a closed-shell pair. As the bond
+is stretched, the unrestricted solution lowers the energy by letting the two
+spins localize differently. The growth of spin contamination is the visible
+trace of that symmetry breaking.
+
+## Diagnostics and limitations
+
+The most common mistake is giving the wrong spin occupation. If the total
+electron count is wrong, everything downstream is wrong. If the spin split is
+wrong, the solver may converge cleanly to the wrong state. The second common
+mistake is to read nonzero spin contamination as a sign that the calculation
+failed. In the bond-breaking example it is the opposite: contamination is the
+visible trace of unrestricted symmetry breaking doing the job RHF could not do.
+
+The more subtle mistake is to compare only total energies and ignore the rest of
+the result. UHF is a spin-resolved method. If the $\alpha$ and $\beta$
+densities, orbital energies, and contamination all look like the restricted
+solution, then the unrestricted machinery has not actually changed the physics,
+even if the solver was configured for UHF.
+
+## Practice plan
+
+Begin with hydrogen, using one alpha electron and no beta electron. Then
+scan H₂ with equal spin populations and several initial guesses, including
+slightly different alpha and beta densities. Record energy, convergence,
+spin expectation, and branch continuity.
+
+A symmetric initial guess may stay on an RHF-like branch. A lower broken-spin
+solution may improve the separated-fragment energy without representing
+the exact singlet. Compare against a tiny-basis full-CI result before
+interpreting that lowering as a complete solution to bond breaking.
+
+## Example configuration
 
 The key change in the code is as small as the key change in the theory:
 instead of one occupation pattern, you now choose one for each spin channel.
 In the example, that choice appears directly in calls such as
 
 ```cpp
-cpu::scf::UHF uhf(n_alpha, n_beta);
-uhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, n_alpha, n_beta};
 uhf.tol = tol;
 uhf.max_iter = max_iter;
-uhf.run(frame);                       // eV energy on frame.meta[kEnergy]
+uhf.run(frame);                       // eV energy on frame.meta.get(kEnergy)
 double e_ha = uhf.energy();           // total energy [Hartree]
 const auto& det = uhf.determinant();  // per-spin orbitals and occupations
+```
+
+## Device UHF
+
+`cuda::scf::UHF` is that call on the device, for STO-3G shells with
+l ≤ 1 only. The constructor is
+`cuda::scf::UHF{basis, n_alpha, n_beta, charge}`, the same arguments as
+`cpu::scf::UHF{basis, n_alpha, n_beta, charge}`. There is no const `run`.
+The SCF is `cuda::Driver<scf::Phase>`
+(`fock`, `mix`, `diagonalize`, `density`, `check`). Fock, CDIIS, both
+densities, and the analytic gradient stay on the device. The start is
+the spin-averaged MINAO density for H, C, N, O, and F; any other element
+keeps the core Hamiltonian. Anything outside STO-3G l ≤ 1 throws
+(`launch_eri_sp`, `launch_uhf_forces_sp`) and does not fill ERIs on the
+host.
+
+H₂⁺ is two protons and one α electron. `run` writes the energy onto the
+Frame; `forces` writes that energy and the nuclear forces.
+
+```cpp
+cpu::Frame frame(2);
+frame.span(kAtom_atomic_number)[0] = 1;
+frame.span(kAtom_atomic_number)[1] = 1;
+frame.span(kAtom_x)[0] = 0;
+frame.span(kAtom_y)[0] = 0;
+frame.span(kAtom_z)[0] = 0;
+frame.span(kAtom_x)[1] = 0;
+frame.span(kAtom_y)[1] = 0;
+frame.span(kAtom_z)[1] = 0.74;
+frame.box = cpu::Box::cubic(20.0);
+
+cuda::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1,
+                   /*n_beta=*/0, /*charge=*/1};
+uhf.run(frame);  // frame.meta.get(kEnergy) [eV]; uhf.energy() [Hartree]
+cpu::scf::GradientResult g = uhf.forces(frame); // kAtom_fx/fy/fz [eV/Å]
 ```
 
 The input you must choose carefully is the spin occupation. `n_alpha` and
@@ -153,7 +215,7 @@ with `n_alpha = 1`, `n_beta = 0`, and a total energy near the STO-3G reference
 of $-0.4666$ Hartree. A stretched $\mathrm{H}_2$ scan should show the
 $\alpha$ and $\beta$ channels separating as the bond length grows.
 
-## Charge and Multiplicity Conventions
+## Charge and spin conventions
 
 **Concept.** An open-shell calculation is specified by two user-visible
 integers: the molecular charge $q$ and the spin multiplicity $M$. Everything
@@ -190,7 +252,7 @@ const int multiplicity = 2;                                 // M = 2S + 1
 const int n_alpha = (n_electrons + multiplicity - 1) / 2;   // 5
 const int n_beta  = (n_electrons - multiplicity + 1) / 2;   // 4
 
-cpu::scf::UHF uhf(n_alpha, n_beta);   // (5, 4)
+cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, n_alpha, n_beta};   // (5, 4)
 ```
 
 Guard the two validity conditions yourself before constructing: $N_e$ and
@@ -219,7 +281,7 @@ $\mathrm{H}(0, 4)$ — $M = 4 > N_e + 1 = 2$ would need $n_\beta = -1$.
 One convention contrast worth memorizing: PySCF's `mol.spin` is **not** the
 multiplicity — it is $2S = n_\alpha - n_\beta = M - 1$. A PySCF doublet is
 `spin=1`; here you write the same state as $M = 2$, i.e.
-`cpu::scf::UHF{5, 4}`.
+`cpu::scf::UHF{basis, 5, 4}`.
 
 **Limitations.** Resolving the occupation fixes bookkeeping only. It cannot tell you
 *which* multiplicity is the ground state (the O atom is a triplet because of
@@ -234,33 +296,10 @@ protect against spin contamination — that diagnostic is the next section.
      FeedsUksConfigRawCounts. Change one side only in lockstep with the
      other. -->
 
-## Spin Contamination: What It Means Here
-
-The price of unrestricted flexibility is that the UHF determinant is usually
-not an exact eigenfunction of $\hat S^2$. That is what the spin
-contamination number measures. In the usual notation, the contaminated amount is
-
-$$
-\Delta\langle \hat S^2 \rangle
-= \langle \hat S^2 \rangle_{\mathrm{UHF}} - S(S+1).
-$$
-
-Near equilibrium in a closed-shell singlet, this number should be close to
-zero. When $\mathrm{H}_2$ is stretched and the unrestricted solution breaks
-spin symmetry, the contamination rises. That is not automatically a bug. In the
-bond-breaking regime it is part of the mechanism by which UHF escapes the
-artificially restricted RHF picture.
-
-The repository example makes this tangible. Near equilibrium, RHF and UHF stay
-close because the electrons still behave like a closed-shell pair. As the bond
-is stretched, the unrestricted solution lowers the energy by letting the two
-spins localize differently. The growth of spin contamination is the visible
-trace of that symmetry breaking.
-
-## ΔSCF: Ionization Energies Beyond Koopmans
+## State-specific ionization
 
 The previous chapter's Koopmans section (see the Koopmans discussion in
-[Chapter 2](ch02-rhf.md)) estimated the ionization
+[Hartree–Fock Theory](ch02-rhf.md)) estimated the ionization
 energy of a closed-shell molecule as $I_K = -\varepsilon_\text{HOMO}$: the
 negative of the highest occupied orbital energy. That estimate is free — you
 already have the orbital energies once the neutral SCF converges — but it rests
@@ -323,9 +362,7 @@ channels with half of the converged neutral density,
 ```cpp
 using Spin = cpu::scf::SlaterDeterminant::Spin;
 
-cpu::scf::RHF neutral;
-neutral.basis = basis;
-neutral.charge = 0;
+cpu::scf::RHF neutral{basis, /*charge=*/0};
 neutral.tol = tol;
 neutral.max_iter = max_iter;
 neutral.run(frame);
@@ -335,9 +372,7 @@ guess.P_alpha = neutral.determinant().density(Spin::alpha);   // half the total
 guess.P_beta  = guess.P_alpha;                                // restricted density
 guess.has_alpha = guess.has_beta = true;
 
-cpu::scf::UHF cation(N/2, N/2 - 1);
-cation.basis = basis;
-cation.charge = 1;
+cpu::scf::UHF cation{basis, N/2, N/2 - 1, /*charge=*/1};
 cation.tol = tol;
 cation.run(frame, &guess);
 ```
@@ -374,7 +409,7 @@ numbers toward experiment; relaxing the cation geometry would convert vertical
 to adiabatic. The worked table for all five systems in both bases is
 a second UHF run on the cation with adjusted `charge` / `n_alpha` / `n_beta`.
 
-## Running The Example
+## Running the example
 
 The build path is straightforward:
 
@@ -382,21 +417,6 @@ The example is a good companion to this chapter because it places RHF and UHF
 side by side instead of treating UHF as a separate world. You can watch the
 method collapse back to RHF when the restricted approximation is safe, then
 watch it diverge only when that extra freedom becomes physically necessary.
-
-## Where Readers Usually Go Wrong
-
-The most common mistake is giving the wrong spin occupation. If the total
-electron count is wrong, everything downstream is wrong. If the spin split is
-wrong, the solver may converge cleanly to the wrong state. The second common
-mistake is to read nonzero spin contamination as a sign that the calculation
-failed. In the bond-breaking example it is the opposite: contamination is the
-visible trace of unrestricted symmetry breaking doing the job RHF could not do.
-
-The more subtle mistake is to compare only total energies and ignore the rest of
-the result. UHF is a spin-resolved method. If the $\alpha$ and $\beta$
-densities, orbital energies, and contamination all look like the restricted
-solution, then the unrestricted machinery has not actually changed the physics,
-even if the solver was configured for UHF.
 
 ## SCF stability analysis
 
@@ -439,24 +459,22 @@ imply external stability. Stretched H₂ sits in exactly that trap.
 
 ### Example: stability of stretched H₂
 
-`RHF::stability()` after `run()` returns the lowest eigenvalues, stability
+`Stability<RHF>::run()` after `run()` returns the lowest eigenvalues, stability
 flags, and—when external instability is found—orbitals rotated along the
 unstable mode for use as a UHF guess:
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.tol = 1e-12;
 rhf.run(frame); // H2, R = 1.5 Å
 
-auto st = rhf.stability();
+auto st = cpu::scf::Stability<cpu::scf::RHF>{rhf}.run();
 // st.internal_eigenvalue ≈ +0.71 Ha  → internally stable
 // st.external_eigenvalue ≈ −0.21 Ha  → externally unstable
 if (!st.external_stable) {
     // Build a broken-symmetry guess from st.rotated_C; see
-    // regressions/scf/h2_rhf_stability for the full construction.
-    cpu::scf::UHF uhf{1, 1};
-    uhf.basis = cpu::scf::BasisSet::STO3G;
+    // `h2_rhf_stability` for the full construction.
+    cpu::scf::UHF uhf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/1, /*n_beta=*/1};
     uhf.run(frame, &guess);
     // uhf.energy() ≈ −0.958 Ha < rhf.energy() ≈ −0.911 Ha
 }
@@ -482,7 +500,7 @@ second-order SCF, CPHF response, and TDHF excitation energies.
 
 PySCF’s `mf.stability(external=True)` at \(R=1.5\,\mathrm{Å}\) reports the
 same internal-stable / external-unstable diagnosis. Geometry and commands are
-in `regressions/scf/h2_rhf_stability/REFERENCE.md`.
+in section `h2_rhf_stability` of case `scf/rhf`.
 
 ## Restricted Open-Shell HF
 
@@ -515,15 +533,13 @@ bug report.
 
 ```cpp
 // O2 triplet, R = 1.2075 Å, (n_alpha, n_beta) = (9, 7), STO-3G
-cpu::scf::ROHF rohf(9, 7); // requires n_alpha >= n_beta
-rohf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROHF rohf{cpu::scf::BasisSet::STO3G, /*n_alpha=*/9, /*n_beta=*/7}; // requires n_alpha >= n_beta
 rohf.tol = 1e-12;
 rohf.run(frame);
 // energy ≈ −147.632167 Ha; spin contamination = 0
 
 // planar D3h methyl, R(C–H) = 1.079 Å, (5, 4)
-cpu::scf::ROHF ch3(5, 4);
-ch3.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::ROHF ch3{cpu::scf::BasisSet::STO3G, /*n_alpha=*/5, /*n_beta=*/4};
 ch3.run(frame_ch3); // ≈ −39.072133 Ha, <S²> = 0.75
 ```
 
@@ -570,8 +586,46 @@ exchange couples all four spin blocks.
 Fukutome (*Int. J. Quantum Chem.* **20**, 955 (1981)) classifies HF mean
 fields by broken symmetries. The real-algebra GHF implemented here corresponds
 to a torsional spin-density-wave sector: magnetisation lies in one spin plane
-(\(\sigma_x,\sigma_z\) real; \(\sigma_y\) imaginary). Complex GHF and
-spin–orbit coupling are out of scope.
+(\(\sigma_x,\sigma_z\) real; \(\sigma_y\) imaginary).
+
+Complex coefficients and one-electron spin–orbit coupling are a separate
+method, `cpu::scf::ComplexGHF` : `cpu::Driver<scf::Phase>` + `cpu::HF`,
+not a `MeanFieldMethod` and not a member of real `GHF`. The SCF stages
+are fock, mix (CDIIS), diagonalize, density, and check. A Criterion
+judges two successive energy changes; the method does not assign
+convergence. Constructor argument `x2c` defaults to true: the core is
+the spin-orbital X2C-1e Hamiltonian (PySCF `GHF.x2c1e`, contracted
+basis). `x2c = false` is non-relativistic complex GHF (block-diagonal
+T+V). Two-electron integrals stay non-relativistic. `provides_force()`
+is false; `forces` throws `complex_ghf_nuclear_forces`. On the X2C path,
+shells with l > 3 throw `complex_ghf_ao_lgt3`. There is no device path.
+The CPU call is Frame in / Frame out:
+
+```cpp
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
+cpu::scf::ComplexGHF ghf{cpu::scf::BasisSet::STO3G}; // charge 0, tol 1e-10, max_iter 80, x2c true
+ghf.run(frame);   // kEnergy and kEnergyElectronic [eV]; ghf.energy() [Ha]
+```
+
+Four-component Dirac–Hartree–Fock is `cpu::scf::DHF` :
+`cpu::Driver<scf::Phase>` + `cpu::HF`, not a `MeanFieldMethod` and not a
+member of `ComplexGHF`. The SCF stages are fock, mix (CDIIS),
+diagonalize, density, and check. A Criterion judges two successive
+energy changes; the method does not assign convergence. It follows
+PySCF `scf.DHF`: complex j-adapted spinors, a kinetically balanced
+large/small metric, and Dirac–Coulomb (LL|LL)+(SS|LL). The (SS|SS)
+block is not assembled, and there is no Gaunt or Breit term. Shells
+with l > 1 throw `dhf_ao_lgt1`. `provides_force()` is false; `forces`
+throws `dhf_nuclear_forces`. There is no device path.
+The CPU call is Frame in / Frame out. `run(Frame&)` overwrites
+`kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes
+nothing; `energy()` is the total in Hartree.
+
+```cpp
+cpu::Frame frame = /* positions [Å], species in kAtom_atomic_number */;
+cpu::scf::DHF dhf{cpu::scf::BasisSet::CcPVDZ}; // hydrogen only; charge 0, tol 1e-10, max_iter 80
+dhf.run(frame);   // kEnergy and kEnergyElectronic [eV]; dhf.energy() [Ha]
+```
 
 ### When the extra freedom matters
 
@@ -591,8 +645,7 @@ convergence the Mulliken spin vectors (real algebra: magnetisation in the
 
 ```cpp
 // equilateral H3, side 1.0 Å, STO-3G
-cpu::scf::GHF ghf(3); // total electron count for spinor aufbau
-ghf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::GHF ghf{cpu::scf::BasisSet::STO3G, /*n_electrons=*/3}; // total electron count for spinor aufbau
 ghf.tol = 1e-12;
 ghf.guess_spin_rotation = 2.0 * M_PI / 3.0; // geometry-adapted Néel angle
 ghf.run(frame);
@@ -612,10 +665,10 @@ On the same geometry collinear UHF itself has two stationary points (a pure
 doublet and a lower broken-symmetry solution). Cold-start UHF in this engine
 lands on the former; PySCF’s MINAO often lands on the latter. The non-collinear
 GHF minimum lies below both; full verification is in
-`regressions/scf/h3_ghf_sto3g/REFERENCE.md`.
+section `h3_ghf_sto3g` of case `scf/ghf`.
 
-Analytic nuclear forces are supported (`ghf.forces(frame)`; pin in
-`regressions/scf/ghf-grad-h3-sto3g/`). Unsupported (explicit errors):
+Analytic nuclear forces are supported (`ghf.forces(frame)`; pin in section
+`ghf-grad-h3-sto3g` of case `scf/ghf`). Unsupported (explicit errors):
 `mp2()`/`fci()`, `soscf`, `level_shift`, EDIIS/ADIIS, non-Hcore guesses.
 Spinor exchange requires a stored dense ERI (`compute_eri`, on by default).
 
@@ -631,4 +684,64 @@ Spinor exchange requires a stored dense ERI (`compute_eri`, on by default).
 The next chapter keeps the spin-resolved structure of UHF but changes the mean
 field itself. Instead of explicit Hartree–Fock exchange, it uses an
 exchange-correlation functional on a real-space grid:
-[Chapter 5](ch05-kohn-sham-dft.md).
+[Density Functional Theory](ch05-kohn-sham-dft.md).
+
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
+
+## Reference results: H₂ Dissociation
+
+RHF cannot dissociate to two neutral H atoms; UHF can. The scan below is the
+actual dissociation scan (columns: \(R\), \(E_\mathrm{RHF}\),
+\(E_\mathrm{UHF}\), \(\langle S^2\rangle\)).
+
+```molplot preset="molplot" theme="auto" width="100%" aspect="16:10"
+mark: {type: line, point: true, tooltip: true, strokeWidth: 2}
+data:
+  values:
+    - {R: 0.50, method: RHF, E: -1.042996}
+    - {R: 0.75, method: RHF, E: -1.116151}
+    - {R: 1.00, method: RHF, E: -1.066109}
+    - {R: 1.25, method: RHF, E: -0.989114}
+    - {R: 1.50, method: RHF, E: -0.910874}
+    - {R: 1.75, method: RHF, E: -0.841349}
+    - {R: 2.00, method: RHF, E: -0.783793}
+    - {R: 2.50, method: RHF, E: -0.702944}
+    - {R: 3.00, method: RHF, E: -0.656048}
+    - {R: 3.50, method: RHF, E: -0.629820}
+    - {R: 4.00, method: RHF, E: -0.614870}
+    - {R: 0.50, method: UHF, E: -1.042996}
+    - {R: 0.75, method: UHF, E: -1.116151}
+    - {R: 1.00, method: UHF, E: -1.066109}
+    - {R: 1.25, method: UHF, E: -0.994190}
+    - {R: 1.50, method: UHF, E: -0.957707}
+    - {R: 1.75, method: UHF, E: -0.943080}
+    - {R: 2.00, method: UHF, E: -0.937213}
+    - {R: 2.50, method: UHF, E: -0.933867}
+    - {R: 3.00, method: UHF, E: -0.933285}
+    - {R: 3.50, method: UHF, E: -0.933182}
+    - {R: 4.00, method: UHF, E: -0.933166}
+encoding:
+  x: {field: R, type: quantitative, title: "R (Å)", scale: {zero: false}}
+  y:
+    field: E
+    type: quantitative
+    title: "E (Hartree)"
+    scale: {zero: false, nice: true}
+  color: {field: method, type: nominal, title: null}
+  tooltip:
+    - {field: method, type: nominal}
+    - {field: R, type: quantitative, format: ".2f"}
+    - {field: E, type: quantitative, format: ".6f"}
+```
+
+At \(R=4\) Å, UHF sits at **−0.933166 Ha** — within \(3\times 10^{-5}\) Ha of
+the exact one-electron limit \(2\times E(\mathrm{H})=-0.9332\) Ha. RHF is still
+**−0.61487 Ha**, more than 0.3 Ha too high. Spin contamination
+\(\langle S^2\rangle\) rises from 0 near equilibrium toward 1 as the UHF
+solution becomes two separate radicals.
+
+## Questions for reflection
+
+Does one alpha and one beta electron imply a singlet? Why can two converged initial guesses lead to different electronic branches?

@@ -44,7 +44,7 @@ namespace semiempirical {
 /// gradient. Because \f$H=\partial E/\partial P\f$ exactly, the density is
 /// stationary and no coupled-perturbed charge response is needed; gated
 /// against re-SCC finite differences by
-/// `regressions/semiempirical/dftb3-analytic-forces/`. This is **not** a
+/// `regressions/semiempirical/dftb3/`. This is **not** a
 /// finite-difference path: one SCC solve per force evaluation, not \f$6N+1\f$.
 ///
 /// **PBC:** Γ-point lattice-image walk for H⁰/S, γ/Γ, repulsive, and analytic
@@ -54,8 +54,7 @@ namespace semiempirical {
 /// Units on the public surface: energy [eV], positions [Å], forces [eV/Å].
 ///
 /// @code
-///   cpu::semiempirical::DFTB3 dftb3;
-///   dftb3.sk_set = cpu::semiempirical::DftbSkSet::MioSketch;
+///   cpu::semiempirical::DFTB3 dftb3{cpu::semiempirical::DftbSkSet::MioSketch};
 ///   dftb3.hubbard_du_ha = basis_data::k3obHubbardDerivsHa;
 ///   dftb3.with_forces = true;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(dftb3));
@@ -77,12 +76,15 @@ class DFTB3 : public cpu::Semiempirical {
     /// @brief When true, write forces F=−∇E [eV/Å] on launch (closed form).
     bool with_forces = true;
 
+    /// @brief Whether the configured evaluator supplies nuclear forces.
+    bool provides_force() const override { return with_forces; }
+
     /// @brief Static SK parameter set. Default `Unset` — DFTB3 will not pick
     ///        one. `launch()` throws `std::invalid_argument` if left `Unset`.
     ///        Declare `DftbSkSet::MioSketch` (mixed-set warning: 3ob
     ///        \(U^{\mathrm d}\) on mio SK must not be labelled `oracle: dftb+`)
     ///        or `ThreeOb` (`std::runtime_error` until `dftb-gamma-h-damping`).
-    DftbSkSet sk_set = DftbSkSet::Unset;
+    const DftbSkSet sk_set;
 
     /// @brief Per-Z DFTB3 Hubbard derivatives \(U^{\mathrm d}=dU/dq\)
     ///        [Ha] (atomic units, as in DFTB+ HubbardDerivs / SpinConstants — NOT eV).
@@ -94,7 +96,9 @@ class DFTB3 : public cpu::Semiempirical {
     /// The published 3ob-3-1 table is `basis_data::k3obHubbardDerivsHa`.
     std::array<double, 96> hubbard_du_ha{};
 
-    DFTB3() = default;
+    /// @brief DFTB3.
+    /// @param sk_set Slater–Koster parameter set (`Unset` throws at build).
+    explicit DFTB3(DftbSkSet sk_set) : sk_set(sk_set) {}
 
     /// @brief Component name token `"dftb3"` (dimensionless).
     std::string name() const override { return "dftb3"; }

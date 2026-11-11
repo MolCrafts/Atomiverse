@@ -15,10 +15,11 @@
 
 #include <gtest/gtest.h>
 
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/nddo_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
 
-using namespace ATV::cpu::semiempirical;
+using namespace ATV::semiempirical;
 
 namespace {
 
@@ -38,7 +39,7 @@ struct CalparDerived {
 /// @brief Re-derive MOPAC's `calpar.F90` block for one parameter row.
 /// @param p Table row (primary parameters only are read).
 /// @return The six derived values in MOPAC's units.
-CalparDerived calpar(const AM1Parameter& p) {
+CalparDerived calpar(const ATV::semiempirical::AM1Parameter& p) {
     const int k = p.iop;
     const int l = std::min(k, 6 - k);
     const double gssc = std::max(p.ios - 1, 0);
@@ -51,8 +52,8 @@ CalparDerived calpar(const AM1Parameter& p) {
     const double hpp = std::max(0.1, 0.5 * (p.gpp - p.gp2));
 
     CalparDerived d{};
-    d.eisol = p.uss * p.ios + p.upp * p.iop + p.udd * p.iod + p.gss * gssc +
-              p.gpp * gppc + p.gsp * gspc + p.gp2 * gp2c + hsp * hspc;
+    d.eisol = p.uss * p.ios + p.upp * p.iop + p.udd * p.iod + p.gss * gssc
+              + p.gpp * gppc + p.gsp * gspc + p.gp2 * gp2c + hsp * hspc;
     d.am = p.gss / kMopacEv;
 
     if (p.zp < 1.0e-8) { // s-only valence shell (H): MOPAC's post-loop branch
@@ -66,8 +67,8 @@ CalparDerived calpar(const AM1Parameter& p) {
 
     // Principal quantum number of the valence shell (MOPAC `nspqn`).
     const double qn = (p.iop > 0) ? p.principal_p : p.principal_s;
-    d.dd = (2.0 * qn + 1.0) * std::pow(4.0 * p.zs * p.zp, qn + 0.5) /
-           std::pow(p.zs + p.zp, 2.0 * qn + 2.0) / std::sqrt(3.0);
+    d.dd = (2.0 * qn + 1.0) * std::pow(4.0 * p.zs * p.zp, qn + 0.5)
+           / std::pow(p.zs + p.zp, 2.0 * qn + 2.0) / std::sqrt(3.0);
     d.qq = std::sqrt((4.0 * qn * qn + 6.0 * qn + 2.0) / 20.0) / p.zp;
 
     // AD solves  hsp/ev = 0.5 x - 0.5 / sqrt(4 dd^2 + 1/x^2), 5 secant steps
@@ -113,7 +114,7 @@ CalparDerived calpar(const AM1Parameter& p) {
     return d;
 }
 
-void expect_row_matches_calpar(const AM1Parameter& p) {
+void expect_row_matches_calpar(const ATV::semiempirical::AM1Parameter& p) {
     const CalparDerived d = calpar(p);
     SCOPED_TRACE(testing::Message()
                  << "Z=" << p.atomic_number << " " << p.symbol);
@@ -130,7 +131,7 @@ void expect_row_matches_calpar(const AM1Parameter& p) {
 TEST(NddoCalparDerived, Am1TableIsSelfConsistent) {
     int rows = 0;
     for (int z = 1; z <= 100; ++z) {
-        const auto* p = am1_parameter(z);
+        const auto* p = ATV::semiempirical::am1_parameter(z);
         if (p == nullptr)
             continue;
         ++rows;
@@ -142,7 +143,7 @@ TEST(NddoCalparDerived, Am1TableIsSelfConsistent) {
 TEST(NddoCalparDerived, Rm1TableIsSelfConsistent) {
     int rows = 0;
     for (int z = 1; z <= 100; ++z) {
-        const auto* p = rm1_parameter(z);
+        const auto* p = ATV::semiempirical::rm1_parameter(z);
         if (p == nullptr)
             continue;
         ++rows;
@@ -151,16 +152,45 @@ TEST(NddoCalparDerived, Rm1TableIsSelfConsistent) {
     EXPECT_EQ(rows, 6) << "RM1 v1 coverage is H, C, N, O, P, S";
 }
 
+TEST(NddoCalparDerived, MndoAndPm3UseTheirOwnChnoRows) {
+    for (const auto method :
+         {SemiEmpiricalMethod::MNDO, SemiEmpiricalMethod::PM3}) {
+        SCOPED_TRACE(nddo_method_name(method));
+        int rows = 0;
+        for (int z = 1; z <= 100; ++z) {
+            const auto* p = nddo_parameter(method, z);
+            const bool chno = z == 1 || z == 6 || z == 7 || z == 8;
+            ASSERT_EQ(p != nullptr, chno) << "Z=" << z;
+            if (!p)
+                continue;
+            ++rows;
+            expect_row_matches_calpar(*p);
+            EXPECT_EQ(p->n_orbitals, z == 1 ? 1 : 4);
+            EXPECT_EQ(p->core_charge, p->ios + p->iop + p->iod);
+            int gaussians = 0;
+            for (double term : p->guess1)
+                gaussians += term != 0;
+            EXPECT_EQ(gaussians, method == SemiEmpiricalMethod::MNDO ? 0 : 2);
+        }
+        EXPECT_EQ(rows, 4);
+    }
+    const auto invalid = static_cast<SemiEmpiricalMethod>(999);
+    EXPECT_EQ(nddo_parameter(invalid, 8), nullptr);
+    EXPECT_THROW(nddo_atomic_heat_kcal_mol(invalid, 8), std::invalid_argument);
+    EXPECT_THROW(nddo_atomic_heat_kcal_mol(SemiEmpiricalMethod::PM3, 16),
+                 std::invalid_argument);
+}
+
 TEST(NddoCalparDerived, Rm1OxygenEisolIsNotTheAm1Shift) {
-    const auto* o_rm1 = rm1_parameter(8);
-    const auto* o_am1 = am1_parameter(8);
+    const auto* o_rm1 = ATV::semiempirical::rm1_parameter(8);
+    const auto* o_am1 = ATV::semiempirical::am1_parameter(8);
     ASSERT_NE(o_rm1, nullptr);
     ASSERT_NE(o_am1, nullptr);
 
     // The fossil: AM1's eisol shifted by the one-electron change only.
-    const double am1_shift = o_am1->eisol +
-                             o_rm1->ios * (o_rm1->uss - o_am1->uss) +
-                             o_rm1->iop * (o_rm1->upp - o_am1->upp);
+    const double am1_shift = o_am1->eisol
+                             + o_rm1->ios * (o_rm1->uss - o_am1->uss)
+                             + o_rm1->iop * (o_rm1->upp - o_am1->upp);
     EXPECT_NEAR(am1_shift, -312.8526806, 1.0e-6) << "fossil reconstructed";
     EXPECT_GT(std::abs(o_rm1->eisol - am1_shift), 0.5)
         << "RM1 eisol must not be AM1's shifted by uss/upp alone";

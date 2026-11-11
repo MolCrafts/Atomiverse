@@ -4,20 +4,25 @@
 /// Subspace utilities (Y_lm, Jacobi eigensolver, initial subspace) live in
 /// internal/pw_subspace.cpp, shared with the CUDA band solver.
 #include "atomiverse/cpu/planewave/internal/davidson.h"
+#include "atomiverse/cpu/linalg/eigensolve.h"
 #include "atomiverse/cpu/planewave/internal/pw_subspace.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstring>
 #include <fftw3.h>
+#include <stdexcept>
 #include <vector>
+#include <xtensor-blas/xblas.hpp>
+#include <xtensor/containers/xadapt.hpp>
+#include <xtensor/views/xview.hpp>
 
 namespace ATV {
 namespace cpu {
 namespace pw {
 namespace internal {
 
-using internal::compute_ylm;
 using internal::n_m_for_l;
 
 namespace {
@@ -86,76 +91,37 @@ void apply_hamiltonian(const PWWorkspace& ws,
     extract_from_fft(ws, work_buf, Hpsi_g);
     AccReal inv_N = AccReal(1) / AccReal(nr);
     for (int ig = 0; ig < ng; ++ig)
-        Hpsi_g[ig] = Hpsi_g[ig] * inv_N + ws.T_G[ig] * psi_g[ig];
+        Hpsi_g[ig] = Hpsi_g[ig] * inv_N + ws.gvec->ekin[ig] * psi_g[ig];
 
     // Step 5: Non-local KB potential: V_NL = Σ_a Σ_lm D_l β_lm^a ⟨β_lm^a|ψ⟩
-    AccReal four_pi_over_sqrt_omega = AccReal(4.0 * M_PI) / std::sqrt(ws.omega);
-    for (size_t ia = 0; ia < ws.kb_proj.size(); ++ia) {
-        auto& atom_proj = ws.kb_proj[ia];
-        AccReal ax = ws.atom_pos_bohr[ia][0], ay = ws.atom_pos_bohr[ia][1],
-                az = ws.atom_pos_bohr[ia][2];
-        auto& gv = *ws.gvec;
-
-        for (size_t ip = 0; ip < atom_proj.size(); ++ip) {
-            int l = atom_proj[ip].l;
-            AccReal D = atom_proj[ip].d;
-            if (std::abs(D) < AccReal(1e-16))
+    for (const auto& atom_proj : ws.kb_proj) {
+        for (const auto& projector : atom_proj) {
+            const int nm = n_m_for_l(projector.l);
+            if (projector.l < 0 || projector.l > 2
+                || projector.beta_G.dimension() != 2
+                || projector.beta_G.shape()[0] != static_cast<std::size_t>(nm)
+                || projector.beta_G.shape()[1] != static_cast<std::size_t>(ng))
+                throw std::invalid_argument(
+                    "PW Hamiltonian: KB columns must be prepared for the "
+                    "current k-sphere");
+            const AccReal D = projector.d;
+            if (D == AccReal(0))
                 continue;
-            int nm = n_m_for_l(l);
-
-            // Compute c_lm = ⟨β_lm^a|ψ⟩ and apply V_NL in one pass
-            // β_lm(G) = (4π/√Ω)·(-i)^l·Y_lm(Ĝ)·f_l(G)·exp(-iG·R)
-            std::vector<std::complex<AccReal>> c_lm(
-                nm, std::complex<AccReal>(0, 0));
-            std::vector<AccReal> ylm(nm); // hoisted: no per-G allocation
-            std::complex<AccReal> im_l(1, 0);
-            if (l == 1)
-                im_l = std::complex<AccReal>(0, -1);
-            else if (l == 2)
-                im_l = std::complex<AccReal>(-1, 0);
-            for (int ig = 0; ig < ng; ++ig) {
-                // Bloch states live on q = k+G.
-                AccReal Gx = gv.g[ig][0] + gv.kvec[0],
-                        Gy = gv.g[ig][1] + gv.kvec[1],
-                        Gz = gv.g[ig][2] + gv.kvec[2];
-                AccReal Gr = std::sqrt(Gx * Gx + Gy * Gy + Gz * Gz);
-                AccReal fl_val = atom_proj[ip].f_G[ig];
-                if (std::abs(fl_val) < AccReal(1e-30))
-                    continue;
-                AccReal phase = Gx * ax + Gy * ay + Gz * az;
-                AccReal cos_p = std::cos(phase), sin_p = std::sin(phase);
-
-                compute_ylm(Gx, Gy, Gz, Gr, l, ylm.data());
-
-                for (int m = 0; m < nm; ++m) {
-                    std::complex<AccReal> beta_lm =
-                        four_pi_over_sqrt_omega * im_l * ylm[m] * fl_val
-                        * std::complex<AccReal>(cos_p, -sin_p);
-                    c_lm[m] += std::conj(beta_lm) * psi_g[ig];
-                }
-            }
-
-            // Apply V_NL: Hψ(G) += Σ_m D·β_lm(G)·c_lm
-            for (int ig = 0; ig < ng; ++ig) {
-                AccReal Gx = gv.g[ig][0] + gv.kvec[0],
-                        Gy = gv.g[ig][1] + gv.kvec[1],
-                        Gz = gv.g[ig][2] + gv.kvec[2];
-                AccReal Gr = std::sqrt(Gx * Gx + Gy * Gy + Gz * Gz);
-                AccReal fl_val = atom_proj[ip].f_G[ig];
-                if (std::abs(fl_val) < AccReal(1e-30))
-                    continue;
-                AccReal phase = Gx * ax + Gy * ay + Gz * az;
-                AccReal cos_p = std::cos(phase), sin_p = std::sin(phase);
-
-                compute_ylm(Gx, Gy, Gz, Gr, l, ylm.data());
-
-                for (int m = 0; m < nm; ++m) {
-                    std::complex<AccReal> beta_lm =
-                        four_pi_over_sqrt_omega * im_l * ylm[m] * fl_val
-                        * std::complex<AccReal>(cos_p, -sin_p);
-                    Hpsi_g[ig] += D * beta_lm * c_lm[m];
-                }
-            }
+            std::array<std::complex<AccReal>, 5> c_lm{};
+            const auto* beta = projector.beta_G.data();
+            // The m-major table is an ng-by-nm column-major B matrix:
+            // c = B†ψ, then Hψ += D Bc, without packing or another table.
+            using Index = xt::blas_index_t;
+            const Index rows = static_cast<Index>(ng);
+            const Index columns = static_cast<Index>(nm);
+            const std::complex<AccReal> one(1, 0), zero(0, 0);
+            cxxblas::gemv<Index>(cxxblas::ColMajor, cxxblas::ConjTrans, rows,
+                                 columns, one, beta, rows, psi_g, Index(1),
+                                 zero, c_lm.data(), Index(1));
+            cxxblas::gemv<Index>(cxxblas::ColMajor, cxxblas::NoTrans, rows,
+                                 columns, std::complex<AccReal>(D, 0), beta,
+                                 rows, c_lm.data(), Index(1), one, Hpsi_g,
+                                 Index(1));
         }
     }
 }
@@ -169,10 +135,8 @@ void pw_apply_h(const PWWorkspace& ws, const std::complex<AccReal>* psi_g,
 
 void pw_apply_h(const PWWorkspace& ws, const std::complex<AccReal>* psi_g,
                 std::complex<AccReal>* hpsi_g) {
-    auto* buf = static_cast<fftw_complex*>(
-        fftw_malloc(sizeof(fftw_complex) * static_cast<size_t>(ws.nr)));
-    apply_hamiltonian(ws, psi_g, hpsi_g, buf);
-    fftw_free(buf);
+    FFTWBuffer<fftw_complex> buf(static_cast<std::size_t>(ws.nr));
+    apply_hamiltonian(ws, psi_g, hpsi_g, buf.data());
 }
 
 // ── Public interface ──
@@ -187,7 +151,6 @@ void DavidsonSolver::step(PWWorkspace& ws) {
     int nb = n_bands_;
     int nr = ws.nr;
 
-    ws.wfc.resize({static_cast<std::size_t>(nb), static_cast<std::size_t>(ng)});
     ws.eigenvalues.resize({static_cast<std::size_t>(nb)});
 
     // FFT work buffer for H·ψ — pre-allocated in prepare(); guard against
@@ -198,12 +161,15 @@ void DavidsonSolver::step(PWWorkspace& ws) {
 
     // ── Initialize subspace (atomic wavefunctions or lowest-T(G) PWs) ──
     std::vector<std::complex<AccReal>> sub_vectors;
-    int n_sub = internal::init_subspace(ws, nb, sub_vectors);
+    int n_sub = internal::init_subspace(*ws.gvec, ws.atom_wfc, ws.atom_pos_bohr,
+                                        ws.wfc, nb, sub_vectors);
+    ws.wfc.resize({static_cast<std::size_t>(nb), static_cast<std::size_t>(ng)});
     std::vector<std::complex<AccReal>> H_sub_vectors(n_sub * ng);
     std::vector<bool> H_computed(n_sub, false);
 
     // ── Davidson iteration ──
-    int max_david = std::min(max_iter_, 20);
+    const int max_david = max_iter_;
+    const AccReal tolerance2 = tol_ * tol_;
 
     for (int idavid = 0; idavid < max_david; ++idavid) {
         // Compute H·v_j for new subspace vectors
@@ -215,94 +181,60 @@ void DavidsonSolver::step(PWWorkspace& ws) {
             H_computed[j] = true;
         }
 
-        // Build subspace Hamiltonian H_sub[μ,ν] = ⟨v_μ|H|v_ν⟩. It is
-        // complex Hermitian at any k that is not time-reversal invariant;
-        // truncating it to its real part (the historical bug) corrupted
-        // the Ritz VECTORS at first order while leaving the eigenvalues
-        // plausible (second-order error) — fatal for Berry phases and
-        // any wavefunction-sensitive observable.
-        std::vector<std::complex<AccReal>> Hs(
-            static_cast<std::size_t>(n_sub) * static_cast<std::size_t>(n_sub));
+        // Rows hold basis vectors. Hs = V^dagger H V in the physical
+        // column-vector convention; only the first factor is conjugated.
+        const std::array<std::size_t, 2> shape{static_cast<std::size_t>(n_sub),
+                                               static_cast<std::size_t>(ng)};
+        const auto V = xt::adapt(sub_vectors, shape);
+        const auto HV = xt::adapt(H_sub_vectors, shape);
+        linalg::CplxMatrix Hs = xt::linalg::dot(xt::conj(V), xt::transpose(HV));
         for (int mu = 0; mu < n_sub; ++mu) {
-            for (int nu = mu; nu < n_sub; ++nu) {
-                std::complex<AccReal> sum(0, 0);
-                for (int ig = 0; ig < ng; ++ig)
-                    sum += std::conj(sub_vectors[mu * ng + ig])
-                           * H_sub_vectors[nu * ng + ig];
-                if (nu == mu) {
-                    Hs[static_cast<std::size_t>(mu * n_sub + mu)] =
-                        std::complex<AccReal>(sum.real(), 0);
-                } else {
-                    Hs[static_cast<std::size_t>(mu * n_sub + nu)] = sum;
-                    Hs[static_cast<std::size_t>(nu * n_sub + mu)] =
-                        std::conj(sum);
-                }
-            }
+            Hs(mu, mu) = {Hs(mu, mu).real(), 0};
+            for (int nu = mu + 1; nu < n_sub; ++nu)
+                Hs(nu, mu) = std::conj(Hs(mu, nu));
         }
+        std::vector<double> sub_eig;
+        linalg::CplxMatrix sub_vecs;
+        linalg::eigh_hermitian(Hs, sub_eig, sub_vecs);
 
-        // Diagonalize subspace (complex Hermitian Jacobi)
-        std::vector<AccReal> sub_eig(n_sub);
-        std::vector<std::complex<AccReal>> sub_vecs(
-            static_cast<std::size_t>(n_sub) * static_cast<std::size_t>(n_sub));
-        internal::jacobi_eigh_hermitian(n_sub, Hs.data(), sub_eig.data(),
-                                        sub_vecs.data());
-
-        // Build Ritz vectors: ψ_i = Σ_μ x_{μ,i} v_μ
-        std::vector<std::complex<AccReal>> ritz(nb * ng);
-        for (int b = 0; b < nb; ++b) {
-            for (int ig = 0; ig < ng; ++ig)
-                ritz[b * ng + ig] = std::complex<AccReal>(0, 0);
-            for (int mu = 0; mu < n_sub; ++mu)
-                for (int ig = 0; ig < ng; ++ig)
-                    ritz[b * ng + ig] +=
-                        sub_vecs[mu * n_sub + b] * sub_vectors[mu * ng + ig];
-        }
+        // H is fixed during the subspace solve: H(Vc)=(HV)c. Rotate the
+        // retained eigenvectors by ordinary transpose, preserving Bloch phases.
+        const linalg::CplxMatrix coefficients =
+            xt::transpose(xt::view(sub_vecs, xt::all(), xt::range(0, nb)));
+        const linalg::CplxMatrix ritz = xt::linalg::dot(coefficients, V);
+        const linalg::CplxMatrix hritz = xt::linalg::dot(coefficients, HV);
 
         // Compute residuals and check convergence
-        AccReal max_res = 0;
+        std::vector<std::complex<AccReal>> residuals(nb * ng);
+        std::vector<AccReal> residual_norm2(nb, 0);
         for (int b = 0; b < nb; ++b) {
-            // H·ψ_b
-            std::vector<std::complex<AccReal>> Hpsi(ng);
-            apply_hamiltonian(ws, &ritz[b * ng], Hpsi.data(), work_buf);
-
             // R = H·ψ - ε·ψ
-            AccReal res_norm = 0;
             for (int ig = 0; ig < ng; ++ig) {
-                auto R = Hpsi[ig] - sub_eig[b] * ritz[b * ng + ig];
-                res_norm += std::norm(R);
+                auto& R = residuals[b * ng + ig];
+                R = hritz(b, ig) - sub_eig[b] * ritz(b, ig);
+                residual_norm2[b] += std::norm(R);
             }
-            res_norm = std::sqrt(res_norm);
-            if (res_norm > max_res)
-                max_res = res_norm;
 
             // Store eigenvalue
             ws.eigenvalues[b] = sub_eig[b];
 
             // Copy Ritz vector to wfc
             for (int ig = 0; ig < ng; ++ig)
-                ws.wfc(b, ig) = ritz[b * ng + ig];
+                ws.wfc(b, ig) = ritz(b, ig);
         }
+        if (*std::max_element(residual_norm2.begin(), residual_norm2.end())
+            <= tolerance2)
+            break;
 
         // Always add residuals to build crystal field (QE approach)
 
         // Add preconditioned residuals for unconverged bands
-        if (idavid < max_david - 1 && n_sub < ng - 1) {
+        if (idavid < max_david - 1 && n_sub < ng) {
             int n_added = 0;
             for (int b = 0; b < nb && n_sub < ng; ++b) {
-                // Compute residual R = H·ψ - ε·ψ
-                std::vector<std::complex<AccReal>> Hpsi(ng);
-                apply_hamiltonian(ws, &ritz[b * ng], Hpsi.data(), work_buf);
-
-                std::vector<std::complex<AccReal>> R(ng);
-                AccReal res_norm = 0;
-                for (int ig = 0; ig < ng; ++ig) {
-                    R[ig] = Hpsi[ig] - sub_eig[b] * ritz[b * ng + ig];
-                    res_norm += std::norm(R[ig]);
-                }
-
                 // Converged band: appending its residual would only
                 // inject rounding noise into the subspace.
-                if (res_norm < AccReal(1e-12)) // ||R|| < 1e-6
+                if (residual_norm2[b] <= tolerance2)
                     continue;
 
                 // Precondition: δ(G) = -R(G) / (T(G) - ε). The clamp keeps
@@ -312,12 +244,12 @@ void DavidsonSolver::step(PWWorkspace& ws) {
                 std::vector<std::complex<AccReal>> delta(ng);
                 AccReal eps = sub_eig[b];
                 for (int ig = 0; ig < ng; ++ig) {
-                    AccReal denom = ws.T_G[ig] - eps;
+                    AccReal denom = ws.gvec->ekin[ig] - eps;
                     // Damp near-degenerate contributions
                     AccReal damp = std::abs(denom);
                     if (damp < AccReal(1e-2))
                         denom = (denom >= 0 ? AccReal(1e-2) : AccReal(-1e-2));
-                    delta[ig] = -R[ig] / denom;
+                    delta[ig] = -residuals[b * ng + ig] / denom;
                 }
 
                 // Normalize first so the drop threshold below is

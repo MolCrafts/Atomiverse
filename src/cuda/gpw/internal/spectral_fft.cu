@@ -31,8 +31,8 @@ void check_cufft(cufftResult r, const char* what) {
 void check_cuda(cudaError_t e, const char* what) {
     if (e != cudaSuccess)
         throw std::runtime_error(std::string("cuda::gpw SpectralFftDevice: ")
-                                 + what + " failed ("
-                                 + cudaGetErrorString(e) + ")");
+                                 + what + " failed (" + cudaGetErrorString(e)
+                                 + ")");
 }
 
 int grid_blocks(long nwork) {
@@ -54,11 +54,10 @@ __device__ __forceinline__ double g_component(int i, int n, double g_unit) {
 }
 
 /// @brief out = i * G_axis * in  (axis 0/1/2 → gx/gy/gz units).
-__global__ void
-mul_ig_kernel(const cufftDoubleComplex* __restrict__ in,
-              cufftDoubleComplex* __restrict__ out, int n0, int n1, int n2c,
-              int n2, int axis, double gx_unit, double gy_unit,
-              double gz_unit) {
+__global__ void mul_ig_kernel(const cufftDoubleComplex* __restrict__ in,
+                              cufftDoubleComplex* __restrict__ out, int n0,
+                              int n1, int n2c, int n2, int axis, double gx_unit,
+                              double gy_unit, double gz_unit) {
     const long ncplx = static_cast<long>(n0) * n1 * n2c;
     for (long idx = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
          idx < ncplx; idx += static_cast<long>(blockDim.x) * gridDim.x) {
@@ -89,11 +88,10 @@ mul_ig_kernel(const cufftDoubleComplex* __restrict__ in,
 }
 
 /// @brief acc += i * G_axis * in  (accumulate for divergence).
-__global__ void
-axpy_ig_kernel(const cufftDoubleComplex* __restrict__ in,
-               cufftDoubleComplex* __restrict__ acc, int n0, int n1, int n2c,
-               int n2, int axis, double gx_unit, double gy_unit,
-               double gz_unit) {
+__global__ void axpy_ig_kernel(const cufftDoubleComplex* __restrict__ in,
+                               cufftDoubleComplex* __restrict__ acc, int n0,
+                               int n1, int n2c, int n2, int axis,
+                               double gx_unit, double gy_unit, double gz_unit) {
     const long ncplx = static_cast<long>(n0) * n1 * n2c;
     for (long idx = static_cast<long>(blockIdx.x) * blockDim.x + threadIdx.x;
          idx < ncplx; idx += static_cast<long>(blockDim.x) * gridDim.x) {
@@ -226,9 +224,9 @@ void SpectralFftDevice::divergence(const double* d_vx, const double* d_vy,
     const int gblocks = grid_blocks(ncplx_);
     const int rblocks = grid_blocks(ntot_);
     for (int axis = 0; axis < 3; ++axis) {
-        check_cufft(cufftExecD2Z(r2c_, const_cast<double*>(comps[axis]),
-                                 d_c_in_),
-                    "cufftExecD2Z divergence");
+        check_cufft(
+            cufftExecD2Z(r2c_, const_cast<double*>(comps[axis]), d_c_in_),
+            "cufftExecD2Z divergence");
         axpy_ig_kernel<<<gblocks, kBlock, 0, stream_>>>(
             d_c_in_, d_c_acc_, n0_, n1_, n2c_, n2_, axis, gx_unit_, gy_unit_,
             gz_unit_);

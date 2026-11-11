@@ -3,25 +3,33 @@
 
 #include "atomiverse/cpu/semiempirical/nddo_hcore.h"
 
+#include "atomiverse/cpu/semiempirical/internal/nddo_derivative.h"
 #include <array>
 #include <cmath>
 #include <stdexcept>
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
 #include "atomiverse/cpu/semiempirical/nddo_overlap.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
 namespace {
+using internal::abs;
+using internal::exp;
+using internal::sqrt;
+using std::abs;
+using std::exp;
+using std::sqrt;
 
 constexpr double kA0 = 0.529177210903;
 constexpr double kEv = 27.211386245988;
 
-double one_center_energy_for_local_ao(const AM1Parameter& p, int local_ao) {
+double one_center_energy_for_local_ao(const ATV::semiempirical::AM1Parameter& p,
+                                      int local_ao) {
     if (local_ao == 0) {
         return p.uss;
     }
@@ -45,7 +53,7 @@ struct KlopmanOhnoTerms {
     double ddp3 = 0.0;
 };
 
-KlopmanOhnoTerms ko_terms(const AM1Parameter& p) {
+KlopmanOhnoTerms ko_terms(const ATV::semiempirical::AM1Parameter& p) {
     KlopmanOhnoTerms out;
     double am = p.am;
     if (am < 1.0e-4) {
@@ -61,7 +69,7 @@ KlopmanOhnoTerms ko_terms(const AM1Parameter& p) {
     out.po7 = out.po1;
     out.po9 = out.po1;
     out.ddp2 = p.dd;
-    out.ddp3 = p.qq * std::sqrt(2.0);
+    out.ddp3 = p.qq * sqrt(2.0);
     if (p.atomic_number == 1) {
         out.po2 = 0.0;
         out.po3 = 0.0;
@@ -69,53 +77,18 @@ KlopmanOhnoTerms ko_terms(const AM1Parameter& p) {
     return out;
 }
 
+template <class Scalar>
 struct PairRotation {
-    std::array<std::array<double, 3>, 3> sp{};
-    std::array<std::array<std::array<double, 3>, 3>, 6> pp{};
+    std::array<std::array<Scalar, 3>, 3> sp{};
+    std::array<std::array<std::array<Scalar, 3>, 3>, 6> pp{};
 };
-
-PairRotation pair_rotation(const std::array<double, 3>& xi,
-                           const std::array<double, 3>& xj) {
-    constexpr double kSmall = 1.0e-7;
-
-    const double x11 = xj[0] - xi[0];
-    const double x22 = xj[1] - xi[1];
-    const double x33 = xj[2] - xi[2];
-    const double b = x11 * x11 + x22 * x22;
-    const double r = std::sqrt(b + x33 * x33);
-    const double sqb = std::sqrt(b);
-    const double sb = r == 0.0 ? 0.0 : sqb / r;
-
-    double ca = 0.0;
-    double sa = 0.0;
-    double cb = 0.0;
-    if (sb > kSmall) {
-        ca = x11 / sqb;
-        sa = x22 / sqb;
-        cb = x33 / r;
-    } else {
-        sa = 0.0;
-        if (x33 < 0.0) {
-            ca = -1.0;
-            cb = -1.0;
-        } else if (x33 > 0.0) {
-            ca = 1.0;
-            cb = 1.0;
-        }
-    }
-
-    PairRotation rot;
+template <class Scalar>
+PairRotation<Scalar> pair_rotation(const std::array<Scalar, 3>& xi,
+                                   const std::array<Scalar, 3>& xj) {
+    PairRotation<Scalar> rot;
+    rot.sp = internal::nddo_pair_axes(
+        std::array<Scalar, 3>{xj[0] - xi[0], xj[1] - xi[1], xj[2] - xi[2]});
     auto& p = rot.sp;
-    p[0][0] = ca * sb;
-    p[1][0] = ca * cb;
-    p[2][0] = -sa;
-    p[0][1] = sa * sb;
-    p[1][1] = sa * cb;
-    p[2][1] = ca;
-    p[0][2] = cb;
-    p[1][2] = -sb;
-    p[2][2] = 0.0;
-
     auto& pp = rot.pp;
     for (int k = 0; k < 3; ++k) {
         pp[0][k][k] = p[k][0] * p[k][0];
@@ -136,60 +109,63 @@ PairRotation pair_rotation(const std::array<double, 3>& xi,
     return rot;
 }
 
-using CoreTerms = std::array<std::array<double, 2>, 10>;
+template <class Scalar>
+using CoreTerms = std::array<std::array<Scalar, 2>, 10>;
 
-CoreTerms sp_core_terms(const AM1Parameter& pi, const AM1Parameter& pj,
-                        double r_angstrom) {
+template <class Scalar>
+CoreTerms<Scalar> sp_core_terms(const ATV::semiempirical::AM1Parameter& pi,
+                                const ATV::semiempirical::AM1Parameter& pj,
+                                Scalar r_angstrom) {
     const auto ki = ko_terms(pi);
     const auto kj = ko_terms(pj);
-    const double r = r_angstrom / kA0;
-    const double r2 = r * r;
+    const Scalar r = r_angstrom / kA0;
+    const Scalar r2 = r * r;
 
-    CoreTerms core{};
-    const double ssi = (ki.po9 + kj.po1) * (ki.po9 + kj.po1);
-    const double ssj = (kj.po9 + ki.po1) * (kj.po9 + ki.po1);
-    core[0][0] = -pj.core_charge * kEv / std::sqrt(r2 + ssj);
-    core[0][1] = -pi.core_charge * kEv / std::sqrt(r2 + ssi);
+    CoreTerms<Scalar> core{};
+    const Scalar ssi = (ki.po9 + kj.po1) * (ki.po9 + kj.po1);
+    const Scalar ssj = (kj.po9 + ki.po1) * (kj.po9 + ki.po1);
+    core[0][0] = -pj.core_charge * kEv / sqrt(r2 + ssj);
+    core[0][1] = -pi.core_charge * kEv / sqrt(r2 + ssi);
 
     if (pi.n_orbitals >= 3) {
-        const double ppj = (kj.po9 + ki.po7) * (kj.po9 + ki.po7);
-        const double da = ki.ddp2;
-        const double qa = ki.ddp3 / std::sqrt(2.0);
-        const double twoqa = qa + qa;
-        const double adj = (ki.po2 + kj.po9) * (ki.po2 + kj.po9);
-        const double aqj = (ki.po3 + kj.po9) * (ki.po3 + kj.po9);
-        const double xj1 = 1.0 / std::sqrt(r2 + ppj);
-        const double xj2 = -0.5 / std::sqrt(r2 + aqj);
-        const double xj3 = -0.5 / std::sqrt((r + da) * (r + da) + adj);
-        const double xj4 = 0.5 / std::sqrt((r - da) * (r - da) + adj);
-        const double xj5 = 0.25 / std::sqrt((r - twoqa) * (r - twoqa) + aqj);
-        const double xj6 = 0.25 / std::sqrt((r + twoqa) * (r + twoqa) + aqj);
-        const double xj7 = 0.5 / std::sqrt(r2 + twoqa * twoqa + aqj);
-        const double aj2 = (xj3 + xj4) * kEv;
-        const double aj3 = (xj1 + xj2 + xj5 + xj6) * kEv;
-        const double aj4 = (xj1 + xj2 + xj7) * kEv;
+        const Scalar ppj = (kj.po9 + ki.po7) * (kj.po9 + ki.po7);
+        const Scalar da = ki.ddp2;
+        const Scalar qa = ki.ddp3 / sqrt(2.0);
+        const Scalar twoqa = qa + qa;
+        const Scalar adj = (ki.po2 + kj.po9) * (ki.po2 + kj.po9);
+        const Scalar aqj = (ki.po3 + kj.po9) * (ki.po3 + kj.po9);
+        const Scalar xj1 = 1.0 / sqrt(r2 + ppj);
+        const Scalar xj2 = -0.5 / sqrt(r2 + aqj);
+        const Scalar xj3 = -0.5 / sqrt((r + da) * (r + da) + adj);
+        const Scalar xj4 = 0.5 / sqrt((r - da) * (r - da) + adj);
+        const Scalar xj5 = 0.25 / sqrt((r - twoqa) * (r - twoqa) + aqj);
+        const Scalar xj6 = 0.25 / sqrt((r + twoqa) * (r + twoqa) + aqj);
+        const Scalar xj7 = 0.5 / sqrt(r2 + twoqa * twoqa + aqj);
+        const Scalar aj2 = (xj3 + xj4) * kEv;
+        const Scalar aj3 = (xj1 + xj2 + xj5 + xj6) * kEv;
+        const Scalar aj4 = (xj1 + xj2 + xj7) * kEv;
         core[1][0] = -pj.core_charge * aj2;
         core[2][0] = -pj.core_charge * aj3;
         core[3][0] = -pj.core_charge * aj4;
     }
 
     if (pj.n_orbitals >= 3) {
-        const double ppi = (ki.po9 + kj.po7) * (ki.po9 + kj.po7);
-        const double db = kj.ddp2;
-        const double qb = kj.ddp3 / std::sqrt(2.0);
-        const double twoqb = qb + qb;
-        const double adi = (kj.po2 + ki.po9) * (kj.po2 + ki.po9);
-        const double aqi = (kj.po3 + ki.po9) * (kj.po3 + ki.po9);
-        const double xi1 = 1.0 / std::sqrt(r2 + ppi);
-        const double xi2 = -0.5 / std::sqrt(r2 + aqi);
-        const double xi3 = -0.5 / std::sqrt((r + db) * (r + db) + adi);
-        const double xi4 = 0.5 / std::sqrt((r - db) * (r - db) + adi);
-        const double xi5 = 0.25 / std::sqrt((r - twoqb) * (r - twoqb) + aqi);
-        const double xi6 = 0.25 / std::sqrt((r + twoqb) * (r + twoqb) + aqi);
-        const double xi7 = 0.5 / std::sqrt(r2 + twoqb * twoqb + aqi);
-        const double ai2 = -(xi3 + xi4) * kEv;
-        const double ai3 = (xi1 + xi2 + xi5 + xi6) * kEv;
-        const double ai4 = (xi1 + xi2 + xi7) * kEv;
+        const Scalar ppi = (ki.po9 + kj.po7) * (ki.po9 + kj.po7);
+        const Scalar db = kj.ddp2;
+        const Scalar qb = kj.ddp3 / sqrt(2.0);
+        const Scalar twoqb = qb + qb;
+        const Scalar adi = (kj.po2 + ki.po9) * (kj.po2 + ki.po9);
+        const Scalar aqi = (kj.po3 + ki.po9) * (kj.po3 + ki.po9);
+        const Scalar xi1 = 1.0 / sqrt(r2 + ppi);
+        const Scalar xi2 = -0.5 / sqrt(r2 + aqi);
+        const Scalar xi3 = -0.5 / sqrt((r + db) * (r + db) + adi);
+        const Scalar xi4 = 0.5 / sqrt((r - db) * (r - db) + adi);
+        const Scalar xi5 = 0.25 / sqrt((r - twoqb) * (r - twoqb) + aqi);
+        const Scalar xi6 = 0.25 / sqrt((r + twoqb) * (r + twoqb) + aqi);
+        const Scalar xi7 = 0.5 / sqrt(r2 + twoqb * twoqb + aqi);
+        const Scalar ai2 = -(xi3 + xi4) * kEv;
+        const Scalar ai3 = (xi1 + xi2 + xi5 + xi6) * kEv;
+        const Scalar ai4 = (xi1 + xi2 + xi7) * kEv;
         core[1][1] = -pi.core_charge * ai2;
         core[2][1] = -pi.core_charge * ai3;
         core[3][1] = -pi.core_charge * ai4;
@@ -203,8 +179,10 @@ int indpp(int a, int b) {
     return kIndpp[a][b];
 }
 
-double electron_nuclear_value(const CoreTerms& core, const PairRotation& rot,
-                              int side, int local_i, int local_j) {
+template <class Scalar>
+Scalar electron_nuclear_value(const CoreTerms<Scalar>& core,
+                              const PairRotation<Scalar>& rot, int side,
+                              int local_i, int local_j) {
     if (local_i == 0 && local_j == 0) {
         return core[0][side];
     }
@@ -221,8 +199,9 @@ double electron_nuclear_value(const CoreTerms& core, const PairRotation& rot,
 }
 
 void add_electron_nuclear_block(std::vector<double>& hcore,
-                                const NDDOAtom& atom, const CoreTerms& core,
-                                const PairRotation& rot, int side,
+                                const NDDOAtom& atom,
+                                const CoreTerms<double>& core,
+                                const PairRotation<double>& rot, int side,
                                 double scale) {
     for (int local_i = 0; local_i < atom.n_orbitals; ++local_i) {
         const int ao_i = atom.first_ao + local_i;
@@ -235,18 +214,20 @@ void add_electron_nuclear_block(std::vector<double>& hcore,
     }
 }
 
-double core_core_repulsion_ev(const AM1Parameter& pi, const AM1Parameter& pj,
-                              double r_angstrom) {
+template <class Scalar>
+Scalar core_core_repulsion_ev(const ATV::semiempirical::AM1Parameter& pi,
+                              const ATV::semiempirical::AM1Parameter& pj,
+                              Scalar r_angstrom) {
     const auto ki = ko_terms(pi);
     const auto kj = ko_terms(pj);
-    const double r_bohr = r_angstrom / kA0;
-    const double aee = (ki.po9 + kj.po9) * (ki.po9 + kj.po9);
-    const double gab = kEv / std::sqrt(r_bohr * r_bohr + aee);
-    const double enuc = pi.core_charge * pj.core_charge * gab;
+    const Scalar r_bohr = r_angstrom / kA0;
+    const Scalar aee = (ki.po9 + kj.po9) * (ki.po9 + kj.po9);
+    const Scalar gab = kEv / sqrt(r_bohr * r_bohr + aee);
+    const Scalar enuc = pi.core_charge * pj.core_charge * gab;
 
-    double eni = std::exp(-pi.alp * r_angstrom);
-    double enj = std::exp(-pj.alp * r_angstrom);
-    double scale = eni + enj;
+    Scalar eni = exp(-pi.alp * r_angstrom);
+    Scalar enj = exp(-pj.alp * r_angstrom);
+    Scalar scale = eni + enj;
     const int nt = pi.atomic_number + pj.atomic_number;
     if (nt == 8 || nt == 9) {
         if (pi.atomic_number == 7 || pi.atomic_number == 8) {
@@ -256,9 +237,9 @@ double core_core_repulsion_ev(const AM1Parameter& pi, const AM1Parameter& pj,
             scale += (r_angstrom - 1.0) * enj;
         }
     }
-    double enuclr = std::abs(scale * enuc) + enuc;
+    Scalar enuclr = abs(scale * enuc) + enuc;
 
-    double gaussian = 0.0;
+    Scalar gaussian = 0.0;
     int gaussian_count = 4;
     const int ni = pi.atomic_number;
     const int nj = pj.atomic_number;
@@ -266,62 +247,62 @@ double core_core_repulsion_ev(const AM1Parameter& pi, const AM1Parameter& pj,
         && (ni == 1 || nj == 1 || ni == 6 || nj == 6 || ni == 9 || nj == 9
             || ni == 17 || nj == 17 || ni == 35 || nj == 35 || ni == 53
             || nj == 53)) {
-        const double prefactor = pi.core_charge * pj.core_charge / r_angstrom;
+        const Scalar prefactor = pi.core_charge * pj.core_charge / r_angstrom;
         if (ni == 1 || nj == 1) {
-            double ax =
+            Scalar ax =
                 10.0 * (r_angstrom - 0.832586) * (r_angstrom - 0.832586);
             if (ax <= 25.0) {
-                gaussian += prefactor * 0.412253 * std::exp(-ax);
+                gaussian += prefactor * 0.412253 * exp(-ax);
             }
             ax = 6.0 * (r_angstrom - 1.186220) * (r_angstrom - 1.186220);
             if (ax <= 25.0) {
-                gaussian += prefactor * (-0.149917) * std::exp(-ax);
+                gaussian += prefactor * (-0.149917) * exp(-ax);
             }
         } else if (ni == 6 || nj == 6) {
-            double ax = 8.0 * (r_angstrom - 1.063995) * (r_angstrom - 1.063995);
+            Scalar ax = 8.0 * (r_angstrom - 1.063995) * (r_angstrom - 1.063995);
             if (ax <= 25.0) {
-                gaussian += prefactor * 0.261751 * std::exp(-ax);
+                gaussian += prefactor * 0.261751 * exp(-ax);
             }
             ax = 5.0 * (r_angstrom - 1.936492) * (r_angstrom - 1.936492);
             if (ax <= 25.0) {
-                gaussian += prefactor * 0.050275 * std::exp(-ax);
+                gaussian += prefactor * 0.050275 * exp(-ax);
             }
         } else {
-            double ax = 9.0 * (r_angstrom - 0.819351) * (r_angstrom - 0.819351);
+            Scalar ax = 9.0 * (r_angstrom - 0.819351) * (r_angstrom - 0.819351);
             if (ax <= 25.0) {
-                gaussian += prefactor * 0.359244 * std::exp(-ax);
+                gaussian += prefactor * 0.359244 * exp(-ax);
             }
             ax = 9.0 * (r_angstrom - 1.574414) * (r_angstrom - 1.574414);
             if (ax <= 25.0) {
-                gaussian += prefactor * 0.074729 * std::exp(-ax);
+                gaussian += prefactor * 0.074729 * exp(-ax);
             }
         }
-        const AM1Parameter& other = ni == 5 ? pj : pi;
+        const ATV::semiempirical::AM1Parameter& other = ni == 5 ? pj : pi;
         for (int ig = 0; ig < 4; ++ig) {
-            const double ax = other.guess2[ig] * (r_angstrom - other.guess3[ig])
+            const Scalar ax = other.guess2[ig] * (r_angstrom - other.guess3[ig])
                               * (r_angstrom - other.guess3[ig]);
             if (ax <= 25.0) {
-                gaussian += prefactor * other.guess1[ig] * std::exp(-ax);
+                gaussian += prefactor * other.guess1[ig] * exp(-ax);
             }
         }
         gaussian_count = 0;
     }
 
     for (int ig = 0; ig < gaussian_count; ++ig) {
-        if (std::abs(pi.guess1[ig]) > 0.0) {
-            const double ax = pi.guess2[ig] * (r_angstrom - pi.guess3[ig])
+        if (abs(pi.guess1[ig]) > 0.0) {
+            const Scalar ax = pi.guess2[ig] * (r_angstrom - pi.guess3[ig])
                               * (r_angstrom - pi.guess3[ig]);
             if (ax <= 25.0) {
                 gaussian += pi.core_charge * pj.core_charge / r_angstrom
-                            * pi.guess1[ig] * std::exp(-ax);
+                            * pi.guess1[ig] * exp(-ax);
             }
         }
-        if (std::abs(pj.guess1[ig]) > 0.0) {
-            const double ax = pj.guess2[ig] * (r_angstrom - pj.guess3[ig])
+        if (abs(pj.guess1[ig]) > 0.0) {
+            const Scalar ax = pj.guess2[ig] * (r_angstrom - pj.guess3[ig])
                               * (r_angstrom - pj.guess3[ig]);
             if (ax <= 25.0) {
                 gaussian += pi.core_charge * pj.core_charge / r_angstrom
-                            * pj.guess1[ig] * std::exp(-ax);
+                            * pj.guess1[ig] * exp(-ax);
             }
         }
     }
@@ -339,7 +320,7 @@ double distance(const std::array<double, 3>& a,
     const double dx = a[0] - b[0];
     const double dy = a[1] - b[1];
     const double dz = a[2] - b[2];
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
+    return sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 } // namespace
@@ -418,6 +399,60 @@ NDDOHCoreResult NDDOHCoreBuilder::build(const NDDOSystem& system,
     }
 
     return result;
+}
+
+std::array<internal::NDDOPairHCoreDerivative, 3>
+internal::hcore_pair_derivative(const NDDOSystem& pair,
+                                const std::array<double, 3>& xi_value,
+                                const std::array<double, 3>& xj_value) {
+    // pair contains j at 0 and i at 1, matching the normal Hcore pair walk.
+    if (pair.atoms.size() != 2)
+        throw std::runtime_error(
+            "NDDO Hcore pair derivative requires exactly two atoms");
+    const auto& ai = pair.atoms[1];
+    const auto& aj = pair.atoms[0];
+    if (ai.n_orbitals < 1 || ai.n_orbitals > 4 || aj.n_orbitals < 1
+        || aj.n_orbitals > 4 || aj.first_ao != 0 || ai.first_ao != aj.n_orbitals
+        || pair.n_orbitals != ai.n_orbitals + aj.n_orbitals || !ai.params
+        || !aj.params)
+        throw std::runtime_error(
+            "NDDO Hcore pair derivative requires a packed s/p pair");
+    const auto& pi = *ai.params;
+    const auto& pj = *aj.params;
+    const auto h1 =
+        one_electron_two_center_derivative(pi, pj, xi_value, xj_value);
+    std::array<NDDODerivative, 3> xi, xj;
+    for (int d = 0; d < 3; ++d) {
+        xi[d] = xi_value[d];
+        xj[d] = xj_value[d];
+        xi[d].gradient[d] = 1.0;
+    }
+    NDDODerivative r2;
+    for (int d = 0; d < 3; ++d)
+        r2 += (xi[d] - xj[d]) * (xi[d] - xj[d]);
+    const auto r = sqrt(r2);
+    const auto core = sp_core_terms(pi, pj, r);
+    const auto rot = pair_rotation(xi, xj);
+    const auto enuc = core_core_repulsion_ev(pi, pj, r);
+    std::array<NDDOPairHCoreDerivative, 3> out{};
+    for (int d = 0; d < 3; ++d) {
+        auto& h = out[d];
+        h.nuclear_repulsion_ev = enuc.gradient[d];
+        for (int mu = 0; mu < ai.n_orbitals; ++mu)
+            for (int nu = 0; nu < aj.n_orbitals; ++nu)
+                h.packed_hcore[packed_index(
+                    ai.first_ao + mu, aj.first_ao + nu)] = h1[d].at(mu, nu);
+        for (int side = 0; side < 2; ++side) {
+            const auto& atom = side == 0 ? ai : aj;
+            for (int mu = 0; mu < atom.n_orbitals; ++mu)
+                for (int nu = 0; nu <= mu; ++nu)
+                    h.packed_hcore[packed_index(atom.first_ao + mu,
+                                                atom.first_ao + nu)] =
+                        electron_nuclear_value(core, rot, side, mu, nu)
+                            .gradient[d];
+        }
+    }
+    return out;
 }
 
 NDDOHCoreResult

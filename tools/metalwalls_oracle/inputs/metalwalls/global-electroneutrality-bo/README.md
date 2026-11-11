@@ -1,6 +1,6 @@
 # MetalWalls twin — global-electroneutrality-bo
 
-Geometry matches `regressions/md/global-electroneutrality-bo`:
+Geometry matches `regressions/md/constant-potential`:
 two single-site Gaussian electrodes (η = 2 Å⁻¹) at z = 5 / 15 Å,
 Ψ = 0 / 1 V, one +1 e point ion at z = 10 Å, box 10×10×20 Å,
 `charge_neutrality true global`, `num_pbc 2`, matrix inversion.

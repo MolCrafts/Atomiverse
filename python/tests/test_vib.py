@@ -16,7 +16,7 @@ the complement, so ``frequencies`` has exactly 3N−6 entries (3N−5 for a
 linear molecule; empty for a lone atom, which ``hessian_diagonalizer.cpp:
 190-197`` short-circuits before the projector). A diatomic therefore reports
 exactly one frequency — the same invariant the C++ regression asserts
-(``regressions/semiempirical/se-analytic-hessian/
+(``regressions/semiempirical/am1/
 reg_se-analytic-hessian.cpp:92-97``).
 
 The physics gate
@@ -39,7 +39,7 @@ unit paths (SI and atomic-unit/PySCF) that agree to ~1e-16 relative, and
 the pinned literal 26.456347759377 cm⁻¹ is checked against both.
 
 Note the frame contract: this domain reads the atom's **atomic number**
-(``kAtom_type``, from the molrs ``atomic_number`` column) and looks the mass
+(``kAtom_atomic_number``, from the molpy ``atomic_number`` column) and looks the mass
 up per Z — ``mass_weighting.cpp:26-28``. The per-atom ``mass`` column is
 present in the fixtures because MD-style frames carry it, but it is IGNORED
 here; changing it cannot move a frequency.
@@ -77,8 +77,12 @@ import numpy as np
 import pytest
 import molpy
 
-import atomiverse as av
 from atomiverse._binding import _cpp, extension_available
+from _domains import skip_module_unless
+
+skip_module_unless("ATV_BUILD_VIB", "ATV_BUILD_POTENTIALS")
+
+import atomiverse as av
 from atomiverse.neighbor import NeighborList
 from atomiverse.potentials.pair import LJCut
 from atomiverse.vibration import Hessian, HessianResult
@@ -87,7 +91,7 @@ from atomiverse.vibration import Hessian, HessianResult
 # sentinel raises ImportError (not AttributeError), so a bare ``hasattr``
 # would break collection on a pure-Python wheel instead of letting conftest
 # skip the file (idiom from test_md.py / test_surface.py).
-_HAS_AM1: bool = extension_available() and hasattr(_cpp, "AM1Evaluator")
+_HAS_AM1: bool = extension_available() and hasattr(_cpp, "AM1")
 
 
 # ── CODATA-2014 constants, verbatim from the engine's own header ──────
@@ -483,7 +487,7 @@ class TestSemiempiricalForceSource:
         frame.box = molpy.Box.cube(20.0)
 
         driver = Hessian()
-        driver.set_evaluator(av.AM1Evaluator())
+        driver.set_evaluator(av.AM1())
         result = driver.run(frame)
 
         assert result.frequencies.shape == (1,)

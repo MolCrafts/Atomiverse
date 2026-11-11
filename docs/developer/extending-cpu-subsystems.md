@@ -30,7 +30,7 @@ inside `cpu::md::MD` exactly the way they pick the existing
 `VelocityVerlet`.
 
 **Where it lives.** A header at
-`include/atomiverse/cpu/dynamics/<name>.h` and an implementation at
+`<name>.h` and an implementation at
 `src/cpu/dynamics/<name>.cpp`. The MD subdirectory is the right home because
 the component will only ever participate in MD (its phase enum is
 `md::Phase`). Putting it under `cpu/dynamics/` also keeps it out of the
@@ -124,7 +124,7 @@ correct.
 PRL 97, 170201, 2006) optimizer alongside the existing
 `cpu::minimizer::LBFGS` and `cpu::minimizer::CG`.
 
-**Where it lives.** `include/atomiverse/cpu/minimize/fire.h` and
+**Where it lives.** `fire.h` and
 `src/cpu/minimize/fire.cpp`. Same reasoning as above: minimizer
 components live under `cpu/minimize/`.
 
@@ -249,13 +249,12 @@ walks the same path for a mixer that is not there yet.
 **Where it lives.** The mixer itself is *not* a Component: it has no
 `default_bindings()` and is never registered into a Plan. It is an
 `internal::` helper under
-[`include/atomiverse/cpu/scf/internal/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/internal/)
+[`internal`](https://github.com/MolCrafts/Atomiverse/blob/master/include/atomiverse/cpu/scf/internal/)
 in the namespace `cpu::scf::internal`.
 
 What *is* a Component is the stage that calls it. SCF is a Driver loop
 (`fock → mix → diagonalize → density → check`), and each stage under
-[`cpu/scf/stages/`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/stages/)
-— including `MixStage` — derives `cpu::Component` and is owned by the
+[`cpu/scf/stages/MixStage` — derives `cpu::Component` and is owned by the
 method as a direct member. So the asymmetry is not "SCF has no
 components"; it is that the **stage sequence is fixed by the method**,
 while the **algorithm inside a stage** is swapped by a member on that
@@ -328,7 +327,7 @@ rhf.run(frame);
 
 Do **not** introduce a `SCFConfig` / `DIISVariant` bag to carry the
 choice — public `*Config` bags are banned by the iron law in
-[CLAUDE.md](../../CLAUDE.md); parameters are constructor arguments or
+the project iron laws; parameters are constructor arguments or
 public members of the concrete method. If the new mixer is strictly
 better than an existing one, retire the loser by deleting it rather
 than keeping both behind a switch.
@@ -339,7 +338,7 @@ matrices with a known answer (say, a Pulay-difficult harmonic case the
 literature has documented), check that the extrapolated Fock matches
 the reference. Keep it a **unit** test: one method, no full SCF solve.
 An end-to-end "both mixers reach the same energy" comparison belongs
-in `regressions/scf/` against a cited literature value, not in
+in `scf` against a cited literature value, not in
 `tests/`.
 
 Because the helper is in the `internal::` namespace, *production*
@@ -377,9 +376,10 @@ Three questions, in order:
 3. **Does the extension cross the host/device boundary?**
    - If yes: read [Architecture](architecture.md) and consider whether
      the right home is the CUDA backend, the CPU backend, or a small
-     helper on both with an `AsyncBridge` between them.
+     helper on both with an `AsyncConsumer` (the shared capture buffer)
+     between them.
    - If no: stay on the CPU side. The CPU subsystem boundaries (md /
-     minimizer / scf) under `include/atomiverse/cpu/` are the right
+     minimizer / scf) under `cpu` are the right
      organizing axis.
 
 If after applying this rubric you still are not sure, search
@@ -392,10 +392,10 @@ matching one of them is usually faster than improvising.
 When you ship a new component, update at least three places:
 
 1. The Doxygen `@brief` and `@param` lines on every public method.
-   Per CLAUDE.md, every public symbol needs `@brief`, `@param` with
+   Per the project iron laws, every public symbol needs `@brief`, `@param` with
    units, and `@return`.
-2. The CLAUDE.md component table in
-   [`/CLAUDE.md`](https://github.com/MolCrafts/Atomiverse/blob/dev/CLAUDE.md) — under "Implemented components" —
+2. The the project iron laws component table in
+   [`/the project iron laws](https://github.com/MolCrafts/Atomiverse/blob/master/the project iron laws) — under "Implemented components" —
    so that downstream readers see the new option without searching the
    tree.
 3. A reference in the relevant tutorial. If you add FIRE, the
@@ -405,7 +405,7 @@ When you ship a new component, update at least three places:
    ([ch02-rhf.md](../tutorial/ch02-rhf.md) onward) gets a footnote on the
    alternate accelerator.
 
-The tutorial reference is what users see first; the CLAUDE.md table is
+The tutorial reference is what users see first; the the project iron laws table is
 what AI-driven workflows see; the Doxygen blocks are what API readers
 see. Skipping any of the three leaves the new component invisible to
 one population of consumers.

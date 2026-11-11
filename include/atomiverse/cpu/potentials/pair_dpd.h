@@ -2,14 +2,18 @@
 /// @brief Groot–Warren DPD: soft conservative + pairwise D/R (CPU).
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
 #include <array>
+#include <cmath>
 #include <span>
+#include <stdexcept>
 
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -42,12 +46,18 @@ namespace cpu {
 /// removes, so the system would heat or cool monotonically instead of sampling
 /// `temperature`.
 ///
-/// `i` and `j` in that stream are LOCAL ATOM INDICES, not global tags, so
-/// bit-for-bit reproducibility holds for a given seed, step budget and atom
-/// ordering — reorder the frame and the same run draws a different (equally
-/// valid) noise realization.
-class PairDpd : public Pair {
+/// The pair key uses the sorted global atom tags, so sorting and spatial
+/// decomposition preserve the stochastic realization.
+class PairDpd : public Pair, public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "PairDpd: timestep must be finite and positive");
+        dt_ = dt;
+    }
     /// @brief DPD's dissipative term is \(v_j - v_i\), so ghost rows carry
     /// velocities. This is the ONLY style in the tree that reads a neighbour
     /// velocity; a run without it does not ship them.
@@ -60,11 +70,23 @@ class PairDpd : public Pair {
     /// catches, because DPD is not energy-conserving by construction.
     /// @return This style's ghost declarations.
     static constexpr std::array kGhosts = {
+        GhostField::read_stable(kAtom_tag, "PairDpd"),
         GhostField::read_each_step(kAtom_vx, "PairDpd"),
         GhostField::read_each_step(kAtom_vy, "PairDpd"),
         GhostField::read_each_step(kAtom_vz, "PairDpd"),
     };
+    /// @brief The per-type `a_matrix` form also reads the neighbour's
+    /// force-field type.
+    static constexpr std::array kTypedGhosts = {
+        GhostField::read_stable(kAtom_tag, "PairDpd"),
+        GhostField::read_each_step(kAtom_vx, "PairDpd"),
+        GhostField::read_each_step(kAtom_vy, "PairDpd"),
+        GhostField::read_each_step(kAtom_vz, "PairDpd"),
+        GhostField::read_stable(kAtom_type, "PairDpd"),
+    };
     std::span<const GhostField> declare_ghosts() const override {
+        if (multi_)
+            return kTypedGhosts;
         return kGhosts;
     }
 
@@ -88,18 +110,15 @@ class PairDpd : public Pair {
 
     /// @brief Multi-component: a per-type-pair amplitude matrix.
     ///
-    /// The matrix is indexed by the frame's `kAtom_type` values AS-IS. In this
-    /// tree that column carries the ATOMIC NUMBER (`cpu::from_molrs` fills it
-    /// from molrs `atomic_number`), so the matrix must be square of side
-    /// max(Z) + 1 — an argon/sodium mixture needs 19 rows, not 2 — and a type
-    /// outside it throws at `launch` rather than falling back to a default.
+    /// The matrix is indexed by the frame's force-field `kAtom_type` values
+    /// AS-IS (`cpu::from_molpy` fills them from molpy `atoms.type_id`), so it
+    /// must be square of side max(type) + 1, and a type outside it throws at
+    /// `launch` rather than falling back to a default. The Frame must carry
+    /// the type column; the single-amplitude form reads none.
     ///
     /// @param a_matrix    Square amplitude table `a_matrix[t_i][t_j]` [eV/Å].
     ///                    Must be supplied SYMMETRIC: the kernel is not
-    ///                    symmetrized — it reads `a_matrix[type[i]][type[j]]`
-    ///                    for the pair whose lower ATOM INDEX is `i` — so an
-    ///                    asymmetric table makes the energy depend on the
-    ///                    frame's atom ordering. Only squareness is checked.
+    ///                    symmetrized; finite symmetric entries are required.
     /// @param gamma       Dissipative friction γ [eV·fs/Å²] (≥ 0).
     /// @param temperature Thermostat setpoint T [K] (> 0).
     /// @param cutoff      Pair cutoff r_c [Å] (> 0).
@@ -139,6 +158,9 @@ class PairDpd : public Pair {
         return nullptr;
     }
 
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
+
   protected:
     void compute(const LaunchContext& ctx) override;
 
@@ -156,6 +178,7 @@ class PairDpd : public Pair {
     int stream_origin_ = 0;
 
     double a_of_(int ti, int tj) const;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

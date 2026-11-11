@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 
 namespace ATV {
 namespace cpu {
@@ -90,6 +91,29 @@ void Dimer::eval_force_(cpu::Frame& f) {
     force_fn_(f);
 }
 
+void Dimer::end_force_difference_(const cpu::Frame& mid, cpu::Frame& f1,
+                                  cpu::Frame& f2, double nx, double ny,
+                                  double nz, double& dfx, double& dfy,
+                                  double& dfz) {
+    const int n = mid.nlocal();
+    for (int i = 0; i < n; ++i) {
+        f1.span(kAtom_x)[i] = mid.span(kAtom_x)[i] + delta * nx;
+        f1.span(kAtom_y)[i] = mid.span(kAtom_y)[i] + delta * ny;
+        f1.span(kAtom_z)[i] = mid.span(kAtom_z)[i] + delta * nz;
+        f2.span(kAtom_x)[i] = mid.span(kAtom_x)[i] - delta * nx;
+        f2.span(kAtom_y)[i] = mid.span(kAtom_y)[i] - delta * ny;
+        f2.span(kAtom_z)[i] = mid.span(kAtom_z)[i] - delta * nz;
+        f1.span(kAtom_fx)[i] = f1.span(kAtom_fy)[i] = f1.span(kAtom_fz)[i] = 0;
+        f2.span(kAtom_fx)[i] = f2.span(kAtom_fy)[i] = f2.span(kAtom_fz)[i] = 0;
+    }
+    eval_force_(f1);
+    eval_force_(f2);
+    // Skeleton: one 3D mode on atom 0 (single particle / uniform N).
+    dfx = f1.span(kAtom_fx)[0] - f2.span(kAtom_fx)[0];
+    dfy = f1.span(kAtom_fy)[0] - f2.span(kAtom_fy)[0];
+    dfz = f1.span(kAtom_fz)[0] - f2.span(kAtom_fz)[0];
+}
+
 int Dimer::run(cpu::Frame& frame, int max_iter) {
     if (max_iter < 1)
         throw std::invalid_argument("Dimer::run: max_iter must be ≥ 1");
@@ -114,50 +138,54 @@ int Dimer::run(cpu::Frame& frame, int max_iter) {
         }
         eval_force_(frame);
 
-        // --- Rotate N (finite-difference curvature) ---
+        // --- Rotate N toward the lowest-curvature mode ---
+        // Henkelman & Jónsson, J. Chem. Phys. 111, 7010 (1999), with the
+        // trial-rotation line search of Kästner & Sherwood, J. Chem. Phys.
+        // 128, 014106 (2008), eqs. 5-8. The rotational force F_perp descends
+        // the curvature C(N) = N·H·N; following the raw finite-difference
+        // force instead converges on the largest-|curvature| mode, which is
+        // the stiff one whenever the start leans toward it.
         for (int rot = 0; rot < max_rotations; ++rot) {
-            for (int i = 0; i < n; ++i) {
-                f1.span(kAtom_x)[i] = frame.span(kAtom_x)[i] + delta * nx_;
-                f1.span(kAtom_y)[i] = frame.span(kAtom_y)[i] + delta * ny_;
-                f1.span(kAtom_z)[i] = frame.span(kAtom_z)[i] + delta * nz_;
-                f2.span(kAtom_x)[i] = frame.span(kAtom_x)[i] - delta * nx_;
-                f2.span(kAtom_y)[i] = frame.span(kAtom_y)[i] - delta * ny_;
-                f2.span(kAtom_z)[i] = frame.span(kAtom_z)[i] - delta * nz_;
-                f1.span(kAtom_fx)[i] = f1.span(kAtom_fy)[i] =
-                    f1.span(kAtom_fz)[i] = 0;
-                f2.span(kAtom_fx)[i] = f2.span(kAtom_fy)[i] =
-                    f2.span(kAtom_fz)[i] = 0;
-            }
-            // Only rotate using the first atom's 3D mode for skeleton (single
-            // particle / uniform N on all atoms). Multi-atom N is 3N-dim later.
-            eval_force_(f1);
-            eval_force_(f2);
-
-            // F_R = (F1 − F2) / (2δ)  approximate −H N for atom 0
-            const double frx =
-                (f1.span(kAtom_fx)[0] - f2.span(kAtom_fx)[0]) / (2.0 * delta);
-            const double fry =
-                (f1.span(kAtom_fy)[0] - f2.span(kAtom_fy)[0]) / (2.0 * delta);
-            const double frz =
-                (f1.span(kAtom_fz)[0] - f2.span(kAtom_fz)[0]) / (2.0 * delta);
-
-            // F_R ≈ −H N. Align N with the softest mode via a power-like step:
-            // prefer direction that maximizes N·F_R (⇔ minimizes N·H·N).
-            const double fr_n = frx * nx_ + fry * ny_ + frz * nz_;
-            double tx = frx, ty = fry, tz = frz;
-            if (fr_n < 0.0) {
-                tx = -frx;
-                ty = -fry;
-                tz = -frz;
-            }
-            const double tnorm = std::sqrt(tx * tx + ty * ty + tz * tz);
-            if (tnorm < rot_tol)
+            double dfx, dfy, dfz; // F1 − F2 at N [eV/Å]
+            end_force_difference_(frame, f1, f2, nx_, ny_, nz_, dfx, dfy, dfz);
+            const double df_n = dfx * nx_ + dfy * ny_ + dfz * nz_;
+            const double c0 = -df_n / (2.0 * delta); // curvature [eV/Å²]
+            double px = dfx - df_n * nx_;
+            double py = dfy - df_n * ny_;
+            double pz = dfz - df_n * nz_;
+            const double f_perp = std::sqrt(px * px + py * py + pz * pz);
+            if (f_perp < rot_tol)
                 break;
-            // Mix toward the soft-mode estimate (stable under pure power iter).
-            const double mix = 0.5;
-            nx_ = (1.0 - mix) * nx_ + mix * (tx / tnorm);
-            ny_ = (1.0 - mix) * ny_ + mix * (ty / tnorm);
-            nz_ = (1.0 - mix) * nz_ + mix * (tz / tnorm);
+            // Θ: unit rotation direction; dC/dφ at φ = 0 is −2|F_perp|/(2δ).
+            px /= f_perp;
+            py /= f_perp;
+            pz /= f_perp;
+            const double dc = -f_perp / delta;
+            const double phi1 = -0.5 * std::atan(dc / (2.0 * std::fabs(c0)));
+            // A trial angle this small cannot resolve a1 (0/0 below).
+            if (!(1.0 - std::cos(2.0 * phi1) > 1e-14))
+                break;
+            const double c1x = std::cos(phi1) * nx_ + std::sin(phi1) * px;
+            const double c1y = std::cos(phi1) * ny_ + std::sin(phi1) * py;
+            const double c1z = std::cos(phi1) * nz_ + std::sin(phi1) * pz;
+            double d1x, d1y, d1z;
+            end_force_difference_(frame, f1, f2, c1x, c1y, c1z, d1x, d1y, d1z);
+            const double c1 =
+                -(d1x * c1x + d1y * c1y + d1z * c1z) / (2.0 * delta);
+            // C(φ) = a0/2 + a1 cos 2φ + b1 sin 2φ through C0, dC and C1.
+            const double b1 = 0.5 * dc;
+            const double a1 = (c0 - c1 + b1 * std::sin(2.0 * phi1))
+                              / (1.0 - std::cos(2.0 * phi1));
+            const double a0 = 2.0 * (c0 - a1);
+            double phi_min = 0.5 * std::atan(b1 / a1);
+            const double c_min = 0.5 * a0 + a1 * std::cos(2.0 * phi_min)
+                                 + b1 * std::sin(2.0 * phi_min);
+            if (c_min > c0)
+                phi_min += 0.5 * units::pi;
+            const double cs = std::cos(phi_min), sn = std::sin(phi_min);
+            nx_ = cs * nx_ + sn * px;
+            ny_ = cs * ny_ + sn * py;
+            nz_ = cs * nz_ + sn * pz;
             normalize3_(nx_, ny_, nz_);
         }
 

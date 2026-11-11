@@ -1,7 +1,7 @@
 /// @file test_cpu_gpw_ksv.cpp
 /// @brief Unit tests for GPW Berry-phase string geometry, link-det phase
 ///        math and quantum wrapping. No SCF e2e (that lives in
-///        regressions/gpw/periodic-berry-gpw and periodic-berry-gpw-uks).
+///        regressions/gpw/berry-phase and periodic-berry-gpw-uks).
 
 #include <array>
 #include <cmath>
@@ -13,10 +13,10 @@
 #include <gtest/gtest.h>
 
 #include "atomiverse/cpu/gpw/berry_polarization.h"
-#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gaussian_basis.h"
+#include "atomiverse/cpu/gpw/gpw_solver.h"
 #include "atomiverse/cpu/gpw/gth_potential.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 using namespace ATV;
 using namespace ATV::cpu::gpw;
@@ -123,18 +123,21 @@ TEST(GpwBerryWrap, CenteredInterval) {
 
 TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
     const double a = 5.43 * kA2B;
-    const GaussianBasis bSi(molrs::Element::Si, "DZVP-MOLOPT-GTH");
-    const GthPotential pSi(molrs::Element::Si, "GTH-PBE-q4");
-    const double pos[3] = {0, 0, 0};
-    std::vector<GpwAtom> atoms;
-    atoms.emplace_back(pos, bSi, pSi, 14);
+    const double b2a = ATV::units::kBohrInAngstrom;
+    ATV::cpu::Frame atoms(1);
+    atoms.span(ATV::kAtom_atomic_number)[0] = 14;
+    atoms.span(ATV::kAtom_x)[0] = 0.0;
+    atoms.span(ATV::kAtom_y)[0] = 0.0;
+    atoms.span(ATV::kAtom_z)[0] = 0.0;
+    atoms.box = ATV::cpu::Box::orthorhombic(a / std::sqrt(2.0) * b2a,
+                                            a / std::sqrt(2.0) * b2a, a * b2a);
 
-    GpwDft method;
-    method.cell[0] = method.cell[1] = a / std::sqrt(2.0);
-    method.cell[2] = a;
-    method.cutoff_ry = 50.0;
+    GpwDft method{{Kind{molrs::Element::Si,
+                        GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
+                        GthPotential(molrs::Element::Si, "GTH-PBE-q4")}},
+                  /*cutoff_ry=*/50.0,
+                  ATV::cpu::xc::XCType::PADE};
     method.n_occ = 2;
-    method.xc = XcKind::PADE;
     method.build(atoms);
 
     BerryPolarization berry;
@@ -142,11 +145,11 @@ TEST(GpwBerryComputeGates, MetallicAndEmptyThrow) {
     berry.k_string = 2;
     berry.directions = {true, false, false};
 
-    method.smearing = Smearing::fermi_dirac;
+    method.smearing = ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.02;
     EXPECT_THROW(berry.compute(method, atoms), std::invalid_argument);
 
-    method.smearing = Smearing::none;
+    method.smearing = ATV::electronic::Smearing::none;
     method.n_occ = 0;
     // rebuild validation for empty occ is on compute, not build if already built
     EXPECT_THROW(berry.compute(method, atoms), std::invalid_argument);

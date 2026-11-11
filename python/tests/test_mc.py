@@ -10,16 +10,16 @@ What is (and is not) checked here
 Behavioural invariants only. The quantitative ensemble physics lives in
 ``regressions/mc/`` and stays there:
 
-* ``regressions/mc/npt_lj`` — ⟨V⟩ = (N+1)k_BT/P + N·B₂ and the exact NPT
+* ``regressions/mc/metropolis`` — ⟨V⟩ = (N+1)k_BT/P + N·B₂ and the exact NPT
   width σ_V = √(N+1)·k_BT/P.
-* ``regressions/mc/gcmc_lj`` — ⟨N⟩(z) against the Mayer activity expansion
+* ``regressions/mc/metropolis`` — ⟨N⟩(z) against the Mayer activity expansion
   ρ = z − 2B₂z² at two activities.
 
 This file asserts only what a *binding* can break: the handle constructs,
 the chain advances (acceptance strictly inside (0,1) — a frozen chain and a
 "accept everything" chain both fail), the statistics are per-verb and
 cumulative across ``run()`` calls, the results are written back into the
-molrs Frame (positions, box, and — for μVT — a rebuilt ``atoms`` block at
+molpy Frame (positions, box, and — for μVT — a rebuilt ``atoms`` block at
 the new N), and the build gates fail loud.
 
 Hard-coded goldens (μVT)
@@ -34,17 +34,13 @@ Pinned quantity               Source
 ============================  ===============================================
 z ≡ e^{βμ}/Λ³, so             Frenkel & Smit, *Understanding Molecular
 μ = k_BT·ln(z·Λ³)             Simulation* (2nd ed. 2002) §5.6.1 eq. (5.6.9);
-                              transcribed in ``regressions/mc/gcmc_lj/
+                              transcribed in ``regressions/mc/metropolis/
                               REFERENCE.md`` and used at
                               ``reg_gcmc_lj.cpp:84``
-Λ = h/√(2π m k_BT)            same REFERENCE.md; engine implementation
-                              ``core/units.h:171`` (``lambda_thermal``)
-k_B = 8.617333262e-5 eV/K,    ``core/units.h:138``, ``:161``, ``:149``
-h = 4.135667696 eV·fs,
-amu·Å²/fs² → eV = 103.6427
+Λ = h/√(2π m k T mvv2e)      lj row, ``lambda_thermal``: h = k = mvv2e = 1
 ρ(z) = z − 2·B₂(T)·z² + O(z³) Hill, *An Introduction to Statistical
                               Thermodynamics* (Dover 1986) §15-3 eq. (15-24);
-                              ``regressions/mc/gcmc_lj/REFERENCE.md``
+                              ``regressions/mc/metropolis/REFERENCE.md``
 B₂(T*=1.5, LJ cut+shifted at  quadrature of McQuarrie, *Statistical
 2.5σ) = −1.7801 σ³            Mechanics* (2000) eq. (12-30) — the same
                               integral ``reg_gcmc_lj.cpp:45-72`` evaluates
@@ -55,7 +51,7 @@ ideal-gas ⟨N⟩ = z·V = 10.80 atoms. Three effects justify the width and none
 is worth tightening in a pytest: the second-order Mayer term lifts the
 prediction to 12.72 atoms (+18%), the first *neglected* term is worth a
 further ≈0.6 atoms, and an 8k-trial chain on ~11 atoms is far too short for
-a percent-level mean. Tightening it is ``regressions/mc/gcmc_lj``'s job,
+a percent-level mean. Tightening it is ``regressions/mc/metropolis``'s job,
 which runs 450k trials in a 12σ box at two activities.
 
 Units: temperature [K]; pressure [eV/Å³] (LAMMPS sign, positive =
@@ -69,6 +65,10 @@ import math
 import numpy as np
 import pytest
 import molpy
+
+from _domains import skip_module_unless
+
+skip_module_unless("ATV_BUILD_MC", "ATV_BUILD_POTENTIALS")
 
 from atomiverse.montecarlo import (
     GCMC,
@@ -84,9 +84,12 @@ from atomiverse.potentials.pair import LJCut
 
 # ── Unit constants, transcribed from core/units.h ───────────────────
 
-_KB_EV_PER_K: float = 8.617333262e-5  # core/units.h:138 [eV/K]
-_H_PLANCK_EV_FS: float = 4.135667696  # core/units.h:161 [eV·fs]
-_MASS_V2_TO_ENERGY: float = 103.6427  # core/units.h:149 [amu·Å²/fs² → eV]
+# The samplers run in the default LAMMPS style lj: boltz = hplanck = mvv2e
+# = 1. The names stay so the activity derivation below is the same algebra
+# as units::lambda_thermal.
+_KB_EV_PER_K: float = 1.0
+_H_PLANCK_EV_FS: float = 1.0
+_MASS_V2_TO_ENERGY: float = 1.0
 
 # ── Argon-flavoured LJ, the same parameters regressions/mc/ samples ──
 
@@ -154,16 +157,12 @@ _GCMC_VOLUME_A3: float = _GCMC_BOX_A**3  # 8489.664 Å³ = 216 σ³
 _GCMC_Z_RED: float = 0.05
 _GCMC_Z_PER_A3: float = _GCMC_Z_RED / _SIGMA_A**3  # [Å⁻³]
 
-#: HARD-CODED GOLDEN — μ = k_BT·ln(z·Λ³) at T = 180 K, m = 39.948 amu,
-#: zσ³ = 0.05, σ = 3.4 Å. Derivation (all inputs pinned in the module
-#: docstring's table):
-#:     k_BT   = 8.617333262e-5 × 180        = 0.0155111998716    eV
-#:     Λ      = h/√(2π m k_BT · 103.6427)   = 0.20588093156041   Å
-#:     Λ³                                   = 8.7266663949720e-3 Å³
-#:     z      = 0.05 / 3.4³                 = 1.2721351516385e-3 Å⁻³
-#:     μ      = k_BT · ln(z Λ³)             = −0.17695844425991  eV
-_GCMC_MU_EV: float = -0.17695844425991422
-_GCMC_LAMBDA_A: float = 0.20588093156041126
+#: HARD-CODED GOLDEN — μ = kT·ln(z·Λ³) on the lj row (h = k = mvv2e = 1),
+#: T = 180, m = 39.948, zσ³ = 0.05, σ = 3.4.
+#:     Λ = 1/√(2π m T) = 0.0047046388726666956
+#:     μ = T · ln(z Λ³) = -4094.0419242493808
+_GCMC_MU_EV: float = -4094.0419242493808
+_GCMC_LAMBDA_A: float = 0.0047046388726666956
 
 #: Ideal-gas ⟨N⟩ = z·V = 10.80 atoms. The second-order Mayer term lifts this
 #: to 12.72 (ρ = z − 2B₂z², B₂ = −69.966 Å³ = −1.7801 σ³) and the first
@@ -257,7 +256,7 @@ class TestMcConstruction:
         assert VolumeMove(_NPT_DV_MAX_A3) is not None
 
     def test_insert_delete_move_constructs(self) -> None:
-        assert InsertDeleteMove(_Z_ARGON, _MASS_AMU) is not None
+        assert InsertDeleteMove(1, _Z_ARGON, _MASS_AMU) is not None
 
     def test_move_selector_chains_and_returns_self(self) -> None:
         """``add`` returns the selector so mixed ensembles read as one
@@ -302,7 +301,7 @@ class TestMcConstruction:
 
     def test_insert_delete_zero_mass_raises(self) -> None:
         with pytest.raises(ValueError):
-            InsertDeleteMove(_Z_ARGON, 0.0)
+            InsertDeleteMove(1, _Z_ARGON, 0.0)
 
 
 # ── 2. Canonical (NVT) sampling ─────────────────────────────────────
@@ -377,7 +376,7 @@ class TestNvtMc:
     def test_frame_meta_energy_is_the_chain_energy(
         self, argon_frame: "molpy.Frame"
     ) -> None:
-        """The molrs Frame carries the LAST ACCEPTED energy, bit-identical
+        """The molpy Frame carries the LAST ACCEPTED energy, bit-identical
         to the handle's own bookkeeping — a rejected trial's energy must
         never survive the write-back."""
         sim = _nvt_handle()
@@ -510,7 +509,7 @@ class TestNptMc:
         assert volume > 0.0
 
     def test_box_written_back(self, npt_frame: "molpy.Frame") -> None:
-        """The accepted box lands in the molrs Frame, not only in the
+        """The accepted box lands in the molpy Frame, not only in the
         handle's bookkeeping."""
         volume_before = npt_frame.box.volume()
         sim = _npt_handle()
@@ -518,7 +517,7 @@ class TestNptMc:
         volume_after = npt_frame.box.volume()
         assert sim.accepts("box") > 0, "no accepted volume move to write back"
         assert volume_after != pytest.approx(volume_before, rel=1.0e-12), (
-            "an accepted volume move must change the molrs Frame box"
+            "an accepted volume move must change the molpy Frame box"
         )
         assert volume_after == pytest.approx(sim.current_volume(), rel=1.0e-10)
 
@@ -542,7 +541,7 @@ def _gcmc_handle() -> "GCMC":
     sim.set_mover(
         MoveSelector()
         .add(TranslateMove(0.4 * _SIGMA_A), 0.5)
-        .add(InsertDeleteMove(_Z_ARGON, _MASS_AMU), 0.5)
+        .add(InsertDeleteMove(1, _Z_ARGON, _MASS_AMU), 0.5)
     )
     return sim
 
@@ -624,8 +623,8 @@ class TestGcmc:
     def test_atoms_block_rebuilt_at_the_new_population(
         self, gcmc_frame: "molpy.Frame"
     ) -> None:
-        """Write-back contract (spec py-mc DECIDED #2): ``to_molrs``
-        rejects a changed row count, so the binding rebuilds the molrs
+        """Write-back contract (spec py-mc DECIDED #2): ``to_molpy``
+        rejects a changed row count, so the binding rebuilds the molpy
         ``atoms`` block. Every column must come back at the new N.
 
         Checked after EVERY block rather than once at the end: whether N
@@ -653,8 +652,9 @@ class TestGcmc:
     def test_inserted_atoms_carry_the_configured_species(
         self, gcmc_frame: "molpy.Frame"
     ) -> None:
-        """``InsertDeleteMove(z, mass)`` stamps the species onto every
-        inserted row — the mass MUST be the one GCMC built Λ from."""
+        """``InsertDeleteMove(type, atomic_number, mass)`` stamps the
+        configured identity onto every inserted row — the mass MUST be the
+        one GCMC built Λ from."""
         sim = _gcmc_handle()
         sim.run(gcmc_frame, _GCMC_EQUILIBRATE)
         masses = np.asarray(gcmc_frame["atoms"]["mass"])
@@ -695,7 +695,7 @@ class TestMcErrors:
         nothing to score."""
         sim = MC(_NVT_T_K, _NVT_SEED)
         sim.set_mover(TranslateMove(_NVT_DELTA_A))
-        with pytest.raises(RuntimeError, match="(?i)potential"):
+        with pytest.raises(RuntimeError, match="energy source"):
             sim.run(argon_frame, 1)
 
     def test_pair_evaluator_without_neighbor_raises(

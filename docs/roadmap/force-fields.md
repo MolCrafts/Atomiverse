@@ -1,242 +1,104 @@
 # Force Fields
 
-Legend and caveats: [Roadmap index](index.md).
+Tutorial: [Many-body potentials](../tutorial/ch16-many-body-potentials.md) · [classical MD](../tutorial/ch10-classical-md.md).
 
-The MD machinery around the potentials (neighbor lists, domain decomposition,
-halo exchange, PME, special-bonds exclusions, virial accumulation) is mature
-and LAMMPS-shaped. The *catalogue of styles* is now GAFF-capable on CPU
-(LJ multi-type, CoulCut/Long, harmonic bond/angle, CHARMM + multi/harmonic
-dihedrals, harmonic improper) plus EAM/SW many-body — still thin relative to
-LAMMPS, but no longer "one pair style and nothing else".
+MD machinery (neighbor lists, DD, halo, PME, specials, virial) is
+LAMMPS-shaped. CPU supports GAFF plus EAM/SW; CUDA supports the harmonic
+bond/angle and polynomial-torsion GAFF subset on one GPU, plus the
+Kremer–Grest FENE bond and cosine angle. Legend:
+[Roadmap index](index.md).
 
-The Lennard–Jones 12-6 pair style is the only ⚡ in the roadmap: SIMD on CPU
-(xsimd, `-march=native`) and the CUDA OpenMM tile engine. Standing bench:
-`benchmarks/lj/` + `benchmarks/cuda/bench_nonbonded_style.cu`. GH200 **1332540**:
-`96.997 Matom*step/s` (N=10648, 80 steps). LAMMPS twin deck:
-`tools/bench_lj_vs_lammps/in.lj_nve.kk`. Keep ⚡ only while a same-node
-LAMMPS Kokkos ratio still supports it.
-**Kokkos backend: ○** (planned portable path; no in-tree Kokkos port yet).
+**⚡** — only LJ 12-6 (CPU xsimd + CUDA OpenMM tile engine vs LAMMPS/Kokkos).
 
-## 1. Classical Bonded Potentials
+A molpy GAFF/GAFF2 force field runs from Python through
+`atomiverse.forcefield.compile` — one molpy style to one evaluator: `lj/cut` →
+per-type `PairLJCut`, `coul/cut` → `PairCoulCut` (special weights, stated
+Coulomb constant), harmonic bond/angle, periodic / charmm torsions as
+`DihedralCharmm` rows, `ImproperCvff` / `ImproperHarmonic`; CPU. Ewald styles
+are not translated.
 
-| Method                             | CPU | CUDA | Kokkos |
-| ---------------------------------- | :-: | :--: | :---: |
-| Harmonic bond potential            |  ✓  |   ✓  |   ○  |
-| Quartic bond potential             |  ○  |   ○  |   ○  |
-| Morse bond potential               |  ○  |   ○  |   ○  |
-| FENE bond potential                |  ✓  |   ○  |   ○  |
-| Tabulated bond potential           |  ○  |   ○  |   ○  |
-| Harmonic angle potential           |  ✓  |   ✓  |   ○  |
-| Cosine angle potential             |  ○  |   ○  |   ○  |
-| Restricted-bending angle potential |  ○  |   ○  |   ○  |
-| Urey–Bradley potential             |  ○  |   ○  |   ○  |
-| Tabulated angle potential          |  ○  |   ○  |   ○  |
-| Periodic Fourier torsion           |  ✓  |   ○  |   ○  |
-| OPLS torsion                       |  ○  |   ○  |   ○  |
-| Ryckaert–Bellemans torsion         |  ✓  |   ✓  |   ○  |
-| CHARMM torsion                     |  ✓  |   ○  |   ○  |
-| Harmonic improper torsion          |  ✓  |   ○  |   ○  |
-| Periodic improper torsion          |  ○  |   ○  |   ○  |
-| CVFF improper torsion              |  ○  |   ○  |   ○  |
-| CMAP correction                    |  ○  |   ○  |   ○  |
-| Bond–bond cross term               |  ○  |   ○  |   ○  |
-| Bond–angle cross term              |  ○  |   ○  |   ○  |
-| Angle–angle cross term             |  ○  |   ○  |   ○  |
-| Bond–torsion cross term            |  ○  |   ○  |   ○  |
-| Class-II bonded potential          |  ○  |   ○  |   ○  |
-| Tabulated bonded potential         |  ○  |   ○  |   ○  |
+Molecular GAFF/GAFF2 parameterization has a separate
+[scientific benchmark](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/forcefield/README.md), using native
+Atomiverse AM1 charges and molpy typing against live AmberTools. Its scope is
+fixed-geometry closed-shell molecules and parameter-level comparisons; these
+checks do not qualify geometry optimization, force evaluation or dynamics.
 
-Two torsion styles share the same topology and geometry helpers
-(`dihedral_geom`):
+<!-- benchmark-evidence:start -->
 
-- `DihedralMultiHarmonic` — LAMMPS `dihedral_style multi/harmonic`:
-  \(V = \sum_n C_n \cos^n\phi\) (Ryckaert–Bellemans), CUDA mirror present.
-- `DihedralCharmm` — LAMMPS `dihedral_style charmm` **without** optional 1–4
-  pair weights: \(V = K(1 + \cos(n\phi - \delta))\). CPU only for now; 1–4
-  scaling remains on pair styles via `special_bonds`. Regression
-  `regressions/md/dihedral_charmm` pins analytic energies at \(\phi=\pi/2\).
+No source-qualified parameterization campaign has been recorded here. Local
+accuracy and timing results remain provisional until the declared coverage and
+build provenance pass the scientific benchmark policy.
 
-Neither is an OPLS parameterization table.
+<!-- benchmark-evidence:end -->
 
-**Improper topology** is first-class (schema columns `num_improper` /
-`improper_atom` / `improper_type`, independent of dihedrals).
-`ImproperHarmonic` implements LAMMPS `improper_style harmonic`
-\(V = K(\chi-\chi_0)^2\) using the shared `dihedral_geom` helpers
-(`regressions/md/improper_harmonic`). Periodic / CVFF impropers remain ○.
+Per-atom identity is two Frame columns, one meaning each (LAMMPS semantics):
+the force-field type `kAtom_type` (molpy `atoms.type_id`, LAMMPS data
+`Atoms` type) keys every per-type table, and the species
+`kAtom_atomic_number` (molpy `atoms.atomic_number`, Z, 0 = no element) keys
+every element lookup. Coarse-grained models carry types only; no table keys
+on Z. See `docs/developer/frame-architecture.md` §1.
 
-Bonded forces are cross-validated against LAMMPS in
-`/* benchmarks removed; re-add later */ pe/validation/` (multi/harmonic path).
+## 1. Bonded
 
-## 2. Classical Nonbonded Potentials
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| Harmonic bond / angle | ✓ | ✓ | |
+| FENE bond | ◐ | ◐ | One law for both backends (`core/fene.h`). No external pin; self-pinned chain case removed. CUDA `BondFene` (Python CUDA MD/Evaluate) unit test: energy, forces and virial vs analytic and CPU, overstretch and untyped-bond faults |
+| Cosine angle (Kremer–Grest bending) | ◐ | ◐ | `AngleCosine`, LAMMPS `angle_style cosine` port, \(K(1+\cos\theta)\), shared `core/angle_cosine.h`. Unit tests: CPU energy/FD forces/virial at 60–150°, CUDA vs analytic energy and CPU forces/virial. No external pin. CUDA MD angle slot is singular (one angle style per run). Wire ID 37; Python `AngleCosine` on CPU and CUDA |
+| Multi/harmonic torsion (RB) | ✓ | ✓ | `DihedralMultiHarmonic` |
+| CHARMM torsion | ✓ | ○ | No optional 1–4 pair weights in style |
+| Fourier torsion (Amber/GAFF multi-term) | ✓ | ○ | `DihedralFourier`; LAMMPS `dihedral_style fourier` pin |
+| Harmonic improper | ✓ | ○ | First-class topology |
+| CVFF improper (Amber/GAFF) | ✓ | ○ | `ImproperCvff`; LAMMPS `improper_style cvff` pin; Python `potentials.improper.Cvff` (local runs) |
+| OPLS / CMAP / Class-II cross | ○ | ○ | |
 
-| Method                              | CPU | CUDA | Kokkos |
-| ----------------------------------- | :-: | :--: | :---: |
-| Lennard–Jones 12-6 potential        |  ⚡  |   ⚡  |   ○  |
-| Mie n-m potential                   |  ○  |   ○  |   ○  |
-| Buckingham potential                |  ✓  |   ○  |   ○  |
-| Morse nonbonded potential           |  ✓  |   ○  |   ○  |
-| Tabulated pair potential            |  ○  |   ○  |   ○  |
-| Coulomb potential                   |  ✓  |   ○  |   ○  |
-| Reaction-field electrostatics       |  ○  |   ○  |   ○  |
-| Damped-shifted-force electrostatics |  ○  |   ○  |   ○  |
-| Wolf summation                      |  ○  |   ○  |   ○  |
-| Direct Ewald summation              |  ✓  |   ✓  |   ○  |
-| Particle Mesh Ewald                 |  ✓  |   ✓  |   ○  |
-| Smooth Particle Mesh Ewald          |  ✓  |   ✓  |   ○  |
-| Lennard–Jones PME                   |  ○  |   ○  |   ○  |
-| Fast multipole electrostatics       |  ○  |   ○  |   ○  |
-| Multilevel summation method         |  ○  |   ○  |   ○  |
-| Soft-core Lennard–Jones potential   |  ✓  |   ○  |   ○  |
-| Soft-core Coulomb potential         |  ✓  |   ○  |   ○  |
+Per-term energies: every force-field style adds its energy to the total and
+to its LAMMPS thermo term on both backends — `energy_pair` (pair styles,
+LJ tail, Ewald/PME/PPPM self, reciprocal and background), `energy_bond`,
+`energy_angle`, `energy_dihedral`, `energy_improper` — so `cuda::to_cpu` and
+the recorders report the CPU breakdown (CUDA `cuda::EnergyTerm`,
+`tests/cuda/potentials/test_energy_terms.cu`). Not on the `cuda::MultiGpu`
+stack, which reduces the total only.
 
-Notes:
+## 2. Nonbonded
 
-- **LJ 12-6** is energy-shifted, supports a **per-type ε/σ table** with
-  Lorentz–Berthelot mixing (and a single-ε fast path), honours LAMMPS
-  `special_bonds` **scales** (0 = drop; Amber/GAFF 1–4 uses 0.5), and
-  optionally accumulates the per-pair virial. See `set_special_bonds(0,0,0.5)`.
-- **Morse** exists as a demo style: O(N²) all-pairs, deliberately opting out of
-  the neighbor list. Correct, but not a production style — and CPU-only.
-- **Cut-off Coulomb** is `PairCoulCut` (CPU; special_bonds scales). **CoulLong**
-  (real-space `erfc(αr)/r`) also applies special-bonds scales on the real-space
-  loop; reciprocal/self terms are unscaled (LAMMPS convention). GAFF path
-  regression: `regressions/forcefield/gaff_peo_fragment`.
-- The PME implementation is Essmann **smooth** PME (B-spline charge spreading →
-  FFT → influence function), so the "Particle Mesh Ewald" and "Smooth Particle
-  Mesh Ewald" rows are the same code. Despite an in-code reference to LAMMPS
-  `kspace_style pppm`, this is SPME, not PPPM.
-- Reciprocal space is **single-GPU only** on CUDA; the CPU PME replicates the
-  grid across MPI ranks rather than distributing the FFT. CUDA PME energy
-  Madelung residual (`cuda-pme-accuracy`) closed 2026-07-23.
-- Open-boundary **FMM tree math** (`FmmTree`) is validated against direct
-  Coulomb sums (`reg_fmm_point_charges`) and powers CFMM-J on the SCF path;
-  it is **not** a periodic MD `KSpace` style, so the FMM row above stays ○.
-- **Soft-core LJ** (`cpu::PairLJSoft`) is Beutler/GROMACS **one-leg appearance**
-  form with public `lambda` (default 1 = hard shifted LJ parity). Not LAMMPS
-  `lj/cut/soft`. Soft-core Coulomb ships as `cpu::PairCoulSoft` (same Beutler
-  family). Regressions: `lj_soft_dimer`, `coul_soft_dimer`.
-- **Buckingham** (`cpu::PairBuck`) is LAMMPS `pair_style buck`
-  \(A e^{-r/\rho}-C/r^{6}\) with optional energy shift; CPU dimer pin
-  `reg_buckingham-pair-lammps`.
-- **Born–Mayer–Huggins** (`cpu::PairBorn`) is LAMMPS `pair_style born`
-  \(A e^{(\sigma-r)/\rho}-C/r^{6}+D/r^{8}\) with energy shift; single-type dimer
-  pin `reg_born-repulsion-foothold`. **Multi-type Fumi–Tosi** uses the same
-  `PairBorn` type table + `PairCoulCut` (LAMMPS `hybrid/overlay born coul/cut`);
-  pin `reg_fumi-tosi-nacl`. **NeighborList-backed bulk Born path** ships
-  (`PairBorn` prefers `ctx.md.pair_list` when published;
-  `reg_born-buck-neighborlist-bulk`). Same NeighborList preference on
-  `PairGaussianCoul` (`reg_gaussian-coul-neighborlist`).
-- **Steele 10-4-3 wall** ships as `cpu::md::FixWallLJ1043` (LAMMPS
-  `fix wall/lj1043`, not `wall/lj93`); pin `reg_steele-wall-argon`.
-- **FENE** (`BondFene`) + **WCA** (`PairWCA`) and **Yukawa** (`PairYukawa`) and
-  **DPD** (`PairDpd`) are CPU textbook styles from the method ladder
-  (`reg_fene_wca_chain`, `reg_yukawa_dimer`, `reg_dpd_groot_warren`).
-- **Direct Ewald** supports Yeh–Berkowitz slab correction via public
-  `KSpaceEwald::slab_factor` (LAMMPS `kspace_modify slab`); pin
-  `reg_slab-2d-ewald-foothold`. True 2D-only Ewald (no 3D+slab) remains
-  **out of MetalWalls-loop product scope** (full 2D-PBC stack).
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| LJ 12-6 | ⚡ | ⚡ | ⚡ = the single-type path. Per-type table on both backends (`PairLJCut(std::vector<LJTypeCoeff>, cutoff)`): LAMMPS `init_one` completion in `core/lj_type_table.h` (geometric ε, arithmetic σ and cutoff, explicit rows override, per-pair cutoffs, shifted at each pair's cutoff, type without diagonal = no LJ site); CPU scalar loop, CUDA device-table tile; evidence is analytic unit tests plus the LAMMPS single point `regressions/forcefield/cg-electrolyte`. `set_type_coeff` (add/override one row) and `set_tail_correction` (LAMMPS `pair_modify tail yes`, each pair at its own cutoff; CUDA: counts at build, volume read on the device, single GPU) on both backends. Special bonds: fractional 1-2/1-3/1-4 scales on both backends (CUDA: weights ≠ 1 leave the tiles, a sparse exception pass applies w · (LJ − offset + r⁻⁴) inside the pair cutoffs; fractional weights need a single GPU). Kokkos ◐: `ATV::kokkos::PairLJCut` on `Kokkos::Serial` only — not multi-type, not special_bonds, not an MD step |
+| r⁻⁴ attraction (force-shifted) | ◐ | ◐ | ATV-native term `set_r4_attraction(std::vector<R4TypeCoeff>)` on `PairLJCut` (per-type) and `PairLJCutCoulLong`: U = −S[(σ/r)⁴ − (σ/r_c)⁴ + 4(σ/r_c)⁴(r/r_c − 1)], same table walk as LJ, scaled by the LJ special weight, energy + virial. Analytic unit tests; no LAMMPS style exists, but `regressions/forcefield/cg-electrolyte` evaluates the same closed form through LAMMPS `pair_style table` (agreement limited by the table's linear interpolation, 3e-10 at 2·10⁵ points, 4e-12 at 2·10⁶) |
+| Buckingham / Morse / Born (Fumi–Tosi) | ✓ | ○ | |
+| WCA / Yukawa / DPD / FENE+WCA | ◐ | ○ | No external pin; self-pinned cases removed |
+| Soft-core LJ / Coulomb | ✓ | ○ | Beutler; alchemical λ |
+| CoulCut / CoulLong | ✓ | ◐ | special_bonds on real space. CUDA `CoulLong`: real space only, no exclusion / special_bonds correction |
+| Fused LJ + screened Coulomb | ✓ | ✓ | `PairLJCutCoulLong(std::vector<LJTypeCoeff>, alpha, cutoff)`, same API and defaults on both backends: typed `init_one` table with per-pair LJ cutoffs (Coulomb at the global cutoff), `set_special_bonds` LJ/Coulomb weights (default Amber), `set_energy_shift` (default on), r⁻⁴ term, `set_type_coeff`, LJ tail correction (`set_tail_correction`, per-pair cutoffs; CUDA reads the volume on the device). erfc(αr) is analytic on both backends (CPU: vectorized fdlibm erfc, `cpu/potentials/ewald_erfc.h`, xsimd; CUDA: erfcx·e^{−x²}); no tabulated mode. CUDA: per-atom Lorentz–Berthelot tile when the table is pure LB at one cutoff (OpenMM-benchmarked path), device-table tile otherwise; pairs whose nearest graph shell has weights ≠ (1, 1) go to a sparse exception pass with the LAMMPS cutoffs (LJ inside the pair's LJ cutoff, the Ewald exclusion correction inside the Coulomb cutoff only, like the CPU neighbor list); single GPU. LAMMPS single point (CG polymer electrolyte, typed LJ + r⁻⁴ + PPPM + FENE + cosine): `regressions/forcefield/cg-electrolyte`. Task wire ID 36 (CPU launcher, tail flag on the wire) and Python on both backends |
+| Direct Ewald / PME / SPME | ✓ | ✓ | SPME = Essmann; neutralizing background energy and virial on both backends. CUDA PME and Ewald: single GPU, fixed atom set and mesh / mode set, changing cell (NPT/deform) with six-component virial |
+| PPPM (Hockney–Eastwood, ik) | ✓ | ◐ | `KSpacePPPM`, LAMMPS `compute_gf_ik(_triclinic)`; general triclinic cell, tables follow the cell revision, six-component virial. Not a task-wire component. CPU: rock-salt Madelung pin (`regressions/longrange/pppm`), unit and MPI parity tests. CUDA `KSpacePPPM` (Python CUDA MD) shares the PME cuFFT path (its own spread / gather stencil); CUDA unit test: energy, forces and six-component virial vs direct Ewald (1e-12) on a 12-ion orthorhombic and triclinic cell, neutral and net-charged. Both backends spread and gather on LAMMPS's centred stencil (`particle_map` / `make_rho` / `fieldforce_ik`, `core/pppm_ik.h`; CPU brick ghosts per `Grid3d::ghost_grid`), choose the mesh by LAMMPS `factorable` (2, 3, 5) and default to order 6; an explicit mesh (`kspace_modify mesh`) and `KSpacePPPM::from_accuracy` (LAMMPS `PPPM::init`: `set_grid_global`, `estimate_ik_error`, `adjust_gewald`, `final_accuracy`, ported once in `core/pppm_accuracy.h`) on both backends and in Python (`KSpacePPPM.from_accuracy(frame, accuracy, cutoff, order=6, alpha=None, mesh=None)`); chosen α / mesh / estimate equal LAMMPS's printout (`tests/core/test_pppm_accuracy.cpp`). The r2c/c2r ik field, energy and virial fold each mode with its conjugate partner (`pppm_half_mode`), so even meshes reproduce LAMMPS's full complex `poisson_ik` (the Nyquist-index derivative cancels as in its real part); the triclinic alias bound uses LAMMPS `lamda2xT`'s |tilt|. CPU brick ghosts include LAMMPS `set_distance(0.5·skin)` from the neighbor skin the Runtime publishes (`Context::md.neighbor_skin`). Unit tests against a literal LAMMPS `make_rho` / `poisson_ik` / `fieldforce_ik` reference (energy, forces, six-component virial) for orders 3–7 on odd and even meshes on both backends, MPI brick-vs-replicated parity for orders 3–7 and for an owned atom 2 cells past its cut. LAMMPS single point `regressions/forcefield/cg-electrolyte` (CPU and CUDA, orders 5, 6, 7): k-space equal to LAMMPS `pppm` up to its truncated 4π = 12.5663706 (6e-9 energy, 1.1e-9 force and virial) at every order |
+| Gaussian-charge Coulomb | ✓ | ○ | |
+| Steele 10-4-3 wall | ✓ | ○ | `FixWallLJ1043` |
+| Periodic FMM as MD KSpace | ○ | ○ | Open-boundary FMM math ✓ (powers CFMM-J); not MD drop-in |
+| Reaction-field / Wolf / LJ-PME | ○ | ○ | |
 
-## 3. Polarizable Force Fields
+## 3. Polarizable
 
-| Method                              | CPU | CUDA | Kokkos |
-| ----------------------------------- | :-: | :--: | :---: |
-| Drude oscillator model              |  ○  |   ○  |   ○  |
-| Self-consistent induced dipoles     |  ✓  |   ○  |   ○  |
-| Extended-Lagrangian induced dipoles |  ✓  |   ○  |   ○  |
-| Thole-damped polarization           |  ✓  |   ○  |   ○  |
-| Atomic-multipole electrostatics     |  ○  |   ○  |   ○  |
-| AMOEBA electrostatics               |  ○  |   ○  |   ○  |
-| AMOEBA polarization                 |  ○  |   ○  |   ○  |
-| Fluctuating-charge model            |  ✓  |   ○  |   ○  |
-| QEq polarization                    |  ✓  |   ○  |   ○  |
-| Charge-equilibration dynamics       |  ○  |   ○  |   ○  |
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| PIM induced dipoles (SCF) | ✓ | ○ | Thole; MetalWalls |
+| Extended-Lagrangian dipoles | ✓ | ○ | |
+| QEq fluctuating charge | ✓ | ○ | LAMMPS `fix qeq/point` |
+| Drude / AMOEBA | ○ | ○ | |
 
-**Bulk PIM** (`cpu::PimInducedDipole`) is MetalWalls-style self-consistent
-induced dipoles with Thole exponential damping and optional Tang–Toennies
-(`tt_b`); permanent charge–charge is separate (`PairCoulCut` / PME). Pin
-`reg_pim-induced-dipole-bulk`. **Electrode-coupled dipole ⊕ \(Q\) joint** ships
-as `cpu::md::DipoleElectrodeJoint` (alternating ConstPotBO \(Q\) + PIM \(\mu\)
-until joint tol; `reg_dipole-electrode-joint`, oracle=metalwalls).
-**Extended-Lagrangian induced dipoles** ship as `cpu::PimXlDipole`
-(time-reversible XL propagation of the PIM dipoles;
-`reg_extended-lagrangian-dipoles`, oracle=metalwalls / iEL-SCF literature).
-**QEq / fluctuating-charge** ships as `cpu::md::QEq` (LAMMPS `fix qeq/point`
-twin; `reg_qeq-fluctuating-charge`, oracle=lammps, fair-bench ratio 0.45).
-The **PIM-NPT polarizable IL product twin** landed as
-`reg_pim-npt-polarizable-il` (oracle=metalwalls offline Thole-PIM pin).
-Charge-equilibration *dynamics* (extended-Lagrangian charge propagation,
-LAMMPS `qeq/dynamic`-class) and Drude / AMOEBA remain ○.
+## 4. Many-body / reactive
 
-## 4. Many-Body and Reactive Potentials
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| EAM | ✓ | ○ | MPI; ghost-of-ghost halo |
+| Stillinger–Weber | ✓ | ○ | MPI |
+| Tersoff / MEAM / ReaxFF / AIREBO | ○ | ○ | |
 
-| Method                         | CPU | CUDA | Kokkos |
-| ------------------------------ | :-: | :--: | :---: |
-| Embedded-atom method           |  ✓  |   ○  |   ○  |
-| Modified embedded-atom method  |  ○  |   ○  |   ○  |
-| Finnis–Sinclair potential      |  ○  |   ○  |   ○  |
-| Stillinger–Weber potential     |  ✓  |   ○  |   ○  |
-| Tersoff potential              |  ○  |   ○  |   ○  |
-| AIREBO                         |  ○  |   ○  |   ○  |
-| AIREBO-M                       |  ○  |   ○  |   ○  |
-| EDIP                           |  ○  |   ○  |   ○  |
-| COMB                           |  ○  |   ○  |   ○  |
-| ReaxFF                         |  ○  |   ○  |   ○  |
-| Reactive charge equilibration  |  ○  |   ○  |   ○  |
-| Generic bond-order potential   |  ○  |   ○  |   ○  |
-| Three-body tabulated potential |  ○  |   ○  |   ○  |
-| Many-body tabulated potential  |  ○  |   ○  |   ○  |
+## 5. Coarse-grained / ML
 
-**EAM** (analytic Sutton-Chen, `cpu::EAM`) and **Stillinger-Weber** (`cpu::StillingerWeber`)
-are implemented on CPU, single-element, and run **under MPI**; both are FD-force-gated
-and carry literature regressions (`regressions/md/eam_cu`, `regressions/md/sw_si`). See
-[Chapter 16](../tutorial/ch16-many-body-potentials.md).
-
-A many-body force needs a derived per-atom quantity (EAM's embedding density) at *ghost*
-atoms, and the engine has exactly one forward halo (`pre_neighbor`) and one reverse halo
-(`post_force`, forces only) — no mid-force communication slot to publish it in. Rather
-than add one, EAM declares `halo_cutoff() = 2 × cutoff`: with a ghost-of-ghost shell,
-every ghost's density completes **locally** and nothing has to be communicated mid-force.
-Comm traded for halo width, which is the standard trade.
-
-Alloy cross-terms, MEAM, Tersoff and the reactive potentials remain ○ — for those,
-the quantum-mechanical route (GPW, plane waves) is still the only option.
-
-## 5. Coarse-Grained Methods
-
-| Method                                     | CPU | CUDA | Kokkos |
-| ------------------------------------------ | :-: | :--: | :---: |
-| MARTINI force field                        |  ○  |   ○  |   ○  |
-| SDK coarse-grained force field             |  ○  |   ○  |   ○  |
-| Dissipative particle dynamics              |  ✓  |   ○  |   ○  |
-| Multiparticle collision dynamics           |  ○  |   ○  |   ○  |
-| Brownian dynamics                          |  ○  |   ○  |   ○  |
-| Generic tabulated coarse-grained potential |  ○  |   ○  |   ○  |
-| Iterative Boltzmann inversion potential    |  ○  |   ○  |   ○  |
-| Force-matching coarse-grained potential    |  ○  |   ○  |   ○  |
-| Relative-entropy coarse graining           |  ○  |   ○  |   ○  |
-
-## 6. Machine-Learning Potentials
-
-| Method                                     | CPU | CUDA | Kokkos |
-| ------------------------------------------ | :-: | :--: | :---: |
-| Behler–Parrinello neural-network potential |  ○  |   ○  |   ○  |
-| ANI potential                              |  ○  |   ○  |   ○  |
-| DimeNet++                                  |  ○  |   ○  |   ○  |
-| PaiNN                                      |  ○  |   ○  |   ○  |
-| GemNet                                     |  ○  |   ○  |   ○  |
-| NequIP                                     |  ○  |   ○  |   ○  |
-| Allegro                                    |  ○  |   ○  |   ○  |
-| MACE                                       |  ○  |   ○  |   ○  |
-| Deep Potential / DeepMD                    |  ○  |   ○  |   ○  |
-| SOAP-GAP                                   |  ○  |   ○  |   ○  |
-| Atomic cluster expansion                   |  ○  |   ○  |   ○  |
-| Moment tensor potential                    |  ○  |   ○  |   ○  |
-| SNAP                                       |  ○  |   ○  |   ○  |
-| Long-range electrostatic ML potential      |  ○  |   ○  |   ○  |
-| Charge-aware ML potential                  |  ○  |   ○  |   ○  |
-| Spin-dependent ML potential                |  ○  |   ○  |   ○  |
-| Delta-learning potential                   |  ○  |   ○  |   ○  |
-| Ensemble ML potential                      |  ○  |   ○  |   ○  |
-
-This table is **true ML / reactive many-body potentials** only. Classical pair
-and bonded styles live in sections 1–2; they are not “unfinished ML.”
+| Capability | CPU | CUDA | Notes |
+| ---------- | :-: | :--: | ----- |
+| DPD | ◐ | ○ | Multi-type \(a_{ij}\). No external pin; self-pinned Groot–Warren / mixing cases removed |
+| MARTINI / SDK / IBI / … | ○ | ○ | |
+| ML potentials (ANI, MACE, DeepMD, …) | ○ | ○ | Entire catalogue ○ |

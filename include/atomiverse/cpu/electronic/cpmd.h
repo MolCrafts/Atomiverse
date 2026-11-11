@@ -63,9 +63,9 @@
 /// Phys. Rev. B 45, 9413 (1992); textbook treatment in Marx & Hutter,
 /// *Ab initio Molecular Dynamics*, CUP 2009). Both classes implement the same
 /// half-steps and honour `thermostat`: real-Γ `Cpmd` is regression-pinned by
-/// `regressions/dynamics/cpmd-electronic-thermostat`, and the multi-k GPW
+/// `regressions/dynamics/car-parrinello`, and the multi-k GPW
 /// consumer thermostats one `CpmdCplx` per (k, σ) channel
-/// (`regressions/dynamics/cpmd-thermostat-kpoints`), k-weighting the
+/// (`regressions/dynamics/car-parrinello`), k-weighting the
 /// published \(T_e\) and \(E_{\mathrm{therm}}\) totals.
 ///
 /// Method-agnostic electronic-DOF propagation on `cpu/linalg` matrices: the
@@ -178,7 +178,8 @@ class Cpmd {
     /// @param Cdot_occ Electronic velocity [a.u. time\(^{-1}\)], same shape as
     ///        `C_occ`.
     /// @throws std::invalid_argument on empty / shape mismatch.
-    void seed(const linalg::RealMatrix& C_occ, const linalg::RealMatrix& Cdot_occ);
+    void seed(const linalg::RealMatrix& C_occ,
+              const linalg::RealMatrix& Cdot_occ);
 
     /// @brief Re-orthonormalize \(C\) under a new metric \(S\) (nuclei moved)
     ///        and project \(\dot C\) onto the velocity constraint manifold.
@@ -235,15 +236,15 @@ class Cpmd {
     /// Recompute \(T_e\) and \(E_{\mathrm{therm}}\) from state.
     void update_energies();
 
-    double mu_ = 400.0;          ///< fictitious mass [a.u.].
-    linalg::RealMatrix C_;       ///< occupied coefficients
-    linalg::RealMatrix Cdot_;    ///< electronic velocity
-    double ke_ha_ = 0.0;         ///< last T_e [Hartree]
-    double e_therm_ha_ = 0.0;    ///< last E_therm [Hartree]
-    double xi_ = 0.0;            ///< NH friction
-    double eta_ = 0.0;           ///< NH coordinate
-    int last_pos_iters_ = 0;     ///< last position-RATTLE iteration count
-    double last_sigma_inf_ = 0.0;///< last ‖σ‖_∞
+    double mu_ = 400.0;           ///< fictitious mass [a.u.].
+    linalg::RealMatrix C_;        ///< occupied coefficients
+    linalg::RealMatrix Cdot_;     ///< electronic velocity
+    double ke_ha_ = 0.0;          ///< last T_e [Hartree]
+    double e_therm_ha_ = 0.0;     ///< last E_therm [Hartree]
+    double xi_ = 0.0;             ///< NH friction
+    double eta_ = 0.0;            ///< NH coordinate
+    int last_pos_iters_ = 0;      ///< last position-RATTLE iteration count
+    double last_sigma_inf_ = 0.0; ///< last ‖σ‖_∞
     bool ready_ = false;
 };
 
@@ -262,7 +263,7 @@ class Cpmd {
 /// half-steps); with real-valued inputs the complex propagator reproduces
 /// `Cpmd` exactly (Γ-limit solver identity, unit-pinned). The GPW consumer
 /// engages one thermostatted instance per (k, σ) channel
-/// (`regressions/dynamics/cpmd-thermostat-kpoints`).
+/// (`regressions/dynamics/car-parrinello`).
 class CpmdCplx {
   public:
     /// @brief Construct with the fictitious electronic mass.
@@ -345,7 +346,8 @@ class CpmdCplx {
     /// @param Cdot_occ Electronic velocity [a.u. time\(^{-1}\)], same shape as
     ///        `C_occ`.
     /// @throws std::invalid_argument on empty / shape mismatch.
-    void seed(const linalg::CplxMatrix& C_occ, const linalg::CplxMatrix& Cdot_occ);
+    void seed(const linalg::CplxMatrix& C_occ,
+              const linalg::CplxMatrix& Cdot_occ);
 
     /// @brief Löwdin-transport \(C\) under a new \(S_k\) and velocity-project
     ///        \(\dot C\) — the geometry-change (not time-step) update.

@@ -36,7 +36,7 @@
 /// no-op `launch`, so the whole file is microseconds and nothing here depends
 /// on `ATV_BUILD_HF`. The QM-in-MC end-to-end witness (a nested RHF energy +
 /// umbrella bias, pinned against the analytic stiff-spring variance) is
-/// `regressions/mc/mc_bias_es`, not this file.
+/// `regressions/sampling/metadynamics`, not this file.
 ///
 /// **Determinism.** No RNG consumed by any stub (the MC RNG stream is seeded
 /// fixed and only the acceptance policy draws from it), no wall clock, no
@@ -279,8 +279,7 @@ TEST(ForcesRequested, McEnergyVetoReachesNestedDriverSlots) {
     // NOTE: `add_ref`'s second positional argument is `order`, the third is the
     // nested budget — the base `default_budget()` is 0, so a nested node with
     // an unspecified budget would never run its plan at all.
-    d.on(sampling::Phase::energy)
-        .add_ref(method, /*order=*/0, /*budget=*/1);
+    d.on(sampling::Phase::energy).add_ref(method, /*order=*/0, /*budget=*/1);
     d.on(sampling::Phase::energy).add_ref(outer_probe, /*order=*/10);
     d.on(sampling::Phase::end_of_step).add_ref(end_probe, /*order=*/10);
     d.build();
@@ -296,8 +295,8 @@ TEST(ForcesRequested, McEnergyVetoReachesNestedDriverSlots) {
         << "outer MC energy slot still requested forces";
     EXPECT_EQ(inner_probe.true_launches, 0)
         << "the nested driver launched its own slots with forces_requested = "
-           "true on " << inner_probe.true_launches << " of "
-        << inner_probe.launches
+           "true on "
+        << inner_probe.true_launches << " of " << inner_probe.launches
         << " launches — the outer energy-only veto stopped at the node "
            "boundary, so a nested QM method still assembles the gradient the "
            "trial discards";

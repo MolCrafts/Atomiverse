@@ -21,8 +21,10 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/core/precision.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/frame/transfer.h"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 
 #include "atom_cell_sort.cuh"
@@ -30,7 +32,6 @@
 #include <cuda_runtime.h>
 
 using namespace ATV;
-using ATV::cuda::real_t;
 using ATV::cuda::md::nlist::apply_permutation_owned;
 using ATV::cuda::md::nlist::AtomCellSortBuffers;
 using ATV::cuda::md::nlist::cell_sort_owned;
@@ -43,6 +44,16 @@ constexpr int MB = 6;
 constexpr int MA = 6;
 constexpr int MD = 8;
 constexpr int MS = 16;
+
+/// Lattice coordinate of atom `idx` along `axis` [Angstrom]: the cell-centred
+/// site plus a small tag-dependent offset (< 2e-4, far from any cell face)
+/// that FP32 cannot represent exactly, so in mixed mode the correction
+/// columns carry per-atom data the sort must move too.
+double lattice_coord(int idx, int n_side, double spacing, int axis) {
+    const int stride = axis == 0 ? n_side * n_side : (axis == 1 ? n_side : 1);
+    const int site = (idx / stride) % n_side;
+    return (double(site) + 0.5) * spacing + 1e-7 * double(idx) * (axis + 1);
+}
 
 /// A cubic lattice of n_side^3 atoms in a box split into dim^3 cells, with a
 /// fully populated per-atom bonded SoA whose entries are a deterministic
@@ -68,6 +79,7 @@ cpu::Frame make_bonded_lattice(int n_side, double spacing) {
     auto mass = frame.span(kAtom_mass);
     auto charge = frame.span(kAtom_charge);
     auto type = frame.span(kAtom_type);
+    auto species = frame.span(kAtom_atomic_number);
     auto tag = frame.span(kAtom_tag);
     auto image = frame.span(kAtom_image);
     auto num_bond = frame.span(kAtom_num_bond);
@@ -86,9 +98,9 @@ cpu::Frame make_bonded_lattice(int n_side, double spacing) {
     for (int ix = 0; ix < n_side; ++ix)
         for (int iy = 0; iy < n_side; ++iy)
             for (int iz = 0; iz < n_side; ++iz) {
-                x[idx] = (double(ix) + 0.5) * spacing;
-                y[idx] = (double(iy) + 0.5) * spacing;
-                z[idx] = (double(iz) + 0.5) * spacing;
+                x[idx] = lattice_coord(idx, n_side, spacing, 0);
+                y[idx] = lattice_coord(idx, n_side, spacing, 1);
+                z[idx] = lattice_coord(idx, n_side, spacing, 2);
                 vx[idx] = 0.1 * idx;
                 vy[idx] = 0.2 * idx;
                 vz[idx] = 0.3 * idx;
@@ -98,10 +110,11 @@ cpu::Frame make_bonded_lattice(int n_side, double spacing) {
                 mass[idx] = 1.0 + 0.01 * idx;
                 charge[idx] = (idx % 2 == 0) ? 0.5 : -0.5;
                 type[idx] = idx % 3;
+                species[idx] = 1 + idx % 11;
                 tag[idx] = idx; // identity tags
-                image(idx, 0) = static_cast<std::int8_t>(idx % 3 - 1);
-                image(idx, 1) = static_cast<std::int8_t>(idx % 5 - 2);
-                image(idx, 2) = static_cast<std::int8_t>(idx % 7 - 3);
+                image(idx, 0) = static_cast<ATV::ImageInt>(idx % 3 - 1);
+                image(idx, 1) = static_cast<ATV::ImageInt>(idx % 5 - 2);
+                image(idx, 2) = static_cast<ATV::ImageInt>(idx % 7 - 3);
 
                 // Bonded SoA — partner tags are deterministic in idx so any
                 // mispermutation across arrays is observable. (Values need
@@ -188,16 +201,23 @@ TEST_F(AtomCellSort, ConsistentPermutationAndSortedByCell) {
     cuda::materialize_per_atom_bonded(d, frame);
 
     AtomCellSortBuffers buf;
-    cell_sort_owned(d, real_t(L), real_t(L), real_t(L), dim, dim, dim,
-                    /*periodic=*/true, buf);
+    cell_sort_owned(d, cuda::force_t(L), cuda::force_t(L), cuda::force_t(L),
+                    dim, dim, dim, /*periodic=*/true, buf);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
     // Read back the sorted per-atom arrays.
     auto h_x = read_back(d.atoms.x, n);
     auto h_y = read_back(d.atoms.y, n);
     auto h_z = read_back(d.atoms.z, n);
+    std::vector<cuda::pos_t> h_corr[3];
+    if constexpr (cuda::kPositionCorrection) {
+        h_corr[0] = read_back(d.atoms.x_corr, n);
+        h_corr[1] = read_back(d.atoms.y_corr, n);
+        h_corr[2] = read_back(d.atoms.z_corr, n);
+    }
     auto h_tag = read_back(d.atoms.tag, n);
     auto h_type = read_back(d.atoms.type, n);
+    auto h_species = read_back(d.atoms.atomic_number, n);
     auto h_charge = read_back(d.atoms.charge, n);
     auto h_image = read_back(d.atoms.image, std::size_t(n) * 3);
     auto h_num_bond = read_back(d.atoms.num_bond, n);
@@ -226,14 +246,29 @@ TEST_F(AtomCellSort, ConsistentPermutationAndSortedByCell) {
         ASSERT_LT(orig, n);
 
         EXPECT_EQ(h_type[k], int(orig % 3));
+        EXPECT_EQ(h_species[k], int(1 + orig % 11));
+
+        // Stored coordinate pair (primary + correction) moved with the atom:
+        // bitwise equal to the host split of the original coordinate.
+        const cuda::pos_t* h_pos[3] = {h_x.data(), h_y.data(), h_z.data()};
+        for (int axis = 0; axis < 3; ++axis) {
+            cuda::pos_t hi, lo = cuda::pos_t(0);
+            cuda::split_position(cuda::mixed_t(StorageReal(lattice_coord(
+                                     int(orig), n_side, spacing, axis))),
+                                 hi, lo);
+            EXPECT_EQ(h_pos[axis][k], hi) << "row " << k << " axis " << axis;
+            if constexpr (cuda::kPositionCorrection)
+                EXPECT_EQ(h_corr[axis][k], lo)
+                    << "row " << k << " axis " << axis;
+        }
         EXPECT_DOUBLE_EQ(double(h_charge[k]), (orig % 2 == 0) ? 0.5 : -0.5);
 
         EXPECT_EQ(int(h_image[std::size_t(k) * 3 + 0]),
-                  int(std::int8_t(orig % 3 - 1)));
+                  int(ATV::ImageInt(orig % 3 - 1)));
         EXPECT_EQ(int(h_image[std::size_t(k) * 3 + 1]),
-                  int(std::int8_t(orig % 5 - 2)));
+                  int(ATV::ImageInt(orig % 5 - 2)));
         EXPECT_EQ(int(h_image[std::size_t(k) * 3 + 2]),
-                  int(std::int8_t(orig % 7 - 3)));
+                  int(ATV::ImageInt(orig % 7 - 3)));
 
         EXPECT_EQ(h_num_bond[k], 2);
         for (int m = 0; m < MB; ++m) {
@@ -250,6 +285,28 @@ TEST_F(AtomCellSort, ConsistentPermutationAndSortedByCell) {
             EXPECT_EQ(h_special[std::size_t(k) * MS + m], orig * 400 + m);
     }
 
+    cuda::destroy(d);
+}
+
+// ── identity columns exist on the device only when the host carries them ──
+TEST_F(AtomCellSort, AbsentIdentityColumnHasNoDeviceArrayAndSortSkipsIt) {
+    const int n_side = 4;
+    const double spacing = 1.5;
+    const double L = double(n_side) * spacing;
+    cpu::Frame frame = make_bonded_lattice(n_side, spacing);
+    frame.block("atoms").erase(kAtom_atomic_number.key);
+    const int n = frame.nlocal();
+    cuda::Frame d = cpu::to_cuda(frame, /*capacity=*/n);
+    EXPECT_NE(d.atoms.type, nullptr);
+    EXPECT_EQ(d.atoms.atomic_number, nullptr);
+    AtomCellSortBuffers buf;
+    cell_sort_owned(d, cuda::force_t(L), cuda::force_t(L), cuda::force_t(L), 2,
+                    2, 2, /*periodic=*/true, buf);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    auto h_tag = read_back(d.atoms.tag, n);
+    auto h_type = read_back(d.atoms.type, n);
+    for (int k = 0; k < n; ++k)
+        EXPECT_EQ(h_type[k], int(h_tag[k] % 3));
     cuda::destroy(d);
 }
 
@@ -272,13 +329,14 @@ TEST_F(AtomCellSort, PermuteThenInverseIsIdentity) {
     cuda::materialize_per_atom_bonded(d, frame);
 
     AtomCellSortBuffers buf;
-    cell_sort_owned(d, real_t(L), real_t(L), real_t(L), dim, dim, dim, true,
-                    buf);
+    cell_sort_owned(d, cuda::force_t(L), cuda::force_t(L), cuda::force_t(L),
+                    dim, dim, dim, true, buf);
     // Undo with the inverse produced by the sort.
     apply_permutation_owned(d, buf.inverse.data(), n, buf);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
-    auto eq_r = [&](const real_t* da, const real_t* db, std::size_t c) {
+    // Generic over the column element (pos_t / mixed_t / fixed_t / force_t).
+    auto eq_r = [&](const auto* da, const auto* db, std::size_t c) {
         auto ha = read_back(da, c);
         auto hb = read_back(db, c);
         EXPECT_EQ(ha, hb);
@@ -294,8 +352,8 @@ TEST_F(AtomCellSort, PermuteThenInverseIsIdentity) {
         auto hb = read_back(db, c);
         EXPECT_EQ(ha, hb);
     };
-    auto eq_i8 = [&](const std::int8_t* da, const std::int8_t* db,
-                     std::size_t c) {
+    auto eq_img = [&](const ATV::ImageInt* da, const ATV::ImageInt* db,
+                      std::size_t c) {
         auto ha = read_back(da, c);
         auto hb = read_back(db, c);
         EXPECT_EQ(ha, hb);
@@ -305,6 +363,11 @@ TEST_F(AtomCellSort, PermuteThenInverseIsIdentity) {
     eq_r(d.atoms.x, ref.atoms.x, un);
     eq_r(d.atoms.y, ref.atoms.y, un);
     eq_r(d.atoms.z, ref.atoms.z, un);
+    if constexpr (cuda::kPositionCorrection) {
+        eq_r(d.atoms.x_corr, ref.atoms.x_corr, un);
+        eq_r(d.atoms.y_corr, ref.atoms.y_corr, un);
+        eq_r(d.atoms.z_corr, ref.atoms.z_corr, un);
+    }
     eq_r(d.atoms.vx, ref.atoms.vx, un);
     eq_r(d.atoms.vy, ref.atoms.vy, un);
     eq_r(d.atoms.vz, ref.atoms.vz, un);
@@ -315,7 +378,7 @@ TEST_F(AtomCellSort, PermuteThenInverseIsIdentity) {
     eq_r(d.atoms.charge, ref.atoms.charge, un);
     eq_i(d.atoms.type, ref.atoms.type, un);
     eq_i64(d.atoms.tag, ref.atoms.tag, un);
-    eq_i8(d.atoms.image, ref.atoms.image, un * 3);
+    eq_img(d.atoms.image, ref.atoms.image, un * 3);
 
     eq_i(d.atoms.num_bond, ref.atoms.num_bond, un);
     eq_i64(d.atoms.bond_atom, ref.atoms.bond_atom, un * MB);

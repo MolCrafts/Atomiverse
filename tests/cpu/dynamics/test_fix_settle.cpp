@@ -1,10 +1,14 @@
 /// @file tests/cpu/md/test_fix_settle.cpp
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/mat3.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/vec3.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/dynamics/fix_settle.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -266,4 +270,96 @@ TEST(FixSettle, HandlesAMoleculeAcrossAPeriodicFace) {
     EXPECT_NEAR(dmi(0, 1), kDOH, 1e-10);
     EXPECT_NEAR(dmi(0, 2), kDOH, 1e-10);
     EXPECT_NEAR(dmi(1, 2), kDHH, 1e-10);
+}
+
+/// The analytic velocity stage zeroes all three bond-direction relative
+/// velocities in one solve, for every water of a threaded batch.
+TEST(FixSettle, VelocityStageIsExactForEveryWater) {
+    constexpr int kWaters = 64;
+    const cpu::Frame one = tip3p_ideal();
+    cpu::Frame f(3 * kWaters);
+    for (int k = 0; k < kWaters; ++k)
+        for (int a = 0; a < 3; ++a) {
+            const int r = 3 * k + a;
+            f.span(kAtom_x)[r] = one.span(kAtom_x)[a] + 3.0 * (k % 4);
+            f.span(kAtom_y)[r] = one.span(kAtom_y)[a] + 3.0 * ((k / 4) % 4);
+            f.span(kAtom_z)[r] = one.span(kAtom_z)[a] + 3.0 * (k / 16);
+            f.span(kAtom_mass)[r] = one.span(kAtom_mass)[a];
+            f.span(kAtom_tag)[r] = r + 1;
+            f.span(kAtom_vx)[r] = 0.01 * std::sin(1.3 * r);
+            f.span(kAtom_vy)[r] = 0.02 * std::cos(0.7 * r);
+            f.span(kAtom_vz)[r] = -0.015 * std::sin(2.1 * r + 0.4);
+        }
+    f.box = cpu::Box::cubic(20.0);
+    f.rebuild_tag_index(0, f.nlocal());
+    cpu::md::FixSettle settle(2.0, kDOH, kDHH);
+    for (int k = 0; k < kWaters; ++k)
+        settle.add_water(3 * k + 1, 3 * k + 2, 3 * k + 3);
+    cpu::Context ctx;
+    settle.build({ctx, f});
+    settle.launch({ctx, f, ATV::slot_of(md::Phase::initial_integrate), 0});
+    settle.launch({ctx, f, ATV::slot_of(md::Phase::post_integrate), 0});
+    settle.launch({ctx, f, ATV::slot_of(md::Phase::final_integrate), 0});
+    auto rv = [&](int i, int j) {
+        return (f.span(kAtom_x)[i] - f.span(kAtom_x)[j])
+                   * (f.span(kAtom_vx)[i] - f.span(kAtom_vx)[j])
+               + (f.span(kAtom_y)[i] - f.span(kAtom_y)[j])
+                     * (f.span(kAtom_vy)[i] - f.span(kAtom_vy)[j])
+               + (f.span(kAtom_z)[i] - f.span(kAtom_z)[j])
+                     * (f.span(kAtom_vz)[i] - f.span(kAtom_vz)[j]);
+    };
+    for (int k = 0; k < kWaters; ++k) {
+        const int o = 3 * k, h1 = o + 1, h2 = o + 2;
+        EXPECT_NEAR(rv(o, h1), 0.0, 1e-15);
+        EXPECT_NEAR(rv(o, h2), 0.0, 1e-15);
+        EXPECT_NEAR(rv(h1, h2), 0.0, 1e-15);
+    }
+}
+
+TEST(FixSettle, RejectsAnAtomInTwoWaters) {
+    cpu::Frame f(5);
+    for (int i = 0; i < 5; ++i) {
+        f.span(kAtom_tag)[i] = i + 1;
+        f.span(kAtom_mass)[i] = i == 0 ? 16.0 : 1.0;
+    }
+    f.box = cpu::Box::cubic(20.0);
+    f.rebuild_tag_index(0, 5);
+    cpu::md::FixSettle settle(2.0, kDOH, kDHH);
+    settle.add_water(1, 2, 3);
+    settle.add_water(1, 4, 5);
+    cpu::Context ctx;
+    EXPECT_THROW(settle.build({ctx, f}), std::invalid_argument);
+}
+
+/// The forward-comm position shift is the lattice translation H·pbc: in a
+/// tilted cell the image across y also moves by the xy tilt.
+TEST(FixSettle, ForwardShiftFollowsTheTriclinicLattice) {
+    auto f = tip3p_ideal(5.0, 5.0, 5.0);
+    Mat3 cell = Mat3::cubic(20.0);
+    cell(0, 1) = 3.0;  // xy tilt
+    cell(0, 2) = -1.5; // xz tilt
+    f.box.set_cell(cell);
+    cpu::md::FixSettle settle(2.0, kDOH, kDHH);
+    settle.add_water(1, 2, 3);
+    cpu::Context ctx;
+    settle.build({ctx, f});
+    settle.launch({ctx, f, ATV::slot_of(md::Phase::initial_integrate), 0});
+    settle.set_comm_mode(cpu::md::FixSettle::CommMode::XSHAKE);
+    const int list[1] = {0};
+    for (const auto& image :
+         {std::array<int, 3>{0, 1, 0}, std::array<int, 3>{0, 0, -1},
+          std::array<int, 3>{1, 1, 1}}) {
+        double buf[3] = {};
+        ASSERT_EQ(settle.pack_forward_comm(1, list, buf, 1, image.data()), 3);
+        const Vec3 shift = f.box.to_cartesian(
+            {double(image[0]), double(image[1]), double(image[2])});
+        EXPECT_DOUBLE_EQ(buf[0], f.span(kAtom_x)[0] + shift[0]);
+        EXPECT_DOUBLE_EQ(buf[1], f.span(kAtom_y)[0] + shift[1]);
+        EXPECT_DOUBLE_EQ(buf[2], f.span(kAtom_z)[0] + shift[2]);
+    }
+    // The tilt must matter in this check, or it proves nothing.
+    double buf[3] = {};
+    const int up[3] = {0, 1, 0};
+    settle.pack_forward_comm(1, list, buf, 1, up);
+    EXPECT_DOUBLE_EQ(buf[0], f.span(kAtom_x)[0] + 3.0);
 }

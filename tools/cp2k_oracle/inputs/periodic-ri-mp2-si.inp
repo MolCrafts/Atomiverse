@@ -1,4 +1,4 @@
-! Offline twin for regressions/gpw/periodic-ri-mp2-si (never launched by ctest).
+! Offline twin for regressions/gpw/periodic-mp2 (never launched by ctest).
 ! Γ-point GPW MP2_GPW on periodic sc-Si2: cubic a=5.43 Å, RKS PBE
 ! reference, DZVP-MOLOPT-GTH + GTH-PBE-q4, CUTOFF 30 Ry. LEVEL_SHIFT 0.3 Ha
 ! matches the Atomiverse product deck (small-gap artificial sc-Si2).

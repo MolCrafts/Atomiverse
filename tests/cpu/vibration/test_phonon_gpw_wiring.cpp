@@ -20,10 +20,11 @@ TEST(PhononGpw, BuildAcceptsGpwWithoutNeighborList) {
         molrs::Element::Si,
         cpu::gpw::GaussianBasis(molrs::Element::Si, "DZVP-MOLOPT-GTH"),
         cpu::gpw::GthPotential(molrs::Element::Si, "GTH-PBE-q4")};
-    cpu::gpw::GPWEvaluator eval(
-        /*kinds*/ {Si}, /*cutoff_ry*/ 150.0, /*max_iter*/ 20, /*tol*/ 1e-6,
-        /*mix*/ 0.4, /*xc*/ cpu::gpw::XcKind::PADE, /*nonperiodic*/ false,
-        /*compute_forces*/ true);
+    cpu::gpw::GpwDft dft{{Si}, /*cutoff_ry=*/150.0, cpu::xc::XCType::PADE};
+    dft.max_iter = 20;
+    dft.tol = 1e-6;
+    dft.mix = 0.4;
+    cpu::gpw::GPWEvaluator eval(std::move(dft), /*compute_forces=*/true);
 
     Phonon phonon(1, 1, 1);
     // No set_neighbor — GPW is not a NeighborConsumer.

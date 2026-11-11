@@ -1,8 +1,8 @@
 # The `atomiverse` driver binary.
 #
-# Always: native LAMMPS-shaped `-in` runner (no Python, no MPI).
-# Optional ATV_BUILD_LAUNCHER: same binary also hosts Python scripts
-# under MPI (rank 0 embeds CPython).
+# Built when either path is on:
+# ATV_BUILD_MD: native LAMMPS-shaped `-in` runner (no Python, no MPI).
+# ATV_BUILD_LAUNCHER: hosts Python scripts under MPI (rank 0 embeds CPython).
 #
 # CMake target is `atomiverse_cli` (the library already owns `atomiverse`);
 # the on-disk name is `atomiverse`.
@@ -10,10 +10,11 @@
 
 include(GNUInstallDirs)
 
-set(_ATV_CLI_SRCS
-    main.cpp
-    input_script.cpp
-)
+set(_ATV_CLI_SRCS main.cpp)
+
+if(ATV_BUILD_MD)
+    list(APPEND _ATV_CLI_SRCS input_script.cpp)
+endif()
 
 if(ATV_BUILD_LAUNCHER)
     list(APPEND _ATV_CLI_SRCS python_host.cpp interpreter_locator.cpp)
@@ -38,7 +39,7 @@ endif()
 
 if(SKBUILD)
     install(TARGETS atomiverse_cli
-            RUNTIME DESTINATION "${SKBUILD_SCRIPTS_DIR}")
+            RUNTIME DESTINATION "${SKBUILD_SCRIPTS_DIR}" COMPONENT python)
 else()
     install(TARGETS atomiverse_cli
             RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")

@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <cmath>
 #include <sstream>
-#include <string>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -22,12 +22,12 @@ namespace internal {
 namespace {
 
 constexpr const char* kMaskHowto =
-    "Insert and fill kAtomQmZ before build():\n"
-    "  frame.blocks.at(\"atoms\").insert(\"qm_z\",\n"
+    "Insert and fill kAtomQm before build():\n"
+    "  frame.block(\"atoms\").insert(\"qm\",\n"
     "      ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,\n"
     "                 kDynamicFieldId});\n"
-    "  auto qm = frame.span(cpu::kAtomQmZ);\n"
-    "  qm[i] = Z;  // >0 = QM with atomic number Z; 0 = MM\n"
+    "  auto qm = frame.span(cpu::kAtomQm);\n"
+    "  qm[i] = 1;  // 1 = QM, 0 = MM; species from kAtom_atomic_number\n"
     "See atomiverse/cpu/multiscale/qm_mask.h.";
 
 } // namespace
@@ -43,26 +43,36 @@ void QmSubsystem::resolve_mask_(const Frame& frame) {
         throw std::runtime_error(
             std::string("QmSubsystem: atoms block missing. ") + kMaskHowto);
     }
-    if (!atoms->contains("qm_z")) {
+    if (!atoms->contains(kAtomQm.key)) {
         throw std::runtime_error(
-            std::string("QmSubsystem: kAtomQmZ (atoms.qm_z) column missing. ")
+            std::string("QmSubsystem: kAtomQm (atoms.qm) column missing. ")
             + kMaskHowto);
     }
-    const auto qm = frame.span(kAtomQmZ);
+    const auto qm = frame.span(kAtomQm);
     for (int i = 0; i < n; ++i) {
-        const int z = qm[i];
-        if (z > 0) {
+        if (qm[i] == 1)
             qm_rows_.push_back(i);
-            qm_z_.push_back(z);
-        } else if (z < 0) {
+        else if (qm[i] != 0)
             throw std::invalid_argument(
-                "QmSubsystem: kAtomQmZ values must be ≥ 0 (0=MM, >0=QM Z)");
-        }
+                "QmSubsystem: kAtomQm values must be 0 (MM) or 1 (QM); row "
+                + std::to_string(i) + " is " + std::to_string(qm[i]));
     }
     if (qm_rows_.empty()) {
         throw std::runtime_error(
-            std::string("QmSubsystem: kAtomQmZ is all-zero (no QM atoms). ")
+            std::string("QmSubsystem: kAtomQm is all-zero (no QM atoms). ")
             + kMaskHowto);
+    }
+    // The QM engine keys basis / parameters on species, which is the
+    // Frame's species column — never the force-field type.
+    const auto species = frame.span(kAtom_atomic_number);
+    for (const int i : qm_rows_) {
+        if (species[i] <= 0)
+            throw std::invalid_argument(
+                "QmSubsystem: QM atom row " + std::to_string(i)
+                + " has atomic number " + std::to_string(species[i])
+                + "; a QM atom needs a real element (Z > 0) in "
+                  "kAtom_atomic_number");
+        qm_z_.push_back(species[i]);
     }
     n_qm_real_ = static_cast<int>(qm_rows_.size());
 }
@@ -70,9 +80,15 @@ void QmSubsystem::resolve_mask_(const Frame& frame) {
 void QmSubsystem::allocate_private_frame_() {
     n_fqm_ = n_qm_real_ + static_cast<int>(resolved_links_.size());
     qm_frame_ = std::make_unique<Frame>(n_fqm_);
+    // The QM engine reads species; the private frame carries no
+    // force-field type it could be confused with.
+    qm_frame_->block("atoms").erase(kAtom_type.key);
 }
 
-void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
+void QmSubsystem::build(const BuildContext& ctx, int mpi_size,
+                        bool require_embedding) {
+    built_ = false;
+    auto& frame = ctx.frame;
     if (mpi_size > 1)
         throw std::runtime_error(
             "QmSubsystem: MPI (mpi_size > 1) is not supported in v1 "
@@ -94,8 +110,7 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
                 "QmSubsystem: embed_cutoff must be > 0");
     }
     if (!(link_scale > 0.0) || !(link_scale < 1.0))
-        throw std::invalid_argument(
-            "QmSubsystem: link_scale must be in (0,1)");
+        throw std::invalid_argument("QmSubsystem: link_scale must be in (0,1)");
 
     resolve_mask_(frame);
 
@@ -135,13 +150,12 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
     // Dedupe unordered tag pairs (bonds may be listed once on min-tag owner).
     std::unordered_set<std::string> seen_pairs;
 
-    const bool has_bonds =
-        frame.blocks.at("atoms").contains("num_bond")
-        && frame.blocks.at("atoms").contains("bond_atom");
+    const bool has_bonds = frame.blocks.at("atoms").contains("num_bond")
+                           && frame.blocks.at("atoms").contains("bond_atom");
     if (has_bonds) {
         const auto num_bond = frame.span(kAtom_num_bond);
         const auto bond_atom = frame.span(kAtom_bond_atom);
-        const auto qm_z = frame.span(kAtomQmZ);
+        const auto qm_mask = frame.span(kAtomQm);
         for (int i = 0; i < n; ++i) {
             const int nb = num_bond[static_cast<std::size_t>(i)];
             for (int m = 0; m < nb; ++m) {
@@ -150,8 +164,8 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
                 if (it == tag_to_row.end())
                     continue;
                 const int j = it->second;
-                const bool qi = qm_z[i] > 0;
-                const bool qj = qm_z[j] > 0;
+                const bool qi = qm_mask[i] == 1;
+                const bool qj = qm_mask[j] == 1;
                 if (qi == qj)
                     continue; // both QM or both MM
                 const int qm_row = qi ? i : j;
@@ -176,19 +190,17 @@ void QmSubsystem::build(Frame& frame, int mpi_size, bool require_embedding) {
         resolved_links_[li].fqm_h_row = n_qm_real_ + static_cast<int>(li);
 
     built_n_qm_ = n_qm_real_;
-    built_ = true;
-
-    cpu::Context dummy;
-    cpu::BuildContext bctx{dummy, *qm_frame_};
+    refresh_(frame);
+    cpu::BuildContext bctx{ctx.runtime, *qm_frame_};
     engine_->prepare(bctx);
+    built_ = true;
 }
 
 void QmSubsystem::refresh_(Frame& frame) {
     resolve_mask_(frame);
     if (n_qm_real_ != built_n_qm_)
-        throw std::runtime_error(
-            "QmSubsystem: QM atom count changed mid-run "
-            "(kAtomQmZ is per-run static in v1)");
+        throw std::runtime_error("QmSubsystem: QM atom count changed mid-run "
+                                 "(kAtomQm is per-run static in v1)");
 
     const StorageReal* x = frame.span(kAtom_x);
     const StorageReal* y = frame.span(kAtom_y);
@@ -197,7 +209,7 @@ void QmSubsystem::refresh_(Frame& frame) {
     auto qx = qm_frame_->span(kAtom_x);
     auto qy = qm_frame_->span(kAtom_y);
     auto qz = qm_frame_->span(kAtom_z);
-    auto qtype = qm_frame_->span(kAtom_type);
+    auto qtype = qm_frame_->span(kAtom_atomic_number);
     auto qtag = qm_frame_->span(kAtom_tag);
     auto qmass = qm_frame_->span(kAtom_mass);
     auto qfx = qm_frame_->span(kAtom_fx);
@@ -209,7 +221,7 @@ void QmSubsystem::refresh_(Frame& frame) {
         qx[k] = x[i];
         qy[k] = y[i];
         qz[k] = z[i];
-        qtype[k] = qm_z_[k]; // Z from mask, not force-field type
+        qtype[k] = qm_z_[k]; // species Z of the parent row
         qtag[k] = static_cast<TagInt>(k + 1);
         qmass[k] = 1.0;
         qfx[k] = qfy[k] = qfz[k] = 0;
@@ -331,17 +343,26 @@ void QmSubsystem::scatter_(Frame& frame, bool forces_requested, double e_qm) {
     }
 }
 
-void QmSubsystem::launch(Frame& frame, bool forces_requested, double& e_qm) {
+void QmSubsystem::launch(const LaunchContext& ctx, double& e_qm) {
+    auto& frame = ctx.frame;
+    const bool forces_requested =
+        ctx.forces_requested && ctx.runtime.exec.forces_requested;
     if (!built_)
         throw std::runtime_error("QmSubsystem::launch before build()");
     refresh_(frame);
     collect_sites_(frame);
-    if (reset_history_each_launch_)
+    // A reversible probe must not erase the last accepted electronic guess.
+    if (reset_history_each_launch_ && !ctx.runtime.exec.initializing_forces
+        && !ctx.runtime.exec.trial_evaluation)
         engine_->reset_history();
 
-    cpu::Context dummy;
-    cpu::LaunchContext lctx{dummy, *qm_frame_, 0, 0};
-    lctx.forces_requested = forces_requested;
+    cpu::LaunchContext lctx{
+        ctx.runtime,
+        *qm_frame_,
+        ctx.stage,
+        ctx.step,
+        forces_requested,
+        ctx.stress_requested && ctx.runtime.exec.stress_requested};
     engine_->evaluate(lctx);
     e_qm = qm_frame_->meta.get(kEnergy);
     scatter_(frame, forces_requested, e_qm);

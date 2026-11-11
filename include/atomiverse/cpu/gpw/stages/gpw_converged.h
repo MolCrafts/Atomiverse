@@ -22,8 +22,13 @@ namespace gpw {
 /// can stop. Algorithms still never write `IterationStatus` themselves.
 class GpwConverged : public cpu::Criterion {
   public:
+    /// @brief This criterion must be satisfied for the loop to converge.
+    /// @return True.
+    bool contributes_to_convergence() const override { return true; }
+
     /// @param skip_update Flag set by KsBuildStage when the residual gate holds.
-    explicit GpwConverged(const bool& skip_update) : skip_update_(skip_update) {}
+    explicit GpwConverged(const bool& skip_update, bool respect_nostop = true)
+        : skip_update_(skip_update), respect_nostop_(respect_nostop) {}
 
     /// @brief Component identifier / stop reason.
     /// @return `"gpw_converged"`.
@@ -47,7 +52,7 @@ class GpwConverged : public cpu::Criterion {
     /// @return `Converged` when `skip_update` is set (and NOSTOP unset).
     ATV::Verdict verdict(const cpu::LoopState& state) override {
         (void)state;
-        if (std::getenv("ATV_GPW_NOSTOP") != nullptr)
+        if (respect_nostop_ && std::getenv("ATV_GPW_NOSTOP") != nullptr)
             return ATV::Verdict::Continue;
         return skip_update_ ? ATV::Verdict::Converged : ATV::Verdict::Continue;
     }
@@ -57,6 +62,7 @@ class GpwConverged : public cpu::Criterion {
 
   private:
     const bool& skip_update_;
+    bool respect_nostop_; ///< Preserve the DIIS-only debug override for OT.
 };
 
 } // namespace gpw

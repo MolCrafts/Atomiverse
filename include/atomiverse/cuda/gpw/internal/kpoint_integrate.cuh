@@ -13,6 +13,8 @@
 #include <cuda_runtime.h>
 #include <vector>
 
+#include "atomiverse/cuda/gpw/internal/kpoint_basis.cuh"
+
 namespace ATV {
 namespace cuda {
 namespace gpw {
@@ -33,22 +35,12 @@ class KpointIntegrateDevice {
     KpointIntegrateDevice(const KpointIntegrateDevice&) = delete;
     KpointIntegrateDevice& operator=(const KpointIntegrateDevice&) = delete;
 
-    /// @brief Allocate per-k χ + H0 buffers and nb×nb Vmat / H workspace.
-    ///
-    /// @param stream  Non-default SCF stream (caller-owned).
-    /// @param nb      AO dimension.
-    /// @param npts    Total real-space grid points.
-    /// @param nk      Number of k-points.
-    void build(cudaStream_t stream, int nb, long npts, int nk);
+    /// @brief Borrow the AO table and allocate H0 / Vmat / H buffers.
+    /// The table outlives this workspace.
+    void build(const KpointBasisDevice& basis);
 
     /// @brief Free device buffers (idempotent).
     void destroy();
-
-    /// @brief Upload pre-summed χ^k for one k (once per geometry / run).
-    ///
-    /// @param ik   k index in [0, nk).
-    /// @param chi  Host array length npts·nb, layout g*nb+μ.
-    void upload_chi(int ik, const std::complex<double>* chi);
 
     /// @brief Upload H0_k = T_k + Vnl_k once per k (geometry-fixed for the run).
     ///
@@ -103,7 +95,7 @@ class KpointIntegrateDevice {
     long npts_ = 0;
     int nk_ = 0;
     /// d_chi_[ik] length npts·nb complex.
-    std::vector<void*> d_chi_;
+    const double2* d_chi_ = nullptr;
     /// d_H0_[ik] length nb·nb complex (T_k + Vnl_k, once per run).
     std::vector<void*> d_H0_;
     void* d_Vmat_ = nullptr; ///< nb·nb complex, overwritten each integrate.

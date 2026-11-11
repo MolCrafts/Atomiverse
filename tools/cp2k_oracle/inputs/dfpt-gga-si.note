@@ -16,7 +16,7 @@ No CP2K / QE module or binary on the pin host (`module avail cp2k` empty).
 Sharp correctness pin is therefore the **same-Hamiltonian central second
 difference of the PW SCF total energy** (h = 0.03 Å) at identical
 ecut/k/XC/UPF — recorded in
-`regressions/response/dfpt-gga-si/REFERENCE.md`.
+`regressions/response/dfpt/REFERENCE.md`.
 
 ## Twin settings (match regression)
 

@@ -3,7 +3,7 @@
 Mirrors `tools/pyscf_oracle/`: produce **hard-coded pins** for regressions.
 **ctest never launches CP2K.** Binding law:
 [`.claude/notes/oracle-pin-provenance.md`](../../.claude/notes/oracle-pin-provenance.md)
-and CLAUDE.md § Oracle capability loops.
+The former oracle capability-loop orchestration has been removed.
 
 ## Contract (strict)
 

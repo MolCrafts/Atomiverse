@@ -1,0 +1,31 @@
+/*
+ * Standalone MolVis / MolPlot embeds in the Atomiverse manual.
+ *
+ * Theme defaults cap bare <molplot-chart> at 36rem / 4:3 — fine for short
+ * demos, but tutorial fences carry side legends and need the full content
+ * column at 16:10 (same as .molcrafts-figure__body--chart). Prefer the
+ * staged local @molcrafts/molplot fontScale; do not override SVG text sizes.
+ */
+
+.md-typeset .molplot {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+.md-typeset .molplot molplot-chart,
+.md-typeset molplot-chart {
+  --molplot-width: 100%;
+  --molplot-aspect: 16 / 10;
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  aspect-ratio: var(--molplot-aspect, 16 / 10);
+}
+
+/* Grid children fill their cell; theme already sets 2-col for .molcrafts-figure-grid. */
+.md-typeset .molcrafts-figure-grid > figure.molcrafts-figure {
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}

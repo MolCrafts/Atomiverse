@@ -6,7 +6,7 @@
 /// SCF solves. Pure LSDA **or pure GGA** (PBE, PBEsol, revPBE, RPBE, BLYP)
 /// with a UPF norm-conserving pseudopotential. **Fixed occupations** or
 /// **metallic smearing** (restricted or collinear spin) (`method.smearing` = Fermi–Dirac /
-/// Methfessel–Paxton / Gaussian with `degauss` [Ry] and `extra_bands`) at
+/// Gaussian with `degauss` [Ry] and `extra_bands`) at
 /// Γ, commensurate finite \(\mathbf{q}\), and **direct** finite-\(q\)
 /// Sternheimer. **Collinear spin** (`method.spin_polarized`) is supported
 /// at Γ, commensurate finite \(\mathbf{q}\) (supercell Γ path), and
@@ -18,7 +18,9 @@
 /// direct finite-\(q\) Sternheimer. **Collinear spin + metallic smearing**
 /// (shared \(\mu\), spinor \(f\)) is allowed at Γ, commensurate
 /// \(\mathbf{q}\) (supercell Γ path), and **direct** finite-\(q\) Sternheimer
-/// (no \(\delta\mu\) at \(q\neq 0\)). Hybrids are rejected. Default
+/// (no \(\delta\mu\) at \(q\neq 0\)). Hybrids and Methfessel–Paxton response
+/// are rejected; signed MP ground-state weights require a different
+/// response treatment. Default
 /// `q_frac = {0,0,0}` is the Γ path. Finite \(\mathbf{q}\) that is
 /// **commensurate** with a small supercell (e.g. \(X=(1/2,0,0)\) →
 /// \(2\times1\times1\)) is evaluated as Γ-DFPT on that supercell plus IFC
@@ -36,11 +38,8 @@
 /// *Rev. Mod. Phys.* **73**, 515 (2001).
 ///
 /// @code
-///   cpu::pw::PW pw;
-///   pw.upf_path = "Si.upf";
-///   pw.ecut_ry = 15.0;
-///   pw.k_mesh = 2;
-///   pw.xc = cpu::scf::XCType::PBE;   // pure GGA kernel OK
+///   cpu::pw::PW pw{{std::make_shared<cpu::pw::UpfPseudopotential>("Si.upf")}, /*ecut_ry=*/15.0,
+///                  /*k_mesh=*/2, cpu::xc::XCType::PBE}; // pure GGA kernel OK
 ///
 ///   cpu::pw::DfptPhonon dfpt;
 ///   dfpt.q_frac = {0.3, 0.0, 0.0};   // incommensurate along Γ–X
@@ -70,6 +69,8 @@ struct DfptPhononResult {
     /// @brief Real part of the Cartesian force-constant matrix [eV/Å²],
     ///        shape `[3N, 3N]`, index `3·I + α`. At Γ this is the full
     ///        (symmetric) matrix; at finite q it is \(\mathrm{Re}\,C(q)\).
+    ///        The commensurate path publishes the raw IFC Fourier sum;
+    ///        frequencies use its Hermitian part.
     xt::xtensor<double, 2> force_constants;
 
     /// @brief Imaginary part of \(C(q)\) [eV/Å²], shape `[3N, 3N]`.
@@ -83,6 +84,7 @@ struct DfptPhononResult {
     bool response_converged = false;
 
     /// @brief Max |C − C†|/2 before Hermitian projection [eV/Å²].
+    ///        Commensurate q includes both supercell and raw Fourier asymmetry.
     double max_asymmetry = 0;
 
     /// @brief Atoms in the cell.
@@ -107,7 +109,8 @@ class DfptPhonon {
     double cg_tol = 1e-10;
     /// @brief Sternheimer CG iteration cap (dimensionless).
     int cg_max_iter = 200;
-    /// @brief Linear mixing factor for the response density in (0, 1].
+    /// @brief Pulay damping fraction for the response density in (0, 1];
+    ///        the mounted PW method supplies its history depth.
     double mix_beta = 0.5;
     /// @brief Phonon wavevector in fractional crystal coordinates of the
     ///        simulation cell (dimensionless). Default `{0,0,0}` = Γ.
@@ -119,11 +122,15 @@ class DfptPhonon {
     /// @brief DFPT phonons at `q_frac` for the geometry in `frame`.
     ///
     /// Throws `std::invalid_argument` unless `method.xc` is pure LSDA or
-    /// pure GGA (`hybrid_exchange_fraction == 0`) and `method.upf_path` is
-    /// set. Restricted metallic smearing is allowed at Γ, commensurate
+    /// pure GGA (`hybrid_exchange_fraction == 0`). The NC provider is shared
+    /// with the method's SCF, force and stress operators. Restricted metallic
+    /// smearing is allowed at Γ, commensurate
     /// \(\mathbf{q}\), and direct finite-\(q\) Sternheimer. Collinear spin
     /// (fixed occupations or metallic smear) is allowed at Γ, commensurate
     /// \(\mathbf{q}\), and incommensurate \(\mathbf{q}\).
+    /// Methfessel–Paxton is rejected before any SCF or supercell work:
+    /// signed quasi-occupation response is not implemented. Ground-state
+    /// PW energies, forces and stress retain MP support.
     ///
     /// @param method Plane-wave method (members only; not mutated).
     /// @param frame  Atom positions [Å], types (Z), simulation cell.

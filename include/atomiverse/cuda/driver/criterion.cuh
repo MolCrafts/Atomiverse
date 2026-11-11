@@ -1,99 +1,27 @@
 /// @file cuda/driver/criterion.cuh
-/// @brief Criterion — termination as a reusable, user-definable policy (CUDA).
+/// @brief Built-in termination criteria for CUDA staged workflows.
 ///
-/// The CUDA mirror of `cpu/driver/loop_handler.h`. Same vocabulary
-/// (`ATV::Verdict` / `ATV::LoopMetrics`, from the CUDA-free `facade/loop.h`), same
-/// composition rule (**Stop > Converged > Continue**), same split of labour: a
-/// component *measures* and publishes into `ctx.runtime.loop.metrics`; a handler
-/// *decides*.
+/// Criteria are Components (cuda/component/criterion.cuh). The driver builds
+/// and destroys each instance through its Plan, executes any measurement
+/// bindings, then polls verdict(). All declared convergence requirements must
+/// succeed; stop-only guards are neutral unless they request Stop.
 ///
-/// ## Why this is not a template
-///
-/// `Criterion` sees a `LoopState` and **never a phase**. That is the whole point: a
-/// handler that knew about `md::Phase` could only ever serve MD. Knowing nothing about
-/// stages, one handler serves every workflow — `StopOnNaN` is as meaningful to a
-/// minimization as to an MD trajectory, and neither of them had any way to say so
-/// before.
-///
-/// Type erasure in this architecture happens at the **node** boundary (a driver is a
-/// node; a component is a node) and at the **policy** boundary (here). It never happens
-/// at the stage boundary — stages stay typed enums, all the way down.
-///
-/// ## Writing one
-///
-/// @code
-///   class StopWhenTooHot : public cuda::Criterion {
-///     public:
-///       explicit StopWhenTooHot(double t_max) : t_max_(t_max) {}
-///       const char* name() const override { return "stop_when_too_hot"; }
-///       Verdict after_iteration(const cuda::LoopState& s) override {
-///           return (s.metrics.energy > t_max_) ? Verdict::Stop : Verdict::Continue;
-///       }
-///     private:
-///       double t_max_;
-///   };
-///
-///   sim.add_criterion(StopWhenTooHot{2000.0});
-/// @endcode
-///
-/// This is LAMMPS's `fix halt`, and it was **impossible** to write before: "stop or not"
-/// was a private `if` inside `cuda::DynamicsDriver` / `cuda::OptimizeDriver`.
-///
-/// ## Note on device residency
-///
-/// A handler runs on the **host**, once per iteration, after the stages. It therefore
-/// judges only what a component has already brought back to the host — that is what
-/// `LoopMetrics` is: the host-side mirror of a device reduction (see
-/// `cuda::minimizer::ConvCheck`, which fuses the four force/displacement metrics into
-/// one kernel and one pinned D2H). A handler must never dereference device pointers off
-/// `LoopState::frame`; the frame is there for structural facts (atom count, box), not
-/// for per-atom reads.
-///
-/// ## MPI
-///
-/// `cpu::Driver` all-reduces the handler verdict across ranks (`MPI_MAX` over the
-/// severity) so that ranks cannot disagree about when to stop and deadlock at the next
-/// collective. The CUDA driver is **single-rank** — it has no communicator and no
-/// `comm/` layer wired into the driver — so there is no reduction here. Handler authors
-/// write `after_iteration` as if the process were alone on both backends; the day CUDA
-/// grows a multi-GPU driver loop, the reduction goes into `Driver::poll_handlers_`,
-/// exactly as on the CPU, and no handler changes.
+/// These policies currently judge host ConvergenceMetrics. ConvCheck publishes
+/// those metrics after a device reduction and readback. Whole-loop device
+/// termination requires a separate device-executable policy contract.
 #pragma once
 
+#include "atomiverse/core/precision.h"
 #include <cmath>
 #include <memory>
 #include <string>
 
 #include "atomiverse/core/verdict.h"
-#include "atomiverse/cuda/component/context.cuh"
+#include "atomiverse/cuda/component/criterion.cuh"
 #include "atomiverse/cuda/frame/frame.cuh"
 
 namespace ATV {
 namespace cuda {
-
-/// @brief Everything a handler is allowed to look at.
-struct LoopState {
-    int iteration; ///< 0-based index of the iteration just completed.
-    const cuda::Frame& frame; ///< Device-resident state as it now stands.
-    const cuda::Context&
-        runtime; ///< Execution context (streams, service slices).
-    const LoopMetrics& metrics; ///< What this loop's components measured.
-                                ///< @see facade/loop.h
-};
-
-/// @brief A termination policy, asked once after every iteration of the loop it is on.
-class Criterion {
-  public:
-    virtual ~Criterion() = default;
-
-    /// @brief Identifier, used in the stop reason the driver reports.
-    virtual const char* name() const = 0;
-
-    /// @brief Judge the iteration just completed.
-    /// @param state Iteration index, frame, context, metrics.
-    /// @return `Continue`, `Converged` or `Stop`. @see ATV::Verdict
-    virtual Verdict after_iteration(const LoopState& state) = 0;
-};
 
 // ─── Built-in handlers ──────────────────────────────────────────────────────
 //
@@ -103,7 +31,7 @@ class Criterion {
 
 /// @brief The five-criteria geometry-optimization convergence test.
 ///
-/// ALL five must hold. It reads `LoopMetrics`, which the Optimizer component publishes
+/// ALL five must hold. It reads `ConvergenceMetrics`, which the Optimizer component publishes
 /// (`cuda::minimizer::ConvCheck` does the reduction) — so the tolerances live here, with
 /// the *policy*, and not (as they did) as five of the eight positional constructor
 /// arguments of `cuda::minimizer::LBFGS`, where changing a tolerance meant touching the
@@ -114,6 +42,7 @@ class Criterion {
 /// nothing.
 class ForceConverged : public Criterion {
   public:
+    bool contributes_to_convergence() const override { return true; }
     /// @brief Construct the convergence test from its five tolerances.
     /// @param ftol Max force [eV/Å].
     /// @param rms_ftol RMS force [eV/Å].
@@ -128,13 +57,13 @@ class ForceConverged : public Criterion {
 
     /// @brief Identifier reported as the stop reason.
     /// @return `"force_converged"`.
-    const char* name() const override { return "force_converged"; }
+    std::string name() const override { return "force_converged"; }
 
     /// @brief Declare convergence when all five criteria hold.
     /// @param s Iteration index, frame, context, metrics.
     /// @return `Converged` if every criterion holds, else `Continue`.
-    Verdict after_iteration(const LoopState& s) override {
-        const LoopMetrics& m = s.metrics;
+    Verdict verdict(const LoopState& s) override {
+        const ConvergenceMetrics& m = s.metrics;
         // Judge the METRICS — never the iteration counter. Whether a displacement is
         // meaningful is a fact only the component knows (it has the previous geometry),
         // and it says so in `has_displacement`: `SteepestDescent` never measures one, so
@@ -161,18 +90,18 @@ class ForceConverged : public Criterion {
 /// blown-up system has zero force on every atom (they are all NaN, and NaN fails every
 /// `<` comparison), so reporting success for it would be worse than crashing.
 ///
-/// Reads only `LoopMetrics::energy`, i.e. what a component already brought back to the
+/// Reads only `ConvergenceMetrics::energy`, i.e. what a component already brought back to the
 /// host. It does not — and on this backend must not — read the device frame.
 class StopOnNaN : public Criterion {
   public:
     /// @brief Identifier reported as the stop reason.
     /// @return `"stop_on_nan"`.
-    const char* name() const override { return "stop_on_nan"; }
+    std::string name() const override { return "stop_on_nan"; }
 
     /// @brief Abandon the run when the measured energy is not finite.
     /// @param s Iteration index, frame, context, metrics.
     /// @return `Stop` if `metrics.energy` [eV] is NaN or infinite, else `Continue`.
-    Verdict after_iteration(const LoopState& s) override {
+    Verdict verdict(const LoopState& s) override {
         const double e = s.metrics.energy;
         return std::isfinite(e) ? Verdict::Continue : Verdict::Stop;
     }

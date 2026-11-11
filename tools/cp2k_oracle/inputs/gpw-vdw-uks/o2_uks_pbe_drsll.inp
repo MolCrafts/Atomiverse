@@ -1,5 +1,5 @@
 ! O2 triplet LSD PBE + nonlocal vdW-DF (DRSLL) — periodic Γ twin
-! Twin for Atomiverse regressions/gpw/gpw-vdw-uks
+! Twin for Atomiverse regressions/gpw/vdw-df
 ! Geometry: R(O-O) = 1.2075 Å centered in a 12 Å cubic cell, PERIODIC XYZ
 ! (nonlocal RPS kernel requires the periodic Poisson route on both sides).
 ! Valence: 12 e- (GTH-q6), multiplicity 3 → Nα=7, Nβ=5

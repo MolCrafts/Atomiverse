@@ -23,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <map>
 #include <string>
 
@@ -214,8 +215,8 @@ TEST(MDSetApi, LongRangeRealHalfRequiresExactlyOneReciprocalHalf) {
 TEST(MDSetApi, LongRangeReciprocalHalfRequiresExactlyOneRealHalf) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"reciprocal-half",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal-half", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
     const std::string error = build_error(sim);
     EXPECT_NE(error.find("reciprocal-half"), std::string::npos);
     EXPECT_NE(error.find("exactly one real-space partner"), std::string::npos);
@@ -224,10 +225,12 @@ TEST(MDSetApi, LongRangeReciprocalHalfRequiresExactlyOneRealHalf) {
 TEST(MDSetApi, LongRangeDuplicateRoleIsRejectedByIdentityIndependentName) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real-a", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"real-b", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real-a", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real-b", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
     const std::string error = build_error(sim);
     EXPECT_NE(error.find("duplicate real-space"), std::string::npos);
     EXPECT_NE(error.find("real-a"), std::string::npos);
@@ -237,9 +240,10 @@ TEST(MDSetApi, LongRangeDuplicateRoleIsRejectedByIdentityIndependentName) {
 TEST(MDSetApi, LongRangeAlphaMismatchIsRejectedBeforePlanBuild) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.31});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.31});
     const std::string error = build_error(sim);
     EXPECT_NE(error.find("alpha mismatch"), std::string::npos);
     EXPECT_NE(error.find("real"), std::string::npos);
@@ -249,16 +253,18 @@ TEST(MDSetApi, LongRangeAlphaMismatchIsRejectedBeforePlanBuild) {
 TEST(MDSetApi, MatchingLongRangePairBuildsAsOrdinaryComponents) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3});
     EXPECT_NO_THROW(sim.build());
 }
 
 TEST(MDSetApi, MultiPhaseBindingDoesNotDuplicateLongRangeParticipant) {
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
     LongRangeStub reciprocal{"reciprocal",
                              ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3};
     sim.on(ATV::md::Phase::force).add_ref(reciprocal);
@@ -271,10 +277,11 @@ TEST(MDSetApi, StressConsumerWithMatchedLongRangePairBuilds) {
     // provides_system_stress provider). Long-range halves only need alpha match.
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
-    sim.set_evaluator(LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
-    sim.set_evaluator(LongRangeStub{"reciprocal",
-                          ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3,
-                          /*provides_stress=*/false});
+    sim.set_evaluator(
+        LongRangeStub{"real", ATV::cpu::LongRangeRole::RealSpace, 0.3});
+    sim.set_evaluator(LongRangeStub{
+        "reciprocal", ATV::cpu::LongRangeRole::ReciprocalSpace, 0.3,
+        /*provides_stress=*/false});
     sim.set_observer(StressConsumerStub{});
     EXPECT_NO_THROW(sim.build());
 }
@@ -339,6 +346,25 @@ TEST(MDSetApi, ExplicitVirialStressSuppressesAutoInject) {
         << "Explicit Virial via set_observer must dedup the auto-inject";
 }
 
+TEST(MDSetApi, ExplicitVirialWithoutBarostatClearsStressOnceBeforeForce) {
+    IntrospectMD sim;
+    sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
+    sim.set_integrator(ATV::cpu::md::VelocityVerlet{kDt});
+    sim.set_observer(ATV::cpu::md::Virial{});
+    for (int compile = 0; compile < 2; ++compile) {
+        sim.name_counts.clear();
+        ASSERT_NO_THROW(sim.build());
+        EXPECT_EQ(sim.name_counts["virial"], 1);
+        EXPECT_EQ(sim.name_counts["zero_stress"], 1);
+        for (const auto& slot : sim.plan().slots)
+            for (const auto& op : slot.ops)
+                if (op.component->name() == "zero_stress")
+                    EXPECT_EQ(slot.phase,
+                              ATV::slot_of(ATV::md::Phase::pre_force));
+    }
+}
+
 TEST(MDSetApi, NoStressReadsLeavesVirialStressOut) {
     IntrospectMD sim;
     sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
@@ -348,6 +374,37 @@ TEST(MDSetApi, NoStressReadsLeavesVirialStressOut) {
     EXPECT_NO_THROW(sim.build());
     EXPECT_EQ(sim.name_counts["virial"], 0)
         << "VelocityVerlet does not read Stress → no Virial injection";
+}
+
+// The pair virial in `stress` is the virial of the step, also when nothing
+// consumes it: two-row argon frozen in place (v = 0, dt = 1e-9 fs) gives the
+// same virial after one step as after three. A missing ZeroStress made it a
+// running sum over the setup evaluation and every step (2× vs 4×).
+TEST(MDSetApi, UnconsumedStressIsThePerStepVirial) {
+    auto run = [](int steps) {
+        ATV::cpu::Frame frame(10);
+        for (int i = 0; i < 10; ++i) {
+            frame.span(ATV::kAtom_x)[i] = 8.0 + 3.8 * (i % 5);
+            frame.span(ATV::kAtom_y)[i] = 10.0 + 3.8 * (i / 5);
+            frame.span(ATV::kAtom_z)[i] = 15.0;
+            frame.span(ATV::kAtom_mass)[i] = 39.948;
+            frame.span(ATV::kAtom_type)[i] = 18;
+        }
+        frame.box = ATV::cpu::Box::cubic(30.0);
+        ATV::cpu::md::MD sim;
+        sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+        sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
+        sim.set_integrator(ATV::cpu::md::VelocityVerlet{1e-9});
+        sim.build();
+        sim.run(frame, steps);
+        return frame.meta.get(ATV::kStress);
+    };
+    const auto one = run(1);
+    const auto three = run(3);
+    ASSERT_NE(one[0], 0.0) << "the LJ rows must produce a virial";
+    for (int c = 0; c < 6; ++c)
+        EXPECT_NEAR(three[c], one[c], 1e-12 + 1e-9 * std::abs(one[c]))
+            << "stress[" << c << "]";
 }
 
 // ─── install_infra: missing-NL throw ────────────────────────────────

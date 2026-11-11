@@ -15,7 +15,7 @@
 /// H2D transfer), while the multi-GPU domain-decomposition path carries
 /// the per-atom SoA (global-tag partners) needed for migration. CPU is
 /// blocks+meta+box with per-atom topology columns only. Per the
-/// CLAUDE.md Frame purity rule the frame carries only fundamental physical
+/// docs/developer/project-contract.md Frame purity rule the frame carries only fundamental physical
 /// quantities: method-specific scratch (the SCF workspace, the neighbor
 /// pair list) is owned by the components that compute it, not by the frame.
 ///
@@ -28,6 +28,7 @@
 
 #include <cstdint>
 
+#include "atomiverse/core/precision.h"
 #include "atomiverse/core/system_scalars.h"
 #include "atomiverse/cuda/frame/types.cuh"
 
@@ -61,30 +62,88 @@ struct DihedralList {
     int* n_dihedrals = nullptr; ///< Dihedral count [device, 1 element].
 };
 
+/// @brief Improper topology list -- all arrays on device, molcrafts naming.
+///        Atom order and owner (atom j) as in `DihedralList`.
+struct ImproperList {
+    int* atomi = nullptr;       ///< First atom index [device].
+    int* atomj = nullptr;       ///< Second (owner) atom index [device].
+    int* atomk = nullptr;       ///< Third atom index [device].
+    int* atoml = nullptr;       ///< Fourth atom index [device].
+    int* type = nullptr;        ///< Improper type index [device].
+    int* n_impropers = nullptr; ///< Improper count [device, 1 element].
+};
+
+/// @brief First fixed-point force fault recorded on one Frame.
+///
+/// Writers raise it when a value does not fit the fixed-point range
+/// (`kConversion`, including NaN/Inf) or an accumulation wraps
+/// (`kAccumulation`). `row` is the first offending local row. A device-side
+/// reserve that a rebuild outgrew raises `kCapacity` with the entry count it
+/// needed. A constraint solver that cannot satisfy its constraints (an
+/// unconverged iteration, a degenerate or out-of-plane molecule) raises
+/// `kConstraint`. The first integrator that refuses the forces stamps `step` and
+/// that row's global `tag`; every state writer stops at the first fault, so
+/// the device state stays at the faulting step until `cuda::to_cpu` throws.
+struct ForceFault {
+    static constexpr unsigned kConversion = 1u;   ///< Encode out of range.
+    static constexpr unsigned kAccumulation = 2u; ///< Fixed-point sum wrapped.
+    static constexpr unsigned kBond = 4u;         ///< FENE bond reached R0.
+    static constexpr unsigned kCapacity = 8u; ///< Neighbor reserve overflowed.
+    /// A holonomic constraint (SETTLE / RATTLE) could not be satisfied.
+    static constexpr unsigned kConstraint = 16u;
+    unsigned kinds = 0;  ///< Bitwise OR of fault kinds.
+    int row = -1;        ///< First offending local row, -1 if unknown.
+    long long step = -1; ///< Step at which integration was refused, -1 if none.
+    long long tag = -1;  ///< Global tag of `row` at that step, -1 if unknown.
+    long long required = -1; ///< Entries a `kCapacity` fault needed.
+};
+
 /// @brief GPU-side system state -- device pointers + host-cached metadata.
 ///
 /// Device pointer fields are GPU-resident. Metadata fields (n_atoms_,
 /// n_bonds_, etc.) are host-cached counts set at materialize time to avoid
 /// D2H transfers.
 ///
-/// Created by cpu::to_cuda() / cuda::from_molrs(), freed by cuda::destroy().
+/// Created by cpu::to_cuda() / cuda::from_molpy(), freed by cuda::destroy().
 struct Frame {
     // -- Per-atom arrays (device pointers, molcrafts "atoms" block) --
 
     /// @brief Per-atom data block matching molpy atoms namespace.
+    ///
+    /// Column types follow the precision contract in `types.cuh`. A stored
+    /// coordinate is `x[i] + x_corr[i]` when `kPositionCorrection` holds
+    /// (mixed mode) and `x[i]` otherwise; force kernels read the primary
+    /// value only, integrators and every host conversion use both. Forces are
+    /// signed 64-bit fixed point (`precision.cuh`): writers encode, readers
+    /// decode, and a failed encode raises `Frame::force_fault`.
     struct Atoms {
-        real_t* x = nullptr;      ///< x positions [Angstrom, device].
-        real_t* y = nullptr;      ///< y positions [Angstrom, device].
-        real_t* z = nullptr;      ///< z positions [Angstrom, device].
-        real_t* vx = nullptr;     ///< x velocities [Angstrom/fs, device].
-        real_t* vy = nullptr;     ///< y velocities [Angstrom/fs, device].
-        real_t* vz = nullptr;     ///< z velocities [Angstrom/fs, device].
-        real_t* fx = nullptr;     ///< x forces [eV/Angstrom, device].
-        real_t* fy = nullptr;     ///< y forces [eV/Angstrom, device].
-        real_t* fz = nullptr;     ///< z forces [eV/Angstrom, device].
-        real_t* mass = nullptr;   ///< Masses [amu, device].
-        real_t* charge = nullptr; ///< Partial charges [e, device].
-        int* type = nullptr;      ///< Atom types [device].
+        pos_t* x = nullptr; ///< x positions [Angstrom, device].
+        pos_t* y = nullptr; ///< y positions [Angstrom, device].
+        pos_t* z = nullptr; ///< z positions [Angstrom, device].
+        /// x position corrections [Angstrom, device]; null without correction.
+        pos_t* x_corr = nullptr;
+        /// y position corrections [Angstrom, device]; null without correction.
+        pos_t* y_corr = nullptr;
+        /// z position corrections [Angstrom, device]; null without correction.
+        pos_t* z_corr = nullptr;
+        mixed_t* vx = nullptr; ///< x velocities [Angstrom/fs, device].
+        mixed_t* vy = nullptr; ///< y velocities [Angstrom/fs, device].
+        mixed_t* vz = nullptr; ///< z velocities [Angstrom/fs, device].
+        /// x forces [fixed-point eV/Angstrom, device]. fx, fy, fz are one
+        /// allocation: fy = fx + capacity, fz = fx + 2 capacity.
+        fixed_t* fx = nullptr;
+        fixed_t* fy = nullptr; ///< y forces [fixed-point eV/Angstrom, device].
+        fixed_t* fz = nullptr; ///< z forces [fixed-point eV/Angstrom, device].
+        mixed_t* mass = nullptr;   ///< Masses [amu, device].
+        force_t* charge = nullptr; ///< Partial charges [e, device].
+        /// @brief Force-field type index per atom [device]; same semantic
+        /// field as CPU `kAtom_type`. Null when the host Frame carries no
+        /// type column (a consumer that needs it throws at setup).
+        int* type = nullptr;
+        /// @brief Chemical species Z per atom [device]; same semantic field
+        /// as CPU `kAtom_atomic_number`. Null when the host Frame carries no
+        /// species column (a consumer that needs it throws at setup).
+        int* atomic_number = nullptr;
 
         /// @brief Global atom identity [device], persistent across MPI
         /// migration and restart. Same semantic field as CPU `kAtom_tag`.
@@ -92,8 +151,9 @@ struct Frame {
 
         /// @brief Per-atom PBC crossing counts, flat row-major [device,
         /// 3 * n_atoms], `image[i * 3 + d]` for atom i along dimension d.
-        /// Same semantic field as CPU `kAtom_image`.
-        std::int8_t* image = nullptr;
+        /// Same semantic field and dtype (`ImageInt`, int32 per component)
+        /// as CPU `kAtom_image`.
+        ImageInt* image = nullptr;
 
         int* d_size = nullptr; ///< Atom count [device, 1 element].
 
@@ -154,7 +214,11 @@ struct Frame {
     /// that header for the field-by-field documentation.
     SystemScalars* scalars = nullptr;
 
-    prec_t* box =
+    /// @brief First fixed-point force fault [device, 1 element]. Every force
+    /// writer of this Frame reports into it; see `ForceFault`.
+    ForceFault* force_fault = nullptr;
+
+    geom_t* box =
         nullptr; ///< Simulation cell 3x3 row-major [Angstrom, device, 9].
 
     // -- Topology sub-structures --
@@ -163,6 +227,8 @@ struct Frame {
     AngleList angles; ///< Angle topology (transferred by cpu::to_cuda).
     DihedralList
         dihedrals; ///< Dihedral topology (transferred by cpu::to_cuda).
+    ImproperList
+        impropers; ///< Improper topology (transferred by cpu::to_cuda).
 
     // -- Host-cached metadata (set at materialize, avoids D2H in loop) --
 
@@ -178,11 +244,15 @@ struct Frame {
     /// @brief Number of dihedrals cached on the host side.
     /// @return Dihedral count.
     int n_dihedrals() const { return n_dihedrals_; }
+    /// @brief Number of impropers cached on the host side.
+    /// @return Improper count.
+    int n_impropers() const { return n_impropers_; }
 
     int n_atoms_ = 0;     ///< Host-cached atom count.
     int n_bonds_ = 0;     ///< Host-cached bond count.
     int n_angles_ = 0;    ///< Host-cached angle count.
     int n_dihedrals_ = 0; ///< Host-cached dihedral count.
+    int n_impropers_ = 0; ///< Host-cached improper count.
 
     // -- Domain-decomposition counts (single-process multi-GPU) --
     // Owned atoms occupy [0, n_local); halo ghosts received from peer GPUs

@@ -1,114 +1,128 @@
 # Hartree–Fock
 
-Legend and caveats: [Roadmap index](index.md).
+Tutorial: [HF](../tutorial/ch02-rhf.md) · [open shell](../tutorial/ch03-open-shell.md) · [basis](../tutorial/ch04-basis-sets.md) · [SCF](../tutorial/ch18-scf-techniques.md).
 
-Hartree–Fock shares one solver with [Kohn–Sham DFT](dft.md): the SCF config is
-the 2×2 product of {restricted, unrestricted} × {HF, KS}, so RHF, UHF, RKS and
-UKS are the same code path with a different Fock build. Correlated methods built
-on the HF reference live in [Post-Hartree–Fock](post-hf.md).
+Shares one SCF solver with [Kohn–Sham DFT](dft.md): the 2×2 product
+{restricted, unrestricted} × {HF, KS}. Correlated post-HF lives in
+[Post-Hartree–Fock](post-hf.md). Legend: [Roadmap index](index.md).
+
+## Current benchmark evidence
+
+The status block below is generated from the new HF benchmark catalog and
+the complete GH200 acceptance record (campaign `2026-10-26-gh200`).
+Its 20-row method/backend matrix (campaign `2026-10-26-gh200`)
+records accuracy, full-call time and hardware. All 60 required numerical cells
+passed. Public reachability, numerical acceptance, source/build qualification
+and CUDA-only trace qualification remain distinct evidence requirements.
+
+The first campaigns use a dirty frozen source snapshot and retain
+`build_verified=false`; missing native oracles and unmigrated cases stay
+explicit. Consequently this bootstrap evidence does not award official ✓/⚡.
+The technical inventory below describes APIs/envelopes and carries no separate
+hand-maintained status symbols.
+
+<!-- benchmark-evidence:start -->
+
+Campaign `2f1b284cb0b74db1b52b9b82e632d6ec`; profile `linux-aarch64-cpu8-acceptance`; tier `acceptance`.
+
+Numerical acceptance and roadmap qualification are separate. A local dirty or unverified build cannot promote ✓/⚡. Unmigrated capabilities retain explicit gaps.
+
+| Capability ID | Capability | CPU | CUDA | Evidence |
+| --- | --- | :---: | :---: | --- |
+| `hf.rhf.energy` | RHF molecular energy | ◐ | ◐ | CPU numerical pass; CUDA numerical pass; official source/build qualification incomplete; CUDA-only trace qualification incomplete; official source/build qualification incomplete |
+| `hf.rhf.gradient` | RHF analytic gradient | ◐ | ◐ | CPU numerical pass; CUDA numerical pass; official source/build qualification incomplete; CUDA-only trace qualification incomplete; official source/build qualification incomplete |
+| `hf.uhf.energy` | UHF molecular energy | ◐ | ◐ | CPU numerical pass; CUDA numerical pass; official source/build qualification incomplete; CUDA-only trace qualification incomplete; official source/build qualification incomplete |
+| `hf.uhf.gradient` | UHF analytic gradient | ◐ | ◐ | CPU numerical pass; CUDA numerical pass; official source/build qualification incomplete; CUDA-only trace qualification incomplete; official source/build qualification incomplete |
+| `hf.rohf.energy` | ROHF molecular energy | ◐ | ○ | CPU numerical pass; CUDA numerical coverage pending; official source/build qualification incomplete |
+| `hf.rohf.gradient` | ROHF analytic gradient | ◐ | ○ | CPU numerical pass; CUDA numerical coverage pending; official source/build qualification incomplete |
+| `hf.ghf.energy` | GHF molecular energy | ◐ | ○ | CPU numerical pass; CUDA numerical coverage pending; official source/build qualification incomplete |
+| `hf.ghf.gradient` | GHF analytic gradient | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle. |
+| `hf.complex.energy` | Complex spinor HF / X2C | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Public complex-spinor oracle/engine adapters remain to be migrated. |
+| `hf.dhf.energy` | Dirac Coulomb HF | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Relativistic molecular rows not migrated. |
+| `hf.delta_scf` | Delta-SCF / MOM / IMOM | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Excited-state occupation and stability inputs not migrated. |
+| `hf.rhf.hessian` | RHF analytic Hessian | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Independent live CPHF Hessian rows not migrated. |
+| `hf.uhf.hessian` | UHF analytic Hessian | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Independent live CPHF Hessian rows not migrated. |
+| `hf.rohf.hessian` | ROHF finite-difference Hessian | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows. |
+| `hf.polarizability` | RHF static polarizability | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Response rows not migrated. |
+| `hf.stability` | HF stability analysis | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Noncollinear H3 does not substitute for general stability-analysis rows. |
+| `hf.periodic.gamma` | Gamma-point periodic RHF | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Periodic lattice/truncation model and independent oracle not migrated. |
+| `hf.periodic.krhf` | k-point RHF | ◐ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; CPU and partial CUDA public periodic surfaces need separate matched model and residency rows. |
+| `hf.periodic.kuhf` | k-point UHF | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Periodic open-shell rows not migrated. |
+| `hf.diis` | DIIS | ◐ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Using DIIS in molecular rows does not validate its full independent capability envelope. |
+| `hf.damping` | Linear damping | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Damping control-grid rows not migrated. |
+| `hf.level_shift` | Level shift | ◐ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Shifted-SCF branch and matched oracle not migrated. |
+| `hf.soscf` | SOSCF | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Second-order convergence rows not migrated. |
+| `hf.orthogonalization` | Canonical orthogonalization | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Linear-dependence threshold/canonical pruning rows not migrated. |
+| `hf.guess` | Hcore / MINAO initial guesses | ◐ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated. |
+| `hf.aspc` | ASPC density prediction | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Independent trajectory warm-start rows not migrated. |
+| `hf.spin_square` | Spin squared analysis | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; GHF Pab noncollinearity is not a complete S2 analysis benchmark. |
+| `hf.spherical` | Spherical AO transformations | ◐ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; def2-SVP molecular rows do not cover all l<=3 transformation cases. |
+| `hf.ri_j` | RI-J | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Auxiliary basis and matched RI model not migrated. |
+| `hf.ri_jk` | RI-JK | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Auxiliary basis and matched RI model not migrated. |
+| `hf.cfmm` | CFMM-J | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; CFMM accuracy/resource/scaling rows not migrated. |
+| `hf.native_rys` | Native Rys ERI | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Public integral-level scientific and resource rows not migrated. |
+| `hf.device_eri` | Device ERI | ○ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; not implemented; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders. |
+| `hf.ecp` | Effective core potentials | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; ECP model and semi-numerical force scope not migrated. |
+| `hf.x2c` | X2C one-electron | ◐ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Relativistic Hamiltonian/gradient rows not migrated. |
+| `hf.diagonalization` | SCF diagonalization | ◐ | ◐ | CPU numerical coverage pending; CUDA numerical coverage pending; required coverage incomplete; numerical evidence missing or failed; official source/build qualification incomplete; Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests. |
+| `hf.ghf.direct_spinor` | Direct-SCF spinor GHF | ○ | ○ | CPU numerical coverage pending; CUDA numerical coverage pending; not implemented |
+
+<!-- benchmark-evidence:end -->
 
 ## 1. Molecular Hartree–Fock
 
-| Method                                     | CPU | CUDA | Kokkos |
-| ------------------------------------------ | :-: | :--: | :---: |
-| Restricted Hartree–Fock, RHF               |  ✓  |   ✓  |   ○  |
-| Unrestricted Hartree–Fock, UHF             |  ✓  |   ○  |   ○  |
-| Restricted open-shell Hartree–Fock, ROHF   |  ✓  |   ○  |   ○  |
-| Generalized Hartree–Fock, GHF              |  ✓  |   ○  |   ○  |
-| Complex generalized Hartree–Fock           |  ○  |   ○  |   ○  |
-| Spinor Hartree–Fock                        |  ○  |   ○  |   ○  |
-| Finite-temperature Hartree–Fock            |  ○  |   ○  |   ○  |
-| Constrained Hartree–Fock                   |  ○  |   ○  |   ○  |
-| Broken-symmetry Hartree–Fock               |  ○  |   ○  |   ○  |
-| Delta-SCF Hartree–Fock                     |  ✓  |   ○  |   ○  |
-| Maximum-overlap excited-state Hartree–Fock |  ✓  |   ○  |   ○  |
-| RHF analytic gradient                      |  ✓  |   ✓  |   ○  |
-| UHF analytic gradient                      |  ✓  |   ○  |   ○  |
-| ROHF analytic gradient                     |  ✓  |   ○  |   ○  |
-| GHF analytic gradient                      |  ✓  |   ○  |   ○  |
-| RHF analytic Hessian                       |  ✓  |   ○  |   ○  |
-| UHF analytic Hessian                       |  ✓  |   ○  |   ○  |
-| ROHF analytic Hessian                      |  ✓  |   ○  |   ○  |
-| Hartree–Fock stability analysis            |  ✓  |   ○  |   ○  |
+| Capability | Public implementation notes |
+| --- | --- |
+| RHF | `cpu::scf::RHF::run(Frame&)` / `run(const Frame&)` / `forces(Frame&)`. ADC, direct RPA, BSE, GF2, and EOM are not members. CUDA `cuda::scf::RHF` : `cuda::Driver<scf::Phase>` (fock, mix, diagonalize, density, check); `run(Frame&)` / `run(const Frame&)` / `forces(Frame&)`. `run(Frame&)` overwrites `kEnergy` [eV]; `run(const Frame&)` writes nothing (`scf.hf.kernel`, `energy_elec`, `energy_tot` on `energy()` [Ha]); device Fock/density/CDIIS. STO-3G l ≤ 1: `launch_1e_integrals_sp` / `launch_eri_sp` energy and `launch_rhf_forces_sp` forces. Cartesian l ≤ 3 (6-31G, 6-31G*, 6-31+G*, ragged primitives): `launch_1e_integrals_lgt1` / `launch_eri_lgt1` energy with `with_gradient(false)`; `forces` throws `launch_rhf_forces_lgt1`. Spherical l ≤ 3 (def2-SVP, def2-TZVP, aug-cc-pVDZ) uses those Cartesian integrals and the CPU CartToSph sandwich on device — def2-TZVP's f shell is ten Cartesian GTOs, then the sandwich, not a Cartesian basis. l ≥ 4 throws `launch_eri_g`. No host ERI fill. `run(const Frame&)` on H2/STO-3G and H2O/STO-3G is pinned in `scf/rhf` section `sto3g_const` (`energy()` [Ha]; the Frame is unchanged). |
+| UHF | `cpu::scf::UHF{basis, n_alpha, n_beta, charge}` : `run(Frame&)` / `run(const Frame&)` / `forces(Frame&)`. CUDA `cuda::scf::UHF{basis, n_alpha, n_beta, charge}` : `cuda::Driver<scf::Phase>` with `run(Frame&)` / `forces(Frame&)` only (no const overload). `run` writes `kEnergy` [eV]; `forces` returns `GradientResult` and writes `kAtom_f*` [eV/Å]. Device Fock, density, CDIIS, and `launch_uhf_forces_sp` for STO-3G l ≤ 1. The device start is the spin-averaged MINAO density (`UHF.init_guess_by_minao`; H, C, N, O, F), so triplet O₂ matches PySCF's default rather than the core-Hamiltonian local minimum; any other element keeps that core start. Outside STO-3G l ≤ 1 the device call throws (`launch_eri_sp`) — no host-ERI fill. `CCSD<UHF>::eom_sf_ccsd`, `SfTDA<UHF>::run`, and `SfTDHF<UHF>::run` are not members |
+| ROHF | Guest–Saunders. `ROHF::run` / `forces`. Correlation is `MP2<ROHF>::run`, not a member |
+| GHF | Real two-component. `GHF::run` / `forces` |
+| Complex / spinor HF | `cpu::scf::ComplexGHF` : `cpu::Driver<scf::Phase>` + `cpu::HF` (not `MeanFieldMethod`). Stages fock, mix, diagonalize, density, check. Mix is CDIIS on the spin-orbital Fock (`hf.get_fock`). Two successive absolute energy changes are a Criterion on `ConvergenceMetrics`; `Driver::converged()` is the verdict. The method does not assign convergence. `ComplexGHF{basis, charge = 0, tol = 1e-10, max_iter = 80, x2c = true}` : `run(Frame&)` / `run(const Frame&)`. `x2c` is fixed at construction: true is spin-orbital X2C-1e (`SpinOrbitalX2CHelper.get_hcore` / `_x2c1e_get_hcore`, `GHF.x2c1e`, `xuncontract=False`); false is non-relativistic complex GHF (`GHF.get_hcore`, block-diagonal T+V). Overlap is `GHF.get_ovlp`. Two-electron integrals stay non-relativistic (`GHF.get_jk` / `get_veff` on the dense ERI). Occupation is `GHF.get_occ` and `hf.make_rdm1`. Energy is `hf.energy_elec` + `hf.energy_tot`. The loop is `hf.kernel`. `run(Frame&)` overwrites `kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes nothing; `energy()` [Ha]; `iterations()`. CPU `requires_full_frame()` is true. Nested `on(phase).add` accumulates energy. X2C shells with l > 3 throw `complex_ghf_ao_lgt3`. `provides_force()` is false; `forces(Frame&)` throws `complex_ghf_nuclear_forces` (PySCF `GHF.nuc_grad_method` and `x2c.SCF.nuc_grad_method` are unimplemented). No device path. Four-component Dirac–Coulomb is `cpu::scf::DHF` : `cpu::Driver<scf::Phase>` + `cpu::HF` (not `MeanFieldMethod`). Stages fock, mix, diagonalize, density, check. Mix is CDIIS on the 4-component Fock (`hf.get_fock`). Two successive absolute energy changes are a Criterion on `ConvergenceMetrics`; `Driver::converged()` is the verdict. The method does not assign convergence. `DHF{basis, charge = 0, tol = 1e-10, max_iter = 80}` : `run(Frame&)` / `run(const Frame&)` / `forces(Frame&)`. Core is `DHF.get_hcore` / `get_ovlp` (j-adapted spinors). Coulomb is `get_jk_coulomb` at (LL|LL)+(SS|LL) (`_call_veff_llll` / `_call_veff_ssll`); (SS|SS) is not assembled; no Gaunt or Breit. Occupation is `DHF.get_occ` and `hf.make_rdm1`. Energy is `dhf.energy_elec` + `hf.energy_tot`. The loop is `DHF.kernel` calling `hf.kernel`. `run(Frame&)` overwrites `kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes nothing; `energy()` [Ha]; `iterations()`. CPU `requires_full_frame()` is true. Nested `on(phase).add` accumulates energy. l > 1 throws `dhf_ao_lgt1`. `provides_force()` is false; `forces(Frame&)` throws `dhf_nuclear_forces`. No device path. Tutorial: [open shell](../tutorial/ch03-open-shell.md) |
+| ΔSCF / MOM / IMOM | `UHF::delta_scf(Frame&, from, to, MomStyle)` |
+| RHF analytic gradient | `RHF::forces(Frame&)` and `cuda::scf::RHF::forces`. CUDA forces are STO-3G l ≤ 1 (`launch_rhf_forces_sp`). Any other basis throws `launch_rhf_forces_lgt1` (`with_gradient(false)` keeps that energy on device) |
+| UHF / ROHF / GHF analytic gradient | `forces(Frame&)`. CUDA UHF uses `launch_uhf_forces_sp` on STO-3G l ≤ 1 (same envelope as the energy). ROHF and GHF gradients stay on the CPU |
+| RHF / UHF analytic Hessian | CPHF: `Hessian<RHF>::run(Frame&)` / `Hessian<UHF>::run(Frame&)` (`pyscf.hessian.rhf` / `uhf`) |
+| ROHF Hessian | `Hessian<ROHF>::run(Frame&)` — `central_difference_nuclear_hessian` of analytic `forces` (not CPHF; PySCF has no `hessian.ROHF`) |
+| RHF static polarizability | `Polarizability<RHF>::run()` after `RHF::run` (no Frame). Not an SCF method |
+| Stability analysis | `Stability<RHF>::run` after `RHF::run` (Seeger–Pople). Not an SCF method |
 
-ROHF is the Roothaan single-effective-Fock method in the PySCF canonical
-(Guest–Saunders) convention (`cpu::scf::ROHF`): energy + **analytic nuclear
-forces** (spin-Fock energy-weighted density; O₂ vs PySCF) + **ROMP2**
-(`ROHF::mp2`; `reg_romp2-o2-sto3g`) + nuclear Hessian via FD of forces
-(`ROHF::hessian`; `reg_rohf-hessian-o2`). SOSCF and level shift still throw.
-UHF remains the default open-shell workhorse; ROHF is the spin-pure
-(⟨S²⟩ = S(S+1) exactly) alternative. GHF is energy + **analytic nuclear
-gradient** (real two-component spinors; spinor energy-weighted density +
-four-block exchange; `reg_h3_ghf_sto3g`, `reg_ghf-grad-h3-sto3g`);
-mp2 / fci / soscf / level_shift still throw.
+### Gaps
 
-**Static polarizability** on RHF ships via CPHF (`RHF::polarizability`,
-`reg_static-polariz-h2o` vs PySCF CPHF/FD). **RHF / UHF analytic nuclear
-Hessians** ship via CPHF (`RHF::hessian` / `UHF::hessian`;
-`reg_h2o_rhf_freq`, `reg_uhf-hessian-o2`). **ROHF nuclear Hessian** ships as
-central FD of analytic ROHF forces (`ROHF::hessian`; `reg_rohf-hessian-o2`) —
-PySCF has no `hessian.ROHF`; full three-space ROHF CPHF is a follow-up. KS
-analytic Hessians and the generic FD vib path (`cpu::vib::Hessian`) remain
-open rows — see [Molecular Dynamics](molecular-dynamics.md). Seeger–Pople
-stability analysis over the orbital Hessian is implemented (internal channel
-+ triplet RHF→UHF).
+- CUDA Hartree–Fock energy is **RHF** on shells with l ≤ 3 (`launch_1e_integrals_sp` / `launch_eri_sp` for uniform STO-3G s/p; `launch_1e_integrals_lgt1` / `launch_eri_lgt1` otherwise, including the CPU CartToSph sandwich on device for spherical def2-SVP, def2-TZVP, and aug-cc-pVDZ) and **UHF** on STO-3G l ≤ 1. No KS, ROHF, GHF, or complex spinor HF on device. No host ERI fill. `cuda::scf::UHF` throws outside STO-3G l ≤ 1 (`launch_eri_sp`, `launch_uhf_forces_sp`). `cuda::scf::RHF` throws `launch_eri_g` for l ≥ 4. `cuda::scf::RHF::forces` throws `launch_rhf_forces_lgt1` outside STO-3G l ≤ 1.
+- ROHF: SOSCF / level shift still throw. GHF: `MP2` / `FCI` / soscf throw.
+- Post-HF, continuum solvent, and CPHF response are not `MeanFieldMethod` members. SCF entries are `run(Frame&)` / `run(const Frame&)` / `forces(Frame&)`. Beside that: `ADC<RHF>::adc2` / `adc2x` / `ip_adc2` / `ea_adc2`, `DirectRPA<RHF>::run`, `BSE<RHF>::run`, `GF2<RHF>::run`, `G0W0<RHF>::run`, `Stability<RHF>::run`, `TDA<RHF>::run`, `TDHF<RHF>::run`, `CISD<RHF>::run`, `CCSD<RHF>::eom_ee_ccsd` / `eom_ip_ccsd` / `eom_ea_ccsd`, `CC2<RHF>::eom_cc2`, `CCSD<UHF>::eom_sf_ccsd`, `SfTDA<UHF>::run`, `SfTDHF<UHF>::run`, `MP2<Method>::run`, `WithSolvent<Method>::run`, `Hessian<RHF|UHF|ROHF>::run`, `Polarizability<RHF>::run`.
 
 ## 2. Periodic Hartree–Fock
 
-| Method                | CPU | CUDA | Kokkos |
-| --------------------- | :-: | :--: | :---: |
-| Γ-point periodic RHF  |  ✓  |   ○  |   ○  |
-| k-point periodic RHF  |  ○  |   ○  |   ○  |
-| Γ-point periodic UHF  |  ○  |   ○  |   ○  |
-| k-point periodic UHF  |  ○  |   ○  |   ○  |
+| Capability | Public implementation notes |
+| --- | --- |
+| Γ-point periodic RHF | Truncated lattice; `RHF.periodic`; short-range erfc gate |
+| k-point periodic RHF | CUDA: no standing device regression (case removed). `cpu::scf::KRHF` : `cpu::Driver<scf::Phase>` + `cpu::HF` and `cuda::scf::KRHF` : `cuda::Driver<scf::Phase>` + `cuda::DriverNode` + `cuda::HF` (not `MeanFieldMethod`). Stages fock, mix, diagonalize, density, check; mix is the identity (no DIIS). Absolute energy change is a Criterion on `ConvergenceMetrics`; `Driver::converged()` is the verdict. The method does not assign convergence. `KRHF{basis, k_mesh, charge = 0, tol = 1e-9, max_iter = 40}` : `run(Frame&)` / `run(const Frame&)`. Orthorhombic cell, s functions, Monkhorst–Pack mesh, FFT Coulomb/exchange with Ewald exchange divergence. `run(Frame&)` overwrites `kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes nothing; `energy()` [Ha]; `iterations()`. CPU `requires_full_frame()` is true. Nested `on(phase).add` accumulates energy. Device step is Coulomb, exchange, Fock, `zheevd`, occupation, density. l > 0 throws (`krhf_ao_lgt0`). `provides_force()` is false; `forces(Frame&)` throws (`krhf_nuclear_forces`). Tutorial: [k-point HF](../tutorial/methods/scf-periodic-hf.md#periodic-kpoint-hf) |
+| k-point UHF periodic HF | `cpu::scf::KUHF` : `cpu::Driver<scf::Phase>` + `cpu::HF` (not `MeanFieldMethod`). Stages fock, mix, diagonalize, density, check; mix is the identity (no DIIS). Absolute energy change is a Criterion on `ConvergenceMetrics`; `Driver::converged()` is the verdict. The method does not assign convergence. `KUHF{basis, k_mesh, n_alpha, n_beta, charge = 0, tol = 1e-9, max_iter = 40}` : `run(Frame&)` / `run(const Frame&)`. Same orthorhombic s-function FFTDF envelope as KRHF. `n_alpha` / `n_beta` are mesh totals (`KUHF.nelec`; spin is not scaled by the number of k-points). Fock is `J = Ja+Jb`, `vhf = J-K` per spin (`KUHF.get_veff`); occupation fill is 1 (`get_occ`). `run(Frame&)` overwrites `kEnergy` and `kEnergyElectronic` [eV]; `run(const Frame&)` writes nothing; `energy()` [Ha]; `iterations()`. CPU `requires_full_frame()` is true. Nested `on(phase).add` accumulates energy. l > 0 throws (`krhf_ao_lgt0`). `provides_force()` is false; `forces(Frame&)` throws (`kuhf_nuclear_forces`). No device path |
 
-Γ-point closed-shell periodic RHF is a truncated-lattice foothold
-(`RHF.periodic = true`): J, K, S, T, V and E_nn share
-`m_d = floor(rcut/L_d)`. A cell larger than the Gaussian pair reach has
-only T = 0 and recovers molecular RHF (`regressions/scf/periodic-rhf-gamma`).
-Bare 1/r image sums are not cutoff-stable (need Ewald); the unit gate uses
-short-range erfc. k-point / UHF / Ewald are follow-ons. PW/GPW product
-paths remain semi-local DFT — see [Periodic DFT](dft.md#10-periodic-kohnsham-methods).
+PW/GPW product paths are semi-local DFT — see [DFT § Periodic](dft.md#4-periodic-kohnsham).
 
 ## 3. SCF infrastructure
 
-| Capability | CPU | CUDA | Kokkos |
-| ---------- | :-: | :--: | :---: |
-| DIIS | ✓ | ✓ (device CDIIS) |   ○  |
-| Linear damping | ✓ | ○ |   ○  |
-| Virtual-orbital level shift (Saunders–Hillier) | ✓ | ✓ |   ○  |
-| SOSCF (second-order SCF) | ✓ | ○ |   ○  |
-| Canonical orthogonalization + linear-dependence filtering | ✓ | ○ |   ○  |
-| Dual energy + DIIS-error convergence test | ✓ | ○ |   ○  |
-| Hcore initial guess | ✓ | ✓ |   ○  |
-| MINAO initial guess | ✓ | ○ |   ○  |
-| ASPC density predictor (AIMD warm start) | ✓ | ○ |   ○  |
-| ⟨S²⟩ spin-contamination analysis | ✓ | ○ |   ○  |
-| Spherical (pure) AO transform | ✓ | ○ |   ○  |
-| RI-J / RI-JK density fitting | ✓ | ○ |   ○  |
-| CFMM-J (continuous FMM for Coulomb) | ✓ | ○ |   ○  |
-| Native Rys ERI engine (l ≤ 3, s/p/d/f) | ✓ | ○ |   ○  |
-| Effective core potentials (ECP) | ✓ | ○ |   ○  |
-| x2c-1e scalar relativity (energy) | ✓ | ○ |   ○  |
-| Device ERI kernels | — | ✓ (s/p, l ≤ 1) |   ○  |
-| Diagonalization | ✓ (LAPACK) | ✓ (cuSOLVER) |   ○  |
+| Capability | Public implementation notes |
+| --- | --- |
+| DIIS | Device CDIIS |
+| Linear damping |  |
+| Level shift (Saunders–Hillier) |  |
+| SOSCF |  |
+| Canonical orthogonalization |  |
+| Hcore / MINAO guess | MINAO: H, C, N, O, F only; else Hcore |
+| ASPC density predictor | AIMD warm start |
+| ⟨S²⟩ analysis |  |
+| Spherical (pure) AO | RHF energy, l ≤ 3 (def2-SVP, def2-TZVP, aug-cc-pVDZ): `launch_1e_integrals_lgt1` / `launch_eri_lgt1` plus the CPU CartToSph sandwich on device. Not a native spherical ERI. `cuda::scf::UHF` stays STO-3G l ≤ 1 (`launch_eri_sp`). l ≥ 4 throws `launch_eri_g` |
+| RI-J / RI-JK | def2-universal JKFIT; SCF only |
+| CFMM-J | `Coulomb::CFMM` |
+| Native Rys ERI (l ≤ 3) | s/p/d/f |
+| Device ERI | STO-3G l ≤ 1: `launch_eri_sp`. Cartesian s/p/d/f, l ≤ 3: `launch_eri_lgt1`. Spherical l ≤ 3 is that tensor plus CartToSph. l ≥ 4 throws `launch_eri_g` |
+| ECP | Semi-numerical forces |
+| x2c-1e | `cpu::scf::RHF::forces(Frame&)` with `RHF::x2c = true` returns `GradientResult` and writes `kAtom_fx/fy/fz` [eV/Å] and `kEnergy` [eV] (`energy()` stays [Ha]). Molecular RHF: H2/STO-3G, H2O/6-31G, HCl/6-31G. An isolated atom is `RHF::run` only (Ar/def2-TZVP). `Hessian<RHF>::run` and `Hessian<UHF>::run` throw for `x2c=true`. No `x2c` on `cuda::scf::RHF`. Tutorial: [basis sets](../tutorial/ch04-basis-sets.md#nuclear-forces) |
+| Diagonalization | LAPACK / cuSOLVER |
 
-Basis sets: STO-3G, 6-31G, 6-31G\*, def2-SVP, def2-TZVP. Cartesian is the
-default engine space; spherical (pure) is available for sets defined that way
-(def2-SVP regression). Density fitting is RI-J / RI-JK over def2-universal
-JKFIT (SCF only — not RI-MP2). CFMM-J is an alternate Coulomb algorithm
-(`Coulomb::CFMM`). ECP forces are semi-numerical; x2c forces throw.
-
-The MINAO guess table covers H, C, N, O, F only; other elements fall back to
-Hcore.
-
-**The CUDA column is a restricted-HF engine, not a general SCF.** The SCF loop
-is device-resident: Fock and density builds, cuSOLVER diagonalization, device
-CDIIS (Pulay) Fock mixing (history on device; only the tiny (m+1) Pulay solve
-runs on host), and the Saunders–Hillier level shift on the device Fock path.
-Device-native integrals **and analytic nuclear forces** cover s/p shells
-(l ≤ 1, STO-3G class — mixed Z up to O). Energy on other bases still
-host-fills S/Hcore/ERI and uploads (SCF loop on device). Requesting
-forces outside that envelope **throws** — use `cpu::scf::RHF`. GPU BOMD
-smoke: `reg_h2_rhf_sto3g_aimd` (GH200 **1332540**). Still missing on
-CUDA: UHF and any Gaussian-basis Kohn–Sham path.
+**Bases:** STO-3G, 6-31G, 6-31G\*, 6-31+G\*, def2-SVP, def2-TZVP, aug-cc-pVDZ, cc-pVDZ.
+STO-3G and the Pople sets are Cartesian; def2-SVP, def2-TZVP, aug-cc-pVDZ, and
+cc-pVDZ are spherical. cc-pVDZ is tabulated for hydrogen only.

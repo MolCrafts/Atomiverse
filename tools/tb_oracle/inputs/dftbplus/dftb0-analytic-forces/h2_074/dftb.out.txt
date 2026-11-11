@@ -1,0 +1,55 @@
+ Fermi distribution function
+
+
+ Total charge:     0.00000000
+
+ Atomic gross charges (e)
+ Atom           Charge
+    1       0.00000000
+    2       0.00000000
+
+Nr. of electrons (up):      2.00000000
+Atom populations (up)
+ Atom       Population
+    1       1.00000000
+    2       1.00000000
+
+l-shell populations (up)
+ Atom Sh.   l       Population
+    1   1   0       1.00000000
+    2   1   0       1.00000000
+
+Orbital populations (up)
+ Atom Sh.   l   m       Population  Label
+    1   1   0   0       1.00000000  s
+    2   1   0   0       1.00000000  s
+
+Fermi level:                        -0.0566743966 H           -1.5422 eV
+Band energy:                        -0.6807883427 H          -18.5252 eV
+TS:                                  0.0000000000 H            0.0000 eV
+Band free energy (E-TS):            -0.6807883427 H          -18.5252 eV
+Extrapolated E(0K):                 -0.6807883427 H          -18.5252 eV
+Output electrons (q):      2.0000000000
+
+Energy H0:                          -0.6807883427 H          -18.5252 eV
+Total Electronic energy:            -0.6807883427 H          -18.5252 eV
+Repulsive energy:                    0.0058374104 H            0.1588 eV
+Total energy:                       -0.6749509324 H          -18.3663 eV
+Extrapolated to 0:                  -0.6749509324 H          -18.3663 eV
+Total Mermin free energy:           -0.6749509324 H          -18.3663 eV
+Force related energy:               -0.6749509324 H          -18.3663 eV
+
+Non-constrained calculation
+
+Non-SCC calculation
+
+Total Forces
+    1     -0.001976354621     -0.000000000000     -0.000000000000
+    2      0.001976354621     -0.000000000000     -0.000000000000
+
+Maximal derivative component:        0.197635E-02 au
+
+Dipole moment:    0.00000000    0.00000000    0.00000000 au
+Dipole moment:    0.00000000    0.00000000    0.00000000 Debye
+
+

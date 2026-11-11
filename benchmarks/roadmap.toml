@@ -1,0 +1,491 @@
+schema = "atomiverse.benchmark-catalog/1"
+
+[[capabilities]]
+id = "forcefield.gaff.parameterization"
+chapter = "force-fields.md"
+label = "GAFF/GAFF2 with AM1-BCC/ABCG2 parameterization"
+scope = "Fixed-geometry closed-shell organic molecules, including cation/anion, S/P/halogens and alkane size series. Exact atom types and parameter instances against live antechamber+parmchk2+tleap; per-atom charges within 1e-3 e. No geometry optimization, external force evaluator, dynamics or general chemical-coverage claim."
+rows = ["forcefield.gaff.bcc.parameterize", "forcefield.gaff.abcg2.parameterize", "forcefield.gaff2.bcc.parameterize", "forcefield.gaff2.abcg2.parameterize"]
+cpu_rows = ["forcefield.gaff.bcc.parameterize", "forcefield.gaff.abcg2.parameterize", "forcefield.gaff2.bcc.parameterize", "forcefield.gaff2.abcg2.parameterize"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Only fresh public-API CPU executions of the declared fixed-geometry inputs qualify; local dirty/unattested builds retain provisional roadmap status."
+
+[[capabilities]]
+id = "post-hf.rmp2.energy"
+chapter = "post-hf.md"
+label = "Canonical molecular RMP2 energy"
+scope = "Fresh RHF and all-electron canonical MP2 for water and eight waters in Cartesian STO-3G; total, reference, correlation and spin-channel energies against live PySCF."
+rows = ["rmp2.sto3g.energy"]
+cpu_rows = ["rmp2.sto3g.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "pending_migration"
+reason = "CPU uses the public Python MP2 binding. The native CUDA energy solver is covered by C++ regressions and awaits a public Python binding."
+
+[[capabilities]]
+id = "post-hf.rmp3.energy"
+chapter = "post-hf.md"
+label = "Canonical molecular RMP3 energy"
+scope = "Fresh RHF and all-electron canonical MP3 on water and eight waters in Cartesian STO-3G. Compares RHF, second-order and third-order corrections, correlation and total energies with live PySCF RHF and NumPy spatial MP3 diagrams."
+rows = ["rmp3.sto3g.energy"]
+cpu_rows = ["rmp3.sto3g.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "The independent CPU oracle combines PySCF orbitals and integrals with the spatial MP3 diagram sum."
+
+[[capabilities]]
+id = "hf.rhf.energy"
+chapter = "hartree-fock.md"
+label = "RHF molecular energy"
+scope = "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only."
+rows = ["rhf.sto3g.energy", "rhf.631gs.energy", "rhf.def2svp.energy", "rhf.sto3g.water_chain16.energy"]
+cpu_rows = ["rhf.sto3g.energy", "rhf.631gs.energy", "rhf.def2svp.energy", "rhf.sto3g.water_chain16.energy"]
+cuda_rows = ["rhf.sto3g.energy", "rhf.631gs.energy", "rhf.def2svp.energy", "rhf.sto3g.water_chain16.energy"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.rhf.gradient"
+chapter = "hartree-fock.md"
+label = "RHF analytic gradient"
+scope = "Cartesian STO-3G and 6-31G*, spherical def2-SVP; canonical 16-water STO-3G energy is performance tier only."
+rows = ["rhf.sto3g.forces", "rhf.631gs.forces", "rhf.def2svp.forces"]
+cpu_rows = ["rhf.sto3g.forces", "rhf.631gs.forces", "rhf.def2svp.forces"]
+cuda_rows = ["rhf.sto3g.forces"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.uhf.energy"
+chapter = "hartree-fock.md"
+label = "UHF molecular energy"
+scope = "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct."
+rows = ["uhf.sto3g.minao.energy", "uhf.sto3g.hcore.energy", "uhf.def2svp.energy"]
+cpu_rows = ["uhf.sto3g.minao.energy", "uhf.sto3g.hcore.energy", "uhf.def2svp.energy"]
+cuda_rows = ["uhf.sto3g.minao.energy"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.uhf.gradient"
+chapter = "hartree-fock.md"
+label = "UHF analytic gradient"
+scope = "Cartesian STO-3G and spherical def2-SVP; O2 UHF MINAO and Hcore branches are distinct."
+rows = ["uhf.sto3g.minao.forces", "uhf.sto3g.hcore.forces", "uhf.def2svp.forces"]
+cpu_rows = ["uhf.sto3g.minao.forces", "uhf.sto3g.hcore.forces", "uhf.def2svp.forces"]
+cuda_rows = ["uhf.sto3g.minao.forces"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.rohf.energy"
+chapter = "hartree-fock.md"
+label = "ROHF molecular energy"
+scope = "Cartesian STO-3G and spherical def2-SVP open-shell molecules."
+rows = ["rohf.sto3g.energy", "rohf.def2svp.energy"]
+cpu_rows = ["rohf.sto3g.energy", "rohf.def2svp.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.rohf.gradient"
+chapter = "hartree-fock.md"
+label = "ROHF analytic gradient"
+scope = "Cartesian STO-3G and spherical def2-SVP open-shell molecules."
+rows = ["rohf.sto3g.forces", "rohf.def2svp.forces"]
+cpu_rows = ["rohf.sto3g.forces", "rohf.def2svp.forces"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.ghf.energy"
+chapter = "hartree-fock.md"
+label = "GHF molecular energy"
+scope = "Native stored-ERI GHF: STO-3G H2 collapse/noncollinear H3 and def2-SVP H2 collapse; direct spinor strategy is unavailable."
+rows = ["ghf.sto3g.collapse.energy", "ghf.sto3g.noncollinear.energy", "ghf.def2svp.collapse.energy"]
+cpu_rows = ["ghf.sto3g.collapse.energy", "ghf.sto3g.noncollinear.energy", "ghf.def2svp.collapse.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Live independent oracle and actual participant results determine acceptance; unavailable bindings never inherit a pass."
+
+[[capabilities]]
+id = "hf.ghf.gradient"
+chapter = "hartree-fock.md"
+label = "GHF analytic gradient"
+scope = "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Native CPU force exists; PySCF GHF.nuc_grad_method raises NotImplementedError. No custom derivative or archived golden is substituted as a live native oracle."
+
+[[capabilities]]
+id = "hf.complex.energy"
+chapter = "hartree-fock.md"
+label = "Complex spinor HF / X2C"
+scope = "Public complex-spinor oracle/engine adapters remain to be migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Public complex-spinor oracle/engine adapters remain to be migrated."
+
+[[capabilities]]
+id = "hf.dhf.energy"
+chapter = "hartree-fock.md"
+label = "Dirac Coulomb HF"
+scope = "Relativistic molecular rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Relativistic molecular rows not migrated."
+
+[[capabilities]]
+id = "hf.delta_scf"
+chapter = "hartree-fock.md"
+label = "Delta-SCF / MOM / IMOM"
+scope = "Excited-state occupation and stability inputs not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Excited-state occupation and stability inputs not migrated."
+
+[[capabilities]]
+id = "hf.rhf.hessian"
+chapter = "hartree-fock.md"
+label = "RHF analytic Hessian"
+scope = "Independent live CPHF Hessian rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Independent live CPHF Hessian rows not migrated."
+
+[[capabilities]]
+id = "hf.uhf.hessian"
+chapter = "hartree-fock.md"
+label = "UHF analytic Hessian"
+scope = "Independent live CPHF Hessian rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Independent live CPHF Hessian rows not migrated."
+
+[[capabilities]]
+id = "hf.rohf.hessian"
+chapter = "hartree-fock.md"
+label = "ROHF finite-difference Hessian"
+scope = "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "No native PySCF ROHF Hessian; numerical-oracle scope must be explicit in future rows."
+
+[[capabilities]]
+id = "hf.polarizability"
+chapter = "hartree-fock.md"
+label = "RHF static polarizability"
+scope = "Response rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Response rows not migrated."
+
+[[capabilities]]
+id = "hf.stability"
+chapter = "hartree-fock.md"
+label = "HF stability analysis"
+scope = "Noncollinear H3 does not substitute for general stability-analysis rows."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Noncollinear H3 does not substitute for general stability-analysis rows."
+
+[[capabilities]]
+id = "hf.periodic.gamma"
+chapter = "hartree-fock.md"
+label = "Gamma-point periodic RHF"
+scope = "Periodic lattice/truncation model and independent oracle not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Periodic lattice/truncation model and independent oracle not migrated."
+
+[[capabilities]]
+id = "hf.periodic.krhf"
+chapter = "hartree-fock.md"
+label = "k-point RHF"
+scope = "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "CPU and partial CUDA public periodic surfaces need separate matched model and residency rows."
+
+[[capabilities]]
+id = "hf.periodic.kuhf"
+chapter = "hartree-fock.md"
+label = "k-point UHF"
+scope = "Periodic open-shell rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Periodic open-shell rows not migrated."
+
+[[capabilities]]
+id = "hf.diis"
+chapter = "hartree-fock.md"
+label = "DIIS"
+scope = "Using DIIS in molecular rows does not validate its full independent capability envelope."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "Using DIIS in molecular rows does not validate its full independent capability envelope."
+
+[[capabilities]]
+id = "hf.damping"
+chapter = "hartree-fock.md"
+label = "Linear damping"
+scope = "Damping control-grid rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Damping control-grid rows not migrated."
+
+[[capabilities]]
+id = "hf.level_shift"
+chapter = "hartree-fock.md"
+label = "Level shift"
+scope = "Shifted-SCF branch and matched oracle not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "Shifted-SCF branch and matched oracle not migrated."
+
+[[capabilities]]
+id = "hf.soscf"
+chapter = "hartree-fock.md"
+label = "SOSCF"
+scope = "Second-order convergence rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Second-order convergence rows not migrated."
+
+[[capabilities]]
+id = "hf.orthogonalization"
+chapter = "hartree-fock.md"
+label = "Canonical orthogonalization"
+scope = "Linear-dependence threshold/canonical pruning rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Linear-dependence threshold/canonical pruning rows not migrated."
+
+[[capabilities]]
+id = "hf.guess"
+chapter = "hartree-fock.md"
+label = "Hcore / MINAO initial guesses"
+scope = "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "UHF O2 explicitly covers two branches; full element/occupation guess capability not migrated."
+
+[[capabilities]]
+id = "hf.aspc"
+chapter = "hartree-fock.md"
+label = "ASPC density prediction"
+scope = "Independent trajectory warm-start rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Independent trajectory warm-start rows not migrated."
+
+[[capabilities]]
+id = "hf.spin_square"
+chapter = "hartree-fock.md"
+label = "Spin squared analysis"
+scope = "GHF Pab noncollinearity is not a complete S2 analysis benchmark."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "GHF Pab noncollinearity is not a complete S2 analysis benchmark."
+
+[[capabilities]]
+id = "hf.spherical"
+chapter = "hartree-fock.md"
+label = "Spherical AO transformations"
+scope = "def2-SVP molecular rows do not cover all l<=3 transformation cases."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "def2-SVP molecular rows do not cover all l<=3 transformation cases."
+
+[[capabilities]]
+id = "hf.ri_j"
+chapter = "hartree-fock.md"
+label = "RI-J"
+scope = "Auxiliary basis and matched RI model not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Auxiliary basis and matched RI model not migrated."
+
+[[capabilities]]
+id = "hf.ri_jk"
+chapter = "hartree-fock.md"
+label = "RI-JK"
+scope = "Auxiliary basis and matched RI model not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Auxiliary basis and matched RI model not migrated."
+
+[[capabilities]]
+id = "hf.cfmm"
+chapter = "hartree-fock.md"
+label = "CFMM-J"
+scope = "CFMM accuracy/resource/scaling rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "CFMM accuracy/resource/scaling rows not migrated."
+
+[[capabilities]]
+id = "hf.native_rys"
+chapter = "hartree-fock.md"
+label = "Native Rys ERI"
+scope = "Public integral-level scientific and resource rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Public integral-level scientific and resource rows not migrated."
+
+[[capabilities]]
+id = "hf.device_eri"
+chapter = "hartree-fock.md"
+label = "Device ERI"
+scope = "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders."
+rows = []
+cpu = "not_implemented"
+cuda = "pending_migration"
+reason = "Molecular energy/force comparisons do not cover all Cartesian and spherical integral orders."
+
+[[capabilities]]
+id = "hf.ecp"
+chapter = "hartree-fock.md"
+label = "Effective core potentials"
+scope = "ECP model and semi-numerical force scope not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "ECP model and semi-numerical force scope not migrated."
+
+[[capabilities]]
+id = "hf.x2c"
+chapter = "hartree-fock.md"
+label = "X2C one-electron"
+scope = "Relativistic Hamiltonian/gradient rows not migrated."
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "Relativistic Hamiltonian/gradient rows not migrated."
+
+[[capabilities]]
+id = "hf.diagonalization"
+chapter = "hartree-fock.md"
+label = "SCF diagonalization"
+scope = "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests."
+rows = []
+cpu = "pending_migration"
+cuda = "pending_migration"
+reason = "Molecular SCF rows do not replace eigen residual, orthogonality and shared-capacity boundary tests."
+
+[[capabilities]]
+id = "hf.ghf.direct_spinor"
+chapter = "hartree-fock.md"
+label = "Direct-SCF spinor GHF"
+scope = "Nonsymmetric spin-off-diagonal exchange without a stored dense AO ERI tensor"
+rows = []
+cpu = "pending_migration"
+cuda = "not_implemented"
+reason = "CPU GHF shares the automatic exact J/K engine; a separately budget-constrained benchmark row has not been migrated."
+
+[[capabilities]]
+id = "dft.rks.energy"
+chapter = "dft.md"
+label = "RKS molecular energy"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["rks.lsda.sto3g.energy", "rks.pbe.sto3g.energy", "rks.pbesol.sto3g.energy", "rks.revpbe.sto3g.energy", "rks.rpbe.sto3g.energy", "rks.blyp.sto3g.energy", "rks.b3lyp.sto3g.energy", "rks.pbe0.sto3g.energy", "rks.camb3lyp.sto3g.energy", "rks.pbe.def2svp.energy", "rks.pbe0.def2svp.energy", "rks.camb3lyp.def2svp.energy"]
+cpu_rows = ["rks.lsda.sto3g.energy", "rks.pbe.sto3g.energy", "rks.pbesol.sto3g.energy", "rks.revpbe.sto3g.energy", "rks.rpbe.sto3g.energy", "rks.blyp.sto3g.energy", "rks.b3lyp.sto3g.energy", "rks.pbe0.sto3g.energy", "rks.camb3lyp.sto3g.energy", "rks.pbe.def2svp.energy", "rks.pbe0.def2svp.energy", "rks.camb3lyp.def2svp.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.rks.gradient"
+chapter = "dft.md"
+label = "RKS molecular gradient"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["rks.pbe.sto3g.forces", "rks.pbe0.sto3g.forces", "rks.camb3lyp.sto3g.forces", "rks.pbesol.sto3g.forces", "rks.revpbe.sto3g.forces", "rks.rpbe.sto3g.forces", "rks.pbe.def2svp.forces", "rks.pbe0.def2svp.forces", "rks.camb3lyp.def2svp.forces"]
+cpu_rows = ["rks.pbe.sto3g.forces", "rks.pbe0.sto3g.forces", "rks.camb3lyp.sto3g.forces", "rks.pbesol.sto3g.forces", "rks.revpbe.sto3g.forces", "rks.rpbe.sto3g.forces", "rks.pbe.def2svp.forces", "rks.pbe0.def2svp.forces", "rks.camb3lyp.def2svp.forces"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.uks.energy"
+chapter = "dft.md"
+label = "UKS molecular energy"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["uks.lsda.sto3g.energy", "uks.pbe.sto3g.energy", "uks.pbesol.sto3g.energy", "uks.revpbe.sto3g.energy", "uks.rpbe.sto3g.energy", "uks.pbe0.sto3g.energy", "uks.camb3lyp.sto3g.energy", "uks.pbe.def2svp.energy", "uks.pbe0.def2svp.energy", "uks.camb3lyp.def2svp.energy"]
+cpu_rows = ["uks.lsda.sto3g.energy", "uks.pbe.sto3g.energy", "uks.pbesol.sto3g.energy", "uks.revpbe.sto3g.energy", "uks.rpbe.sto3g.energy", "uks.pbe0.sto3g.energy", "uks.camb3lyp.sto3g.energy", "uks.pbe.def2svp.energy", "uks.pbe0.def2svp.energy", "uks.camb3lyp.def2svp.energy"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.uks.gradient"
+chapter = "dft.md"
+label = "UKS molecular gradient"
+scope = "STO-3G plus spherical def2-SVP for PBE/PBE0/standard CAM-B3LYP; explicit GGA-family, hybrid and full moving-grid force comparisons to live PySCF."
+rows = ["uks.lsda.sto3g.forces", "uks.pbe.sto3g.forces", "uks.pbesol.sto3g.forces", "uks.revpbe.sto3g.forces", "uks.rpbe.sto3g.forces", "uks.pbe0.sto3g.forces", "uks.camb3lyp.sto3g.forces", "uks.pbe.def2svp.forces", "uks.pbe0.def2svp.forces", "uks.camb3lyp.def2svp.forces"]
+cpu_rows = ["uks.lsda.sto3g.forces", "uks.pbe.sto3g.forces", "uks.pbesol.sto3g.forces", "uks.revpbe.sto3g.forces", "uks.rpbe.sto3g.forces", "uks.pbe0.sto3g.forces", "uks.camb3lyp.sto3g.forces", "uks.pbe.def2svp.forces", "uks.pbe0.def2svp.forces", "uks.camb3lyp.def2svp.forces"]
+cuda_rows = []
+cpu = "implemented"
+cuda = "not_implemented"
+reason = "Gaussian CUDA KS has no device method. PW/GPW evidence cannot substitute for molecular KS; measured results determine CPU acceptance."
+
+[[capabilities]]
+id = "dft.pw.periodic"
+chapter = "dft.md"
+label = "PW periodic energy, full forces and six-component stress"
+scope = "Gamma Si2 RKS and skew H3 UKS with Fermi–Dirac smearing, PBEsol/revPBE/RPBE, plus skew H2O with H GTH and O NC-UPF at fixed PBE occupations, against live QE 7.6."
+rows = ["pw.si2-rks.pbesol", "pw.si2-rks.revpbe", "pw.si2-rks.rpbe", "pw.h3-uks.pbesol", "pw.h3-uks.revpbe", "pw.h3-uks.rpbe", "pw.h2o-rks.pbe"]
+cuda_rows = ["pw.si2-rks.pbesol", "pw.si2-rks.revpbe", "pw.si2-rks.rpbe", "pw.h3-uks.pbesol", "pw.h3-uks.revpbe", "pw.h3-uks.rpbe", "pw.h2o-rks.pbe"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "CPU and CUDA public-method acceptance use the same inputs and original periodic tolerances."
+
+[[capabilities]]
+id = "dft.gpw.periodic"
+chapter = "dft.md"
+label = "GPW periodic energy, full forces and diagonal stress"
+scope = "Orthorhombic Gamma H2 RKS and H3 UKS, integer occupations and PBE-family XC against live CP2K 2026.2. H2 covers equivalent periodic images, a same-grid geometry change and three-level multigrid. Displaced diamond Si4 uses a full two-point mesh with single-grid and three-level multigrid on both backends. H3 UKS uses a full two-point mesh with single-grid and three-level multigrid on CPU."
+rows = ["gpw.h2-rks.pbesol", "gpw.h2-rks.revpbe", "gpw.h2-rks.rpbe", "gpw.h3-uks.pbe", "gpw.h3-uks.pbesol", "gpw.h3-uks.revpbe", "gpw.h3-uks.rpbe", "gpw.h2-rks-boundary.pbesol", "gpw.h2-rks-moved.pbesol", "gpw.h2-rks-multigrid.pbesol", "gpw.si4-rks-kpoints.pbe", "gpw.si4-rks-kpoints-multigrid.pbe", "gpw.h3-uks-kpoints.pbe", "gpw.h3-uks-kpoints-multigrid.pbe"]
+cuda_rows = ["gpw.h2-rks.pbesol", "gpw.h2-rks.revpbe", "gpw.h2-rks.rpbe", "gpw.h3-uks.pbe", "gpw.h3-uks.pbesol", "gpw.h3-uks.revpbe", "gpw.h3-uks.rpbe", "gpw.h2-rks-boundary.pbesol", "gpw.h2-rks-moved.pbesol", "gpw.h2-rks-multigrid.pbesol", "gpw.si4-rks-kpoints.pbe", "gpw.si4-rks-kpoints-multigrid.pbe", "gpw.h3-uks-kpoints.pbe"]
+cpu = "implemented"
+cuda = "implemented"
+reason = "CPU and CUDA public-method acceptance use the original periodic tolerances and three supported stress components."

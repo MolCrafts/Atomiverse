@@ -21,7 +21,7 @@ spin channel (`dfpt_q_spin_impl`).
 CP2K binary **not available**. Pins are literature-biased windows aligned
 with the restricted incommensurate twin (`dfpt-incommensurate-si`) plus
 measured ATV collinear-spin spectrum under the regression settings (see
-`regressions/response/dfpt-spin-incommensurate/REFERENCE.md`).
+`regressions/response/dfpt/REFERENCE.md`).
 `perf_exempt=true` until a fair CP2K DFPT wall is recorded.
 
 ## Cite

@@ -2,7 +2,7 @@
 ! CP2K Quickstep uses GTH-PADE + DZVP-GTH; Atomiverse PW uses ONCV UPF.
 ! Geometry matches the regression twin (a = 5.43 A, 2-atom fcc primitive).
 ! Use only for fair wall timing when a CP2K binary is available offline.
-! See regressions/pw/pw-lda-si/REFERENCE.md.
+! See regressions/pw/rks/REFERENCE.md.
 
 &GLOBAL
   PROJECT si_lda_wall

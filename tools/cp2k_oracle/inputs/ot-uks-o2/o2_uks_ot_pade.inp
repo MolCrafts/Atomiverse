@@ -1,5 +1,5 @@
 ! O2 triplet UKS + OT / PADE / DZVP-MOLOPT-GTH + GTH-PBE-q6 — Γ-only, MT
-! Twin for Atomiverse regressions/gpw/ot-uks-o2
+! Twin for Atomiverse regressions/gpw/orbital-transformation
 ! Geometry matches gpw-uks-o2-gamma (centered R=1.2075 Å)
 ! Valence: 12 e- (GTH-q6), multiplicity 3 → Nα=7, Nβ=5
 ! Cutoff 250 Ry — fair OT twin under ≤60 s ATV budget class

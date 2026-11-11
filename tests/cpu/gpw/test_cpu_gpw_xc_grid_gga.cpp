@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -10,7 +11,7 @@
 #include "atomiverse/cpu/gpw/internal/collocate.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid.h"
 #include "atomiverse/cpu/gpw/internal/xc_grid_gga.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 using ATV::cpu::gpw::make_uniform_grid;
 using ATV::cpu::gpw::UniformGrid;
@@ -42,11 +43,11 @@ TEST(GpwXcGGA, ConstantDensityLdaLimit) {
 
     XcOnGrid xc = xc_grid_pbe(grid, rho);
 
-    const ATV::cpu::scf::XCOutput ref = ATV::cpu::scf::evaluate_xc(
-        ATV::cpu::scf::XCType::PBE, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBE, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
     const double volume = cell[0] * cell[1] * cell[2];
-    EXPECT_NEAR(xc.e_xc, volume * rho0 * ref.exc,
-                1e-9 * std::abs(volume * rho0 * ref.exc));
+    EXPECT_NEAR(xc.e_xc, volume * ref.energy_density,
+                1e-9 * std::abs(volume * ref.energy_density));
     // grad = 0 -> potential is purely the local vrho.
     EXPECT_NEAR(xc.vxc_r[0], ref.vrho_alpha, 1e-9);
     EXPECT_NEAR(xc.vxc_r[grid.npts() / 2], ref.vrho_alpha, 1e-9);
@@ -64,11 +65,11 @@ TEST(GpwXcGGA, PBEsolConstantDensityMatchesPBE) {
     EXPECT_NEAR(sol.e_xc, pbe.e_xc, 1e-12 * std::max(1.0, std::abs(pbe.e_xc)));
     EXPECT_NEAR(sol.vxc_r[0], pbe.vxc_r[0], 1e-12);
 
-    const ATV::cpu::scf::XCOutput ref = ATV::cpu::scf::evaluate_xc(
-        ATV::cpu::scf::XCType::PBEsol, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::PBEsol, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
     const double volume = cell[0] * cell[1] * cell[2];
-    EXPECT_NEAR(sol.e_xc, volume * rho0 * ref.exc,
-                1e-9 * std::abs(volume * rho0 * ref.exc));
+    EXPECT_NEAR(sol.e_xc, volume * ref.energy_density,
+                1e-9 * std::abs(volume * ref.energy_density));
 }
 
 // BLYP at σ=0 must match evaluate_xc(BLYP) LDA limit (B88+LYP at zero grad).
@@ -80,11 +81,11 @@ TEST(GpwXcGGA, BLYPConstantDensityLdaLimit) {
     std::vector<double> rho(static_cast<std::size_t>(grid.npts()), rho0);
 
     XcOnGrid xc = xc_grid_blyp(grid, rho);
-    const ATV::cpu::scf::XCOutput ref = ATV::cpu::scf::evaluate_xc(
-        ATV::cpu::scf::XCType::BLYP, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::BLYP, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
     const double volume = cell[0] * cell[1] * cell[2];
-    EXPECT_NEAR(xc.e_xc, volume * rho0 * ref.exc,
-                1e-9 * std::abs(volume * rho0 * ref.exc));
+    EXPECT_NEAR(xc.e_xc, volume * ref.energy_density,
+                1e-9 * std::abs(volume * ref.energy_density));
     EXPECT_NEAR(xc.vxc_r[0], ref.vrho_alpha, 1e-9);
 }
 
@@ -116,11 +117,11 @@ TEST(GpwXcGGA, RevPBEConstantDensityMatchesPBE) {
     EXPECT_NEAR(rev.e_xc, pbe.e_xc, 1e-12 * std::max(1.0, std::abs(pbe.e_xc)));
     EXPECT_NEAR(rev.vxc_r[0], pbe.vxc_r[0], 1e-12);
 
-    const ATV::cpu::scf::XCOutput ref = ATV::cpu::scf::evaluate_xc(
-        ATV::cpu::scf::XCType::RevPBE, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::RevPBE, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
     const double volume = cell[0] * cell[1] * cell[2];
-    EXPECT_NEAR(rev.e_xc, volume * rho0 * ref.exc,
-                1e-9 * std::abs(volume * rho0 * ref.exc));
+    EXPECT_NEAR(rev.e_xc, volume * ref.energy_density,
+                1e-9 * std::abs(volume * ref.energy_density));
 }
 
 // Nonuniform density: revPBE and PBE must differ (κ activation gate).
@@ -151,11 +152,11 @@ TEST(GpwXcGGA, RPBEConstantDensityMatchesPBE) {
     EXPECT_NEAR(rpbe.e_xc, pbe.e_xc, 1e-12 * std::max(1.0, std::abs(pbe.e_xc)));
     EXPECT_NEAR(rpbe.vxc_r[0], pbe.vxc_r[0], 1e-12);
 
-    const ATV::cpu::scf::XCOutput ref = ATV::cpu::scf::evaluate_xc(
-        ATV::cpu::scf::XCType::RPBE, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::RPBE, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
     const double volume = cell[0] * cell[1] * cell[2];
-    EXPECT_NEAR(rpbe.e_xc, volume * rho0 * ref.exc,
-                1e-9 * std::abs(volume * rho0 * ref.exc));
+    EXPECT_NEAR(rpbe.e_xc, volume * ref.energy_density,
+                1e-9 * std::abs(volume * ref.energy_density));
 }
 
 // Nonuniform density: RPBE and PBE must differ (exponential F_x gate).
@@ -261,12 +262,89 @@ TEST(GpwXcGGA, PotentialIsFunctionalDerivative) {
         rp[g] = rho[g] + eps * bump[g];
         rm[g] = rho[g] - eps * bump[g];
     }
-    const double ep = xc_grid_pbe(grid, rp).e_xc;
-    const double em = xc_grid_pbe(grid, rm).e_xc;
+    const double ep =
+        ATV::cpu::gpw::xc_grid_gga(grid, rp, ATV::cpu::xc::XCType::PBE,
+                                   ATV::electronic::XcOrder::Energy)
+            .e_xc;
+    const double em =
+        ATV::cpu::gpw::xc_grid_gga(grid, rm, ATV::cpu::xc::XCType::PBE,
+                                   ATV::electronic::XcOrder::Energy)
+            .e_xc;
     const double fd = (ep - em) / (2.0 * eps);
 
     EXPECT_NEAR(fd, analytic, 1e-4 * std::max(1.0, std::abs(analytic)))
         << "fd=" << fd << " analytic=" << analytic;
+}
+
+TEST(GpwXcGGA, EnergyOrderConstantSpinDensityMatchesLibxc) {
+    UniformGrid grid;
+    for (int d = 0; d < 3; ++d) {
+        grid.n[d] = 8;
+        grid.L[d] = 8;
+    }
+    const std::vector<double> ra(static_cast<std::size_t>(grid.npts()), 0.12);
+    const std::vector<double> rb(ra.size(), 0.08);
+    // libxc 7.0.0 printed through PySCF 2.14.0 eval_xc('PBE', spin=1, deriv=1):
+    // rho_a=.12, rho_b=.08, sigma=0 => epsilon=-.49339204305519685 Ha.
+    constexpr double f_xc = -0.09867840861103938; // Ha/Bohr^3
+    using ATV::cpu::gpw::xc_grid_gga_spin;
+    using ATV::cpu::xc::XCType;
+    using ATV::electronic::XcOrder;
+    const auto energy =
+        xc_grid_gga_spin(grid, ra, rb, XCType::PBE, XcOrder::Energy);
+    const auto first =
+        xc_grid_gga_spin(grid, ra, rb, XCType::PBE, XcOrder::First);
+    EXPECT_NEAR(energy.e_xc, 512 * f_xc, 1e-11);
+    EXPECT_DOUBLE_EQ(energy.e_xc, first.e_xc);
+    EXPECT_TRUE(energy.vxc_a.empty());
+    EXPECT_TRUE(energy.vxc_b.empty());
+    EXPECT_EQ(first.vxc_a.size(), ra.size());
+    EXPECT_THROW(xc_grid_gga_spin(grid, ra, rb, XCType::PBE, XcOrder::Second),
+                 std::invalid_argument);
+}
+
+TEST(GpwXcGGA, EnergyOrderSpinPotentialIsFunctionalDerivative) {
+    UniformGrid grid;
+    for (int d = 0; d < 3; ++d) {
+        grid.n[d] = 8;
+        grid.L[d] = 8;
+    }
+    const auto n = static_cast<std::size_t>(grid.npts());
+    std::vector<double> ra(n), rb(n), ba(n), bb(n);
+    for (std::size_t g = 0; g < n; ++g) {
+        double r[3];
+        grid.point(static_cast<long>(g), r);
+        const double ca = std::cos(2 * M_PI * r[0] / grid.L[0]);
+        const double cb = std::cos(2 * M_PI * r[1] / grid.L[1]);
+        ra[g] = 0.12 + 0.02 * ca;
+        rb[g] = 0.08 + 0.015 * cb;
+        ba[g] = 0.01 * ca;
+        bb[g] = 0.01 * cb;
+    }
+    using ATV::cpu::gpw::xc_grid_gga_spin;
+    using ATV::cpu::xc::XCType;
+    using ATV::electronic::XcOrder;
+    const auto first =
+        xc_grid_gga_spin(grid, ra, rb, XCType::PBE, XcOrder::First);
+    const auto energy =
+        xc_grid_gga_spin(grid, ra, rb, XCType::PBE, XcOrder::Energy);
+    EXPECT_DOUBLE_EQ(first.e_xc, energy.e_xc);
+    double analytic = 0;
+    std::vector<double> ap(n), am(n), bp(n), bm(n);
+    constexpr double h = 1e-4;
+    for (std::size_t g = 0; g < n; ++g) {
+        analytic +=
+            grid.weight() * (first.vxc_a[g] * ba[g] + first.vxc_b[g] * bb[g]);
+        ap[g] = ra[g] + h * ba[g];
+        am[g] = ra[g] - h * ba[g];
+        bp[g] = rb[g] + h * bb[g];
+        bm[g] = rb[g] - h * bb[g];
+    }
+    const double ep =
+        xc_grid_gga_spin(grid, ap, bp, XCType::PBE, XcOrder::Energy).e_xc;
+    const double em =
+        xc_grid_gga_spin(grid, am, bm, XCType::PBE, XcOrder::Energy).e_xc;
+    EXPECT_NEAR((ep - em) / (2 * h), analytic, 1e-7);
 }
 
 // OptB88VdW at σ=0 matches evaluate_xc (optB88-x + PW92).
@@ -278,11 +356,11 @@ TEST(GpwXcGGA, OptB88VdWConstantDensityLdaLimit) {
     std::vector<double> rho(static_cast<std::size_t>(grid.npts()), rho0);
 
     XcOnGrid xc = xc_grid_optb88_vdw(grid, rho);
-    const ATV::cpu::scf::XCOutput ref = ATV::cpu::scf::evaluate_xc(
-        ATV::cpu::scf::XCType::OptB88VdW, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
+    const ATV::cpu::xc::XCOutput ref = ATV::cpu::xc::evaluate_xc(
+        ATV::cpu::xc::XCType::OptB88VdW, 0.5 * rho0, 0.5 * rho0, 0, 0, 0);
     const double volume = cell[0] * cell[1] * cell[2];
-    EXPECT_NEAR(xc.e_xc, volume * rho0 * ref.exc,
-                1e-9 * std::abs(volume * rho0 * ref.exc));
+    EXPECT_NEAR(xc.e_xc, volume * ref.energy_density,
+                1e-9 * std::abs(volume * ref.energy_density));
     EXPECT_NEAR(xc.vxc_r[0], ref.vrho_alpha, 1e-9);
 }
 

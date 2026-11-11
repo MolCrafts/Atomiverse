@@ -5,31 +5,30 @@
 /// All method bodies are defined inline (template class). Explicit
 /// instantiations live in src/cpu/driver/driver.cpp and src/cuda/driver/driver.cu.
 ///
-/// Plan slots hold a Component*. A nested CPU loop is wrapped as
-/// `cpu::NestedLoopAdapter` at `on(phase).add` / `add_ref`.
+/// Plan slots hold a Component*. A nested loop that is not already a
+/// Component is mounted by `on(phase).add` / `add_ref` as a registration-
+/// private slot. That slot is not a named public type. `Driver` does not
+/// inherit `Component`.
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "atomiverse/core/backend_traits.h"
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/capture_buffer.h"
 #include "atomiverse/core/device.h"
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/driver/driver_node.h"
-#include "atomiverse/cpu/driver/nested_loop_adapter.h"
-#include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cuda/device/timer.h"
+#include "atomiverse/core/unit_system.h"
 
 namespace ATV {
-
-/// @brief GPU profiler type held by `Driver` (CUDA-free PIMPL facade).
-using Timer = cuda::Timer;
 
 /// @brief Instance identity of a mounted plugin (pointer, not type or name).
 struct PluginIdentity {
@@ -40,6 +39,7 @@ struct PluginIdentity {
 };
 
 namespace detail {
+
 /// @brief Unresolved binding collected before `Driver::build()`.
 template <typename Component>
 struct PendingBinding {
@@ -65,6 +65,7 @@ class PhaseBuilder {
                       && !std::is_lvalue_reference_v<Comp>,
                   int> = 0>
     PhaseBuilder& add(Comp&& comp, int order = 0) {
+        require_mutable_();
         using C = std::remove_reference_t<Comp>;
         auto ptr = std::make_unique<C>(std::forward<Comp>(comp));
         auto* raw = ptr.get();
@@ -77,6 +78,7 @@ class PhaseBuilder {
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     PhaseBuilder& add(std::unique_ptr<Comp> comp, int order = 0) {
+        require_mutable_();
         if (!comp)
             throw std::invalid_argument("PhaseBuilder::add: null component");
         Component* raw = comp.get();
@@ -87,60 +89,50 @@ class PhaseBuilder {
 
     /// @brief Borrow a component whose lifetime is owned by the caller.
     ///
+    /// A continuable run stays live between `run()` calls, and the driver's
+    /// destructor ends it by calling `destroy()` on every built component,
+    /// borrowed ones included. A borrowed component may still be destroyed
+    /// first: the CPU Runtime then releases it without calling into it (its
+    /// own destructor has released its resources).
+    ///
     /// Prefer Component binding when the type is dual-identity
     /// (Component + cpu::DriverNode), e.g. transitional MeanFieldMethod.
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     PhaseBuilder& add_ref(Comp& comp, int order = 0) {
+        require_mutable_();
         bindings_->push_back({ATV::slot_of(phase_), order, &comp});
         return *this;
     }
 
-    /// @brief Own a nested driver on this phase (CPU only).
-    ///
-    /// Wraps `child` in `cpu::NestedLoopAdapter` (owned by this driver).
-    /// `@param order` Binding order within the phase (lower runs earlier).
-    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
-    /// `child.default_budget()`. Dual-identity Component+DriverNode types
-    /// keep the Component overload.
+    /// @brief Register an owned nested loop using the backend's node protocol.
     template <typename Nested,
               std::enable_if_t<
-                  std::is_same_v<DeviceTag, cpu::device_tag>
-                      && std::is_base_of_v<cpu::DriverNode,
-                                           std::remove_reference_t<Nested>>
+                  std::is_base_of_v<
+                      typename backend_traits<DeviceTag>::driver_node_type,
+                      std::remove_reference_t<Nested>>
                       && !std::is_base_of_v<Component,
                                             std::remove_reference_t<Nested>>
                       && !std::is_lvalue_reference_v<Nested>,
                   int> = 0>
     PhaseBuilder& add(Nested&& child, int order = 0, int budget = -1) {
+        require_mutable_();
         using N = std::remove_reference_t<Nested>;
-        auto node = std::make_unique<N>(std::forward<Nested>(child));
-        auto adapter =
-            std::make_unique<cpu::NestedLoopAdapter>(std::move(node), budget);
-        Component* raw = adapter.get();
-        owned_->push_back(std::move(adapter));
-        bindings_->push_back({ATV::slot_of(phase_), order, raw});
-        return *this;
+        auto owned = std::make_unique<N>(std::forward<Nested>(child));
+        N* node = owned.get();
+        return mount_nested(std::move(owned), node, order, budget);
     }
 
-    /// @brief Borrow a nested driver on this phase (CPU only).
-    ///
-    /// The adapter is owned by this driver; `child` stays with the caller
-    /// so `child.converged()` remains readable after `run`.
-    /// `@param order` Binding order within the phase (lower runs earlier).
-    /// `@param budget` Dimensionless inner-loop iterations; `< 0` uses
-    /// `child.default_budget()`.
-    template <typename Nested,
-              std::enable_if_t<std::is_same_v<DeviceTag, cpu::device_tag>
-                                   && std::is_base_of_v<cpu::DriverNode, Nested>
-                                   && !std::is_base_of_v<Component, Nested>,
-                               int> = 0>
+    /// @brief Borrow a nested loop; the caller owns its lifetime.
+    template <
+        typename Nested,
+        std::enable_if_t<
+            std::is_base_of_v<
+                typename backend_traits<DeviceTag>::driver_node_type, Nested>
+                && !std::is_base_of_v<Component, Nested>,
+            int> = 0>
     PhaseBuilder& add_ref(Nested& child, int order = 0, int budget = -1) {
-        auto adapter = std::make_unique<cpu::NestedLoopAdapter>(child, budget);
-        Component* raw = adapter.get();
-        owned_->push_back(std::move(adapter));
-        bindings_->push_back({ATV::slot_of(phase_), order, raw});
-        return *this;
+        return mount_nested(std::unique_ptr<Nested>{}, &child, order, budget);
     }
 
     /// Implicit lvalue borrowing is forbidden. Use `add_ref(comp)`.
@@ -151,13 +143,33 @@ class PhaseBuilder {
     template <typename PE, typename DT>
     friend class Driver;
     PhaseBuilder(std::vector<detail::PendingBinding<Component>>* b,
-                 std::vector<std::unique_ptr<Component>>* o,
-                 std::vector<std::unique_ptr<cpu::DriverNode>>* d, PhaseEnum p)
-        : bindings_(b), owned_(o), owned_drivers_(d), phase_(p) {}
+                 std::vector<std::unique_ptr<Component>>* o, PhaseEnum p,
+                 const bool* const* lock)
+        : bindings_(b), owned_(o), phase_(p), mutation_lock_(lock) {}
     std::vector<detail::PendingBinding<Component>>* bindings_;
     std::vector<std::unique_ptr<Component>>* owned_;
-    std::vector<std::unique_ptr<cpu::DriverNode>>* owned_drivers_;
     PhaseEnum phase_;
+    const bool* const* mutation_lock_;
+    void require_mutable_() const {
+        if (mutation_lock_ && *mutation_lock_ && **mutation_lock_)
+            throw std::logic_error(
+                "cannot change driver bindings during dispatch");
+    }
+
+    template <typename Node>
+    PhaseBuilder& mount_nested(std::unique_ptr<Node> owned, Node* node,
+                               int order, int budget) {
+        require_mutable_();
+        const int cap = budget < 0 ? node->default_budget() : budget;
+        const auto [energy, force] =
+            backend_traits<DeviceTag>::node_outputs(*node);
+        auto slot = backend_traits<DeviceTag>::template nested_slot<Node>(
+            std::move(owned), node, cap, energy, force);
+        Component* raw = slot.get();
+        owned_->push_back(std::move(slot));
+        bindings_->push_back({ATV::slot_of(phase_), order, raw});
+        return *this;
+    }
 };
 
 /// @brief Simulation driver -- user-facing facade.
@@ -170,31 +182,97 @@ class Driver {
     using traits = backend_traits<DeviceTag>;
     using Component = typename traits::component_type;
     using BackendT = typename traits::backend_type;
+    using frame_type = typename traits::frame_type;
+    using Timer = typename traits::timer_type;
 
   public:
     Driver() = default;
-    ~Driver() { shutdown(); }
+    virtual ~Driver() { shutdown(); }
     Driver(const Driver&) = delete;
     Driver& operator=(const Driver&) = delete;
 
-    Driver(Driver&& o) noexcept
-        : pending_(std::move(o.pending_)),
-          owned_components_(std::move(o.owned_components_)),
-          owned_drivers_(std::move(o.owned_drivers_)),
-          plan_(std::move(o.plan_)), backend_(std::move(o.backend_)),
-          timer_(std::move(o.timer_)) {}
+    Driver(Driver&& o) { *this = std::move(o); }
 
-    Driver& operator=(Driver&& o) noexcept {
+    Driver& operator=(Driver&& o) {
         if (this != &o) {
+            if (mutation_lock_ || o.mutation_lock_)
+                throw std::logic_error(
+                    "cannot move a driver bound to a Runtime");
             shutdown();
             pending_ = std::move(o.pending_);
             owned_components_ = std::move(o.owned_components_);
-            owned_drivers_ = std::move(o.owned_drivers_);
             plan_ = std::move(o.plan_);
             backend_ = std::move(o.backend_);
             timer_ = std::move(o.timer_);
+            capture_buffer_bytes_ = o.capture_buffer_bytes_;
+            units_ = o.units_;
+            units_bound_ = o.units_bound_;
+            units_explicit_ = o.units_explicit_;
         }
         return *this;
+    }
+
+    /// @brief Byte budget of this driver's shared asynchronous capture
+    ///        buffer (core/capture_buffer.h) — the one buffer every
+    ///        asynchronous recorder and online-analysis observer of the
+    ///        driver reads its steps from.
+    ///
+    /// Bounds the bytes of every captured frame in flight across all of the
+    /// driver's consumers; allocated once when a run starts (only if an
+    /// asynchronous consumer is mounted). When it is full the run waits for
+    /// the consumers, never drops a step. Default `ATV_CAPTURE_BUFFER_BYTES`
+    /// (CMake, 256 MiB). A budget smaller than one captured frame is refused
+    /// with `std::invalid_argument` when the run starts. Set before the
+    /// first `run()`.
+    /// @param bytes Budget [bytes; >= 1].
+    /// @throws std::invalid_argument on 0.
+    void set_capture_buffer_bytes(std::uint64_t bytes) {
+        require_mutable_();
+        if (bytes == 0)
+            throw std::invalid_argument(
+                "capture_buffer_bytes must be >= 1 byte, got 0");
+        capture_buffer_bytes_ = bytes;
+    }
+    /// @brief LAMMPS `units <style>` for this run (default lj).
+    ///
+    /// Selects the factor row every classical component multiplies
+    /// (`boltz`, `mvv2e`, `ftm2v`, `qqrd2e`, `nktv2p`, ...), and with it the
+    /// unit of every number the run takes and reports: parameters, `dt`,
+    /// temperatures, pressures and the frame's positions, masses, charges
+    /// and velocities are all in that style, as in LAMMPS. Nothing is
+    /// converted. Like LAMMPS, which refuses `units` once the box exists,
+    /// the style is fixed once this driver has bound a system: set it before
+    /// the first `run()`. A nested driver runs in its parent's style.
+    /// @param style LAMMPS name: lj, real, metal, si, cgs, electron, micro,
+    ///        nano.
+    /// @throws std::invalid_argument on an unknown style.
+    /// @throws std::logic_error after a run bound the system in another
+    ///         style.
+    void set_units(std::string_view style) {
+        require_mutable_();
+        const units::UnitSystem next = units::from_style(style);
+        if (units_bound_ && next.style != units_.style)
+            throw std::logic_error(
+                std::string("units: the run already bound its system in '")
+                + units_.name() + "'; the style cannot change to '"
+                + next.name()
+                + "' (LAMMPS refuses `units` after the box exists). Use a "
+                  "new driver.");
+        units_ = next;
+        units_explicit_ = true;
+    }
+    /// @brief The run's LAMMPS `units` style (default lj).
+    const units::UnitSystem& units() const noexcept { return units_; }
+
+    /// @brief The capture buffer budget [bytes].
+    std::uint64_t capture_buffer_bytes() const noexcept {
+        return capture_buffer_bytes_;
+    }
+    /// @brief Accounting of the capture buffer (budget, frame size, frames
+    ///        captured, peak occupancy, blocked episodes and seconds) since
+    ///        the driver's current backend started; zeros before a run.
+    CaptureStats capture_stats() const {
+        return backend_ ? backend_->capture().stats() : CaptureStats{};
     }
 
     /// @brief Begin explicit phase binding — the only public Plan-registration
@@ -207,7 +285,7 @@ class Driver {
     /// @return A `PhaseBuilder` bound to that phase.
     PhaseBuilder<PhaseEnum, DeviceTag> on(PhaseEnum phase) {
         return PhaseBuilder<PhaseEnum, DeviceTag>(&pending_, &owned_components_,
-                                                  &owned_drivers_, phase);
+                                                  phase, &mutation_lock_);
     }
 
     /// @brief Read-only access to the compiled Plan (after `build()`).
@@ -218,6 +296,7 @@ class Driver {
     /// `pending_` stays populated so a second `build()` / `compile()` can
     /// rewrite `plan_` without reconstructing the driver.
     void build() {
+        require_mutable_();
         PlanBuilder<Component> builder;
         for (auto& pb : pending_)
             builder.add({pb.phase, pb.order, pb.component});
@@ -239,11 +318,6 @@ class Driver {
         return false;
     }
 
-    /// @brief Run the full simulation lifecycle.
-    /// @param frame Host-side frame used as input and final output.
-    /// @param n_steps Number of time steps or SCF iterations to execute.
-    void run(cpu::Frame& frame, int n_steps);
-
     /// @brief Enable per-component timing (call before run).
     void enable_timing();
 
@@ -252,9 +326,15 @@ class Driver {
     std::string summary() const;
 
     /// @brief Shut down Backend and release all resources.
-    void shutdown();
+    virtual void shutdown();
 
   protected:
+    /// @brief Backend execution primitive; public workflow entry points belong
+    /// to the concrete backend driver so lifecycle and termination cannot be bypassed.
+    /// @param frame Host-side frame used as input and final output.
+    /// @param n_steps Number of steps to dispatch.
+    void run(frame_type& frame, int n_steps);
+
     // Internals are protected (not private) so the backend loop node
     // (cpu::Driver / cuda::Driver) can drive the per-iteration loop itself.
 
@@ -268,10 +348,11 @@ class Driver {
               std::enable_if_t<
                   std::is_base_of_v<Component, std::remove_reference_t<Comp>>
                       && !std::is_lvalue_reference_v<Comp>
-                      && !std::is_base_of_v<cpu::DriverNode,
+                      && !std::is_base_of_v<typename traits::driver_node_type,
                                             std::remove_reference_t<Comp>>,
                   int> = 0>
     void bind_defaults(Comp&& comp) {
+        require_mutable_();
         using C = std::remove_reference_t<Comp>;
         bind_defaults(std::make_unique<C>(std::forward<Comp>(comp)));
     }
@@ -280,6 +361,7 @@ class Driver {
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>, int> = 0>
     void bind_defaults(std::unique_ptr<Comp> comp) {
+        require_mutable_();
         if (!comp)
             throw std::invalid_argument(
                 "Driver::bind_defaults: null component");
@@ -298,9 +380,11 @@ class Driver {
     /// @brief Borrow a component via its `default_bindings()`.
     template <typename Comp,
               std::enable_if_t<std::is_base_of_v<Component, Comp>
-                                   && !std::is_base_of_v<cpu::DriverNode, Comp>,
+                                   && !std::is_base_of_v<
+                                       typename traits::driver_node_type, Comp>,
                                int> = 0>
     void bind_defaults_ref(Comp& comp) {
+        require_mutable_();
         auto bindings = comp.default_bindings();
         if (bindings.empty())
             throw std::runtime_error(
@@ -311,12 +395,80 @@ class Driver {
             pending_.push_back({db.phase, db.order, &comp});
     }
 
+    /// Unmount an instance and all of its bindings, with backend resource
+    /// release before ownership is erased. Repeated bindings are not namesakes.
+    template <typename Release, typename Extra = std::vector<Component*>>
+    void unmount_(std::string_view name, bool launching, Release&& release,
+                  const Extra& extra = {}) {
+        if (launching)
+            throw std::runtime_error(
+                "unfix: cannot unfix from inside launch(). Unfix between "
+                "steps or run() chunks.");
+        Component* found = nullptr;
+        std::string mounted;
+        auto inspect = [&](Component* component) {
+            if (!component)
+                return;
+            if (!mounted.empty())
+                mounted += ", ";
+            mounted += component->name();
+            if (component->name() != name)
+                return;
+            if (found && found != component)
+                throw std::runtime_error(
+                    "unfix: name '" + std::string(name)
+                    + "' is not unique. Give plugins distinct name() values.");
+            found = component;
+        };
+        for (const auto& binding : pending_)
+            inspect(binding.component);
+        for (auto* component : extra)
+            inspect(component);
+        if (!found)
+            throw std::runtime_error(
+                "unfix: no plugin named '" + std::string(name) + "'. mounted: ["
+                + mounted + "]. Remount with on(phase).add / set_evaluator.");
+        release(found);
+        std::erase_if(pending_, [found](const auto& binding) {
+            return binding.component == found;
+        });
+        std::erase_if(owned_components_, [found](const auto& component) {
+            return component.get() == found;
+        });
+    }
+
+    const bool* mutation_lock_ = nullptr;
+    void require_mutable_() const {
+        if (mutation_lock_ && *mutation_lock_)
+            throw std::logic_error(
+                "cannot change driver bindings during dispatch");
+    }
+
     std::vector<detail::PendingBinding<Component>> pending_;
     std::vector<std::unique_ptr<Component>> owned_components_;
-    std::vector<std::unique_ptr<cpu::DriverNode>> owned_drivers_;
     Plan<Component> plan_;
     std::unique_ptr<BackendT> backend_;
     std::unique_ptr<Timer> timer_;
+    std::uint64_t capture_buffer_bytes_ = kCaptureBufferBytes;
+    /// The run's unit style, published on the Context by `setup_pass`.
+    units::UnitSystem units_ = units::UnitSystem::lj();
+    /// True once a run published `units_` with a bound system.
+    bool units_bound_ = false;
+    /// True once `set_units` chose the style (a nested driver must agree
+    /// with its parent's run).
+    bool units_explicit_ = false;
+
+    /// @brief A nested driver runs in its parent's style (one Context).
+    /// @throws std::invalid_argument when this driver chose another style.
+    void adopt_parent_units_(const units::UnitSystem& parent) {
+        if (units_explicit_ && units_.style != parent.style)
+            throw std::invalid_argument(
+                std::string("units: a nested driver set to '") + units_.name()
+                + "' cannot run inside a run in '" + parent.name()
+                + "'; one run has one units style");
+        units_ = parent;
+        units_bound_ = true;
+    }
 
   private:
     /// @brief Registration-time gate: reject default bindings built from

@@ -2,8 +2,13 @@
 /// @brief Constant-velocity SMD / LAMMPS-like `fix move` (linear foothold).
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
+#include <array>
 #include <string>
-#include <vector>
+#include <unordered_map>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
@@ -21,8 +26,18 @@ namespace md {
 /// Also zeros force on the group so NVE does not double-count (v fixed).
 ///
 /// Parameters are ctor args / members — no Config bag.
-class FixMove : public cpu::Component {
+class FixMove : public cpu::Component, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "FixMove: timestep must be finite and positive");
+        dt = timestep;
+    }
+
     /// @param vx Velocity x [Å/fs]
     /// @param vy Velocity y [Å/fs]
     /// @param vz Velocity z [Å/fs]
@@ -35,6 +50,9 @@ class FixMove : public cpu::Component {
     int type_id = 0;
     double dt = 0.001; ///< [fs]
 
+    /// @brief Origins are local component state; spatial migration is unsupported.
+    bool requires_full_frame() const override { return true; }
+
     std::string name() const override { return "fix_move"; }
 
     std::vector<DefaultBinding> default_bindings() const override {
@@ -43,6 +61,7 @@ class FixMove : public cpu::Component {
     }
 
     void build(const BuildContext& ctx) override;
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext&) override;
 
@@ -50,9 +69,7 @@ class FixMove : public cpu::Component {
     double last_z() const { return last_z_; }
 
   private:
-    std::vector<int> atoms_;
-    std::vector<double> x0_, y0_, z0_;
-    int step0_ = 0;
+    std::unordered_map<TagInt, std::array<double, 3>> origins_;
     bool origin_set_ = false;
     double last_z_ = 0.0;
 };

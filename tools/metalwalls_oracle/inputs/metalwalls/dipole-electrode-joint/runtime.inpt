@@ -1,4 +1,4 @@
-# MetalWalls twin of the Atomiverse regression regressions/md/dipole-electrode-joint
+# MetalWalls twin of the Atomiverse regression regressions/md/constant-potential
 # ---------------------------------------------------------------------------------
 # Same geometry / species / charges / masses / eta / box / Psi as
 # reg_dipole-electrode-joint.cpp, converted ANGSTROM/eV/V -> BOHR/Ha/(Ha/e)

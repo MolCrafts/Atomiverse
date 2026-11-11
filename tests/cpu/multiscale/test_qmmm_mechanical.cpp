@@ -16,24 +16,25 @@ using namespace ATV;
 
 namespace {
 
-void insert_qm_z(cpu::Frame& f) {
+void insert_qm_mask(cpu::Frame& f) {
     f.blocks.at("atoms").insert(
-        "qm_z",
-        cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
-                        kDynamicFieldId});
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
 }
 
 } // namespace
 
 TEST(QmmmMechanical, RequiresEngine) {
     cpu::Frame f(2);
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
     f.span(kAtom_x)[1] = 0.74;
     f.box = cpu::Box::cubic(20);
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
     cpu::QmmmMechanical m{{{1, 1, 0.01, 3.4}}, 10.0};
     cpu::Context ctx;
     EXPECT_THROW(m.build({ctx, f}), std::runtime_error);
@@ -44,8 +45,11 @@ TEST(QmmmMechanical, H2PlusArWithDftb2) {
     f.span(kAtom_x)[0] = 0;
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 5.0;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     f.span(kAtom_type)[2] = 18;
     f.span(kAtom_tag)[0] = 1;
     f.span(kAtom_tag)[1] = 2;
@@ -55,15 +59,15 @@ TEST(QmmmMechanical, H2PlusArWithDftb2) {
     f.span(kAtom_mass)[2] = 40;
     f.box = cpu::Box::cubic(30);
     f.meta.get(kEnergy) = 0;
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
 
     cpu::Context ctx;
     cpu::QmmmMechanical qmmm{{{1, 1, 0.01, 3.4}, {18, 18, 0.01, 3.4}}, 10.0};
-    cpu::semiempirical::DFTB2 dftb;
-    dftb.with_forces = false;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
+
     qmmm.set_engine(std::move(dftb));
     qmmm.build({ctx, f});
     cpu::LaunchContext lc{ctx, f, 0, 0};
@@ -81,8 +85,11 @@ TEST(QmmmMechanical, ClassicalCoulombClosedForm) {
     cpu::Frame f(3);
     f.span(kAtom_x)[1] = 0.74;
     f.span(kAtom_x)[2] = 2.0;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[1] = 1;
     f.span(kAtom_type)[1] = 1;
+    f.span(kAtom_atomic_number)[2] = 18;
     f.span(kAtom_type)[2] = 18;
     f.span(kAtom_charge)[0] = 1.0;
     f.span(kAtom_charge)[1] = 0.0;
@@ -91,14 +98,14 @@ TEST(QmmmMechanical, ClassicalCoulombClosedForm) {
     f.span(kAtom_tag)[1] = 2;
     f.span(kAtom_tag)[2] = 3;
     f.box = cpu::Box::cubic(30);
-    insert_qm_z(f);
-    f.span(cpu::kAtomQmZ)[0] = 1;
-    f.span(cpu::kAtomQmZ)[1] = 1;
-    f.span(cpu::kAtomQmZ)[2] = 0;
+    insert_qm_mask(f);
+    f.span(cpu::kAtomQm)[0] = 1;
+    f.span(cpu::kAtomQm)[1] = 1;
+    f.span(cpu::kAtomQm)[2] = 0;
 
     cpu::QmmmMechanical q2{{{1, 1, 0.0, 3.4}, {18, 18, 0.0, 3.4}}, 10.0};
-    cpu::semiempirical::DFTB2 dftb;
-    dftb.with_forces = false;
+    cpu::semiempirical::DFTB2 dftb{cpu::semiempirical::DftbSkSet::MioSketch};
+
     q2.set_engine(std::move(dftb));
     cpu::Context ctx;
     q2.build({ctx, f});
@@ -107,6 +114,6 @@ TEST(QmmmMechanical, ClassicalCoulombClosedForm) {
     f.meta.get(kEnergy) = 0;
     q2.launch(lc);
     // only H0–MM at r=2: ke * 1 * (-1) / 2
-    const double want = units::coulomb * (1.0) * (-1.0) / 2.0;
+    const double want = units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0) / 2.0;
     EXPECT_NEAR(q2.last_coul_energy(), want, 1e-12);
 }

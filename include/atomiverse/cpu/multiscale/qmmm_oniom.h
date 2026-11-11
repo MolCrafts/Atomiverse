@@ -7,10 +7,10 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/multiscale/internal/classical_nonbonded.h"
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
-#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 namespace ATV {
 namespace cpu {
@@ -23,7 +23,7 @@ namespace cpu {
 ///     - E_{\mathrm{low}}(\mathrm{model})
 /// \f]
 ///
-/// - **model** — QM atoms from Frame `kAtomQmZ` (high also gets topology-derived
+/// - **model** — QM atoms from Frame `kAtomQm` (high also gets topology-derived
 ///   link H via `QmSubsystem`).
 /// - **high** — any vacuum `QmEngine` (`set_engine`).
 /// - **low** — classical nonbonded (LJ table + optional Coulomb) on the full
@@ -37,6 +37,7 @@ namespace cpu {
 /// environment). Svensson et al., *J. Phys. Chem.* **100**, 19357 (1996).
 class QmmmOniom : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param low_lj Low-level LJ diagonals/pairs (Lorentz–Berthelot fill).
     /// @param cutoff Low-level nonbonded cutoff [Å].
     /// @param with_coulomb Include classical Coulomb among low pairs.

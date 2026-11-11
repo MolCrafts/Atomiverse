@@ -186,11 +186,11 @@ struct PrimRef {
 ///        / integrate iterates tasks; monoms stay the expansion of one
 ///        geometry batch (shell-prim pair × angular products × image).
 struct CollintTask {
-    int beg = 0; ///< inclusive start index into `by_level[l]`.
-    int end = 0; ///< exclusive end index into `by_level[l]`.
-    int lpx = 0; ///< max monom (la_x + lb_x) in the task.
-    int lpy = 0; ///< max monom (la_y + lb_y).
-    int lpz = 0; ///< max monom (la_z + lb_z).
+    int beg = 0;  ///< inclusive start index into `by_level[l]`.
+    int end = 0;  ///< exclusive end index into `by_level[l]`.
+    int lpx = 0;  ///< max monom (la_x + lb_x) in the task.
+    int lpy = 0;  ///< max monom (la_y + lb_y).
+    int lpz = 0;  ///< max monom (la_z + lb_z).
     int Ltot = 0; ///< max |la|+|lb| over monoms (window / radius).
     /// max_i maxc(ua)·maxc(ub)·|k| — geometry magnitude for integrate screen.
     double geom_mag = 0.0;
@@ -262,6 +262,27 @@ std::vector<double> integrate_products(
     const std::vector<PrimContrib>& contribs, int nb,
     const std::vector<double>& V_level, double eps);
 
+namespace internal {
+/// @brief Nuclear-center gradient of the potential energy from product density.
+/// @param mg Product grid hierarchy. @param products Geometry-fixed products.
+/// @param nb AO count. @param P Symmetric row-major density matrix.
+/// @param potential Potential on the finest grid [Hartree].
+/// @param basis_atoms Nuclear owner of each AO. @param n_atoms Nuclei count.
+/// @param eps Gaussian-tail screening. @return Center gradients [Ha/Bohr].
+std::vector<std::array<double, 3>> multigrid_density_center_gradient(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<double>& P, const std::vector<double>& potential,
+    const std::vector<int>& basis_atoms, int n_atoms, double eps);
+
+/// Same center derivative with D(t) from Hermitian Bloch densities.
+/// The image-cell relation is D(-t) = D(t)^T.
+std::vector<std::array<double, 3>> multigrid_density_center_gradient_cells(
+    const MultiGrid& mg, const ProductSet& products, int nb,
+    const std::vector<std::vector<double>>& D,
+    const std::vector<double>& potential, const std::vector<int>& basis_atoms,
+    int n_atoms, double eps);
+} // namespace internal
+
 /// @brief `collocate_products` with a per-image-cell density-matrix stack —
 ///        the Bloch-sampled product collocation. Each product weighs by
 ///        `D[tcell][μ·nb+ν]` instead of one shared `P`: for k-point sampling
@@ -313,9 +334,10 @@ std::vector<double> multigrid_collocate_rho(const MultiGrid& mg,
 /// @brief Fine-grid density from a Bloch D(t) stack (multi-k MAIN path).
 /// @param D One row-major nb×nb real matrix per `products.cells` entry.
 /// @return Total density on the finest level.
-std::vector<double> multigrid_collocate_rho_cells(
-    const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<std::vector<double>>& D, double eps);
+std::vector<double>
+multigrid_collocate_rho_cells(const MultiGrid& mg, const ProductSet& products,
+                              int nb, const std::vector<std::vector<double>>& D,
+                              double eps);
 
 /// @brief Integrate fine V_eff into the Γ KS matrix contribution — multi-level
 ///        spectral restrict + product integrate (exact adjoint of
@@ -330,9 +352,10 @@ std::vector<double> multigrid_integrate_veff(const MultiGrid& mg,
 /// @brief Integrate fine V_eff into the per-image-cell real KS stack (multi-k
 ///        MAIN path) — exact adjoint of `multigrid_collocate_rho_cells`.
 /// @return One row-major nb×nb real matrix per `products.cells` entry.
-std::vector<std::vector<double>> multigrid_integrate_veff_cells(
-    const MultiGrid& mg, const ProductSet& products, int nb,
-    const std::vector<double>& veff, double eps);
+std::vector<std::vector<double>>
+multigrid_integrate_veff_cells(const MultiGrid& mg, const ProductSet& products,
+                               int nb, const std::vector<double>& veff,
+                               double eps);
 
 } // namespace gpw
 } // namespace cpu

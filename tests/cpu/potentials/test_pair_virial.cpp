@@ -38,13 +38,17 @@
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/gaussian_charge.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 #include "atomiverse/cpu/potentials/pair_buck.h"
+#include "atomiverse/cpu/potentials/pair_coul_cut.h"
+#include "atomiverse/cpu/potentials/pair_coul_soft.h"
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 #include "atomiverse/cpu/potentials/pair_gaussian_coul.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_tip4p_cut.h"
+#include "atomiverse/cpu/potentials/pair_lj_soft.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_wca.h"
 #include "atomiverse/cpu/potentials/pair_yukawa.h"
@@ -53,9 +57,9 @@ using namespace ATV;
 
 namespace {
 
-constexpr int kN = 24;      ///< ≥ 8 neighbours for the low rows ⇒ the xsimd
-                            ///< ket loop runs (W = 8 on AVX-512) plus a tail.
-constexpr double kBox = 40.0;  ///< [Å] — cutoff stays < L/2.
+constexpr int kN = 24;        ///< ≥ 8 neighbours for the low rows ⇒ the xsimd
+                              ///< ket loop runs (W = 8 on AVX-512) plus a tail.
+constexpr double kBox = 40.0; ///< [Å] — cutoff stays < L/2.
 constexpr double kCutoff = 14.0; ///< [Å] — larger than the cluster diameter.
 
 /// @brief Deterministic pseudo-random cluster, all pairs inside the cutoff.
@@ -113,7 +117,6 @@ cpu::md::PairList all_pairs_half(int n) {
         off += n - 1 - i;
     }
     p.total_pairs = off;
-    p.has_shifts = false;
     p.version = 1;
     return p;
 }
@@ -188,6 +191,13 @@ void run_style(Style& style, cpu::Frame& f, double& energy, Voigt& stress) {
     style.build({ctx, f});
     style.launch({ctx, f, 0, 0});
     energy = f.meta.get(kEnergy);
+    // Every pair style books its whole energy as pair energy (LAMMPS
+    // `epair`), so `energy` stays the sum of the per-term scalars.
+    EXPECT_DOUBLE_EQ(f.meta.get(kEnergyPair), energy) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyBond), 0.0) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyAngle), 0.0) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyDihedral), 0.0) << style.name();
+    EXPECT_EQ(f.meta.get(kEnergyImproper), 0.0) << style.name();
     for (int k = 0; k < 6; ++k)
         stress.v[k] = f.meta.get(kStress)[k];
 }
@@ -246,7 +256,8 @@ TEST(PairLJCut, SimdKetLoopVirialMatchesPairSum) {
     // The pair sum is exact arithmetic over the identical pair set; only
     // summation order differs, so the tolerance is rounding, not physics.
     for (int k = 0; k < 6; ++k)
-        EXPECT_NEAR(got.v[k], want.v[k], 1e-11 * std::max(1.0, std::fabs(want.v[k])))
+        EXPECT_NEAR(got.v[k], want.v[k],
+                    1e-11 * std::max(1.0, std::fabs(want.v[k])))
             << "Voigt component " << k;
     // Guard the guard: a virial of zero must not pass by accident.
     EXPECT_GT(std::fabs(want.trace()), 1.0);
@@ -258,6 +269,50 @@ TEST(PairLJCut, VirialTraceIsMinusThreeVdEdV) {
                 [](double l) { return cluster(l); }, trace, dedv);
     EXPECT_NEAR(trace, dedv, 1e-6 * std::fabs(dedv));
     EXPECT_GT(std::fabs(dedv), 1.0);
+}
+
+TEST(PairLJCut, ForceAndStressRequestsAreIndependent) {
+    auto pairs = all_pairs_half(kN);
+    cpu::Context ctx;
+    ctx.md.pair_list = &pairs;
+    auto reference = cluster(1.0);
+    cpu::PairLJCut baseline{kEps, kSig, kCutoff};
+    baseline.build({ctx, reference});
+    baseline.launch({ctx, reference, 0, 0, true, true});
+    for (bool force : {false, true}) {
+        for (bool stress : {false, true}) {
+            SCOPED_TRACE(force);
+            SCOPED_TRACE(stress);
+            auto frame = cluster(1.0);
+            cpu::PairLJCut lj{kEps, kSig, kCutoff};
+            lj.build({ctx, frame});
+            for (int i = 0; i < kN; ++i) {
+                frame.span(kAtom_fx)[i] = 7.0;
+                frame.span(kAtom_fy)[i] = 7.0;
+                frame.span(kAtom_fz)[i] = 7.0;
+            }
+            frame.meta.get(kStress).fill(7.0);
+            lj.launch({ctx, frame, 0, 0, force, stress});
+            for (int i = 0; i < kN; ++i) {
+                EXPECT_NEAR(frame.span(kAtom_fx)[i],
+                            7.0 + (force ? reference.span(kAtom_fx)[i] : 0.0),
+                            1e-10);
+                EXPECT_NEAR(frame.span(kAtom_fy)[i],
+                            7.0 + (force ? reference.span(kAtom_fy)[i] : 0.0),
+                            1e-10);
+                EXPECT_NEAR(frame.span(kAtom_fz)[i],
+                            7.0 + (force ? reference.span(kAtom_fz)[i] : 0.0),
+                            1e-10);
+            }
+            for (int k = 0; k < 6; ++k)
+                EXPECT_NEAR(
+                    frame.meta.get(kStress)[k],
+                    7.0 + (stress ? reference.meta.get(kStress)[k] : 0.0),
+                    1e-10);
+            EXPECT_DOUBLE_EQ(frame.meta.get(kEnergy),
+                             reference.meta.get(kEnergy));
+        }
+    }
 }
 
 // ── PairBorn ────────────────────────────────────────────────────────────
@@ -315,9 +370,9 @@ TEST(PairBorn, MultiTypeTableWritesTheSameVirial) {
 // ── PairBuck ────────────────────────────────────────────────────────────
 
 namespace {
-constexpr double kBuckA = 100.0;  // [eV]
-constexpr double kBuckRho = 0.3;  // [Å]
-constexpr double kBuckC = 5.0;    // [eV Å⁶]
+constexpr double kBuckA = 100.0; // [eV]
+constexpr double kBuckRho = 0.3; // [Å]
+constexpr double kBuckC = 5.0;   // [eV Å⁶]
 } // namespace
 
 TEST(PairBuck, VirialMatchesPairSum) {
@@ -490,18 +545,18 @@ TEST(PairGaussianCoul, VirialMatchesPairSum) {
     Voigt got;
     run_style(gc, f, e, got);
 
-    const double K = units::coulomb;
-    const Voigt want = reference_virial(f, kCutoff, [&](int i, int j,
-                                                        double r2) {
-        const double r = std::sqrt(r2);
-        const double qi = f.span(kAtom_charge)[i];
-        const double qj = f.span(kAtom_charge)[j];
-        const double ei = gauss_eta()[static_cast<std::size_t>(i % 2)];
-        const double ej = gauss_eta()[static_cast<std::size_t>(j % 2)];
-        const double dG = cpu::GaussianChargeKernel::dgreens_dr(r, ei, ej);
-        // U = K q_i q_j G(r) → −U'/r = −K q_i q_j G'(r)/r
-        return -K * qi * qj * dG / r;
-    });
+    const double K = units::UnitSystem::lj().qqrd2e();
+    const Voigt want =
+        reference_virial(f, kCutoff, [&](int i, int j, double r2) {
+            const double r = std::sqrt(r2);
+            const double qi = f.span(kAtom_charge)[i];
+            const double qj = f.span(kAtom_charge)[j];
+            const double ei = gauss_eta()[static_cast<std::size_t>(i % 2)];
+            const double ej = gauss_eta()[static_cast<std::size_t>(j % 2)];
+            const double dG = cpu::GaussianChargeKernel::dgreens_dr(r, ei, ej);
+            // U = K q_i q_j G(r) → −U'/r = −K q_i q_j G'(r)/r
+            return -K * qi * qj * dG / r;
+        });
 
     for (int k = 0; k < 6; ++k)
         EXPECT_NEAR(got.v[k], want.v[k],
@@ -592,8 +647,8 @@ TEST(PairDpd, VirialExcludesDissipativeAndRandomForces) {
     // The thermostat must actually be doing something, or this proves nothing.
     double max_df = 0.0;
     for (int i = 0; i < kN; ++i)
-        max_df = std::max(max_df, std::fabs(f_dr.span(kAtom_fx)[i]
-                                            - f_c.span(kAtom_fx)[i]));
+        max_df = std::max(
+            max_df, std::fabs(f_dr.span(kAtom_fx)[i] - f_c.span(kAtom_fx)[i]));
     EXPECT_GT(max_df, 1e-6);
     EXPECT_GT(std::fabs(s_c.trace()), 1.0);
 
@@ -615,14 +670,14 @@ TEST(PairDpd, VirialExcludesDissipativeAndRandomForces) {
 // knowing any of this.
 
 namespace {
-constexpr double kROH = 0.9572;            // [Å]
-constexpr double kThetaHOH = 1.82421813;   // [rad] = 104.52°
-constexpr double kQDist = 0.15;            // [Å]
-constexpr double kTipEps = 0.006721;       // [eV] ≈ 0.155 kcal/mol
-constexpr double kTipSigma = 3.15365;      // [Å]
-constexpr double kTipCut = 25.0;           // [Å] — beyond the cluster diameter
-constexpr double kTipBox = 100.0;          // [Å] — cutoff stays < L/2
-constexpr double kQO = -1.04, kQH = 0.52;  // [e]
+constexpr double kROH = 0.9572;           // [Å]
+constexpr double kThetaHOH = 1.82421813;  // [rad] = 104.52°
+constexpr double kQDist = 0.15;           // [Å]
+constexpr double kTipEps = 0.006721;      // [eV] ≈ 0.155 kcal/mol
+constexpr double kTipSigma = 3.15365;     // [Å]
+constexpr double kTipCut = 25.0;          // [Å] — beyond the cluster diameter
+constexpr double kTipBox = 100.0;         // [Å] — cutoff stays < L/2
+constexpr double kQO = -1.04, kQH = 0.52; // [e]
 constexpr int kNWater = 4;
 
 /// @brief Four rigid TIP4P waters, deterministic centres and orientations.
@@ -638,8 +693,10 @@ cpu::Frame water_cluster(double lambda) {
     for (int m = 0; m < kNWater; ++m) {
         const double a = 1.9 * m + 0.4;
         const double ox = 0.45 * (4.6 * std::sin(a) + 1.2 * std::cos(2.3 * a));
-        const double oy = 0.45 * (4.6 * std::cos(1.7 * a) + 0.8 * std::sin(3.1 * a));
-        const double oz = 0.45 * (4.6 * std::sin(2.3 * a + 0.7) + 1.1 * std::cos(a));
+        const double oy =
+            0.45 * (4.6 * std::cos(1.7 * a) + 0.8 * std::sin(3.1 * a));
+        const double oz =
+            0.45 * (4.6 * std::sin(2.3 * a + 0.7) + 1.1 * std::cos(a));
         const double phi = 0.83 * m + 0.21, psi = 0.57 * m + 1.13;
         auto rot = [&](double vx, double vy, double vz, double& rx, double& ry,
                        double& rz) {
@@ -714,7 +771,9 @@ TEST(PairLJCutTip4pCut, VirialMatchesRedistributedAtomicSum) {
         EXPECT_NEAR(got.v[k], want.v[k],
                     1e-9 * std::max(1.0, std::fabs(want.v[k])))
             << "Voigt component " << k;
-    EXPECT_GT(std::fabs(want.trace()), 0.1);
+    // Non-vacuity guard: the cluster virial is ~0.045 on the lj row
+    // (qqrd2e = 1), the Coulomb part 14.4x below its metal value.
+    EXPECT_GT(std::fabs(want.trace()), 0.01);
 }
 
 TEST(PairLJCutTip4pCut, VirialTraceIsMinusThreeVdEdV) {
@@ -722,5 +781,64 @@ TEST(PairLJCutTip4pCut, VirialTraceIsMinusThreeVdEdV) {
     fd_identity([] { return make_tip4p(); },
                 [](double l) { return water_cluster(l); }, trace, dedv);
     EXPECT_NEAR(trace, dedv, 1e-6 * std::fabs(dedv));
-    EXPECT_GT(std::fabs(dedv), 0.1);
+    EXPECT_GT(std::fabs(dedv), 0.01); // ~0.045 on the lj row
+}
+
+TEST(ClassicalPairRequests, ForceAndStressRequestsAreIndependent) {
+    auto check = [](auto pair) {
+        SCOPED_TRACE(pair.name());
+        auto f = charged_cluster(1.0);
+        auto pairs = all_pairs_half(f.nlocal());
+        cpu::Context runtime;
+        runtime.md.pair_list = &pairs;
+        pair.build({runtime, f});
+        for (int i = 0; i < f.nlocal(); ++i)
+            f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
+        f.meta.get(kStress).fill(0);
+        f.meta.get(kEnergy) = 0;
+        pair.launch({runtime, f, 0, 9});
+        const auto baseline = f;
+        ASSERT_NE(f.meta.get(kEnergy), 0);
+        for (bool force : {false, true})
+            for (bool stress : {false, true}) {
+                for (int i = 0; i < f.nlocal(); ++i) {
+                    f.span(kAtom_fx)[i] = 11;
+                    f.span(kAtom_fy)[i] = 12;
+                    f.span(kAtom_fz)[i] = 13;
+                }
+                f.meta.get(kStress).fill(17);
+                f.meta.get(kEnergy) = 0;
+                pair.launch({runtime, f, 0, 9, force, stress});
+                EXPECT_DOUBLE_EQ(f.meta.get(kEnergy),
+                                 baseline.meta.get(kEnergy));
+                for (int i = 0; i < f.nlocal(); ++i) {
+                    EXPECT_NEAR(f.span(kAtom_fx)[i],
+                                11 + (force ? baseline.span(kAtom_fx)[i] : 0),
+                                1e-9);
+                    EXPECT_NEAR(f.span(kAtom_fy)[i],
+                                12 + (force ? baseline.span(kAtom_fy)[i] : 0),
+                                1e-9);
+                    EXPECT_NEAR(f.span(kAtom_fz)[i],
+                                13 + (force ? baseline.span(kAtom_fz)[i] : 0),
+                                1e-9);
+                }
+                for (int d = 0; d < 6; ++d)
+                    EXPECT_NEAR(
+                        f.meta.get(kStress)[d],
+                        17 + (stress ? baseline.meta.get(kStress)[d] : 0),
+                        1e-8);
+            }
+        pair.destroy({runtime, f});
+    };
+    check(cpu::PairBorn{kA, kRho, kSigma, kC, kD, kCutoff});
+    check(cpu::PairBuck{kBuckA, kBuckRho, kBuckC, kCutoff});
+    check(cpu::PairMorse{kMorseD, kMorseAlpha, kMorseR0, kCutoff});
+    check(cpu::PairWCA{kWcaEps, kWcaSigma});
+    check(cpu::PairYukawa{kYukA, kYukKappa, kCutoff});
+    check(cpu::PairDpd{kDpdA, 1.0, kDpdT, kDpdRc, kDpdDt, 5});
+    check(cpu::PairGaussianCoul{kCutoff, gauss_eta()});
+    check(cpu::CoulLong{0.3, kCutoff});
+    check(cpu::PairCoulCut{kCutoff});
+    check(cpu::PairCoulSoft{kCutoff, 1.0});
+    check(cpu::PairLJSoft{0.01, 1.0, kCutoff});
 }

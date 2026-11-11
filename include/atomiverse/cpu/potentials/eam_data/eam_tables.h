@@ -4,7 +4,7 @@
 /// Transcribed once from the published table and committed as plain C++ data.
 /// **Nothing is parsed at build, test, or run time** — no setfl / .eam.alloy /
 /// funcfl reader exists anywhere in the tree, per the binding precedent set by
-/// the GPW data tables (CLAUDE.md, "GPW data (in-tree static .h tables, no
+/// the GPW data tables (docs/developer/project-contract.md, "GPW data (in-tree static .h tables, no
 /// parsing)"). Consumed only by the `EAMPotential(molrs::Element, name)` lookup
 /// constructor, which throws on an unsupported element or name.
 ///
@@ -15,7 +15,7 @@
 ///
 /// Unlike the GPW tables there is no generator under tools/: these are five
 /// numbers per element read off a printed table, so a generator would be a
-/// program with no second caller (CLAUDE.md: do not extract single-use code).
+/// program with no second caller (docs/developer/project-contract.md: do not extract single-use code).
 #pragma once
 
 namespace ATV {

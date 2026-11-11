@@ -1,4 +1,4 @@
-"""``python -m atomiverse status`` — modules / fingerprint / build dirs."""
+"""``python -m atomiverse status`` — installed extension + active build."""
 
 from __future__ import annotations
 
@@ -7,80 +7,90 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-def _package_status_path() -> Path:
+
+def _installed_build_info_path() -> Path:
+    """``_build_info.json`` that CMake ships inside the native wheel."""
     import atomiverse
 
-    return Path(atomiverse.__file__).resolve().parent / "_install_state.json"
+    return Path(atomiverse.__file__).resolve().parent / "_build_info.json"
 
 
-def load_install_state(path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Load build or install state JSON.
-
-    Prefers explicit *path*, then package ``_install_state.json``, then
-    ``<build_dir>/atomiverse_cli_state.json`` via the active-build pointer.
-    Never uses a home-directory cache.
-    """
-    candidates: list[Path] = []
-    if path is not None:
-        candidates.append(path)
-    else:
-        candidates.append(_package_status_path())
-        try:
-            from atomiverse.cli.build import (
-                read_active_build_dir,
-                state_file_in_build,
-            )
-
-            candidates.append(state_file_in_build(read_active_build_dir()))
-        except Exception:
-            pass
-    for p in candidates:
-        if not p.is_file():
-            continue
-        try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-    return None
+def _read_json(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
-def format_status(state: Optional[Dict[str, Any]]) -> str:
+def load_installed_build() -> Optional[Dict[str, Any]]:
+    """Defines the installed extension was compiled with, or None."""
+    return _read_json(_installed_build_info_path())
+
+
+def load_active_build() -> Optional[Dict[str, Any]]:
+    """State of the active ``config``/``compile`` build tree, or None."""
+    from atomiverse.cli.build import read_active_build_dir, state_file_in_build
+    from atomiverse.cli.config import ConfigError
+
+    try:
+        return _read_json(state_file_in_build(read_active_build_dir()))
+    except ConfigError:
+        return None
+
+
+def format_status(
+    installed: Optional[Dict[str, Any]],
+    active: Optional[Dict[str, Any]],
+    *,
+    extension: bool,
+    load_error: Optional[BaseException] = None,
+) -> str:
+    from atomiverse.cli.config import enabled_modules_from_defines
+
     lines = ["atomiverse status"]
-    if state is None:
-        lines.append("  modules: (none — run `atomiverse config …` first)")
-        lines.append("  fingerprint: (none)")
+    if load_error is not None:
+        lines.append(f"  extension: BROKEN — failed to load: {load_error}")
+    elif not extension:
+        lines.append("  extension: not installed (pure-Python package)")
+    elif installed is None:
+        lines.append("  extension: installed (no build info — not from a native wheel)")
+    else:
+        defines = installed.get("defines") or {}
+        modules = enabled_modules_from_defines(defines)
+        lines.append("  extension: installed")
+        lines.append("  modules:   " + (", ".join(modules) or "(none)"))
+        for key in ("ATV_USE_MPI", "ATV_REAL_STORAGE", "ATV_REAL_WORK", "ATV_ID_SIZE"):
+            if key in defines:
+                lines.append(f"    {key}={defines[key]}")
+
+    if active is None:
+        lines.append("  build:     (none — run `atomiverse config …` first)")
         lines.append(
-            "  hint: python -m atomiverse config md --mpi --src /path/to/Atomiverse"
+            "  hint: python -m atomiverse config md --src /path/to/Atomiverse"
         )
         return "\n".join(lines)
-
-    modules = state.get("modules") or []
-    if isinstance(modules, list) and modules:
-        lines.append("  modules: " + ", ".join(modules))
-    else:
-        lines.append("  modules: (none)")
-
-    fp = state.get("fingerprint") or ""
-    lines.append(f"  fingerprint: {fp if fp else '(none)'}")
-
-    for key in ("source_root", "build_dir"):
-        if state.get(key):
-            lines.append(f"  {key}: {state[key]}")
-
-    for flag in ("configured", "compiled", "installed"):
-        if flag in state:
-            lines.append(f"  {flag}: {state[flag]}")
-
-    defines = state.get("defines") or {}
-    if isinstance(defines, dict) and defines:
-        lines.append("  defines:")
-        for key in sorted(defines):
-            lines.append(f"    {key}={defines[key]}")
+    lines.append(f"  build:     {active.get('build_dir', '?')}")
+    lines.append(f"    source:  {active.get('source_root', '?')}")
+    lines.append("    modules: " + (", ".join(active.get("modules") or []) or "(none)"))
+    lines.append(f"    wheel:   {active.get('wheel') or '(not compiled)'}")
+    lines.append(f"    molpy:   {active.get('molpy_wheel') or '(not compiled)'}")
+    lines.append(f"    installed: {bool(active.get('installed'))}")
     return "\n".join(lines)
 
 
-def run_status(*, path: Optional[Path] = None, stream=None) -> int:
+def run_status(*, stream=None) -> int:
+    from atomiverse._binding import extension_available, extension_load_error
+
     out = stream if stream is not None else sys.stdout
-    state = load_install_state(path)
-    print(format_status(state), file=out)
+    print(
+        format_status(
+            load_installed_build(),
+            load_active_build(),
+            extension=extension_available(),
+            load_error=extension_load_error(),
+        ),
+        file=out,
+    )
     return 0

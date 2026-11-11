@@ -42,7 +42,7 @@
   The TF model itself is correct; `xy_image_range` is now 1280 in the regression.
 - **perf:** `ratio_atv_over_mw = 4.4` (0.885 s vs 0.20 s per elastance solve, 1 rank)
 
-> **OPEN — same defect, different slug:** `regressions/md/voronoi-volume-tf`
+> **OPEN — same defect, different slug:** `regressions/md/thomas-fermi`
 > (`reg_voronoi-volume-tf.cpp:24,26,34`) reuses the identical toy at
 > `kImageRange = 40` and the identical superseded numbers. It needs the same
 > re-pin against the MetalWalls binary (per-site `voronoi_volume` twin).

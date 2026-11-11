@@ -34,10 +34,9 @@ mulliken_charge(const cpu::scf::internal::IntegralView& ints,
 /// @param P_alpha Alpha density [n_basis, n_basis].
 /// @param P_beta Beta density [n_basis, n_basis].
 /// @return Per-atom Mulliken spin densities [e].
-std::vector<double>
-mulliken_spin(const cpu::scf::internal::IntegralView& ints,
-              const xt::xtensor<double, 2>& P_alpha,
-              const xt::xtensor<double, 2>& P_beta);
+std::vector<double> mulliken_spin(const cpu::scf::internal::IntegralView& ints,
+                                  const xt::xtensor<double, 2>& P_alpha,
+                                  const xt::xtensor<double, 2>& P_beta);
 
 } // namespace cpu
 } // namespace ATV

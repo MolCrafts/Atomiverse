@@ -8,45 +8,30 @@
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
-#include "atomiverse/cpu/semiempirical/am1_parameters.h"
-#include "atomiverse/cpu/semiempirical/rm1_parameters.h"
+#include "atomiverse/semiempirical/am1_parameters.h"
+#include "atomiverse/semiempirical/rm1_parameters.h"
 
 namespace ATV {
 namespace cpu {
 namespace semiempirical {
 
-const AM1Parameter* nddo_parameter(SemiEmpiricalMethod method, int z) noexcept {
-    switch (method) {
-    case SemiEmpiricalMethod::AM1:
-        return am1_parameter(z);
-    case SemiEmpiricalMethod::RM1:
-        return rm1_parameter(z);
-    }
-    return nullptr;
-}
-
-bool nddo_has_parameter(SemiEmpiricalMethod method, int z) noexcept {
-    return nddo_parameter(method, z) != nullptr;
-}
-
 int am1_orbital_count(int z) noexcept {
-    const auto* p = am1_parameter(z);
+    const auto* p = ATV::semiempirical::am1_parameter(z);
     return p == nullptr ? 0 : p->n_orbitals;
 }
 
 double am1_core_charge(int z) noexcept {
-    const auto* p = am1_parameter(z);
+    const auto* p = ATV::semiempirical::am1_parameter(z);
     return p == nullptr ? 0.0 : p->core_charge;
 }
 
 NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
-                       SemiEmpiricalMethod method_in) {
+                       ATV::semiempirical::SemiEmpiricalMethod method_in) {
     if (multiplicity < 1) {
         throw std::runtime_error("NDDO multiplicity must be positive");
     }
 
-    const char* method_name =
-        (method_in == SemiEmpiricalMethod::RM1) ? "RM1" : "AM1";
+    const char* method_name = ATV::semiempirical::nddo_method_name(method_in);
 
     charge = charge_in;
     method = method_in;
@@ -54,10 +39,10 @@ NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
 
     int next_ao = 0;
     double electron_count = -static_cast<double>(charge_in);
-    const int* __restrict sp_type = frame.span(kAtom_type);
+    const int* __restrict sp_type = frame.span(kAtom_atomic_number);
     for (int i = 0; i < frame.nlocal(); ++i) {
         const int z = sp_type[i];
-        const auto* p = nddo_parameter(method_in, z);
+        const auto* p = ATV::semiempirical::nddo_parameter(method_in, z);
         if (p == nullptr) {
             throw std::runtime_error(
                 std::string(method_name)
@@ -100,12 +85,6 @@ NDDOSystem::NDDOSystem(const cpu::Frame& frame, int charge_in, int multiplicity,
         throw std::runtime_error(
             "NDDO spin electron count is outside AO capacity");
     }
-}
-
-std::size_t packed_index(int i, int j) noexcept {
-    if (i < j)
-        return packed_index(j, i);
-    return static_cast<std::size_t>(i * (i + 1) / 2 + j);
 }
 
 std::vector<double> atomic_populations_from_packed_density(

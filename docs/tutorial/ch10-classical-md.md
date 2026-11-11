@@ -1,60 +1,203 @@
-# Chapter 10. Classical Molecular Dynamics
+# Molecular Dynamics
 
-The previous chapters introduced the SCF machinery and showed that the
-same `cpu::md::MD` driver that ran *ab initio* MD will also run classical
-MD — you just swap the force evaluator. This chapter takes that promise
-seriously and walks through a complete classical-MD setup from an empty
-frame to a usable trajectory: pair potential, bonded terms, neighbor
-list, integrator, thermostat, barostat, and observers. By the end you
-will have built every layer of an LAMMPS-style script, but in C++, in
-about thirty lines.
+Status tables: [MD roadmap](../roadmap/molecular-dynamics.md) · [Force Fields](../roadmap/force-fields.md).
 
-## Live Result: NVE Energy Conservation
+How does a collection of atoms move when each responds to its neighbors?
+Classical molecular dynamics turns that question into a sequence of force
+evaluations and small time steps. Argon provides a manageable first model:
+its approximately spherical neutral atoms let us begin without molecular topology.
 
-Thermo every 200 steps from the binary (total energy in eV):
+**Learning goals.** Relate pair energy to force, interpret velocity Verlet,
+and test whether a chosen time step resolves the modeled motion.
 
-| step | \(E_\mathrm{pot}\) | \(E_\mathrm{kin}\) | \(E_\mathrm{total}\) |
-|-----:|-------------------:|-------------------:|---------------------:|
-| 0 | −10.0451 | 0.4226 | **−9.622484** |
-| 200 | −9.8187 | 0.1962 | −9.622481 |
-| 400 | −9.8734 | 0.2509 | −9.622482 |
-| 600 | −9.9145 | 0.2920 | −9.622480 |
-| 800 | −10.0050 | 0.3825 | −9.622481 |
-| 1000 | −10.2620 | 0.6395 | **−9.622481** |
+**Before you begin.** Use the derivative and Taylor expansion in
+[Mathematical Tools](mathematical-tools.md), and the frame conventions in
+[Systems and Units](ch01-foundations.md).
 
-Drift over 1000 steps: **\(2.93\times 10^{-6}\) eV** (relative \(\sim 3\times 10^{-7}\)).
+## The classical model
 
-```molplot preset="molplot" theme="auto" width="100%" aspect="16:9"
-mark: {type: line, point: true, tooltip: true}
-data:
-  values:
-    - {step: 0, series: E_total, E: -9.622484}
-    - {step: 200, series: E_total, E: -9.622481}
-    - {step: 400, series: E_total, E: -9.622482}
-    - {step: 600, series: E_total, E: -9.622480}
-    - {step: 800, series: E_total, E: -9.622481}
-    - {step: 1000, series: E_total, E: -9.622481}
-    - {step: 0, series: E_pot, E: -10.0451}
-    - {step: 200, series: E_pot, E: -9.8187}
-    - {step: 400, series: E_pot, E: -9.8734}
-    - {step: 600, series: E_pot, E: -9.9145}
-    - {step: 800, series: E_pot, E: -10.0050}
-    - {step: 1000, series: E_pot, E: -10.2620}
-encoding:
-  x: {field: step, type: quantitative, title: Step}
-  y: {field: E, type: quantitative, title: "Energy (eV)", scale: {zero: false}}
-  color: {field: series, type: nominal, title: null}
-```
+Classical molecular dynamics treats nuclei as particles with positions and
+momenta. An energy function represents their interactions, and Newton's
+equations determine their motion. This is a model choice, not a property
+of the integration algorithm. Nuclear quantum effects and the adequacy of
+the chosen interaction model need separate consideration.
 
-Potential and kinetic trade off; **total** is flat — the NVE signature of a
-correct Velocity-Verlet + LJ force pipeline. The CUDA twin
-should match within floating-point noise.
+Argon is a useful starting point because an isotropic interaction between
+neutral atoms avoids bonds and angles in the input topology. The
+Lennard–Jones pair energy is
 
-## What "Classical" Means in This Code
+$$u(r)=4\epsilon[(\sigma/r)^{12}-(\sigma/r)^6],\qquad
+U=\sum_{A<B}u(r_{AB}).$$
 
-Classical MD differs from AIMD in exactly one place: the **force phase**.
-Everything before, after, and around the force evaluation is shared.
-That is why the LAMMPS-derived phase order
+The sum counts each distinct pair once. The energy scale $\epsilon>0$ is
+the well depth, and the length $\sigma>0$ is the zero-crossing distance,
+not the equilibrium separation. The attractive inverse-sixth-power term
+models dispersion in a simplified form; the inverse-twelfth-power repulsion
+is a convenient empirical choice, not a derivation of electronic overlap.
+
+Define $\mathbf R_{AB}=\mathbf R_A-\mathbf R_B$. Applying the chain rule gives
+the force on $A$ due to $B$:
+
+$$\mathbf F_{A\leftarrow B}
+=\frac{24\epsilon}{r_{AB}}
+\left[2\left(\frac{\sigma}{r_{AB}}\right)^{12}
+-\left(\frac{\sigma}{r_{AB}}\right)^6\right]
+\frac{\mathbf R_{AB}}{r_{AB}}.$$
+
+The force is repulsive at short distance and attractive at sufficiently
+large distance before truncation. It vanishes at $r_0=2^{1/6}\sigma$, where
+$u(r_0)=-\epsilon$. Check these identities and the opposite force on $B$
+before constructing a many-atom sample. They test the chosen formula, not
+whether it describes every property of real argon.
+
+## What is conserved
+
+For fixed masses in coherent units, Newton's equation is
+$m_A\ddot{\mathbf R}_A=\mathbf F_A$. Kinetic energy is
+$K=\sum_A m_A|\mathbf v_A|^2/2$. If the potential has no explicit time
+dependence and all forces are its negative gradient, the chain rule gives
+
+$$\frac{d(K+U)}{dt}
+=\sum_A\mathbf v_A\cdot
+\left(m_A\dot{\mathbf v}_A+\nabla_A U\right)=0.$$
+
+This is a statement about the continuous equations for an isolated
+conservative model. A thermostat, external driving, or moving boundary
+can exchange energy with the system. A finite-step algorithm also has
+numerical error. These are different reasons for seeing a changing energy.
+
+For an isolated pair model, opposite internal forces imply conservation of
+total momentum. Net center-of-mass motion is not the same as internal
+thermal motion. Record whether it was removed when initializing velocities.
+
+## Advancing one time step
+
+Velocity Verlet divides the acceleration update into two halves. For an
+atom of mass $m$, omitting its label for readability, the update is
+
+$$\begin{aligned}
+\mathbf v^{n+1/2}&=\mathbf v^n+\frac{\Delta t}{2m}\mathbf F(\mathbf R^n),\\
+\mathbf R^{n+1}&=\mathbf R^n+\Delta t\,\mathbf v^{n+1/2},\\
+\mathbf v^{n+1}&=\mathbf v^{n+1/2}
++\frac{\Delta t}{2m}\mathbf F(\mathbf R^{n+1}).
+\end{aligned}$$
+
+The superscript labels a numerical time level. Forces at the initial
+geometry must already be available for the first half update. After the
+position update, evaluate forces again before completing the velocity.
+These equations use coherent units; in a LAMMPS style such as `real` or
+`metal` the force-over-mass term carries the style's `ftm2v`, which the
+engine takes from the run's `units`.
+
+For smooth conservative forces and a fixed step, this method is
+time-reversible and symplectic: it preserves the canonical phase-space
+structure, not the exact original energy at each discrete step. Small
+bounded energy oscillations are therefore not automatically a failure.
+Long-time accuracy still depends on the model, regularity, and step size.
+
+A harmonic oscillator makes the limitation visible. With angular frequency
+$\omega$, the Verlet position recurrence is
+
+$$x_{n+1}-2x_n+x_{n-1}=-(\omega\Delta t)^2x_n.$$
+
+An oscillatory trial solution gives
+$\cos(\widetilde\omega\Delta t)=1-(\omega\Delta t)^2/2$.
+Bounded harmonic motion requires $0<\omega\Delta t<2$ away from the
+marginal endpoints. This is a stability condition, not an accuracy target:
+the numerical frequency $\widetilde\omega$ can be wrong well before the
+trajectory becomes unstable. Refine the step for the observable being measured.
+
+## Boundaries and cutoffs
+
+In a cubic periodic cell of edge $L$, the usual single-image treatment of a
+short-range pair interaction requires a cutoff $r_c<L/2$. Other cell shapes
+require the corresponding geometric condition. The neighbor-list skin is
+an additional search buffer that permits list reuse; it does not extend
+the physical interaction range. The list must be rebuilt before motion
+can bring an unlisted pair into that range.
+
+Three cutoff conventions should not be confused. Simple truncation sets
+the interaction to zero beyond $r_c$. An energy shift uses
+$u_{\mathrm{ES}}(r)=u(r)-u(r_c)$ below $r_c$ and zero above it. This makes
+energy continuous but generally leaves a force jump. A force shift uses
+
+$$u_{\mathrm{FS}}(r)=u(r)-u(r_c)-(r-r_c)u'(r_c),\qquad r<r_c,$$
+
+and zero beyond the cutoff. It changes the force throughout the retained
+range while making it vanish continuously at $r_c$. Match the convention
+when comparing energies, forces, and pressure between implementations.
+Smooth-force arguments about the integrator do not automatically apply at
+a discontinuous cutoff.
+
+## Choosing a state
+
+For a face-centered-cubic starting lattice, $n_c$ conventional cells per
+direction contain $N=4n_c^3$ atoms, with box edge $L=n_c a$ and nearest
+separation $a/\sqrt2$. The number density is $N/L^3=4/a^3$; mass density
+also includes the atomic mass and a unit conversion. Thus choosing a
+lattice constant is already choosing a density.
+
+The reduced quantities $T^*=k_{\mathrm B}T/\epsilon$ and
+$\rho^*=(N/V)\sigma^3$ make the state easier to compare across parameter
+sets. A useful time scale is $t_0=\sigma\sqrt{m/\epsilon}$ in coherent
+units. An initial crystal does not prove that the equilibrium phase at
+the chosen density and temperature is crystalline.
+
+## Practice plan
+
+1. Verify the isolated pair energy and force at a compressed separation,
+   at $r_0$, and at a stretched separation below the cutoff. Compare a
+   nonzero force with finite differences before using a many-atom geometry.
+2. Build the argon sample below. Record density, pair parameters, cutoff
+   convention, neighbor settings, boundaries, and velocity initialization.
+3. Prepare the state, then run a short trajectory without heat or pressure
+   control. Record potential energy, kinetic energy, total momentum, and
+   elapsed physical time at consistently completed time steps.
+4. Repeat at half the time step for the same physical duration, rather
+   than the same number of steps. Compare energy drift and oscillation
+   amplitude; investigate close contacts or cutoff crossings when necessary.
+5. Only after these checks add the ensemble controls developed in
+   [Statistical Ensembles](ch11-ensembles.md). A thermostat can remove
+   integration-generated heat and thereby conceal a poor baseline.
+
+Keep the first successful test small. It gives a reference you can return
+to when a larger sample behaves unexpectedly.
+
+## Checking a run
+
+- **Geometry and cell.** Initialize all coordinates and a valid cell before
+  neighbor construction. Inspect separations; a severe overlap can produce
+  enormous forces even when the program is behaving as specified.
+- **Search range.** Ensure the neighbor scheme covers every interacting pair
+  and respects its rebuild criterion. Do not infer these settings from the
+  potential cutoff alone.
+- **Velocities.** Explicitly initialize or load them. Zero velocities are a
+  legitimate chosen state, but they are not a thermal distribution at an
+  arbitrary requested temperature.
+- **Topology.** For bonded models, document exclusions or scaled nonbonded
+  terms. Otherwise the intended bonded interaction can coexist with an
+  unintended short-range repulsion.
+- **Controls.** Begin with one validated thermostat or barostat arrangement
+  for each controlled group. Do not stack controls on the same degrees of
+  freedom without a defined sampling scheme.
+
+## Changing the evaluator
+
+An electronic evaluator can occupy the force stage of an MD workflow, but
+the substitution is not a complete physical setup. It requires an electronic
+state, model data, converged energy and derivatives, and consistent units.
+Stress availability must also be checked before allowing the cell to change.
+The cost and tolerable time step can change substantially.
+
+A validated classical test can help isolate a scheduling problem from an
+electronic-convergence problem. It is not an alternative physical model of
+the same accuracy simply because the software interface is shared.
+[Comparing Models](ch15-cross-method.md) develops this distinction.
+
+## Force evaluation in the driver
+
+The execution design places force evaluation between position and final
+velocity updates. The inherited phase-order sketch is
 
 ```text
 initial_integrate → pre_force → force → post_force → final_integrate → end_of_step
@@ -62,15 +205,15 @@ initial_integrate → pre_force → force → post_force → final_integrate →
 
 works for both regimes. In a classical run, the components bound at the
 `force` phase are pair potentials and bonded-energy terms; in AIMD the
-same phase holds an `SCF`. The integrator, thermostat,
-barostat, kinetic-energy accumulator, and recorder all read and write
-the same `kAtom_fx/fy/fz` columns and `kEnergy` entry irrespective
-of who produced the forces.
+same phase may hold a concrete electronic method. The force evaluator
+writes forces and energy; the integrator uses forces to update motion, and
+observers read the quantities they report. Sharing the frame does not mean
+that every component writes the same fields.
 
-Concretely, a "classical" force in Atomiverse is any
-`cpu::Component`-derived class whose `role()` is `Evaluator` and
-whose `capabilities()` advertises at least `Capability::Force`. The
-shipped set under `cpu/potentials/` is:
+The following inherited table relates component names to their physical
+contributions. Its capability column describes reported outputs; it should
+not be read as a specification of a current `capabilities()` C++ member.
+Check registration and derivative support against the selected revision.
 
 | Component | Functional form | Capability |
 |---|---|---|
@@ -79,12 +222,12 @@ shipped set under `cpu/potentials/` is:
 | `cpu::AngleHarmonic` | $K(\theta - \theta_0)^2$ | Energy &#124; Force |
 | `cpu::DihedralMultiHarmonic` | $\sum_n a_n \cos^n\phi$ | Energy &#124; Force |
 
-They share the same lifecycle, the same OpenMP per-thread force
-reduction buffer pattern, and the same cell-list-driven neighbor-list
+They share the same lifecycle, the same chunk-owned OpenMP force
+buffers (deterministic at a fixed thread count), and the same cell-list-driven neighbor-list
 hand-off. None of them know about the integrator. That decoupling is
 what makes the rest of the chapter short.
 
-## Setting Up an FCC Argon Frame
+## Building an argon sample
 
 A small but realistic test problem is a face-centred-cubic crystal of
 Argon at the experimental nearest-neighbour spacing. Four atoms per
@@ -124,7 +267,7 @@ The `cpu::Box` is constructed last from the side length. A frame is a
 plain value object — there is no "open" or "init" call to make, no
 implicit registration. Hand it to the driver and you are done.
 
-## Wiring a Lennard-Jones Run
+## Integrating the pair model
 
 The simplest possible classical MD is an NVE run with a single pair
 potential. The full driver setup is:
@@ -191,7 +334,11 @@ constructor before the user code runs. You almost never have to think
 about them, but if you ever wonder why `frame.meta.get(kEnergy)` is zero before the
 first force component runs each step, that is why.
 
-## Adding a Thermostat
+## Temperature control
+
+The fragments in this and the next section are interface references. Read
+[Statistical Ensembles](ch11-ensembles.md) for the distribution being sampled
+and the checks needed before interpreting the resulting averages.
 
 Two thermostats ship today. They differ in *how* they enforce
 temperature, not in the wiring you write:
@@ -235,7 +382,7 @@ set advertises `Capability::Force`. That lets a *pure* Langevin run
 `cpu::md::MD`'s "something must produce forces" build-time check.
 Roles describe structure; capabilities describe data flow.
 
-## Adding a Barostat
+## Pressure control
 
 For NPT, combine a thermostat with the Berendsen barostat:
 
@@ -301,12 +448,12 @@ also not a rigorous NPT method — it relaxes the pressure towards the target
 without sampling the correct constant-pressure distribution, which makes it
 a good equilibrator and a poor production ensemble. The CPU backend does
 have the rigorous alternatives: `cpu::md::NoseHooverNPT`
-(`include/atomiverse/cpu/dynamics/nose_hoover_npt.h`), which can also
+(`nose_hoover_npt.h`), which can also
 barostat individual axes, and `cpu::md::ParrinelloRahmanNPT`
-(`include/atomiverse/cpu/dynamics/parrinello_rahman_npt.h`), whose full
+(`parrinello_rahman_npt.h`), whose full
 cell matrix lets the box shear as well as breathe. Both are integrators
 that *replace* `VelocityVerlet` + thermostat + barostat rather than joining
-them. [Chapter 11](ch11-ensembles.md) is where the NPT ensemble is worked
+them. [Statistical Ensembles](ch11-ensembles.md) is where the NPT ensemble is worked
 through properly — when Berendsen is enough, how `NoseHooverNPT` is
 configured, and the conserved-quantity trace that tells you an NPT run is
 actually correct; `ParrinelloRahmanNPT` takes the same arguments in the
@@ -317,7 +464,7 @@ The `Barostat::set_enabled` toggle and `set_P_target` setter are intended
 for multi-stage protocols that mix NVT and NPT segments under a single
 driver instance.
 
-## Bonded Force Fields
+## Bonded interactions
 
 Pair potentials alone describe noble gases and not much else. Most
 soft-matter force fields are built from harmonic-bond, harmonic-angle,
@@ -359,7 +506,7 @@ auto lj_gaff = cpu::PairLJCut{eps, sigma, cutoff}
 Scales are true weights: `0` drops the pair, values in `(0,1]` multiply
 pair energy and force. Charged GAFF stacks also need `load_lammps_data`
 with **atom_style full** (partial charges) — see
-`regressions/forcefield/gaff_peo_fragment` and `cpu/io/lammps_real.h` for
+`gaff_peo_fragment` and `cpu/io/lammps_real.h` for
 kcal/mol → eV helpers. If you forget specials when topology is present,
 bonded atoms clash through the nonbonded wall and the trajectory will
 explode.
@@ -369,7 +516,7 @@ explode.
 complete `.ff` text parser, CUDA Amber specials parity, and paper-length
 polymer equilibration protocols.
 
-## What `end_of_step` Is Good For
+## Measurements and output
 
 The `end_of_step` phase is where observers and recorders live. It runs
 once per MD step after the integrator has finished, the thermostat has
@@ -398,8 +545,9 @@ sim.set_observer(ATV::RDF{/*r_max=*/5.5, /*n_bins=*/200,
 `set_thermo(N)` binds `cpu::Thermo{N}` at `end_of_step @ +20`; it prints the
 LAMMPS-style "step PE KE T" line synchronously on rank 0. `ATV::RDF` is an
 async observer — it inherits `cpu::md::AsyncObserver`, runs on a background
-thread, and accumulates a half-list pair-distance histogram from the published
-snapshots. At the end of the run its `finalize()` writes the normalized
+thread, and accumulates a half-list pair-distance histogram from the frames the
+driver captures for it (lossless: a slow analysis makes the run wait, it
+never skips a frame). At the end of the run its `finalize()` writes the normalized
 $g(r)$ to disk. Note that `set_observer` takes an **rvalue**; to keep the
 observer around and read `rdf.gr()` after the run, declare it first and borrow
 it with `set_observer_ref(rdf)`.
@@ -413,11 +561,15 @@ trajectories that component is `cpu::XyzRecorder`, and it goes in through
 sim.set_record(cpu::XyzRecorder{"traj.xyz", /*freq=*/100});
 ```
 
-It binds itself at `end_of_step @ +10` and writes one XYZ frame whenever
-`step % freq == 0`. Step indices start at 0 and keep counting across
-consecutive `run(frame, n)` calls on the same `cpu::Frame`, so a 1000-step run
-at `freq=100` writes frames for steps 0, 100, …, 900 — ten of them, with no
-extra write at step 1000. The recorder truncates the file on its first write
+It binds itself at `end_of_step @ +10` and follows the LAMMPS `dump` step
+convention: a frame's step is the number of completed MD steps and the frame
+is the state after exactly that many steps. Every `run()` first writes the
+current state when its step is a multiple of `freq` (LAMMPS `Output::setup`),
+and the end of every step whose completed count is a multiple of `freq` writes
+another; no step is written twice. The count keeps going across consecutive
+`run(frame, n)` calls on the same `cpu::Frame`, so a 1000-step run at
+`freq=100` writes frames for steps 0, 100, …, 1000 — eleven of them, the
+initial and the final state included. The recorder truncates the file on its first write
 and appends afterwards, so one recorder owns one trajectory file; MPI runs
 gather to rank 0, which writes the complete tag-ordered geometry.
 
@@ -428,45 +580,52 @@ after the run. Underneath it, `cpu::XYZ` is still a plain writer (`write` /
 `cpu::minimizer::TrajectoryWriter` is the sibling Recorder bound to the
 minimizer phases.
 
-## When the Force Producer Changes
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
 
-Everything above uses classical force evaluators at the `force` phase.
-Replace them with `cpu::scf::RHF{}.predictor(3)` and
-nothing else changes — the integrator, thermostat, barostat, and
-observers all keep working. That is the AIMD recipe of [Tutorial
-6](ch15-cross-method.md), and it is *the* reason the project has only one MD
-driver.
+## Reference energy conservation
 
-A practical corollary: when you debug an AIMD setup, isolating the
-force phase by swapping in a known-good classical force field is one of
-the cleanest ways to determine whether the problem is in the SCF or in
-the MD wiring.
+Thermo every 200 steps from the binary (total energy in eV):
 
-## Common Pitfalls
+| step | \(E_\mathrm{pot}\) | \(E_\mathrm{kin}\) | \(E_\mathrm{total}\) |
+|-----:|-------------------:|-------------------:|---------------------:|
+| 0 | −10.0451 | 0.4226 | **−9.622484** |
+| 200 | −9.8187 | 0.1962 | −9.622481 |
+| 400 | −9.8734 | 0.2509 | −9.622482 |
+| 600 | −9.9145 | 0.2920 | −9.622480 |
+| 800 | −10.0050 | 0.3825 | −9.622481 |
+| 1000 | −10.2620 | 0.6395 | **−9.622481** |
 
-A short field guide to the things that have actually broken in this
-code:
+Drift over 1000 steps: **\(2.93\times 10^{-6}\) eV** (relative \(\sim 3\times 10^{-7}\)).
 
-- **`frame.box` not set.** Every neighbor-search and minimum-image
-  helper reads `cpu::Box`. An uninitialized box means
-  zero-length edges, infinite densities, and segfaults inside cell-list
-  setup. Always set `frame.box = cpu::Box::cubic(L)` before `sim.build()`.
-- **Cutoff vs neighbor-list-cutoff.** `PairLJCut{eps, sigma, cutoff}` defines
-  the physical cutoff. `NeighborList<>{cutoff}` defines the search
-  cutoff. They must agree (or the neighbor-list cutoff is larger by the
-  Verlet skin). Mismatch silently truncates the pair list.
-- **Forgotten `InitVelocity`.** Without it, atoms start with zero
-  velocity. NVE runs will heat up to the wrong temperature; NVT runs
-  will spike kinetic energy until the thermostat catches up.
-- **Special-bonds not enabled in topology runs.** See above. Bonded
-  pairs feel a $r^{-12}$ wall.
-- **Trying to stack thermostats.** Nose-Hoover and Langevin are mutually
-  exclusive. Pick one. The driver's `validate_components()` does not
-  flag the combination because both advertise `role() == Thermostat`,
-  but they will fight each other and your temperature trace will be
-  meaningless.
+```molplot preset="molplot" theme="auto" width="100%" aspect="16:10"
+mark: {type: line, point: true, tooltip: true}
+data:
+  values:
+    - {step: 0, series: E_total, E: -9.622484}
+    - {step: 200, series: E_total, E: -9.622481}
+    - {step: 400, series: E_total, E: -9.622482}
+    - {step: 600, series: E_total, E: -9.622480}
+    - {step: 800, series: E_total, E: -9.622481}
+    - {step: 1000, series: E_total, E: -9.622481}
+    - {step: 0, series: E_pot, E: -10.0451}
+    - {step: 200, series: E_pot, E: -9.8187}
+    - {step: 400, series: E_pot, E: -9.8734}
+    - {step: 600, series: E_pot, E: -9.9145}
+    - {step: 800, series: E_pot, E: -10.0050}
+    - {step: 1000, series: E_pot, E: -10.2620}
+encoding:
+  x: {field: step, type: quantitative, title: Step}
+  y: {field: E, type: quantitative, title: "Energy (eV)", scale: {zero: false}}
+  color: {field: series, type: nominal, title: null}
+```
 
-## What This Chapter Did Not Cover
+Potential and kinetic trade off; **total** is flat — the NVE signature of a
+correct Velocity-Verlet + LJ force pipeline. The CUDA twin
+should match within floating-point noise.
+
+## Scope and next steps
 
 Three pieces of MD machinery exist on the CPU side and are not
 discussed in detail here:
@@ -489,3 +648,7 @@ force evaluators under a different driver — `cpu::minimizer::Minimize`
 also anchors *ab initio* geometry optimization. From a wiring
 perspective, the two are the same recipe with the integrator swapped
 for an L-BFGS step.
+
+## Questions for reflection
+
+Why can the pair force vanish where its energy is negative? Which cutoff errors would not disappear merely by halving the time step?

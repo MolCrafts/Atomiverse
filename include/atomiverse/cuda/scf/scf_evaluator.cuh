@@ -8,8 +8,7 @@
 ///
 /// @code{.cpp}
 ///   // Preferred (production):
-///   cuda::scf::RHF rhf;
-///   rhf.basis = cpu::scf::BasisSet::STO3G;
+///   cuda::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 ///   rhf.run(frame);
 ///
 ///   // Synthetic (tests only):

@@ -6,41 +6,48 @@ A molpy-built Atomistic system exports via ``to_frame()`` to the
 
 from __future__ import annotations
 
-import numpy as np
-import molpy
+import sys
 
-from atomiverse.md import MD, InitVelocity
-from atomiverse.neighbor import NeighborList
-from atomiverse.potentials.pair import LJCut
+import numpy as np
+
+from _domains import skip_module_unless
+
+skip_module_unless("ATV_BUILD_MD")
 
 
 def _molpy_argon_frame() -> "molpy.Frame":
+    import molpy
+
     scale = 3.4
     system = molpy.Atomistic()
     for ix in range(2):
         for iy in range(2):
             for iz in range(2):
-                system.def_atom(
-                    element="Ar",
+                system.add_atom(
+                    atomic_number=18,
                     x=ix * scale,
                     y=iy * scale,
                     z=iz * scale,
                     mass=39.948,
                 )
     frame = system.to_frame()
-    frame["atoms"].insert("atomic_number", np.full(8, 18, dtype=np.uint32))
     frame.box = molpy.Box.cube(2 * scale)
     return frame
 
 
 class TestMolpyInterop:
     def test_atomistic_exports_molpy_frame(self) -> None:
+        import molpy
+
         frame = _molpy_argon_frame()
         assert isinstance(frame, molpy.Frame)
         assert np.asarray(frame["atoms"]["x"]).shape == (8,)
 
     def test_molpy_frame_runs_atv_lj_md(self) -> None:
+        from atomiverse.md import MD, InitVelocity
         from atomiverse.md.integrator import VelocityVerlet
+        from atomiverse.neighbor import NeighborList
+        from atomiverse.potentials.pair import LJCut
 
         frame = _molpy_argon_frame()
         cutoff = 8.5

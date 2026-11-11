@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/linalg/matrix.h"
 #include "atomiverse/cpu/semiempirical/basis_data/ipea_tables.h"
 #include "atomiverse/cpu/semiempirical/internal/scc_mixer.h"
+#include "atomiverse/cpu/semiempirical/scc_method.h"
 
 namespace ATV {
 namespace cpu {
@@ -593,73 +594,76 @@ struct SccOut {
 };
 
 SccOut scc_energy(const IpeaSystem& sys, double scc_tol, int max_scc,
-                  double mix_beta, double kT_ha) {
+                  double mix_beta, double kT_ha, Runtime* host = nullptr) {
     std::vector<double> q(static_cast<std::size_t>(sys.n_sh), 0.0);
     internal::ChargeMixer mixer(mix_beta, 6);
-    bool converged = false;
     SccOut out;
     linalg::RealMatrix H = sys.H0;
     std::pair<linalg::RealVector, linalg::RealMatrix> sol;
-    for (int it = 0; it < max_scc; ++it) {
-        std::vector<double> q_at(static_cast<std::size_t>(sys.n_at), 0.0);
-        for (int i = 0; i < sys.n_sh; ++i)
-            q_at[static_cast<std::size_t>(
-                sys.sh[static_cast<std::size_t>(i)].atom)] +=
-                q[static_cast<std::size_t>(i)];
-        std::vector<double> V(static_cast<std::size_t>(sys.n_sh), 0.0);
-        for (int i = 0; i < sys.n_sh; ++i) {
-            double v = 0;
-            for (int j = 0; j < sys.n_sh; ++j)
-                v += sys.gamma[static_cast<std::size_t>(i * sys.n_sh + j)]
-                     * q[static_cast<std::size_t>(j)];
-            const int ia = sys.sh[static_cast<std::size_t>(i)].atom;
-            v += sys.sh[static_cast<std::size_t>(i)].gam3
-                 * q_at[static_cast<std::size_t>(ia)]
-                 * q_at[static_cast<std::size_t>(ia)];
-            V[static_cast<std::size_t>(i)] = v;
-        }
-        H = sys.H0;
-        for (int i = 0; i < sys.n_sh; ++i) {
-            const Shell& si = sys.sh[static_cast<std::size_t>(i)];
-            for (int j = 0; j < sys.n_sh; ++j) {
-                const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
-                const double vij = 0.5
-                                   * (V[static_cast<std::size_t>(i)]
-                                      + V[static_cast<std::size_t>(j)]);
-                for (int ia = 0; ia < si.nao; ++ia)
-                    for (int ja = 0; ja < sj.nao; ++ja)
-                        H(si.ao0 + ia, sj.ao0 + ja) +=
-                            vij * sys.S(si.ao0 + ia, sj.ao0 + ja);
+    linalg::RealMatrix P_it;
+    std::vector<double> q_out;
+    SccDriver scc;
+    const SccOutcome outcome = scc.solve(
+        host, max_scc, scc_tol,
+        [&] {
+            std::vector<double> q_at(static_cast<std::size_t>(sys.n_at), 0.0);
+            for (int i = 0; i < sys.n_sh; ++i)
+                q_at[static_cast<std::size_t>(
+                    sys.sh[static_cast<std::size_t>(i)].atom)] +=
+                    q[static_cast<std::size_t>(i)];
+            std::vector<double> V(static_cast<std::size_t>(sys.n_sh), 0.0);
+            for (int i = 0; i < sys.n_sh; ++i) {
+                double v = 0;
+                for (int j = 0; j < sys.n_sh; ++j)
+                    v += sys.gamma[static_cast<std::size_t>(i * sys.n_sh + j)]
+                         * q[static_cast<std::size_t>(j)];
+                const int ia = sys.sh[static_cast<std::size_t>(i)].atom;
+                v += sys.sh[static_cast<std::size_t>(i)].gam3
+                     * q_at[static_cast<std::size_t>(ia)]
+                     * q_at[static_cast<std::size_t>(ia)];
+                V[static_cast<std::size_t>(i)] = v;
             }
-        }
-        sol = linalg::diagonalize_fock_generalized(H, sys.S);
-        const auto& C = sol.second;
-        linalg::RealMatrix P;
-        accumulate_density(sol.first, C, sys.n_ao, sys.n_elec, kT_ha, P,
-                           nullptr);
-        std::vector<double> q_out(static_cast<std::size_t>(sys.n_sh), 0.0);
-        for (int i = 0; i < sys.n_sh; ++i) {
-            const Shell& si = sys.sh[static_cast<std::size_t>(i)];
-            double pop = 0;
-            for (int ia = 0; ia < si.nao; ++ia)
-                for (int nu = 0; nu < sys.n_ao; ++nu)
-                    pop += P(si.ao0 + ia, nu) * sys.S(si.ao0 + ia, nu);
-            q_out[static_cast<std::size_t>(i)] = pop - si.n0;
-        }
-        out.residual = 0;
-        for (int i = 0; i < sys.n_sh; ++i)
-            out.residual = std::max(
-                out.residual, std::fabs(q_out[static_cast<std::size_t>(i)]
-                                        - q[static_cast<std::size_t>(i)]));
-        out.iterations = it + 1;
-        if (out.residual < scc_tol) {
-            q = q_out;
-            converged = true;
-            break;
-        }
-        q = mixer.next(q, q_out);
-    }
-    if (!converged)
+            H = sys.H0;
+            for (int i = 0; i < sys.n_sh; ++i) {
+                const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+                for (int j = 0; j < sys.n_sh; ++j) {
+                    const Shell& sj = sys.sh[static_cast<std::size_t>(j)];
+                    const double vij = 0.5
+                                       * (V[static_cast<std::size_t>(i)]
+                                          + V[static_cast<std::size_t>(j)]);
+                    for (int ia = 0; ia < si.nao; ++ia)
+                        for (int ja = 0; ja < sj.nao; ++ja)
+                            H(si.ao0 + ia, sj.ao0 + ja) +=
+                                vij * sys.S(si.ao0 + ia, sj.ao0 + ja);
+                }
+            }
+        },
+        [&] {
+            sol = linalg::diagonalize_fock_generalized(H, sys.S);
+            accumulate_density(sol.first, sol.second, sys.n_ao, sys.n_elec,
+                               kT_ha, P_it, nullptr);
+        },
+        [&] {
+            q_out.assign(static_cast<std::size_t>(sys.n_sh), 0.0);
+            for (int i = 0; i < sys.n_sh; ++i) {
+                const Shell& si = sys.sh[static_cast<std::size_t>(i)];
+                double pop = 0;
+                for (int ia = 0; ia < si.nao; ++ia)
+                    for (int nu = 0; nu < sys.n_ao; ++nu)
+                        pop += P_it(si.ao0 + ia, nu) * sys.S(si.ao0 + ia, nu);
+                q_out[static_cast<std::size_t>(i)] = pop - si.n0;
+            }
+            out.residual = 0;
+            for (int i = 0; i < sys.n_sh; ++i)
+                out.residual = std::max(
+                    out.residual, std::fabs(q_out[static_cast<std::size_t>(i)]
+                                            - q[static_cast<std::size_t>(i)]));
+            scc.set_residual(out.residual);
+        },
+        [&] { q = q_out; }, [&] { q = mixer.next(q, q_out); });
+    out.iterations = outcome.iterations;
+    out.residual = outcome.residual;
+    if (!outcome.converged)
         throw std::runtime_error(
             "IPEA: SCC did not converge in " + std::to_string(max_scc)
             + " iterations (residual " + std::to_string(out.residual)
@@ -933,9 +937,10 @@ struct TotalOut {
 TotalOut total_energy_eV(const StorageReal* x, const StorageReal* y,
                          const StorageReal* z, const int* type, int n_at,
                          int charge, double scc_tol, int max_scc,
-                         double mix_beta, bool want_grad, double kT_ha) {
+                         double mix_beta, bool want_grad, double kT_ha,
+                         Runtime* host = nullptr) {
     const IpeaSystem sys = build_system(x, y, z, type, n_at, charge);
-    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta, kT_ha);
+    const SccOut scc = scc_energy(sys, scc_tol, max_scc, mix_beta, kT_ha, host);
     const double e_rep = repulsive_e(sys);
     const double e_disp = dispersion_e(sys, type);
     TotalOut out;
@@ -963,7 +968,7 @@ void IPEA::launch(const LaunchContext& ctx) {
             "IPEA: open shell (multiplicity!=1) is not a product path; "
             "closed-shell only (see queue spin-gfn-xtb). VIP/VEA start from "
             "a closed-shell N-electron state (set compute_vip/compute_vea)");
-    const auto type = f.span(kAtom_type);
+    const auto type = f.span(kAtom_atomic_number);
     const StorageReal* x = f.span(kAtom_x);
     const StorageReal* y = f.span(kAtom_y);
     const StorageReal* z = f.span(kAtom_z);
@@ -972,8 +977,9 @@ void IPEA::launch(const LaunchContext& ctx) {
     AccReal* fz = f.span(kAtom_fz);
 
     const bool do_f = with_forces && ctx.forces_requested;
-    const TotalOut out = total_energy_eV(x, y, z, type, n_at, charge, scc_tol,
-                                         max_scc, mix_beta, do_f, 0.0);
+    const TotalOut out =
+        total_energy_eV(x, y, z, type, n_at, charge, scc_tol, max_scc, mix_beta,
+                        do_f, 0.0, ctx.runtime.exec.runtime);
     energy_ = out.energy_ev;
     scc_residual_ = out.residual;
     scc_iterations_ = out.iterations;
@@ -992,15 +998,15 @@ void IPEA::launch(const LaunchContext& ctx) {
         const double kT_ha =
             units::kB_ev_per_k * kIpeaEtempK / units::kHartreeInEv;
         if (compute_vip) {
-            const TotalOut cat =
-                total_energy_eV(x, y, z, type, n_at, charge + 1, scc_tol,
-                                max_scc, mix_beta, false, kT_ha);
+            const TotalOut cat = total_energy_eV(
+                x, y, z, type, n_at, charge + 1, scc_tol, max_scc, mix_beta,
+                false, kT_ha, ctx.runtime.exec.runtime);
             vip_ = (cat.energy_ev - energy_) - kIpeaShiftEv;
         }
         if (compute_vea) {
-            const TotalOut an =
-                total_energy_eV(x, y, z, type, n_at, charge - 1, scc_tol,
-                                max_scc, mix_beta, false, kT_ha);
+            const TotalOut an = total_energy_eV(
+                x, y, z, type, n_at, charge - 1, scc_tol, max_scc, mix_beta,
+                false, kT_ha, ctx.runtime.exec.runtime);
             vea_ = (energy_ - an.energy_ev) - kIpeaShiftEv;
         }
     }

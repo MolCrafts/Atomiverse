@@ -5,19 +5,34 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/driver/backend.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/transfer.cuh"
 
 using namespace ATV;
 
 namespace {
 
-__global__ void add_one_k(cuda::real_t* fx, cuda::real_t* fy, cuda::real_t* fz,
-                          const int* n_ptr) {
+/// @brief Fixed-point word of a 1 eV/Angstrom force (`precision.cuh`).
+/// @return Encoded word; AddOne adds it once per launch.
+cuda::fixed_t unit_force_word() {
+    cuda::fixed_t word = 0;
+    cuda::encode_force(1.0, word);
+    return word;
+}
+
+/// @brief Host image of one AddOne launch [eV/Angstrom]: forces are 64-bit
+/// fixed point, so 1.0 decodes to the representable value it truncates to.
+/// @return Decoded unit force.
+double unit_force() { return cuda::decode_force<double>(unit_force_word()); }
+
+__global__ void add_one_k(cuda::fixed_t* fx, cuda::fixed_t* fy,
+                          cuda::fixed_t* fz, cuda::fixed_t one,
+                          cuda::ForceFault* fault, const int* n_ptr) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < *n_ptr) {
-        atomicAdd(&fx[idx], cuda::real_t(1));
-        atomicAdd(&fy[idx], cuda::real_t(1));
-        atomicAdd(&fz[idx], cuda::real_t(1));
+        cuda::add_fixed(fx, idx, one, fault);
+        cuda::add_fixed(fy, idx, one, fault);
+        cuda::add_fixed(fz, idx, one, fault);
     }
 }
 
@@ -32,14 +47,15 @@ class AddOne : public cuda::Component {
         if (grid < 1)
             grid = 1;
         add_one_k<<<grid, block, 0, stream>>>(
-            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, frame.atoms.d_size);
+            frame.atoms.fx, frame.atoms.fy, frame.atoms.fz, unit_force_word(),
+            frame.force_fault, frame.atoms.d_size);
     }
 };
 
-__global__ void double_vel_k(cuda::real_t* vx, const int* n_ptr) {
+__global__ void double_vel_k(cuda::mixed_t* vx, const int* n_ptr) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < *n_ptr)
-        vx[idx] *= cuda::real_t(2);
+        vx[idx] *= cuda::mixed_t(2);
 }
 
 class DoubleVel : public cuda::Component {
@@ -108,7 +124,7 @@ TEST(Backend, KernelDispatch) {
     {
         auto fx = frame.span(kAtom_fx);
         for (int i = 0; i < 32; ++i)
-            EXPECT_DOUBLE_EQ(fx[i], 1.0);
+            EXPECT_DOUBLE_EQ(fx[i], unit_force());
     }
 
     backend.shutdown();
@@ -155,7 +171,7 @@ TEST(Backend, BlockingDeferrable) {
         auto fx = frame.span(kAtom_fx);
         auto vx = frame.span(kAtom_vx);
         for (int i = 0; i < 32; ++i) {
-            EXPECT_DOUBLE_EQ(fx[i], 1.0);
+            EXPECT_DOUBLE_EQ(fx[i], unit_force());
             EXPECT_DOUBLE_EQ(vx[i], 2.0);
         }
     }

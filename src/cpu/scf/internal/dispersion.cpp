@@ -48,11 +48,10 @@ void add_dispersion_forces(const Frame& frame, bool d3bj, bool d4,
             + std::to_string(natm) + " atoms");
     for (int A = 0; A < natm; ++A)
         for (int d = 0; d < 3; ++d)
-            gr.forces(A, d) +=
-                units::convert(f_disp[static_cast<std::size_t>(A)]
-                                     [static_cast<std::size_t>(d)],
-                               units::Force::HartreePerBohr,
-                               units::Force::eVPerAngstrom);
+            gr.forces(A, d) += units::convert(
+                f_disp[static_cast<std::size_t>(A)]
+                      [static_cast<std::size_t>(d)],
+                units::Force::HartreePerBohr, units::Force::eVPerAngstrom);
 }
 
 } // namespace internal

@@ -182,7 +182,7 @@ def main():
     # P_target is supplied on the command line of the comparison driver; the
     # step-0 force / pressure readout does not depend on it, so pin it at 0
     # for the static twin (the piston then feels only the LJ force).
-    rt = f"""# MetalWalls twin of ATV regressions/md/piston-electrode-pz
+    rt = f"""# MetalWalls twin of ATV regressions/md/constant-potential
 # ---------------------------------------------------------
 # Static (step-0) readout of the LJ z-force and P_z = F_z/A on the
 # rigid upper piston electrode.  All charges are zero, so every Coulomb

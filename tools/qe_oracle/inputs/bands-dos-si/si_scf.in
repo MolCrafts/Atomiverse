@@ -1,4 +1,4 @@
-! Fair-wall twin of regressions/pw/bands-dos-si, step 1 of 4: SCF density.
+! Fair-wall twin of regressions/pw/bands-dos, step 1 of 4: SCF density.
 ! Same NC UPF, cell, ecutwfc = 15 Ry, MP 2x2x2 as the ATV regression's SCF.
 &control
   calculation = 'scf'

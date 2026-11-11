@@ -1,7 +1,7 @@
 /// @file python/src/bindings/bind_md.cpp
 /// @brief MD driver + component bindings aligned with the C++ categorical API.
 ///
-/// Public surface mirrors ``examples/07_md_lj.cpp`` and ``cpu::md::MD``:
+/// Public surface mirrors ``examples/cpp/08_md_lj.cpp`` and ``cpu::md::MD``:
 ///
 /// @code
 ///   sim.set_evaluator(PairLJCut{…});
@@ -17,9 +17,10 @@
 /// launcher TaskSpec path stays byte-compatible. ``MdHandle`` materializes the
 /// real C++ components on each setter and records the mirror entry.
 
+#include "capture_stats.h"
 #include "evaluator_setters.h"
 #include "frame_guards.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
 
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/string.h>
@@ -37,6 +38,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
@@ -44,10 +46,12 @@
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
+#include "atomiverse/cpu/dynamics/nvt_sllod.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
+#include "units_binding.h"
 // The eighteen force sources this file used to spell out are registered from
 // `evaluator_setters.h`, which owns their build gates. The four headers below
 // are still included HERE because the `PhaseBuilder` escape hatch at the
@@ -57,7 +61,12 @@
 #include "atomiverse/cpu/potentials/dihedral_multi_harmonic.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/record/thermo.h"
+#ifdef ATV_HAS_IO
 #include "atomiverse/cpu/record/xyz_recorder.h"
+#endif
+#ifdef ATV_HAS_IO
+#include "atomiverse/cpu/record/mrec_recorder.h"
+#endif
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
 
@@ -107,6 +116,37 @@ struct MdHandle {
                   "configuration.");
     }
 
+    // Borrow a live component/node; nanobind keeps its Python owner alive.
+    template <typename Evaluator>
+    void set_local_evaluator(Evaluator& evaluator, const char* name) {
+        require_configurable_("set_evaluator");
+        driver.set_evaluator_ref(evaluator);
+        unmirrored_.push_back(name);
+    }
+
+    /// @brief Register a force source the task wire cannot carry.
+    ///
+    /// `KSpacePPPM` is move-only and is not an `MDComponentParams`
+    /// alternative. `set_categorical` would either fail its variant
+    /// static_assert or append a mirror entry and then drop the solver on
+    /// a launcher replay. `coulomb` feeds `require_charge_column`, because
+    /// this registration never lands in `mirror`.
+    template <typename Component>
+    void set_unmirrored_evaluator(Component comp, const char* name,
+                                  bool coulomb) {
+        require_configurable_("set_evaluator");
+        if (coulomb)
+            unmirrored_coulomb_ = true;
+        unmirrored_.push_back(name);
+        driver.set_evaluator(std::move(comp));
+    }
+
+    void set_nvt_sllod_(cpu::md::NvtSllod integrator) {
+        require_configurable_("set_integrator");
+        unmirrored_.push_back("nvt_sllod");
+        driver.set_integrator(std::move(integrator));
+    }
+
     template <typename Params, typename Component>
     void set_categorical(const char* setter, const Params& p, Component comp) {
         require_configurable_(setter);
@@ -116,6 +156,7 @@ struct MdHandle {
                       || std::is_same_v<P, cpu::task::AngleHarmonicParams>
                       || std::is_same_v<P, cpu::task::PairCoulCutParams>
                       || std::is_same_v<P, cpu::task::CoulLongParams>
+                      || std::is_same_v<P, cpu::task::PairLJCutCoulLongParams>
                       || std::is_same_v<P,
                                         cpu::task::DihedralMultiHarmonicParams>
                       // The widened real-space catalogue: six pair styles and
@@ -129,7 +170,11 @@ struct MdHandle {
                       || std::is_same_v<P, cpu::task::PairDpdParams>
                       || std::is_same_v<P, cpu::task::BondFeneParams>
                       || std::is_same_v<P, cpu::task::DihedralCharmmParams>
-                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>)
+                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>
+                      || std::is_same_v<P, cpu::task::AngleCosineParams>
+                      // A uniform field is a force source on the same slot
+                      // (force phase), as cpu::md::FixEfield documents.
+                      || std::is_same_v<P, cpu::task::FixEfieldParams>)
             driver.set_evaluator(std::move(comp));
 #ifdef ATV_HAS_KSPACE
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
@@ -138,13 +183,13 @@ struct MdHandle {
             driver.set_evaluator(std::move(comp));
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-        else if constexpr (std::is_same_v<P, cpu::task::AM1EvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::AM1Params>)
             // A semiempirical force source rides the same plural evaluator
             // slot as the pair styles — that is what makes an MD run BOMD.
             driver.set_evaluator(std::move(comp));
 #endif
 #ifdef ATV_HAS_PW
-        else if constexpr (std::is_same_v<P, cpu::task::PwEvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::PWParams>)
             // Plane-wave DFT is the other force source that makes the loop
             // Born-Oppenheimer; move-only (it owns FFTW plans), so the
             // component arrives here already moved from the setter.
@@ -182,10 +227,13 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
                 static_cast<const cpu::task::ThermoParams&>(p).freq);
-        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>)
-            // The trajectory sink owns its file handle and its own stride
-            // gate, so it goes in whole through the recorder slot (plural)
-            // rather than through a driver-level cadence like Thermo's.
+        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>
+                           || std::is_same_v<P, cpu::task::MrecRecorderParams>)
+            // The trajectory sinks own their file handle and their own
+            // stride gate, so they go in whole through the recorder slot
+            // (plural) rather than through a driver-level cadence like
+            // Thermo's. Both are mirrored: under the MPI launcher every rank
+            // gathers its owned rows to rank 0, which alone writes.
             driver.set_record(std::move(comp));
         else
             static_assert(cpu::task::detail::unsupported_component_v<P>);
@@ -205,27 +253,28 @@ struct MdHandle {
     /// The two boundaries deliberately differ:
     ///
     /// - At the **C++ boundary** `charge` is an *optional* per-atom column.
-    ///   `cpu::from_molrs` allocates it either way and zero-fills it when the
-    ///   molrs Frame did not carry it, because a C++ caller that hands over a
+    ///   `cpu::from_molpy` allocates it either way and zero-fills it when the
+    ///   molpy Frame did not carry it, because a C++ caller that hands over a
     ///   frame with no charges is stating a neutral system on purpose.
     /// - At the **Python boundary** that same silence is the common mistake:
     ///   an all-zero charge column and a forgotten charge column produce
     ///   identical, plausible-looking output (energy finite, forces finite,
-    ///   electrostatics simply absent), and by the time `from_molrs` has run
-    ///   the difference is gone. So the binding checks the molrs Frame — the
+    ///   electrostatics simply absent), and by the time `from_molpy` has run
+    ///   the difference is gone. So the binding checks the molpy Frame — the
     ///   last place where absence is still visible — and throws with a how-to
     ///   instead of running a Coulomb model on charges nobody supplied.
     ///
     /// Intentional zeros stay expressible: insert an explicit zero `charge`
     /// column and the check passes.
     ///
-    /// @param frame Borrowed molrs Frame about to be advanced.
+    /// @param frame Borrowed molpy Frame about to be advanced.
     /// @throws std::runtime_error when a Coulomb evaluator is registered and
     ///         the frame's `atoms` block has no `charge` column.
     void require_charge_column(const molrs::FrameRef& frame) const {
-        const bool coulomb = std::any_of(mirror.begin(), mirror.end(),
-                                         is_coulomb_entry<MDComponentEntry>);
-        if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
+        const bool coulomb = unmirrored_coulomb_
+                             || std::any_of(mirror.begin(), mirror.end(),
+                                            is_coulomb_entry<MDComponentEntry>);
+        if (!coulomb || has_molpy_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(
             "this MD run registers a Coulomb evaluator but the molpy.Frame "
@@ -234,12 +283,12 @@ struct MdHandle {
             "frame[\"atoms\"].insert(\"charge\", q).");
     }
 
-    void run(nb::object frame_obj, int n_steps) {
+    void run(nb::object frame_obj, std::int64_t n_steps) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
             // Every ramping component gets THIS run's span `[0, n_steps]`,
             // identical to what `TaskMaterializer` installs on the launcher
-            // path. Each `run()` is an independent simulation — the molrs
+            // path. Each `run()` is an independent simulation — the molpy
             // overload of `cpu::md::MD::run` tears its run down before
             // returning, so the next call's `LaunchContext::step` restarts at
             // 0 and a span carried over from an earlier call would put the
@@ -251,7 +300,7 @@ struct MdHandle {
                 npt_owned->set_run_span(0, nlast);
             for (auto& langevin : langevin_owned)
                 langevin->set_run_span(0, nlast);
-            auto frame = borrow_molrs_frame(frame_obj);
+            auto frame = borrow_molpy_frame(frame_obj);
             require_charge_column(*frame);
             {
                 nb::gil_scoped_release release;
@@ -264,20 +313,30 @@ struct MdHandle {
             return;
         }
 #ifdef ATV_HAS_MPI
-        cpu::task::TaskSpec spec(
-            cpu::task::MDTask{mirror, static_cast<std::int64_t>(n_steps)});
-        auto fref = borrow_molrs_frame(frame_obj);
+        if (!unmirrored_.empty())
+            throw std::runtime_error(
+                "MD.run: the MPI launcher task payload cannot carry "
+                + unmirrored_.front() + "; run without the launcher");
+        cpu::task::TaskSpec spec(cpu::task::MDTask{
+            mirror, static_cast<std::int64_t>(n_steps),
+            driver.capture_buffer_bytes(), driver.units().style});
+        auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
-        cpu::Frame work = cpu::from_molrs(*fref);
+        cpu::Frame work = cpu::from_molpy(*fref);
+        const int n_import = work.nlocal();
+        std::vector<TagInt> import_tags(
+            static_cast<std::size_t>(std::max(n_import, 0)));
+        if (n_import > 0)
+            std::copy_n(work.span(kAtom_tag).data(), n_import,
+                        import_tags.begin());
         cpu::Frame result(0);
         {
             nb::gil_scoped_release release;
-            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD,
-                                                 cpu::task::kProtocolVersion,
-                                                 /*handshake=*/false);
+            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD);
             result = dispatcher.dispatch(spec, std::move(work)).frame;
         }
-        cpu::to_molrs(result, *fref);
+        result.restore_import_order(import_tags.data(), n_import);
+        cpu::to_molpy(result, *fref);
         ran_ = true;
 #endif
     }
@@ -285,6 +344,10 @@ struct MdHandle {
   private:
     /// True once a `run()` has completed; see `require_configurable_`.
     bool ran_ = false;
+    std::vector<std::string> unmirrored_;
+    /// True once `set_unmirrored_evaluator` registered an electrostatic
+    /// source. `require_charge_column` ORs this with the mirror scan.
+    bool unmirrored_coulomb_ = false;
 };
 
 struct MdPhaseBuilder {
@@ -312,7 +375,54 @@ void bind_md(nb::module_& m) {
             [](cpu::task::VelocityVerletParams* p, double dt) {
                 new (p) cpu::task::VelocityVerletParams{dt};
             },
-            nb::arg("dt"), "Construct with timestep dt [fs].");
+            nb::arg("dt"), "Construct with timestep dt [time].");
+
+    nb::class_<ATV::md::NvtSllodSpec>(
+        m, "NvtSllod",
+        "NVT SLLOD integrator (LAMMPS `fix nvt/sllod` + `fix deform` ERATE, "
+        "`remap v`).\n\n"
+        "Replaces VelocityVerlet and thermostats peculiar velocities itself. "
+        "Do not add NoseHoover or Langevin beside it. `direction` is the "
+        "Voigt index 0..5: x, y, z, yz, xz, xy. `rate` is the engineering "
+        "strain rate [1/time]. The strain clock is internal and restarts when "
+        "the driver is built again. `tchain` is the Nose-Hoover chain "
+        "length (LAMMPS `tchain`; `fix nvt/sllod` defaults it to 1). A tilt "
+        "beyond half its box length flips the cell (LAMMPS `flip yes`).\n\n"
+        "This record is not part of the MPI task payload. `MD.run` under the "
+        "launcher rejects it.")
+        .def(
+            "__init__",
+            [](ATV::md::NvtSllodSpec* p, double temperature, double tau,
+               double dt, double rate, int direction, int tchain) {
+                new (p) ATV::md::NvtSllodSpec{temperature, tau,       dt,
+                                              rate,        direction, tchain};
+            },
+            nb::arg("temperature"), nb::arg("tau"), nb::arg("dt"),
+            nb::arg("rate"), nb::arg("direction"), nb::arg("tchain") = 1,
+            "temperature [temperature], tau [time] (LAMMPS Tdamp), dt [time], "
+            "engineering rate [1/time], direction 0..5, chain length tchain.");
+
+    nb::class_<cpu::task::FixEfieldParams>(
+        m, "FixEfield",
+        "Constant uniform electric field (LAMMPS `fix efield Ex Ey Ez`, "
+        "metal units).\n\n"
+        "A force source for MD.set_evaluator on CPU and CUDA: F_i += q_i E. "
+        "The energy U = -sum_i q_i E . r_i^u uses unwrapped coordinates "
+        "r^u = r + H n through the frame's image flags (LAMMPS fsum[0]); it "
+        "drifts by the work the field does on migrating ions and is not a "
+        "bounded potential under PBC. No virial is added (LAMMPS "
+        "`fix_modify virial` is off by default). Needs a per-atom 'charge' "
+        "column [e].")
+        .def(
+            "__init__",
+            [](cpu::task::FixEfieldParams* p, double Ex, double Ey, double Ez) {
+                new (p) cpu::task::FixEfieldParams{Ex, Ey, Ez};
+            },
+            nb::arg("Ex"), nb::arg("Ey"), nb::arg("Ez"),
+            "Construct with the field components Ex, Ey, Ez [V/A].")
+        .def_ro("Ex", &cpu::task::FixEfieldParams::Ex, "Field x [V/A].")
+        .def_ro("Ey", &cpu::task::FixEfieldParams::Ey, "Field y [V/A].")
+        .def_ro("Ez", &cpu::task::FixEfieldParams::Ez, "Field z [V/A].");
 
     nb::class_<cpu::task::InitVelocityParams>(
         m, "InitVelocity", "Maxwell-Boltzmann velocity initialization.")
@@ -323,7 +433,7 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::InitVelocityParams{temperature, seed};
             },
             nb::arg("temperature"), nb::arg("seed"),
-            "Construct with target temperature [K] and RNG seed.");
+            "Construct with target temperature [temperature] and RNG seed.");
 
     nb::class_<cpu::task::NoseHooverParams>(
         m, "NoseHoover", "Nose-Hoover thermostat (LAMMPS `fix nvt`).")
@@ -334,8 +444,8 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::NoseHooverParams{T_target, tau_T, dt};
             },
             nb::arg("T_target"), nb::arg("tau_T"), nb::arg("dt"),
-            "Construct with target temperature [K], coupling time "
-            "tau_T [fs] (LAMMPS `Tdamp`), and timestep [fs].");
+            "Construct with target temperature [temperature], coupling time "
+            "tau_T [time] (LAMMPS `Tdamp`), and timestep [time].");
 
     nb::class_<cpu::task::FixLangevinParams>(
         m, "Langevin", "Langevin thermostat (LAMMPS `fix langevin`).")
@@ -348,8 +458,10 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("T_start"), nb::arg("T_stop"), nb::arg("damp"),
             nb::arg("dt"), nb::arg("seed"),
-            "Construct with ramp temperatures T_start/T_stop [K], damping "
-            "time damp [fs] (LAMMPS `damp`), timestep dt [fs], and RNG seed.");
+            "Construct with ramp temperatures T_start/T_stop [temperature], "
+            "damping "
+            "time damp [time] (LAMMPS `damp`), timestep dt [time], and RNG "
+            "seed.");
 
     nb::class_<cpu::task::FixCsvrParams>(
         m, "CSVR",
@@ -361,8 +473,9 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::FixCsvrParams{T_start, tau, dt, seed};
             },
             nb::arg("T_start"), nb::arg("tau"), nb::arg("dt"), nb::arg("seed"),
-            "Construct with target temperature [K], coupling time tau [fs] "
-            "(CP2K `TIMECON`), timestep dt [fs], and RNG seed.");
+            "Construct with target temperature [temperature], coupling time "
+            "tau [time] "
+            "(CP2K `TIMECON`), timestep dt [time], and RNG seed.");
 
     nb::class_<cpu::task::NoseHooverNptParams>(
         m, "NoseHooverNPT",
@@ -394,11 +507,14 @@ void bind_md(nb::module_& m) {
             nb::arg("mtchain") = 3, nb::arg("mpchain") = 3,
             nb::arg("couple_axis") = std::array<bool, 3>{true, true, true},
             nb::arg("T_stop") = double(-1),
-            "Construct with target temperature T_target [K], thermostat "
-            "coupling time tau_T [fs] (LAMMPS `Tdamp`), target pressure "
-            "P_target [eV/A^3] (LAMMPS sign, positive compressive; 1 bar ~ "
-            "6.2415e-7 eV/A^3), barostat coupling time tau_P [fs] (LAMMPS "
-            "`Pdamp`), and timestep dt [fs]. A coupling time is the "
+            "Construct with target temperature T_target [temperature], "
+            "thermostat "
+            "coupling time tau_T [time] (LAMMPS `Tdamp`), target pressure "
+            "P_target [pressure] (LAMMPS sign, positive compressive; in the "
+            "run's "
+            "pressure unit: metal bar, real atm), barostat coupling time tau_P "
+            "[time] (LAMMPS "
+            "`Pdamp`), and timestep dt [time]. A coupling time is the "
             "timescale on which that setpoint is enforced; both are usually "
             "tens (tau_T) to hundreds (tau_P) of timesteps.\n\n"
             "Optional LAMMPS `fix npt` knobs, all defaulted to the C++ "
@@ -410,7 +526,8 @@ void bind_md(nb::module_& m) {
             "  couple_axis per-axis barostat enable {x, y, z}; a False axis "
             "is frozen (its cell edge never rescales, so that direction "
             "stays NVT).\n"
-            "  T_stop      end temperature [K] of a linear setpoint ramp "
+            "  T_stop      end temperature [temperature] of a linear setpoint "
+            "ramp "
             "across the run span, as in LAMMPS. Any value >= 0 is taken as "
             "the ramp end (equal to T_target means a constant setpoint); "
             "< 0 folds to T_target. The run span itself is wired "
@@ -443,11 +560,11 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("T_target"), nb::arg("P_target"), nb::arg("tau_T"),
             nb::arg("tau_P"), nb::arg("dt"),
-            "Construct with target temperature T_target [K], target "
-            "hydrostatic pressure P_target [eV/A^3] (LAMMPS sign, positive "
-            "compressive; 1 bar ~ 6.2415e-7 eV/A^3), thermostat coupling "
-            "time tau_T [fs] (LAMMPS `Tdamp`), barostat coupling time "
-            "tau_P [fs] (LAMMPS `Pdamp`), and timestep dt [fs].\n\n"
+            "Construct with target temperature T_target [temperature], target "
+            "hydrostatic pressure P_target [pressure] (LAMMPS sign, positive "
+            "compressive; metal bar, real atm), thermostat coupling "
+            "time tau_T [time] (LAMMPS `Tdamp`), barostat coupling time "
+            "tau_P [time] (LAMMPS `Pdamp`), and timestep dt [time].\n\n"
             "Mind the order: it is (T_target, P_target, tau_T, tau_P, dt) — "
             "both setpoints first, then both coupling times — whereas "
             "NoseHooverNPT pairs each setpoint with its own coupling time "
@@ -476,416 +593,27 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("P_target"), nb::arg("tau_P"), nb::arg("dt"),
             nb::arg("bulk_modulus") = double(1),
-            "Construct with target pressure P_target [eV/A^3] (LAMMPS sign, "
-            "positive compressive; 1 bar ~ 6.2415e-7 eV/A^3), barostat "
-            "coupling time tau_P [fs] (LAMMPS `Pdamp`), and timestep dt "
-            "[fs].\n\n"
-            "bulk_modulus is the tunable modulus beta [eV/A^3] (LAMMPS "
+            "Construct with target pressure P_target [pressure] (LAMMPS sign, "
+            "positive compressive; metal bar, real atm), barostat "
+            "coupling time tau_P [time] (LAMMPS `Pdamp`), and timestep dt "
+            "[time].\n\n"
+            "bulk_modulus is the tunable modulus beta [pressure] (LAMMPS "
             "`modulus`). It divides the per-step rescale, so a larger value "
             "means a gentler box change and slower pressure relaxation. The "
             "default is 1.0, deliberately NOT LAMMPS's 10.0 — see "
             "cpu/dynamics/barostat.h; pass 10.0 for LAMMPS-identical "
             "relaxation.");
 
-    nb::class_<cpu::task::PairLJCutParams>(m, "PairLJCut",
-                                           "Lennard-Jones 12-6 pair potential.")
-        .def(
-            "__init__",
-            [](cpu::task::PairLJCutParams* p, double epsilon, double sigma,
-               double cutoff) {
-                new (p) cpu::task::PairLJCutParams{epsilon, sigma, cutoff};
-            },
-            nb::arg("epsilon"), nb::arg("sigma"), nb::arg("cutoff"),
-            "Construct with epsilon [eV], sigma [A], and cutoff [A].");
-
-    // ── The widened real-space catalogue ──
-    //
-    // Six pair styles and three bonded ones, all unconditional: a real-space
-    // style is part of ATV_BUILD_POTENTIALS with no flag of its own, exactly
-    // like PairLJCut / BondHarmonic. None of the six pair styles is a
-    // NeighborConsumer, and each as constructed from these mirrors walks all
-    // pairs O(N^2) — including PairBorn, whose only neighbor-list-aware arm is
-    // the single-type C++ constructor the table mirror never reaches. So a run
-    // that installs only these needs no NeighborList at all.
-
-    nb::class_<cpu::task::PairMorseParams>(
-        m, "PairMorse",
-        "Morse pair potential V = D(1 - exp(-alpha(r - r0)))^2, shifted to "
-        "zero at the cutoff.\n\n"
-        "The textbook model of a chemical bond: a minimum at r0, harmonic for "
-        "small displacements, and — unlike a spring — flattening out to the "
-        "finite dissociation energy D as r grows, so the bond can break. "
-        "alpha sets how fast that flattening happens; a large alpha is a "
-        "narrow, stiff well.\n\n"
-        "The tree's demonstration that a new pair style costs two files and "
-        "no registry, written for readability rather than speed: it walks "
-        "every pair O(N^2) with no neighbor list. Use it at the scale where "
-        "that is honest — a dimer, a small cluster, a teaching example.")
-        .def(
-            "__init__",
-            [](cpu::task::PairMorseParams* p, double D, double alpha, double r0,
-               double cutoff) {
-                new (p) cpu::task::PairMorseParams{D, alpha, r0, cutoff};
-            },
-            nb::arg("D"), nb::arg("alpha"), nb::arg("r0"), nb::arg("cutoff"),
-            "Construct with well depth D [eV], width alpha [1/A], "
-            "equilibrium separation r0 [A], and cutoff [A].");
-
-    nb::class_<cpu::task::PairBuckParams>(
-        m, "PairBuck",
-        "Buckingham pair potential U = A exp(-r/rho) - C/r^6, shifted at the "
-        "cutoff (LAMMPS `pair_style buck` with `pair_modify shift yes`).\n\n"
-        "The two terms are the two physical effects of a closed-shell pair. "
-        "The Born-Mayer exponential is Pauli repulsion — the energy cost of "
-        "forcing two filled electron clouds to overlap, falling off over the "
-        "softness length rho. The -C/r^6 term is London dispersion, the "
-        "attraction between the instantaneous dipoles two polarizable atoms "
-        "induce in each other.\n\n"
-        "Single-type: one (A, rho, C) applies to every pair. Mind the short-"
-        "range limit — the Born-Mayer wall is finite while -C/r^6 is not, so "
-        "Buckingham has a spurious attractive collapse as r -> 0 that "
-        "PairBorn's +D/r^8 term cures.")
-        .def(
-            "__init__",
-            [](cpu::task::PairBuckParams* p, double A, double rho, double C,
-               double cutoff) {
-                new (p) cpu::task::PairBuckParams{A, rho, C, cutoff};
-            },
-            nb::arg("A"), nb::arg("rho"), nb::arg("C"), nb::arg("cutoff"),
-            "Construct with Born-Mayer prefactor A [eV], softness length "
-            "rho [A], dispersion coefficient C [eV*A^6], and cutoff [A].");
-
-    nb::class_<cpu::task::PairBornParams>(
-        m, "PairBorn",
-        "Born-Mayer-Huggins pair table U = A exp((sigma - r)/rho) - C/r^6 + "
-        "D/r^8, shifted at the cutoff (LAMMPS `pair_style born`) — the "
-        "Fumi-Tosi short-range half of a molten-salt model. Add the Coulomb "
-        "term as a separate evaluator.\n\n"
-        "The table is per TYPE PAIR and the keys are ATOMIC NUMBERS: the "
-        "frame's per-atom type column is filled from the molrs "
-        "`atomic_number` column, so a sodium-chloride row is type_i=11, "
-        "type_j=17 and an argon dimer is 18, 18 — not a 0-based index.\n\n"
-        "Every interacting pair must be listed, and the table is symmetric in "
-        "(i, j). An unlisted pair does NOT interact: Fumi-Tosi parameters are "
-        "not Lorentz-Berthelot, so there is no mixing rule to fall back on.")
-        .def(
-            "__init__",
-            [](cpu::task::PairBornParams* p, std::vector<int> type_i,
-               std::vector<int> type_j, std::vector<double> A,
-               std::vector<double> rho, std::vector<double> sigma,
-               std::vector<double> C, std::vector<double> D, double cutoff) {
-                new (p) cpu::task::PairBornParams{
-                    std::move(type_i), std::move(type_j),
-                    std::move(A),      std::move(rho),
-                    std::move(sigma),  std::move(C),
-                    std::move(D),      cutoff};
-            },
-            nb::arg("type_i"), nb::arg("type_j"), nb::arg("A"), nb::arg("rho"),
-            nb::arg("sigma"), nb::arg("C"), nb::arg("D"), nb::arg("cutoff"),
-            "Construct from PARALLEL sequences, one entry per table row: "
-            "type_i / type_j (atomic numbers), A [eV], rho [A], sigma [A], "
-            "C [eV*A^6], D [eV*A^8], plus the one shared cutoff [A].\n\n"
-            "All seven sequences are one table seen column-wise and must have "
-            "the same length. A single-type model is one row, e.g. "
-            "type_i=[18], type_j=[18], A=[1000.0], ...\n\n"
-            "This object is a plain parameter record and validates nothing; "
-            "the table is transposed into coefficient rows when the evaluator "
-            "is installed, so a length mismatch raises ValueError from "
-            "MD.set_evaluator(...), not from here — the same arrangement as "
-            "XYZ and MD.set_record(...).");
-
-    nb::class_<cpu::task::PairYukawaParams>(
-        m, "PairYukawa",
-        "Screened-Coulomb (Yukawa) pair potential U = A exp(-kappa r)/r, "
-        "shifted at the cutoff.\n\n"
-        "SCREENING is what a cloud of mobile opposite charges — counter-ions "
-        "around a colloid, electrons in a plasma — does to a bare charge: it "
-        "neutralizes it beyond a distance 1/kappa, turning the 1/r Coulomb "
-        "tail into an exponentially cut one. kappa = 0 recovers unscreened "
-        "A/r.\n\n"
-        "Despite the name it reads NO per-atom charge column: the amplitude A "
-        "is the whole interaction strength, which is what makes this a "
-        "colloid / screened-plasma model rather than an electrostatic one. "
-        "For real charges use PairCoulCut, or CoulLong + KSpacePME.")
-        .def(
-            "__init__",
-            [](cpu::task::PairYukawaParams* p, double A, double kappa,
-               double cutoff) {
-                new (p) cpu::task::PairYukawaParams{A, kappa, cutoff};
-            },
-            nb::arg("A"), nb::arg("kappa"), nb::arg("cutoff"),
-            "Construct with amplitude A [eV*A] (positive is repulsive), "
-            "screening wavenumber kappa [1/A], and cutoff [A].");
-
-    nb::class_<cpu::task::PairWcaParams>(
-        m, "PairWCA",
-        "Weeks-Chandler-Andersen pair potential: Lennard-Jones 12-6 cut and "
-        "shifted at r_c = 2^(1/6) sigma, so U(r_c) = F(r_c) = 0 and the style "
-        "is purely repulsive.\n\n"
-        "There is no cutoff argument, deliberately: the cutoff is DERIVED "
-        "from sigma (the LJ minimum), not chosen — that is the definition of "
-        "the style. Beyond it the contribution is exactly zero, not merely "
-        "small.")
-        .def(
-            "__init__",
-            [](cpu::task::PairWcaParams* p, double epsilon, double sigma) {
-                new (p) cpu::task::PairWcaParams{epsilon, sigma};
-            },
-            nb::arg("epsilon"), nb::arg("sigma"),
-            "Construct with the parent LJ well depth epsilon [eV] and length "
-            "scale sigma [A].");
-
-    nb::class_<cpu::task::PairDpdParams>(
-        m, "PairDpd",
-        "Groot-Warren dissipative particle dynamics (DPD).\n\n"
-        "DPD is a COARSE-GRAINED method: a particle stands for a blob of "
-        "fluid rather than an atom, so the pair force is soft (finite at "
-        "r = 0) and the degrees of freedom that were coarsened away come back "
-        "as a pairwise thermostat. The conservative half is "
-        "F^C = a w(r) rhat with w = 1 - r/r_c, rhat the unit vector along "
-        "r_i - r_j; the energy reported for it is U^C = a r_c w^2 / 2 [eV]. "
-        "The thermostat half is a matched dissipative/random pair with "
-        "sigma^2 = 2 gamma k_B T.\n\n"
-        "It is a THERMOSTAT as well as a potential — install it instead of, "
-        "not beside, NoseHoover / Langevin / CSVR, and give it the same dt "
-        "the integrator uses (the random force scales as 1/sqrt(dt)). It does "
-        "NOT replace the integrator: VelocityVerlet still advances the "
-        "positions.\n\n"
-        "Single-amplitude only: the C++ class also has a multi-component "
-        "constructor taking a square a_matrix[type_i][type_j], and that one is "
-        "NOT bound here (it has no wire mirror either — it is a dense matrix "
-        "indexed by atomic number, not a list of keyed rows like PairBorn's "
-        "table). One `a` applies to every pair.\n\n"
-        "Two consequences worth knowing before reading a number off a run:\n"
-        "  * the reported stress carries the CONSERVATIVE virial only. The "
-        "dissipative and random forces are thermostat terms with zero mean at "
-        "equilibrium, and the random one diverges as 1/sqrt(dt), so tallying "
-        "them would put timestep-dependent noise into every pressure without "
-        "changing its average.\n"
-        "  * the random force is REDRAWN every step from the {seed, step, i, "
-        "j} stream, where i and j are atom INDICES. A run is reproducible for "
-        "a given seed, step budget and atom ordering; a single point is not "
-        "reproducible across different steps unless gamma = 0, which switches "
-        "both thermostat terms off and leaves the conservative half alone.")
-        .def(
-            "__init__",
-            [](cpu::task::PairDpdParams* p, double a, double gamma,
-               double temperature, double cutoff, double dt,
-               std::uint64_t seed) {
-                new (p) cpu::task::PairDpdParams{a,      gamma, temperature,
-                                                 cutoff, dt,    seed};
-            },
-            nb::arg("a"), nb::arg("gamma"), nb::arg("temperature"),
-            nb::arg("cutoff"), nb::arg("dt"),
-            nb::arg("seed") = std::uint64_t(1),
-            "Construct with soft repulsion amplitude a [eV/A] — a FORCE, the "
-            "value of F^C at contact, not an energy — dissipative friction "
-            "gamma [eV*fs/A^2], thermostat temperature [K], cutoff r_c [A], "
-            "timestep dt [fs], and the random-stream seed "
-            "(dimensionless).\n\n"
-            "gamma = 0 switches BOTH the dissipative and the random term off "
-            "(sigma = sqrt(2 gamma k_B T)), leaving the conservative soft "
-            "repulsion alone — which is the only way to get a reproducible "
-            "single point out of this style.");
-
-    nb::class_<cpu::task::BondFeneParams>(
-        m, "BondFene",
-        "Kremer-Grest FENE bond U = -K R0^2 ln(1 - (r/R0)^2) / 2.\n\n"
-        "FENE is Finitely Extensible Nonlinear Elastic: the energy diverges "
-        "as the bond length approaches the maximum extension R0, so unlike a "
-        "harmonic spring the bond cannot be stretched arbitrarily far. And it "
-        "says so — a bond at or beyond R0 raises RuntimeError from run() "
-        "rather than reporting an infinite energy.\n\n"
-        "The standard coarse-grained polymer bond, and the reason it is "
-        "standard: paired with a repulsive WCA pair style, the hard ceiling "
-        "on bond length plus the hard floor on non-bonded approach makes it "
-        "geometrically impossible for two chains to pass through each other.")
-        .def(
-            "__init__",
-            [](cpu::task::BondFeneParams* p, std::vector<double> K,
-               std::vector<double> R0) {
-                new (p) cpu::task::BondFeneParams{std::move(K), std::move(R0)};
-            },
-            nb::arg("K"), nb::arg("R0"),
-            "Construct with spring constants K [eV/A^2] and maximum "
-            "extensions R0 [A] per bond type.");
-
-    nb::class_<cpu::task::DihedralCharmmParams>(
-        m, "DihedralCharmm",
-        "CHARMM periodic torsion V = K(1 + cos(n phi - delta)).\n\n"
-        "This is LAMMPS `dihedral_style charmm` WITHOUT the optional 1-4 "
-        "LJ/Coulomb weight factors — those belong to the pair styles via "
-        "special-bonds weights, not to the torsion. The C++ class also "
-        "exposes a stress-skipping performance switch (`set_compute_stress`); "
-        "it is not bound and stays at its default, so the torsion always "
-        "contributes to the virial.")
-        .def(
-            "__init__",
-            [](cpu::task::DihedralCharmmParams* p, std::vector<double> K,
-               std::vector<int> n, std::vector<double> delta) {
-                new (p) cpu::task::DihedralCharmmParams{
-                    std::move(K), std::move(n), std::move(delta)};
-            },
-            nb::arg("K"), nb::arg("n"), nb::arg("delta"),
-            "Construct with force constants K [eV], multiplicities n "
-            "(integers >= 1) and phase shifts delta [rad] per dihedral type. "
-            "n is the number of minima per full turn, so n = 3 is the "
-            "threefold barrier of an sp3-sp3 bond; delta shifts where those "
-            "minima sit.");
-
-    nb::class_<cpu::task::ImproperHarmonicParams>(
-        m, "ImproperHarmonic",
-        "Harmonic improper torsion V = K(chi - chi0)^2 (LAMMPS "
-        "`improper_style harmonic`), where chi is the angle between the two "
-        "planes of the 4-tuple.\n\n"
-        "Reads the frame's IMPROPER topology — a separate block from "
-        "`dihedrals`, holding the out-of-plane tuples that keep a group "
-        "planar (an sp2 centre, an aromatic ring).")
-        .def(
-            "__init__",
-            [](cpu::task::ImproperHarmonicParams* p, std::vector<double> K,
-               std::vector<double> chi0) {
-                new (p) cpu::task::ImproperHarmonicParams{std::move(K),
-                                                          std::move(chi0)};
-            },
-            nb::arg("K"), nb::arg("chi0"),
-            "Construct with force constants K [eV/rad^2] and equilibrium "
-            "angles chi0 [rad] per improper type.");
-
-    nb::class_<cpu::task::PairCoulCutParams>(
-        m, "PairCoulCut",
-        "Truncated Coulomb pair style (LAMMPS `pair_style coul/cut`).\n\n"
-        "The bare q_i q_j / r sum over the neighbor list, hard-cut at "
-        "cutoff. It is self-contained: unlike CoulLong it takes no "
-        "reciprocal-space partner, so it is the whole electrostatic model of "
-        "the run that installs it. Charges come from the per-atom 'charge' "
-        "column [e] of the molpy.Frame; a frame without that column is "
-        "rejected by run() instead of being read as neutral.")
-        .def(
-            "__init__",
-            [](cpu::task::PairCoulCutParams* p, double cutoff) {
-                new (p) cpu::task::PairCoulCutParams{cutoff};
-            },
-            nb::arg("cutoff"),
-            "Construct with the real-space cutoff [A]. The neighbor list "
-            "must be built with a cutoff >= this value.");
-
-    nb::class_<cpu::task::CoulLongParams>(
-        m, "CoulLong",
-        "Real-space half of an Ewald/PME split (LAMMPS `pair_style "
-        "coul/long`).\n\n"
-        "Sums erfc(alpha r) q_i q_j / r over the neighbor list; the "
-        "complementary smooth part is summed in reciprocal space by the "
-        "matched KSpacePME evaluator of the same run. alpha is therefore not "
-        "a private knob — it must equal the reciprocal partner's alpha, and "
-        "build() refuses a run that installs only one of the two halves.")
-        .def(
-            "__init__",
-            [](cpu::task::CoulLongParams* p, double alpha, double cutoff) {
-                new (p) cpu::task::CoulLongParams{alpha, cutoff};
-            },
-            nb::arg("alpha"), nb::arg("cutoff"),
-            "Construct with the Ewald splitting parameter alpha [1/A] — "
-            "which must equal the KSpacePME alpha — and the real-space "
-            "cutoff [A]. The neighbor list must be built with a cutoff >= "
-            "this value.\n\n"
-            "alpha sets where the split between the two halves falls: "
-            "larger alpha screens the real-space term harder and moves work "
-            "out of the neighbor-list sum into the reciprocal one. The "
-            "LAMMPS rule of thumb is alpha ~ 3.5 / cutoff, at which the "
-            "screened pair term has fallen to erfc(3.5) ~ 7e-7 of the bare "
-            "one at the cutoff.");
-
-#ifdef ATV_HAS_KSPACE
-    nb::class_<cpu::task::KSpacePmeParams>(
-        m, "KSpacePME",
-        "Reciprocal-space half of the same Ewald/PME split — smooth "
-        "Particle-Mesh Ewald (Essmann et al., J. Chem. Phys. 103, 8577 "
-        "(1995)).\n\n"
-        "Rather than a direct O(N^2) double sum, each charge is spread onto "
-        "nearby points of a mesh with B-spline weights, the mesh is "
-        "Fourier-transformed (FFT), multiplied point-by-point by an "
-        "influence function fixed by the cell, alpha and order, and "
-        "transformed back — O(N log N). It is not a Hamiltonian on its own: "
-        "install it together with CoulLong at the SAME alpha, or build() "
-        "raises.\n\n"
-        "This type exists only in an extension built with "
-        "ATV_BUILD_KSPACE=ON (the solver needs FFTW3).")
-        .def(
-            "__init__",
-            [](cpu::task::KSpacePmeParams* p, double alpha, double grid_spacing,
-               int order) {
-                new (p) cpu::task::KSpacePmeParams{alpha, grid_spacing, order};
-            },
-            nb::arg("alpha"), nb::arg("grid_spacing") = double(1),
-            nb::arg("order") = 6,
-            "Construct with the Ewald splitting parameter alpha [1/A], which "
-            "must equal the CoulLong alpha.\n\n"
-            "  grid_spacing  target real-space mesh spacing [A] (default "
-            "1.0). The mesh is derived from the box and rounded to "
-            "FFT-friendly sizes, so a smaller spacing buys a finer mesh and "
-            "a more accurate — costlier — reciprocal sum.\n"
-            "  order         B-spline interpolation order [count, >= 3; "
-            "default 6] — the width of the charge-spreading stencil per "
-            "dimension.");
-#endif
-
-    nb::class_<cpu::task::NeighborListParams>(
-        m, "NeighborList", "Cell-list based neighbor list component.")
-        .def(
-            "__init__",
-            [](cpu::task::NeighborListParams* p, double cutoff, double skin) {
-                new (p) cpu::task::NeighborListParams{cutoff, skin};
-            },
-            nb::arg("cutoff"), nb::arg("skin") = double(-1),
-            "Construct with cutoff [A] and optional skin distance [A].");
-
-    nb::class_<cpu::task::BondHarmonicParams>(
-        m, "BondHarmonic", "Harmonic bond potential V = K(r - r0)^2.")
-        .def(
-            "__init__",
-            [](cpu::task::BondHarmonicParams* p, std::vector<double> K,
-               std::vector<double> r0) {
-                new (p)
-                    cpu::task::BondHarmonicParams{std::move(K), std::move(r0)};
-            },
-            nb::arg("K"), nb::arg("r0"),
-            "Construct with force constants K [eV/A^2] and equilibrium "
-            "distances r0 [A], one entry per bond type. The bond type is the "
-            "frame's `bonds` block `type_id` column.");
-
-    nb::class_<cpu::task::AngleHarmonicParams>(
-        m, "AngleHarmonic", "Harmonic angle potential V = K(theta - theta0)^2.")
-        .def(
-            "__init__",
-            [](cpu::task::AngleHarmonicParams* p, std::vector<double> K,
-               std::vector<double> theta0) {
-                new (p) cpu::task::AngleHarmonicParams{std::move(K),
-                                                       std::move(theta0)};
-            },
-            nb::arg("K"), nb::arg("theta0"),
-            "Construct with force constants K [eV/rad^2] and equilibrium "
-            "angles theta0 [rad], one entry per angle type (the frame's "
-            "`angles` block `type_id` column).");
-
-    nb::class_<cpu::task::DihedralMultiHarmonicParams>(
-        m, "DihedralMultiHarmonic",
-        "Multi-harmonic (Ryckaert-Bellemans) dihedral potential "
-        "V = sum_n C_n cos^n(phi), where phi is the torsion angle about the "
-        "central bond of the 4-tuple (LAMMPS `dihedral_style "
-        "multi/harmonic`).")
-        .def(
-            "__init__",
-            [](cpu::task::DihedralMultiHarmonicParams* p,
-               std::vector<std::vector<double>> Cn) {
-                new (p) cpu::task::DihedralMultiHarmonicParams{std::move(Cn)};
-            },
-            nb::arg("Cn"),
-            "Construct with the coefficients Cn [eV] — one inner sequence per "
-            "dihedral type, its k-th entry multiplying cos^k(phi).");
-
-    nb::class_<cpu::task::ThermoParams>(m, "Thermo",
-                                        "Thermodynamic output at end_of_step.")
+    nb::class_<cpu::task::ThermoParams>(
+        m, "Thermo",
+        "Thermodynamic output at end_of_step.\n\n"
+        "LAMMPS `thermo` step convention: the `step` column is the number of "
+        "completed MD steps and the line is the state after that many steps. "
+        "Each run() first prints the header and the initial state (step 0), "
+        "then the state after every `freq`-th step and after the last step: "
+        "run(frame, 1000) at freq=100 prints steps 0, 100, ..., 1000. "
+        "freq=0 prints the first and last step of each run only (LAMMPS "
+        "`thermo 0`).")
         .def(
             "__init__",
             [](cpu::task::ThermoParams* p, int freq) {
@@ -900,7 +628,8 @@ void bind_md(nb::module_& m) {
     nb::class_<cpu::task::XyzRecorderParams>(
         m, "XYZ",
         "XYZ trajectory output at end_of_step.\n\n"
-        "Writes one frame — element symbol plus x y z [A] per atom, under a "
+        "Writes one frame — element symbol plus x y z [length] per atom, under "
+        "a "
         "comment line carrying the cell and the typed frame metadata — every "
         "`freq` steps. The symbol is derived from the frame's per-atom "
         "`atomic_number` column (Z), so Z=18 is written as Ar.\n\n"
@@ -908,9 +637,11 @@ void bind_md(nb::module_& m) {
         "later write of that same recorder appends, so handing a NEW "
         "XYZ(path, freq) to a second run starts the trajectory over instead "
         "of extending it.\n\n"
-        "Within one run() call the step index runs 0..n_steps-1, so the "
-        "stride gate opens on the steps 0, freq, 2*freq, ... below n_steps: "
-        "a 10-step run at freq=5 writes 2 frames (steps 0 and 5), never 3. "
+        "LAMMPS `dump` step convention: a frame's step is the number of "
+        "completed MD steps and the frame is the state after exactly that "
+        "many steps. A run() writes the initial state (step 0) and then the "
+        "state after every `freq`-th step, up to and including the last: a "
+        "10-step run at freq=5 writes 3 frames (steps 0, 5 and 10). "
         "Each run() call advances a freshly materialized working frame, so "
         "chunked run() calls are not one continued trajectory — do not rely "
         "on the step index carrying over between them.")
@@ -925,10 +656,75 @@ void bind_md(nb::module_& m) {
             "  filename  output XYZ path (truncated on the first write, "
             "appended to afterwards).\n"
             "  freq      write cadence [steps, >= 1; default 1] — one frame "
-            "whenever step % freq == 0.\n\n"
+            "whenever the completed-step count is a multiple of freq "
+            "(including the initial state, step 0).\n\n"
             "This object is a plain parameter record; the values are checked "
             "when the recorder is built, so an empty path or freq < 1 raises "
             "ValueError from MD.set_record(...), not from here.");
+
+#ifdef ATV_HAS_IO
+    // Bound once here as the task-wire mirror: the CPU handle mirrors it to
+    // the MPI launcher, and the CUDA MD handle (bind_cuda.cu) accepts the
+    // same record and builds cuda::MrecRecorder from it.
+    nb::class_<cpu::task::MrecRecorderParams>(
+        m, "MrecRecorder",
+        "molrec (`*.mrec`) trajectory output at end_of_step, on the CPU and "
+        "the CUDA MD driver alike, and under the MPI launcher.\n\n"
+        "Every `every` steps one frame is appended to the store: positions "
+        "[length], velocities [A/fs], forces [force], charges [e], images "
+        "(int32 "
+        "ix/iy/iz, so unwrapped = x + ix*a + iy*b + iz*c), tags, mass "
+        "[mass], the identity columns the frame carries (force-field type as "
+        "`type_id`, species as `atomic_number`; an absent one stays absent), "
+        "the cell, the energies/virial in the frame metadata, the step and "
+        "— with an integrator — time = step*dt [time]. The step is the number "
+        "of completed MD steps and the frame is the state after exactly that "
+        "many steps (LAMMPS `dump`): a run() of n steps at every=k records "
+        "steps 0, k, 2k, ..., up to and including n. Rows are in ascending "
+        "tag order. Read it back with `molpy.io.mrec.MrecReader(path)`; the "
+        "store's `status` section records `state` (with the `error` when "
+        "the run failed), `frames_written` and, on CUDA, the `buffer` "
+        "accounting of the driver's capture buffer (`budget_bytes`, "
+        "`frame_bytes`, `peak_bytes`, `blocked_episodes`, "
+        "`blocked_seconds`).\n\n"
+        "The first frame replaces any store at the path. A recorder records "
+        "one run: on the CPU driver each run() is an independent simulation "
+        "(steps restart at 0), so give a second run() a new MD and "
+        "recorder; on the CUDA driver continued run() calls on the same "
+        "frame extend the same trajectory, the step axis continuing and the "
+        "boundary step written once. Under the MPI launcher every rank "
+        "gathers its atoms to rank 0, which alone writes.\n\n"
+        "CUDA recording is asynchronous but lossless: frames travel through "
+        "the driver's one shared capture buffer (MD(capture_buffer_bytes=…)) "
+        "and when it is full the run waits until the consumers free space — "
+        "no frame is ever dropped. Waits are logged and recorded in the "
+        "`status` section. If writing fails (disk full, I/O error) the run "
+        "stops with RuntimeError naming the store and the cause, and the "
+        "status records state = \"failed\".")
+        .def(
+            "__init__",
+            [](cpu::task::MrecRecorderParams* p, std::string path, int every,
+               std::uint64_t flush_every, bool durable) {
+                new (p) cpu::task::MrecRecorderParams{std::move(path), every,
+                                                      flush_every, durable};
+            },
+            nb::arg("path"), nb::arg("every") = 1, nb::arg("flush_every") = 0,
+            nb::arg("durable") = true,
+            "  path         output store, must end in .mrec\n"
+            "  every        write cadence [steps, >= 1; default 1] — one "
+            "frame whenever the completed-step count is a multiple of every "
+            "(including the initial state, step 0)\n"
+            "  flush_every  automatic commit cadence [frames]; 0 lets molpy "
+            "commit whole chunks\n"
+            "  durable      sync the files on each commit\n\n"
+            "The frame buffer is the driver's, not the recorder's: "
+            "MD(capture_buffer_bytes=…). Checked by MD.set_record (ValueError "
+            "on a bad path or every < 1).")
+        .def_ro("path", &cpu::task::MrecRecorderParams::path)
+        .def_ro("every", &cpu::task::MrecRecorderParams::every)
+        .def_ro("flush_every", &cpu::task::MrecRecorderParams::flush_every)
+        .def_ro("durable", &cpu::task::MrecRecorderParams::durable);
+#endif
 
     // ── MD driver (categorical setters) ──
     nb::class_<MdHandle> md(
@@ -938,7 +734,25 @@ void bind_md(nb::module_& m) {
         "compiled exactly once, so every setter — and on(phase) — raises "
         "RuntimeError afterwards. A different configuration means a new MD "
         "object. Running again with the same configuration stays legal.");
+    ATV::python::bind_units(
+        md, [](MdHandle& h) -> cpu::md::MD& { return h.driver; },
+        [](const MdHandle& h, const char* s) { h.require_configurable_(s); });
     md.def(nb::init<>())
+        .def(
+            "set_capture_buffer_bytes",
+            [](MdHandle& self, std::uint64_t bytes) {
+                self.require_configurable_("set_capture_buffer_bytes");
+                self.driver.set_capture_buffer_bytes(bytes);
+            },
+            nb::arg("bytes"),
+            "Byte budget of the driver's shared asynchronous capture buffer; "
+            ">= 1. Carried by the MPI launcher.")
+        .def(
+            "capture_stats",
+            [](const MdHandle& self) {
+                return capture_stats_dict(self.driver.capture_stats());
+            },
+            "Capture-buffer accounting of the driver's last run.")
         .def(
             "set_integrator",
             [](MdHandle& self, const cpu::task::VelocityVerletParams& p) {
@@ -972,6 +786,15 @@ void bind_md(nb::module_& m) {
             "LAMMPS-style set_integrator. ParrinelloRahmanNPT is the "
             "full-cell (shearable) variant of the same MTK NPT scheme and "
             "likewise takes the integrator slot.")
+        .def(
+            "set_integrator",
+            [](MdHandle& self, const ATV::md::NvtSllodSpec& p) {
+                self.set_nvt_sllod_(cpu::md::NvtSllod{p.temperature_K, p.tau_fs,
+                                                      p.dt_fs, p.rate_per_fs,
+                                                      p.direction, p.tchain});
+            },
+            nb::arg("comp"),
+            "NVT SLLOD. Not mirrored into the MPI task payload.")
         .def(
             "set_barostat",
             [](MdHandle& self, const cpu::task::BerendsenBarostatParams& p) {
@@ -1027,21 +850,6 @@ void bind_md(nb::module_& m) {
     // eighteen force sources, because `Minimize` exposes the very same names.
     bind_evaluator_setters(
         md,
-        // set_evaluator_am1 — the MD reading of the same component.
-        "Append the AM1 semiempirical evaluator as an MD force source — "
-        "Born-Oppenheimer dynamics, meaning the electrons are "
-        "re-converged at every geometry the nuclei reach: one "
-        "self-consistent-field (SCF) solve per step, with forces from the "
-        "fixed-density central finite difference (step 1e-4 A). Takes no "
-        "NeighborList (AM1 is molecular, not a pair style) and reads the "
-        "frame's 'atomic_number' column [Z]. Like any MD run it also "
-        "needs a per-atom 'mass' column [amu] — the integrator divides by "
-        "it.\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the five "
-        "SCF parameters: the object you pass keeps its own state, so "
-        "last_result() on it is NOT populated by run() — per-step "
-        "results (energy [eV], charges [e], forces [eV/A]) land on the "
-        "frame.",
         // set_evaluator_pw — the MD reading of the same component.
         "Append the plane-wave DFT evaluator as an MD force source — "
         "Born-Oppenheimer dynamics on a plane-wave Hamiltonian, meaning "
@@ -1050,18 +858,12 @@ void bind_md(nb::module_& m) {
         "Ewald + Kleinman-Bylander) taken at the converged density. "
         "Takes no NeighborList (a plane-wave Hamiltonian is not a pair "
         "style) and reads the frame's 'atomic_number' column [Z]. Like "
-        "any MD run it needs a per-atom 'mass' column [amu], and like "
+        "any MD run it needs a per-atom 'mass' column [mass], and like "
         "any plane-wave run it needs a box.\n\n"
-        "Budget it deliberately: a step costs TWO self-consistent-field "
-        "solves — the energy solve, then the analytic force path's own — "
-        "and each is seconds of work at production settings, so a Python "
-        "smoke run wants a small cell, a low ecut_ry and a modest "
-        "max_iter.\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the "
-        "fifteen method parameters: the object you pass keeps its own "
-        "state, so last_result() on it is NOT populated by run() — "
-        "per-step results (energy [eV], forces [eV/A]) land on the "
-        "frame.");
+        "A force-producing step uses one electronic solve and contracts its "
+        "accepted state for forces. The driver borrows this same method and "
+        "keeps its Python owner alive; last_result() is populated on it. "
+        "This local provider is not serialized to a launcher task.");
 
     md.def(
           "set_neighbor",
@@ -1086,6 +888,7 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("comp"),
             "Register a recorder; Thermo is installed via set_thermo cadence.")
+#ifdef ATV_HAS_IO
         .def(
             "set_record",
             [](MdHandle& self, const cpu::task::XyzRecorderParams& p) {
@@ -1096,6 +899,22 @@ void bind_md(nb::module_& m) {
             "Register the XYZ trajectory recorder (LAMMPS `dump`). Binds at "
             "end_of_step and writes one frame every freq steps; raises "
             "ValueError on an empty path or freq < 1.")
+#endif
+#ifdef ATV_HAS_IO
+        .def(
+            "set_record",
+            [](MdHandle& self, const cpu::task::MrecRecorderParams& p) {
+                self.set_categorical("set_record", p,
+                                     cpu::MrecRecorder{p.path, p.every,
+                                                       p.flush_every,
+                                                       p.durable});
+            },
+            nb::arg("comp"),
+            "Register the `*.mrec` trajectory recorder (cpu::MrecRecorder). "
+            "Binds at end_of_step; raises ValueError on a path without the "
+            ".mrec suffix or every < 1. Carried by the MPI launcher (rank-0 "
+            "gather and write).")
+#endif
         .def(
             "on",
             [](MdHandle& self, md::Phase phase) {
@@ -1145,7 +964,7 @@ void bind_md(nb::module_& m) {
             [](MdPhaseBuilder& self, const cpu::task::PairLJCutParams& p,
                int order) -> MdPhaseBuilder& {
                 self.handle->add_on_phase(
-                    p, cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff},
+                    p, cpu::task::internal::make_pair_lj_cut(p),
                     MDBinding{self.phase, order});
                 return self;
             },

@@ -95,17 +95,22 @@ bool solve_qp(double eps_p, double vx_m_vmf, int p, int n_occ, int n_mo,
 
 } // namespace
 
-G0W0Result RHF::g0w0() const {
-    if (!has_result())
-        throw std::runtime_error(
-            "RHF::g0w0: no SCF result — call run(frame) first");
+template <typename Method>
+G0W0<Method>::G0W0(const Method& mf) : mf_(&mf) {}
 
-    const SlaterDeterminant& det = determinant();
+template <typename Method>
+G0W0Result G0W0<Method>::run() const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
+        throw std::runtime_error(
+            "G0W0::run: no SCF result — call run(frame) first");
+
+    const SlaterDeterminant& det = mf.determinant();
     if (!det.restricted() || det.generalized())
         throw std::runtime_error(
-            "RHF::g0w0: closed-shell RHF reference required (no fallback)");
+            "G0W0::run: closed-shell RHF reference required (no fallback)");
 
-    const internal::IntegralView pack = integral_view_();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -114,7 +119,7 @@ G0W0Result RHF::g0w0() const {
     const RealVector& eps_raw = det.orbital_energies(Spin::alpha);
     const int n_mo = static_cast<int>(C.shape()[1]);
     if (n_mo != static_cast<int>(eps_raw.size()))
-        throw std::runtime_error("RHF::g0w0: MO dimension mismatch");
+        throw std::runtime_error("G0W0::run: MO dimension mismatch");
 
     // Occupations: integer f=1 columns.
     int n_occ = 0;
@@ -125,18 +130,18 @@ G0W0Result RHF::g0w0() const {
             ++n_occ;
         else if (f != 0.0)
             throw std::invalid_argument(
-                "RHF::g0w0: fractional occupation — integer occupations only");
+                "G0W0::run: fractional occupation — integer occupations only");
     }
     const int n_vir = n_mo - n_occ;
     if (n_occ < 1 || n_vir < 1)
         throw std::invalid_argument(
-            "RHF::g0w0: need at least one occupied and one virtual orbital "
+            "G0W0::run: need at least one occupied and one virtual orbital "
             "(no fallback)");
 
     // dRPA screening of W (α_hf = 0 Casida matrices).
     const internal::OrbitalHessian hess{det, eri_ao};
     if (hess.n_occ() != n_occ || hess.n_virt() != n_vir)
-        throw std::runtime_error("RHF::g0w0: Hessian occupation mismatch");
+        throw std::runtime_error("G0W0::run: Hessian occupation mismatch");
 
     // Shared dRPA Hermitian reduction (α_hf = 0); G0W0 consumes Ω_s + X/Y.
     const internal::DirectRpaResult rpa =
@@ -222,6 +227,8 @@ G0W0Result RHF::g0w0() const {
     out.gap_ev = (e_l - e_h) * units::kHartreeInEv;
     return out;
 }
+
+template class G0W0<RHF>;
 
 } // namespace scf
 } // namespace cpu

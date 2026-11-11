@@ -9,12 +9,12 @@
 /// inverse FFT → force interpolation, giving O(N log N) scaling.
 ///
 /// Smooth PME of Essmann et al., J. Chem. Phys. 103, 8577 (1995):
-///   E_recip = units::coulomb/(2πV) · Σ_{m≠0} exp(−π²m²/α²)/m² · B(m) · |F(Q)(m)|²
+///   E_recip = qqrd2e/(2πV) · Σ_{m≠0} exp(−π²m²/α²)/m² · B(m) · |F(Q)(m)|²
 /// with Q the spline-interpolated charge grid and B(m) the Euler spline
 /// modulus. DOI: 10.1063/1.470117.
 ///
 /// **Performance.** Influence geometry tables are rebuilt only when the mesh
-/// or cell changes (not every step). FFTW plans use `FFTW_MEASURE`. Under MPI
+/// or cell changes (not every step). FFTW plans use `FFTW_ESTIMATE` (deterministic across processes). Under MPI
 /// (replicated grid) only rank 0 runs FFT + influence + iFFT; the force grid
 /// is broadcast — every rank still spreads owned charges and interpolates.
 /// (Distributed slab FFT is a future scalability refinement.)

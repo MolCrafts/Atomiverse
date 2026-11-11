@@ -1,13 +1,17 @@
 /// @file app/atomiverse/main.cpp
-/// @brief `atomiverse` driver: native `-in` script (always) and optional
-///        MPI Python host when built with ATV_BUILD_LAUNCHER.
+/// @brief `atomiverse` driver: native `-in` script when built with
+///        ATV_BUILD_MD, MPI Python host when built with ATV_BUILD_LAUNCHER.
 
 #include "cli_args.h"
-#include "input_script.h"
 
 #include <cstdio>
 #include <exception>
 #include <iostream>
+#include <stdexcept>
+
+#ifdef ATV_HAS_MD
+#include "input_script.h"
+#endif
 
 #ifdef ATV_HAS_LAUNCHER
 #include <mpi.h>
@@ -26,7 +30,13 @@ int main(int argc, char** argv) {
         }
 
         if (!args.in_path.empty()) {
+#ifdef ATV_HAS_MD
             return ATV::app::run_input_script(args.in_path, args.log_path);
+#else
+            throw std::runtime_error(
+                "native input scripts run classical MD and need "
+                "ATV_BUILD_MD=ON. Rebuild with -DATV_BUILD_MD=ON.");
+#endif
         }
 
         if (!args.py_script.empty()) {
@@ -60,7 +70,7 @@ int main(int argc, char** argv) {
             return exit_code;
 #else
             throw std::runtime_error(
-                "atomiverse: Python scripts require ATV_BUILD_LAUNCHER=ON "
+                "Python scripts require ATV_BUILD_LAUNCHER=ON "
                 "(MPI + embedded CPython). For a native input use "
                 "`atomiverse -in in.lj`. Or run the script with "
                 "`python -m atomiverse script.py`.");

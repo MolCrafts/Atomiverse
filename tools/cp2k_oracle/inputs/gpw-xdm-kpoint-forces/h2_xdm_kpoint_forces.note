@@ -77,4 +77,4 @@ reproduce the wiring gate because `assemble_gpw_forces_kpoints` rebuilds
 - Gate: \(F^{k+\mathrm{XDM}}-F^{k}\approx F_{\mathrm{XDM}}^{\mathrm{geom}}\)
   to 1e-8 Ha/Bohr.
 
-See `regressions/gpw/gpw-xdm-kpoint-forces/REFERENCE.md`.
+See `regressions/gpw/xdm/REFERENCE.md`.

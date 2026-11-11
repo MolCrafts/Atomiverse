@@ -1,13 +1,16 @@
 /// @file cpu/potentials/pair_dpd.cpp
 #include "atomiverse/cpu/potentials/pair_dpd.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cpu/potentials/force_scratch.h"
+#include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -16,11 +19,12 @@ PairDpd::PairDpd(double a, double gamma, double temperature, double cutoff,
                  double dt, std::uint64_t seed)
     : Pair(cutoff), a_default_(a), multi_(false), gamma_(gamma),
       temperature_(temperature), dt_(dt), seed_(seed) {
-    if (!(cutoff > 0.0) || !(dt > 0.0) || !(temperature > 0.0)
+    if (!std::isfinite(a) || !std::isfinite(cutoff) || !std::isfinite(dt)
+        || !std::isfinite(temperature) || !std::isfinite(gamma)
+        || !(cutoff > 0.0) || !(dt > 0.0) || !(temperature > 0.0)
         || !(gamma >= 0.0))
         throw std::invalid_argument("PairDpd: invalid parameters");
     cutoff_sq_ = cutoff * cutoff;
-    sigma_ = std::sqrt(2.0 * gamma_ * units::kB_ev_per_k * temperature_);
 }
 
 PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
@@ -28,7 +32,9 @@ PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
                  std::uint64_t seed)
     : Pair(cutoff), a_mat_(std::move(a_matrix)), multi_(true), gamma_(gamma),
       temperature_(temperature), dt_(dt), seed_(seed) {
-    if (!(cutoff > 0.0) || !(dt > 0.0) || !(temperature > 0.0)
+    if (!std::isfinite(cutoff) || !std::isfinite(dt)
+        || !std::isfinite(temperature) || !std::isfinite(gamma)
+        || !(cutoff > 0.0) || !(dt > 0.0) || !(temperature > 0.0)
         || !(gamma >= 0.0))
         throw std::invalid_argument("PairDpd: invalid parameters");
     if (a_mat_.empty())
@@ -37,8 +43,12 @@ PairDpd::PairDpd(std::vector<std::vector<double>> a_matrix, double gamma,
     for (const auto& row : a_mat_)
         if (row.size() != n)
             throw std::invalid_argument("PairDpd: a_matrix must be square");
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t j = 0; j < n; ++j)
+            if (!std::isfinite(a_mat_[i][j]) || a_mat_[i][j] != a_mat_[j][i])
+                throw std::invalid_argument(
+                    "PairDpd: a_matrix must be finite and symmetric");
     cutoff_sq_ = cutoff * cutoff;
-    sigma_ = std::sqrt(2.0 * gamma_ * units::kB_ev_per_k * temperature_);
 }
 
 double PairDpd::a_of_(int ti, int tj) const {
@@ -52,13 +62,17 @@ double PairDpd::a_of_(int ti, int tj) const {
 
 void PairDpd::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
-    const int n = static_cast<int>(f.nlocal());
+    // LAMMPS pair dpd `sigma = sqrt(2 boltz T gamma)` in the run's units.
+    sigma_ = std::sqrt(2.0 * gamma_ * ctx.runtime.units.boltz * temperature_);
     const double rc = pair_cutoff();
     const double inv_sqrt_dt = 1.0 / std::sqrt(dt_);
-    const auto type = f.span(kAtom_type);
+    // The single-amplitude form needs no force-field type; only the
+    // per-type `a_matrix` form reads (and so requires) the column.
+    const int* type = multi_ ? f.span(kAtom_type).data() : nullptr;
+    const auto tags = f.span(kAtom_tag);
 
-    double energy = 0.0;
-    // Pair virial, Voigt xx yy zz xy xz yz [eV] — Σ Δr ⊗ F^C, LAMMPS sign.
+    // Pair virial, Voigt xx yy zz xy xz yz [eV] — Σ Δr ⊗ F^C, LAMMPS sign
+    // (PairTermX::fvirial below).
     //
     // CONSERVATIVE FORCE ONLY, deliberately. F^D and F^R are thermostat
     // forces, not derivatives of the energy this style reports:
@@ -76,17 +90,6 @@ void PairDpd::compute(const LaunchContext& ctx) {
     // that satisfies tr(σ) = −3V dE/dV for the energy this style writes,
     // pinned by tests/cpu/potentials/test_pair_virial.cpp
     // (`PairDpd.VirialExcludesDissipativeAndRandomForces`).
-    md::Voigt6 vir{};
-    const StorageReal* __restrict x = f.span(kAtom_x);
-    const StorageReal* __restrict y = f.span(kAtom_y);
-    const StorageReal* __restrict z = f.span(kAtom_z);
-    const StorageReal* __restrict vx = f.span(kAtom_vx);
-    const StorageReal* __restrict vy = f.span(kAtom_vy);
-    const StorageReal* __restrict vz = f.span(kAtom_vz);
-    AccReal* __restrict fx = f.span(kAtom_fx);
-    AccReal* __restrict fy = f.span(kAtom_fy);
-    AccReal* __restrict fz = f.span(kAtom_fz);
-
     // The stream index of THIS launch. `LaunchContext::step` is the only step
     // a Component sees once a Driver owns the loop, and nothing in the engine
     // calls `set_step` — so keying the stream on a stored member alone froze
@@ -95,85 +98,105 @@ void PairDpd::compute(const LaunchContext& ctx) {
     // heats or cools monotonically instead of sampling `temperature_`.
     // `stream_origin_` only SHIFTS this, so a chunked run can continue the
     // stream its predecessor ended on (`set_step`).
+    // Setup uses the preceding draw: at zero this is the reserved -1
+    // stream, and live re-preparation repeats the last completed step.
     const std::int64_t stream_step =
-        static_cast<std::int64_t>(stream_origin_) + ctx.step;
+        static_cast<std::int64_t>(stream_origin_)
+        + static_cast<std::int64_t>(ctx.step)
+        - (ctx.runtime.exec.initializing_forces ? 1 : 0);
 
-    auto theta = [&](int i, int j) {
-        std::uint64_t s = seed_;
-        s ^= static_cast<std::uint64_t>(stream_step) * 0x9e3779b97f4a7c15ULL;
-        s ^= static_cast<std::uint64_t>(i) * 0xbf58476d1ce4e5b9ULL;
-        s ^= static_cast<std::uint64_t>(j) * 0x94d049bb133111ebULL;
-        s = (s ^ (s >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        s = (s ^ (s >> 27)) * 0x94d049bb133111ebULL;
-        s = s ^ (s >> 31);
-        const double u1 =
-            (static_cast<double>((s & 0xffffffffULL) + 1) / 4294967297.0);
-        const double u2 = (static_cast<double>(((s >> 32) & 0xffffffffULL) + 1)
-                           / 4294967297.0);
-        return std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * units::pi * u2);
-    };
+    // The per-type amplitude table throws on a type outside it; surface that
+    // here, serially, rather than inside the threaded walk.
+    if (multi_)
+        for (int i = 0; i < f.n_total(); ++i)
+            (void)a_of_(type[i], type[i]);
 
-    for (int i = 0; i < n; ++i) {
-        for (int j = i + 1; j < n; ++j) {
-            double dx = x[j] - x[i];
-            double dy = y[j] - y[i];
-            double dz = z[j] - z[i];
-            f.box.min_image(dx, dy, dz);
-            const double r2 = dx * dx + dy * dy + dz * dz;
-            if (r2 >= cutoff_sq_ || r2 == 0.0)
-                continue;
+    // F^R draws from a pair-seeded stream (seed, step, the two tags), never
+    // from thread order, so a threaded run is as reproducible as the rest
+    // of the chunk-owned walk.
+    struct Kernel {
+        const PairDpd* self;
+        const int* type;
+        const TagInt* tag;
+        const StorageReal *vx, *vy, *vz;
+        double rc_sq, rc, inv_sqrt_dt;
+        std::int64_t stream_step;
 
-            const double r = std::sqrt(r2);
+        double cutoff_sq() const { return rc_sq; }
+        int row(int i) const { return i; }
+
+        double theta(int i, int j) const {
+            std::uint64_t s = self->seed_;
+            s ^=
+                static_cast<std::uint64_t>(stream_step) * 0x9e3779b97f4a7c15ULL;
+            s ^= static_cast<std::uint64_t>(std::min(tag[i], tag[j]))
+                 * 0xbf58476d1ce4e5b9ULL;
+            s ^= static_cast<std::uint64_t>(std::max(tag[i], tag[j]))
+                 * 0x94d049bb133111ebULL;
+            s = (s ^ (s >> 30)) * 0xbf58476d1ce4e5b9ULL;
+            s = (s ^ (s >> 27)) * 0x94d049bb133111ebULL;
+            s = s ^ (s >> 31);
+            const double u1 =
+                (static_cast<double>((s & 0xffffffffULL) + 1) / 4294967297.0);
+            const double u2 =
+                (static_cast<double>(((s >> 32) & 0xffffffffULL) + 1)
+                 / 4294967297.0);
+            return std::sqrt(-2.0 * std::log(u1))
+                   * std::cos(2.0 * units::pi * u2);
+        }
+
+        md::PairTermX operator()(int i, const md::PairSite& p,
+                                 const md::PairChunk&) const {
+            const int j = p.j;
+            const double r = std::sqrt(p.r2);
             const double inv_r = 1.0 / r;
             const double w = 1.0 - r / rc;
             if (w <= 0.0)
-                continue;
-
-            const double aij = a_of_(type[i], type[j]);
-            const double fc = aij * w;
-            double fpair = -fc * inv_r;
-
-            // F^C on i is −fc·inv_r·(r_j − r_i) = fc·inv_r·Δ with Δ = r_i − r_j,
-            // so the pair term is Δ_a F_b = (a w / r)·d_a·d_b. Taken here,
-            // before the dissipative and random terms join `fpair`.
-            const double cvir = fc * inv_r;
-            vir.v[0] += cvir * dx * dx;
-            vir.v[1] += cvir * dy * dy;
-            vir.v[2] += cvir * dz * dz;
-            vir.v[3] += cvir * dx * dy;
-            vir.v[4] += cvir * dx * dz;
-            vir.v[5] += cvir * dy * dz;
-
-            const double dvx = vx[j] - vx[i];
-            const double dvy = vy[j] - vy[i];
-            const double dvz = vz[j] - vz[i];
-            const double rdotv = (dx * dvx + dy * dvy + dz * dvz) * inv_r;
+                return {};
+            const double aij =
+                type ? self->a_mat_[static_cast<std::size_t>(type[i])]
+                                   [static_cast<std::size_t>(type[j])]
+                     : self->a_default_;
+            // Separation and relative velocity both r_i − r_j / v_i − v_j.
+            const double dvx = vx[i] - vx[j];
+            const double dvy = vy[i] - vy[j];
+            const double dvz = vz[i] - vz[j];
+            const double rdotv = (p.dx * dvx + p.dy * dvy + p.dz * dvz) * inv_r;
             const double w2 = w * w;
-            const double fd = -gamma_ * w2 * rdotv;
-            fpair += fd * inv_r;
-
-            const double fr = sigma_ * w * theta(i, j) * inv_sqrt_dt;
-            fpair += fr * inv_r;
-
-            fx[i] += fpair * dx;
-            fy[i] += fpair * dy;
-            fz[i] += fpair * dz;
-            fx[j] -= fpair * dx;
-            fy[j] -= fpair * dy;
-            fz[j] -= fpair * dz;
-
+            // F^C = a w r̂: fpair·Δ with fpair = a w / r; the virial takes
+            // this conservative factor alone.
+            const double fc = aij * w * inv_r;
+            const double fd = self->gamma_ * w2 * rdotv;
+            const double fr = self->sigma_ * w * theta(i, j) * inv_sqrt_dt;
+            md::PairTermX t;
+            t.fpair = fc - (fd + fr) * inv_r;
+            t.fvirial = fc;
             // U^C = ½ a r_c w², the potential whose gradient is F^C = a w r̂
-            // (Groot–Warren 1997; LAMMPS `0.5*a0*cut*wd*wd`). The `r_c` factor
-            // was missing: the energy was reported in eV/Å while `a` is a
-            // force amplitude, and it disagreed with the force this same loop
-            // applies by exactly that factor — visible the moment the virial
-            // is checked against −3V dE/dV. Both in-tree DPD regressions use
-            // r_c = 1 Å, which is why nothing caught it.
-            energy += 0.5 * aij * rc * w2;
+            // (Groot–Warren 1997; LAMMPS `0.5*a0*cut*wd*wd`). The `r_c`
+            // factor was missing once: the energy was reported in eV/Å
+            // while `a` is a force amplitude, and it disagreed with the
+            // force by exactly that factor — visible the moment the virial
+            // is checked against −3V dE/dV. Both in-tree DPD regressions
+            // use r_c = 1 Å, which is why nothing caught it.
+            t.energy = 0.5 * aij * rc * w2;
+            return t;
         }
-    }
-    f.meta.get(kEnergy) += energy;
-    vir.flush_to(f.meta.get(kStress));
+    };
+    const Kernel kernel{this,
+                        type,
+                        tags.data(),
+                        f.span(kAtom_vx).data(),
+                        f.span(kAtom_vy).data(),
+                        f.span(kAtom_vz).data(),
+                        cutoff_sq_,
+                        rc,
+                        inv_sqrt_dt,
+                        stream_step};
+    const md::PairTotals sums = loop_.run(ctx, kernel, "PairDpd");
+    f.meta.get(kEnergy) += sums.energy;
+    f.meta.get(kEnergyPair) += sums.energy;
+    if (ctx.stress_requested)
+        sums.virial.flush_to(f.meta.get(kStress));
 }
 
 } // namespace cpu

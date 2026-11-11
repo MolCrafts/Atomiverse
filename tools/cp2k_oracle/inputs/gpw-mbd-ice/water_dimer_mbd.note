@@ -2,7 +2,7 @@
 
 CP2K 2026.1 stock `PAIR_POTENTIAL TYPE` has no MBD (only DFTD2/D3/D3BJ/D4);
 hosts may link libMBD as an external VDW backend. Hard pin is **libMBD**
-free-atom MBD@rsSCS — see `regressions/gpw/gpw-mbd-ice/REFERENCE.md`.
+free-atom MBD@rsSCS — see `regressions/gpw/mbd/REFERENCE.md`.
 
 Isolated libMBD check (build libmbd, link OpenBLAS; ATV Å→Bohr = 1/0.52917720859):
 

@@ -3,7 +3,6 @@
 #pragma once
 
 #include <array>
-#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -17,7 +16,7 @@
 #include "atomiverse/cpu/electronic/cpmd.h"
 #include "atomiverse/cpu/electronic/xl_bomd.h"
 #include "atomiverse/cpu/gpw/gpw_solver.h"
-#include "atomiverse/molrs.hpp"
+#include "atomiverse/molpy.hpp"
 
 namespace ATV {
 namespace cpu {
@@ -30,27 +29,27 @@ class SecondGenCp;
 
 namespace gpw {
 
-/// @brief One element's basis + pseudopotential — CP2K's `&KIND` concept.
-struct Kind {
-    molrs::Element element;
-    GaussianBasis basis;
-    GthPotential pot;
-
-    Kind(molrs::Element element, GaussianBasis basis, GthPotential pot)
-        : element(element), basis(std::move(basis)), pot(std::move(pot)) {}
-};
-
-/// @brief GPW total-energy evaluator component.
+/// @brief GPW energy / force / stress source for CPU drivers — the bind shell
+///        around one `GpwDft`.
 ///
-/// Parameters are public members / constructor args — no `GpwEvaluatorConfig`
-/// bag.
+/// The method is the concrete `GpwDft` (kinds + every SCF parameter as its
+/// members); this component only adapts it to a Driver slot: it re-reads the
+/// Frame each launch, accumulates energy / forces / stress onto the Frame,
+/// and hosts the AIMD propagators (XL-BOMD, CPMD, second-gen CP) that
+/// `electronic::XlBomdForce` / `CarParrinello` / `SecondGenCp` switch on.
+/// There is no second copy of the method parameters here.
 ///
-/// **Variable cell:** `launch()` re-targets the solver to the frame's current
-/// orthorhombic box on every call (`GpwDft::run` rebuilds all
-/// geometry-dependent structure — grids, lattice images, S/T/Vpp — per call),
-/// so cell-relaxation drivers may rescale `frame.box` between launches.
-/// The MO warm start survives a cell change (the AO basis is
-/// geometry-independent in size).
+/// ```cpp
+/// cpu::gpw::GpwDft dft{kinds, /*cutoff_ry=*/280.0, cpu::xc::XCType::PBE};
+/// md.on(md::Phase::force).add(cpu::gpw::GPWEvaluator(std::move(dft),
+///                                                    /*compute_forces=*/true));
+/// ```
+///
+/// **Variable cell:** `launch()` re-targets the method to the frame's current
+/// orthorhombic box on every call (`GpwDft` rebuilds all geometry-dependent
+/// structure — grids, lattice images, S/T/Vpp — per call), so cell-relaxation
+/// drivers may rescale `frame.box` between launches. The MO warm start
+/// survives a cell change (the AO basis is geometry-independent in size).
 ///
 /// **Timestep:** under `cpmd = true` the electronic propagation shares the
 /// nuclear clock, so the evaluator is a `cpu::TimestepConsumer` — `cpu::md::MD`
@@ -58,26 +57,10 @@ struct Kind {
 /// timestep member to keep in sync (and no way to run CPMD outside an MD loop).
 class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
   public:
-    /// @brief Plane-wave cutoff [Ry].
-    double cutoff_ry = 300.0;
-    /// @brief CP2K-style multigrid levels (`&MGRID NGRIDS`). Default 1 =
-    ///        single density grid (CompactBasisGrid). With `rel_cutoff > 0`
-    ///        and `ngrids > 1`, product collocation is used (RKS and UKS).
-    int ngrids = 1;
-    /// @brief CP2K REL_CUTOFF [Ry] for exponent→level mapping. Ignored when
-    ///        `ngrids == 1`. Typical twin: 60 Ry with CUTOFF 400 / NGRIDS 4.
-    double rel_cutoff = 0.0;
-    /// @brief Max SCF iterations.
-    int max_iter = 200;
-    /// @brief SCF residual tolerance.
-    double tol = 1e-7;
-    /// @brief Density mixing parameter.
-    double mix = 0.3;
-    /// @brief XC functional kind.
-    XcKind xc = XcKind::PADE;
-    /// @brief Non-periodic (cluster) boundary conditions.
-    bool nonperiodic = false;
-    /// @brief Compute analytic forces (one SCF + one gradient pass).
+    bool provides_force() const override { return compute_forces; }
+
+    /// @brief Compute analytic forces (one SCF + one gradient pass), added to
+    ///        `kAtom_f*` [eV/Å].
     bool compute_forces = false;
     /// @brief Compute cell stress (default: analytic fixed-\(P\) path).
     ///        Writes Frame `kStress` [eV/Å³] Voigt; also `last_stress_ha_bohr3()`.
@@ -85,107 +68,23 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        shadow-density stress (no reference SCF); cold seed stays classic.
     bool compute_stress = false;
     /// @brief When true, use multi-SCF strain-FD (`gpw_stress_fd`) instead of
-    ///        the product analytic path (`gpw_stress`). Default false.
+    ///        the product analytic path (`GpwDft::stress`). Default false.
+    ///        Strain step / axis mask are the method's `stress_strain_h` /
+    ///        `stress_axes`.
     ///        Refused with `xl_bomd_linearized` at `build()` (BO stress, not
     ///        the zero-SCF shadow functional).
     bool stress_use_fd = false;
-    /// @brief Dimensionless strain step for analytic fixed-\(P\) FD and for
-    ///        multi-SCF FD when `stress_use_fd` (default 2e-3).
-    double stress_strain_h = 2e-3;
-    /// @brief Per-axis stress mask (x,y,z): a masked axis skips samples and
-    ///        reports σ exactly 0 — pair with the matching
-    ///        `AnisotropicCellRelax` `relax_*` mask in variable-cell runs.
-    std::array<bool, 3> stress_axes = {true, true, true};
-    /// @brief FD displacement [Bohr] for forces (legacy path).
-    double fd_step = 1e-3;
-    /// @brief Grimme DFT-D3 (zero damping, PBE params). Exclusive vs other disp.
-    bool d3 = false;
-    /// @brief Grimme DFT-D3(BJ) (PBE params, CP2K CN). Exclusive vs other disp.
-    bool d3bj = false;
-    /// @brief Three-body ATM / C9 when `d3` or `d3bj` (CP2K CALCULATE_C9_TERM).
-    bool d3_atm = false;
-    /// @brief DFT-D3 pair / ABC hard cutoff [Bohr], doubled convention
-    ///        (CP2K `R_CUTOFF x` Å sums to 2·x). Default = CP2K default
-    ///        `R_CUTOFF 20.0` → 75.59 Bohr. Applies to `d3` / `d3bj` only.
-    double d3_rcut_bohr = kD3Cp2kPairCutoffBohr;
-    /// @brief Grimme DFT-D4 (PBE BJ). Exclusive vs other disp.
-    ///        Two-body only unless `d4_atm`.
-    bool d4 = false;
-    /// @brief D4 ATM three-body (s9=1). Requires `d4`.
-    bool d4_atm = false;
-    /// @brief Tkatchenko–Scheffler (PBE free-atom TS). Exclusive vs other disp.
-    bool ts = false;
-    /// @brief Free-atom XDM (Becke–Johnson, QE NC-PBE a1/a2). Exclusive vs other disp.
-    bool xdm = false;
-    /// @brief MBD@rsSCS (PBE β=0.83). Exclusive vs other pairwise / nonlocal disp.
-    ///        Default isolated; set `mbd_k_mesh` non-zero for periodic Ewald.
-    bool mbd = false;
-    /// @brief MBD k-mesh (0,0,0 = free-atom isolated; else periodic Ewald).
-    int mbd_k_mesh[3] = {0, 0, 0};
-    /// @brief Nonlocal vdW-DF (DRSLL) SC potential. Exclusive vs d3/d3bj/d4/ts/mbd/vdw_df2/rvv10.
-    bool vdw_df = false;
-    /// @brief Nonlocal vdW-DF2 (LMKLL) SC potential. Exclusive vs d3/d3bj/d4/ts/mbd/vdw_df/rvv10.
-    bool vdw_df2 = false;
-    /// @brief Nonlocal rVV10 SC potential. Exclusive vs d3/d3bj/d4/ts/mbd/vdw_df/vdw_df2.
-    bool rvv10 = false;
-    /// @brief Hirshfeld \(V/V_{\mathrm{free}}\) scaling for TS/MBD (requires ts or mbd).
-    bool hirshfeld = false;
-    /// @brief Orbital Transformation (OT) SCF minimizer instead of
-    ///        diagonalization + DIIS. Same gapped ground state; preferred for
-    ///        larger AO bases (avoids dense \(O(n_b^3)\) eigensolve each step).
-    ///        Units-free switch; energy still [Hartree] on `last_result()`.
-    bool use_ot = false;
-    /// UKS spin occupations. When both zero, closed-shell RKS from valence/2.
-    /// O₂ GTH-q6 triplet: n_alpha=7, n_beta=5.
-    int n_alpha = 0;
-    int n_beta = 0;
-    /// @brief Monkhorst–Pack k mesh (CP2K `&KPOINTS SCHEME MONKHORST-PACK`).
-    ///        `{1,1,1}` keeps the Γ-point path. Non-Γ engages multi-k RKS/UKS
-    ///        SCF (and multi-k XL/SGCP when those wrappers are used).
-    int k_mesh[3] = {1, 1, 1};
-    /// @brief Fold ±k pairs by time reversal (default true; set false for
-    ///        an explicit unreduced mesh, e.g. multi-k XL regression).
-    bool k_time_reversal = true;
-    /// @brief Metallic occupation smearing (default: fixed integer fillings).
-    ///        Product multi-k BOMD under FD/MP uses free-energy SCF + fractional
-    ///        \(P_k\) warm start (`reg_gpw-bomd-smearing`).
-    Smearing smearing = Smearing::none;
-    /// @brief Smearing width [Ry] (QE `degauss` / CP2K \(k_B T_e\)). Required
-    ///        `> 0` when `smearing != none`.
-    double degauss = 0.02;
-    /// @brief Methfessel–Paxton order \(N\) (used when
-    ///        `smearing == methfessel_paxton`).
-    int mp_order = 1;
-    /// @brief Extra virtual bands kept for metallic fillings (CP2K
-    ///        `ADDED_MOS` class).
-    int extra_bands = 0;
-    /// @brief Dudarev DFT+U (PLUS_U); empty disables. U−J in eV per entry.
-    std::vector<PlusU> plus_u;
-    /// @brief Per-atom initial spin seed for UKS AFM/FM (0 or n_atoms).
-    std::vector<double> atom_spin_guess;
-    /// @brief One Kind per distinct element in the system.
-    std::vector<Kind> kinds;
-
-    /// @param kinds One Kind per distinct element.
-    /// @param cutoff_ry Plane-wave cutoff [Ry].
-    /// @param max_iter Max SCF iterations.
-    /// @param tol SCF residual tolerance.
-    /// @param mix Density mixing (DIIS path; ignored when `use_ot`).
-    /// @param xc XC functional.
-    /// @param nonperiodic Cluster BC when true.
+    /// @brief Bind one GPW method to a Driver slot.
+    /// @param method Configured `GpwDft` (kinds + parameters; not yet built —
+    ///        the evaluator builds it against the Frame at `build()`).
     /// @param compute_forces Enable analytic forces.
-    /// @param fd_step FD step [Bohr].
-    /// @param d3 Enable DFT-D3 zero damping.
-    /// @param use_ot Enable OT minimizer (product path; no env required).
-    explicit GPWEvaluator(std::vector<Kind> kinds, double cutoff_ry = 300.0,
-                          int max_iter = 200, double tol = 1e-7,
-                          double mix = 0.3, XcKind xc = XcKind::PADE,
-                          bool nonperiodic = false, bool compute_forces = false,
-                          double fd_step = 1e-3, bool d3 = false,
-                          bool use_ot = false)
-        : cutoff_ry(cutoff_ry), max_iter(max_iter), tol(tol), mix(mix), xc(xc),
-          nonperiodic(nonperiodic), compute_forces(compute_forces),
-          fd_step(fd_step), d3(d3), use_ot(use_ot), kinds(std::move(kinds)) {}
+    explicit GPWEvaluator(GpwDft method, bool compute_forces = false)
+        : compute_forces(compute_forces), method_(std::move(method)) {}
+
+    /// @brief The bound method (parameters are its members).
+    GpwDft& method() { return method_; }
+    /// @brief The bound method (read-only).
+    const GpwDft& method() const { return method_; }
 
     std::string name() const override { return "gpw_evaluator"; }
 
@@ -256,7 +155,7 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     ///        +E_{\mathrm{KS}}[n]\) — `build()` throws for `use_ot`,
     ///        `cpmd`, or `second_gen_cp`. `compute_stress` is product:
     ///        each warm branch evaluates the analytic fixed-\(P\)
-    ///        **shadow-density stress** (`gpw_stress` at the warm payload
+    ///        **shadow-density stress** (fixed-P stress at the warm payload
     ///        \(P = D = q[n]\), \(W\) from the \(H[n]\) eigenpairs) with
     ///        no reference SCF; `stress_use_fd` is refused (the multi-SCF
     ///        strain-FD oracle re-converges the SCF — Born–Oppenheimer
@@ -320,7 +219,7 @@ class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
     /// through `set_timestep`. 0 = never pushed ⇒ `build()` refuses `cpmd`.
     double cpmd_dt_fs_ = 0.0;
     GpwResult last_{};
-    std::unique_ptr<GpwDft> solver_;
+    GpwDft method_; ///< The one concrete method this shell binds.
     std::array<double, 6> last_stress_ha_{};
     /// XL-BOMD auxiliary-density propagator (engaged when `xl_bomd` on Γ).
     /// RKS: total \(P\). UKS: \(P_\alpha\). Empty when multi-k XL is active.

@@ -31,9 +31,6 @@ namespace comm {
 
 namespace {
 
-inline constexpr std::uint32_t kBcastWireVersion = 1;
-inline constexpr std::uint32_t kMetaWireVersion = 1;
-
 class ByteWriter {
   public:
     template <typename T>
@@ -113,9 +110,6 @@ void write_meta_value(ByteWriter& writer, MetaDType dtype,
     case MetaDType::U64:
         writer.pod(std::get<std::uint64_t>(value));
         break;
-    case MetaDType::F32:
-        writer.pod(std::get<float>(value));
-        break;
     case MetaDType::F64:
         writer.pod(std::get<double>(value));
         break;
@@ -143,20 +137,11 @@ void write_meta_value(ByteWriter& writer, MetaDType dtype,
     case MetaDType::U64x3:
         write_array(writer, std::get<MetaU64x3>(value));
         break;
-    case MetaDType::F32x3:
-        write_array(writer, std::get<MetaF32x3>(value));
-        break;
     case MetaDType::F64x3:
         write_array(writer, std::get<MetaF64x3>(value));
         break;
-    case MetaDType::F32x6:
-        write_array(writer, std::get<MetaF32x6>(value));
-        break;
     case MetaDType::F64x6:
         write_array(writer, std::get<MetaF64x6>(value));
-        break;
-    case MetaDType::F32x9:
-        write_array(writer, std::get<MetaF32x9>(value));
         break;
     case MetaDType::F64x9:
         write_array(writer, std::get<MetaF64x9>(value));
@@ -179,8 +164,6 @@ MetaValue read_meta_value(ByteReader& reader, MetaDType dtype) {
         return MetaValue{reader.pod<std::uint32_t>()};
     case MetaDType::U64:
         return MetaValue{reader.pod<std::uint64_t>()};
-    case MetaDType::F32:
-        return MetaValue{reader.pod<float>()};
     case MetaDType::F64:
         return MetaValue{reader.pod<double>()};
     case MetaDType::String: {
@@ -205,16 +188,10 @@ MetaValue read_meta_value(ByteReader& reader, MetaDType dtype) {
         return MetaValue{read_array<std::uint32_t, 3>(reader)};
     case MetaDType::U64x3:
         return MetaValue{read_array<std::uint64_t, 3>(reader)};
-    case MetaDType::F32x3:
-        return MetaValue{read_array<float, 3>(reader)};
     case MetaDType::F64x3:
         return MetaValue{read_array<double, 3>(reader)};
-    case MetaDType::F32x6:
-        return MetaValue{read_array<float, 6>(reader)};
     case MetaDType::F64x6:
         return MetaValue{read_array<double, 6>(reader)};
-    case MetaDType::F32x9:
-        return MetaValue{read_array<float, 9>(reader)};
     case MetaDType::F64x9:
         return MetaValue{read_array<double, 9>(reader)};
     case MetaDType::TagIndexLocal:
@@ -282,6 +259,24 @@ void bcast_frame(Frame& frame, int root) {
         throw std::invalid_argument(
             "bcast_frame: root rank is invalid or differs across ranks");
 
+    // The identity columns are optional (a boundary leaves out the one its
+    // source did not carry, `atom_field_how_to`). Receivers adopt the root's
+    // choice before the schema digest below compares column sets.
+    int identity[2] = {frame.has("atoms", kAtom_type.key) ? 1 : 0,
+                       frame.has("atoms", kAtom_atomic_number.key) ? 1 : 0};
+    MPI_Bcast(identity, 2, MPI_INT, root, MPI_COMM_WORLD);
+    if (rank != root) {
+        const std::pair<AtomFieldId, const char*> keys[2] = {
+            {AtomFieldId::type, kAtom_type.key},
+            {AtomFieldId::atomic_number, kAtom_atomic_number.key}};
+        for (int k = 0; k < 2; ++k) {
+            if (identity[k] != 0)
+                frame.insert_field(keys[k].first);
+            else if (frame.has("atoms", keys[k].second))
+                frame.block("atoms").erase(keys[k].second);
+        }
+    }
+
     // The atoms Block's own column selection, not a compiled wire plan. A
     // broadcast is a bulk column-major collective: it wants the column set
     // and none of `PackPlan`'s per-row pack verbs, and shipping whole
@@ -289,18 +284,16 @@ void bcast_frame(Frame& frame, int root) {
     // per-row pack loop over the same data.
     std::vector<ColumnRef> fields =
         frame.block("atoms").resolve_columns(kColExchange);
-    require_collective_fingerprint(kAtomWireVersion,
-                                   column_schema_fingerprint(fields),
+    require_collective_fingerprint(column_schema_fingerprint(fields),
                                    MPI_COMM_WORLD, "bcast_frame/atoms");
-    require_collective_fingerprint(kMetaWireVersion,
-                                   frame.meta.serializable_fingerprint(),
+    require_collective_fingerprint(frame.meta.serializable_fingerprint(),
                                    MPI_COMM_WORLD, "bcast_frame/meta");
 
     std::vector<std::byte> meta_payload;
     std::array<double, 9> cell{};
-    // 0 wire version, 1 atom count, 2 meta bytes, 3 meta fingerprint,
-    // 4 has_bonded, 5 column count, 6..10 per-atom topology capacities.
-    std::array<std::uint64_t, 11> header{};
+    // 0 atom count, 1 meta bytes, 2 meta fingerprint, 3 has_bonded,
+    // 4 column count, 5..9 per-atom topology capacities.
+    std::array<std::uint64_t, 10> header{};
 
     if (rank == root) {
         meta_payload = serialize_meta(frame.meta);
@@ -309,7 +302,6 @@ void bcast_frame(Frame& frame, int root) {
                 cell[static_cast<std::size_t>(3 * i + j)] =
                     frame.box.cell()(i, j);
         header = {
-            kBcastWireVersion,
             static_cast<std::uint64_t>(frame.nlocal()),
             static_cast<std::uint64_t>(meta_payload.size()),
             frame.meta.serializable_fingerprint(),
@@ -327,24 +319,22 @@ void bcast_frame(Frame& frame, int root) {
 
     MPI_Bcast(header.data(), static_cast<int>(header.size()), MPI_UINT64_T,
               root, MPI_COMM_WORLD);
-    if (header[0] != kBcastWireVersion)
-        throw std::runtime_error("bcast_frame: unsupported wire version");
-    if (header[1] > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
+    if (header[0] > static_cast<std::uint64_t>(std::numeric_limits<int>::max()))
         throw std::length_error(
             "bcast_frame: atom count exceeds local int range");
-    if (header[2] > std::numeric_limits<std::size_t>::max())
+    if (header[1] > std::numeric_limits<std::size_t>::max())
         throw std::length_error(
             "bcast_frame: payload exceeds addressable size");
-    if (header[3] != frame.meta.serializable_fingerprint())
+    if (header[2] != frame.meta.serializable_fingerprint())
         throw std::runtime_error(
             "bcast_frame: typed-meta schema changed during broadcast");
-    if (header[5] != static_cast<std::uint64_t>(fields.size()))
+    if (header[4] != static_cast<std::uint64_t>(fields.size()))
         throw std::runtime_error(
             "bcast_frame: rank column counts disagree after the schema "
             "digest matched");
 
-    const int atom_count = static_cast<int>(header[1]);
-    const std::size_t meta_bytes = static_cast<std::size_t>(header[2]);
+    const int atom_count = static_cast<int>(header[0]);
+    const std::size_t meta_bytes = static_cast<std::size_t>(header[1]);
     const int meta_mpi_count =
         checked_mpi_byte_count(meta_bytes, "bcast_frame/meta");
 
@@ -372,7 +362,7 @@ void bcast_frame(Frame& frame, int root) {
 
     if (rank != root) {
         deserialize_meta(meta_payload, frame.meta);
-        if (frame.meta.serializable_fingerprint() != header[3])
+        if (frame.meta.serializable_fingerprint() != header[2])
             throw std::runtime_error(
                 "bcast_frame: decoded typed-meta schema mismatch");
 
@@ -392,12 +382,12 @@ void bcast_frame(Frame& frame, int root) {
             ColGroup::Bond, ColGroup::Angle, ColGroup::Dihedral,
             ColGroup::Improper, ColGroup::Special};
         for (std::size_t gi = 0; gi < kGroups.size(); ++gi)
-            frame.grow_group(kGroups[gi], static_cast<int>(header[6 + gi]));
-        frame.meta.set(kHasBonded, static_cast<std::int64_t>(header[4] != 0));
+            frame.grow_group(kGroups[gi], static_cast<int>(header[5 + gi]));
+        frame.meta.set(kHasBonded, static_cast<std::int64_t>(header[3] != 0));
         // Every mutation above bumps the Block generation, so the refs have
         // to be resolved after the last of them.
         fields = frame.block("atoms").resolve_columns(kColExchange);
-        if (header[5] != static_cast<std::uint64_t>(fields.size()))
+        if (header[4] != static_cast<std::uint64_t>(fields.size()))
             throw std::runtime_error(
                 "bcast_frame: the receiving Frame's column set changed while "
                 "it was being resized");

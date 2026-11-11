@@ -28,6 +28,7 @@ void OptLog::build(const cpu::BuildContext& ctx) {
     z_prev_.assign(cap, 0.0);
     has_prev_ = false;
     n_rows_ = 0;
+    last_step_ = -1;
     last_generation_ = ~std::uint64_t{0};
 
     if (ctx.runtime.mpi_rank != 0)
@@ -39,7 +40,33 @@ void OptLog::build(const cpu::BuildContext& ctx) {
                     "rms_F", "|dx|");
 }
 
+// LAMMPS src/min.cpp Min::setup / Min::run and src/output.cpp
+// Output::setup / Output::write (thermo every iteration), e8c4c278a8.
+// Copyright (2003) Sandia Corporation. GPL-2.0-only. Row 0 is the initial
+// state; iteration s ends at completed iteration s + 1; an early stop
+// writes the final iteration unless already written (`last_thermo`).
+
+void OptLog::setup_output(const cpu::LaunchContext& ctx) {
+    if (ctx.step == last_step_)
+        return;
+    row_(ctx, ctx.step);
+}
+
 void OptLog::launch(const cpu::LaunchContext& ctx) {
+    const BigInt step = loop_output_step(ctx);
+    if (step == last_step_)
+        return;
+    row_(ctx, step);
+}
+
+void OptLog::final_output(const cpu::LaunchContext& ctx) {
+    if (ctx.step == last_step_)
+        return;
+    row_(ctx, ctx.step);
+}
+
+void OptLog::row_(const cpu::LaunchContext& ctx, BigInt step) {
+    last_step_ = step; // every rank: the guards stay rank-identical
     // NOTE: no rank gate here — the metric reductions below are
     // collectives that every rank must enter; only the I/O at the end is
     // rank-0-only.
@@ -58,7 +85,7 @@ void OptLog::launch(const cpu::LaunchContext& ctx) {
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->neighbor_generation : 0;
+            (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0})
                 has_prev_ = false;
@@ -116,13 +143,14 @@ void OptLog::launch(const cpu::LaunchContext& ctx) {
     if (ctx.runtime.mpi_rank != 0)
         return;
     if (os_.is_open()) {
-        os_ << ctx.step << '\t' << f.meta.get(kEnergy) << '\t' << max_force
-            << '\t' << rms_force << '\t' << step_norm << '\n';
+        os_ << step << '\t' << f.meta.get(kEnergy) << '\t' << max_force << '\t'
+            << rms_force << '\t' << step_norm << '\n';
         os_.flush();
     }
     if (also_stdout_) {
-        std::printf("%6d  %15.8e  %12.6e  %12.6e  %12.6e\n", ctx.step,
-                    f.meta.get(kEnergy), max_force, rms_force, step_norm);
+        std::printf("%6lld  %15.8e  %12.6e  %12.6e  %12.6e\n",
+                    static_cast<long long>(step), f.meta.get(kEnergy),
+                    max_force, rms_force, step_norm);
     }
     ++n_rows_;
 }

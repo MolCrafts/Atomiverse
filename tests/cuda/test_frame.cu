@@ -51,6 +51,24 @@ TEST(Frame, ToDeviceAndBack) {
     cuda::destroy(d_frame);
 }
 
+TEST(Frame, EnergyOnlyReadbackPreservesHostForces) {
+    cpu::Frame frame(1);
+    frame.box = cpu::Box::cubic(10.0);
+    frame.span(kAtom_mass)[0] = 1.0;
+    frame.span(kAtom_x)[0] = 2.0;
+    frame.span(kAtom_fx)[0] = 1.25;
+    frame.span(kAtom_fy)[0] = -2.5;
+    frame.span(kAtom_fz)[0] = 5.0;
+    auto resident = cpu::to_cuda(frame);
+    frame.span(kAtom_x)[0] = 0.0;
+    cuda::to_cpu(resident, frame, false);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_x)[0], 2.0);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_fx)[0], 1.25);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_fy)[0], -2.5);
+    EXPECT_DOUBLE_EQ(frame.span(kAtom_fz)[0], 5.0);
+    cuda::destroy(resident);
+}
+
 TEST(Frame, TopologyRoundTrip) {
     cpu::Frame frame(4);
     auto x = frame.span(kAtom_x);

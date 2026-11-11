@@ -12,7 +12,10 @@
 ///
 /// CUDA-free header.
 #pragma once
+#include "atomiverse/core/input_change.h"
+#include <cstdint>
 
+#include "atomiverse/core/precision.h"
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -31,6 +34,10 @@ class NeighborConsumer; // opt-in neighbor protocols (neighbor_protocol.cuh)
 class NeighborProvider;
 class
     LongRangeParticipant; // opt-in long-range protocol (long_range_protocol.cuh)
+class TimestepProvider;   // opt-in timestep protocol (timestep_protocol.cuh)
+class TimestepConsumer;
+class
+    ConstraintProvider; // opt-in constraint protocol (constraint_protocol.cuh)
 
 /// @brief Context for one-time component build (after Runtime + DeviceFrame exist).
 ///
@@ -43,6 +50,17 @@ struct BuildContext {
     cuda::Frame& frame;     ///< Device-resident system state + host metadata.
 };
 
+/// @brief Energy / virial a component consumes on the steps with
+///        `step % every == phase` (`every` = 0: on no cadence step — only on
+///        the run's reported final step and at setup, which evaluate the
+///        energy always and the virial whenever any component demands it).
+struct EvaluationDemand {
+    bool energy = false;
+    bool virial = false;
+    int every = 0;
+    int phase = 0;
+};
+
 /// @brief Context for per-step GPU work submission.
 ///
 /// Passed to Component::launch() every simulation step. launch() must
@@ -52,8 +70,19 @@ struct BuildContext {
 struct LaunchContext {
     cuda::Context& runtime; ///< CUDA execution context (streams).
     cuda::Frame& frame;     ///< Device-resident system state + host metadata.
-    int stage; ///< Current Plan slot index (erased — compare via `at()`).
-    int step;  ///< Current simulation step index (0-based).
+    int stage;   ///< Current Plan slot index (erased — compare via `at()`).
+    BigInt step; ///< Current simulation step index (0-based).
+    bool initializing_forces = runtime.exec.initializing_forces;
+    /// Set only by the minimizer's `final_output` pass (LAMMPS `Min::run`
+    /// forced output): `step` is then the completed-iteration count itself.
+    bool forced_final = false;
+    bool forces_requested = runtime.exec.forces_requested;
+    /// Potential energy wanted this step (LAMMPS `eflag_global`). An MD
+    /// step clears it unless a consumer's demand falls on the step.
+    bool energy_requested = runtime.exec.energy_requested;
+    /// Virial wanted this step (LAMMPS `vflag_global`), same rule.
+    bool stress_requested = runtime.exec.stress_requested;
+    bool trial_evaluation = runtime.exec.trial_evaluation;
 
     /// @brief Is the component running in `phase` right now? @see cpu::LaunchContext::at
     /// @tparam PhaseEnum The workflow Phase enum the component is bound in.
@@ -102,6 +131,21 @@ class Component {
     /// @brief RoleFlag set (mirrors cpu::Component). @see facade/component_role.h
     virtual Role role() const { return 0; }
 
+    /// The backend publishes cell caches after these bindings complete.
+    virtual bool changes_box(int stage) const { return false; }
+
+    /// @brief True when this component may make an orthorhombic cell
+    ///        triclinic during the run (it writes tilt factors).
+    ///
+    /// Host-side kernel dispatch picks the orthorhombic or general-cell
+    /// specialization from `Context::host_box.ortho`, and the host does not
+    /// read back a cell the device changed. The backend scans this at
+    /// `load()` and keeps `host_box.ortho` false for such a plan, so pair,
+    /// neighbor and mask kernels run the general path (which still takes the
+    /// orthorhombic branch at runtime while the published cell is
+    /// orthorhombic). Default false.
+    virtual bool tilts_box() const { return false; }
+
     virtual bool requires_system_stress() const { return false; }
     virtual bool provides_system_stress() const { return false; }
 
@@ -115,20 +159,24 @@ class Component {
     /// @return Dimensionless predicate. Default false.
     virtual bool provides_hessian() const { return false; }
 
-    /// @brief Per-run hint: does any component downstream consume this
-    ///        evaluator's stress/virial contribution?
+    /// @brief What this component consumes from the force field, and how
+    ///        often (LAMMPS `Integrate::ev_setup` / `ev_set`).
     ///
-    /// `cuda::md::MD::install_defaults()` calls this on every pending
-    /// component with the plan-level verdict (`needs_stress` — true iff
-    /// some component `requires_system_stress()`). Virial-producing
-    /// evaluators (pair / bonded) override it to gate their per-step virial
-    /// accumulation: in a plain NVE run (no barostat/stress observer) the
-    /// pair kernel then skips the 6 inner-loop virial products and the
-    /// stress reduction, and frees the accumulator registers under its
-    /// launch-bounds budget. Default no-op: components that produce no
-    /// virial ignore it. No `dynamic_cast` / `name()` matching.
-    /// @param required true iff a downstream consumer needs the virial.
-    virtual void set_stress_required(bool /*required*/) {}
+    /// The backend ORs the demands whose cadence hits a step into that
+    /// step's `energy_requested` / `stress_requested`; producers skip the
+    /// accumulation, reductions and atomics of what nobody asked for. The
+    /// last step of every run evaluates the energy (and the virial when
+    /// anything demands it) so the retrieved Frame carries it. Default: a
+    /// component that
+    /// `requires_system_stress()` wants the virial every step.
+    virtual EvaluationDemand demand() const {
+        EvaluationDemand d;
+        if (requires_system_stress()) {
+            d.virial = true;
+            d.every = 1;
+        }
+        return d;
+    }
 
     /// @brief Typed accessor for the consumer side of the opt-in
     ///        neighbor protocol (mirrors
@@ -154,6 +202,18 @@ class Component {
     virtual const LongRangeParticipant* as_long_range_participant() const {
         return nullptr;
     }
+    /// @brief Supply side of the timestep protocol (the integrators).
+    ///        `cuda::md::MD::install_defaults()` probes it. Default: none.
+    virtual const TimestepProvider* as_timestep_provider() const {
+        return nullptr;
+    }
+    /// @brief Demand side of the timestep protocol (`cuda::MrecRecorder`).
+    ///        Default: not a consumer.
+    virtual TimestepConsumer* as_timestep_consumer() { return nullptr; }
+    /// @brief Constraint protocol: components that remove degrees of
+    ///        freedom (`cuda::md::FixSettle`, `cuda::md::FixRattle`). The
+    ///        backend sums their counts into `Ndof`. Default: none.
+    virtual const ConstraintProvider* as_constraint() const { return nullptr; }
 
     /// @brief Scheduling trait (blocking or deferrable).
     /// @return Scheduling::blocking (default) or Scheduling::deferrable.
@@ -162,6 +222,37 @@ class Component {
     /// @brief Execution frequency: 0 = every step, N = every Nth step.
     /// @return Step frequency. 0 means execute on every step.
     virtual int frequency() const { return 0; }
+
+    /// @brief Cadence phase: with `frequency() = N > 0` the backend launches
+    ///        this component when `step % N == frequency_phase()`, `step`
+    ///        being the zero-based index of the step in progress (the host
+    ///        step counter — the gate never reads the device).
+    ///
+    /// Default 0 (steps 0, N, 2N, …). End-of-step output keyed on the
+    /// completed-step count (LAMMPS `update->ntimestep`, incremented at the
+    /// top of `Verlet::run`) returns `N - 1`, so it fires after steps
+    /// N, 2N, …. A phase outside `[0, N)` matches no step: the component
+    /// then runs only where the driver forces it (`samples_final_step`,
+    /// `setup_output`) — LAMMPS `thermo 0`.
+    virtual int frequency_phase() const { return 0; }
+
+    /// @brief launch() may be captured once into a step graph and replayed.
+    ///
+    /// True only when launch() enqueues main-stream work that is a pure
+    /// function of build-time state, device state and the step's
+    /// `energy_requested` / `stress_requested` (never `ctx.step` or other
+    /// host state that changes per step; the step is on
+    /// `runtime.device_step`). The backend captures runs of such components
+    /// into one graph per step signature. Default false: launched directly.
+    virtual bool graph_capturable() const { return false; }
+
+    /// @brief Changes whenever state baked into a captured launch changes
+    ///        (active count, attached hooks). Part of the step-graph key.
+    virtual std::uint64_t graph_epoch() const { return 0; }
+
+    /// @brief Also run on the last step of every run, off cadence (LAMMPS
+    ///        prints thermo on the final step). Default false.
+    virtual bool samples_final_step() const { return false; }
 
     /// @brief Default stage bindings. Empty = must bind explicitly via on().add().
     /// @return Vector of DefaultBinding (phase index + order pairs).
@@ -176,6 +267,14 @@ class Component {
     /// @param ctx Build context with Runtime and DeviceFrame references.
     virtual void build(const BuildContext& ctx) {}
 
+    /// Whether a boundary input edit can preserve this component's lifecycle.
+    /// Unknown components reject structural changes before any device mutation.
+    virtual bool supports_input_changes(InputChange changes) const {
+        return !has_input_change(changes, InputChange::Identity);
+    }
+    /// Refresh input-derived caches without replaying one-time initialization.
+    virtual void invalidate_inputs(InputChange, const BuildContext&) {}
+
     /// @brief Per-step GPU work submission.
     ///
     /// Called every step during the simulation loop.
@@ -184,6 +283,66 @@ class Component {
     ///
     /// @param ctx Launch context with Runtime, DeviceFrame, phase, and step.
     virtual void launch(const LaunchContext& ctx) = 0;
+
+    /// @brief Host-side admission of one in-loop launch, on the stepping
+    ///        thread, before its device work is enqueued.
+    ///
+    /// The backend calls it for every launch that passes the cadence gate
+    /// (`frequency()` / `frequency_phase()` / `samples_final_step()`),
+    /// whether `launch()` then runs eagerly or the step replays a captured
+    /// graph that contains it — so it runs exactly once per in-loop
+    /// execution even when `launch()` itself is not called. It must not
+    /// touch the device. It is the one place a component may block the
+    /// stepping thread, and only for the sanctioned exception to iron law
+    /// 10: an asynchronous recorder whose byte budget is full waits here,
+    /// on a host condition variable, until its writer frees space (lossless
+    /// backpressure); with space it returns at once. A throw stops the run.
+    /// Default: nothing.
+    /// @param ctx Launch context of the launch being admitted.
+    virtual void before_launch(const LaunchContext& ctx) { (void)ctx; }
+
+    /// Opt in to the force-preparation schedule without advancing history.
+    virtual void initialize_forces(const LaunchContext& ctx) {}
+
+    /// @brief Output of the current state at the start of a run (LAMMPS
+    ///        `Output::setup`, src/output.cpp).
+    ///
+    /// The MD and minimizer drivers call it once per `run()` — fresh or
+    /// continued — after the setup force evaluation and before the first
+    /// step, eagerly (never inside a step graph), with `ctx.step` = the
+    /// steps / iterations completed so far (LAMMPS `update->ntimestep`; 0 on
+    /// a fresh run) and
+    /// `ctx.initializing_forces` set (LAMMPS `update->setupflag`). The same
+    /// purity rule as `launch()` applies: device work only, no D2H, no sync.
+    /// Default: nothing. Recorders override it to write the initial state;
+    /// their in-loop end_of_step writes are labelled with the completed-step
+    /// count `ctx.step + 1`, so a frame labelled `s` is always the state
+    /// after `s` steps.
+    virtual void setup_output(const LaunchContext& ctx) {}
+
+    /// @brief Forced output of the final state when a minimization stops
+    ///        before its iteration budget (LAMMPS `Min::run`, src/min.cpp:
+    ///        on any stop condition but MAXITER, `output->write` runs at the
+    ///        final `update->ntimestep` with every dump and thermo due).
+    ///
+    /// `cuda::minimizer::Minimize` calls it once after its loop — the stop
+    /// is already host-visible there, so no device read is added — eagerly,
+    /// with `ctx.step` = iterations completed and `ctx.forced_final` set.
+    /// Recorders write the current state unless that step was already
+    /// written (LAMMPS `last_dump` / `last_thermo`). Same purity rule as
+    /// `launch()`. Default: nothing.
+    virtual void final_output(const LaunchContext& ctx) {}
+
+    /// @brief Event: the end-of-run retrieve has synchronized the device and
+    ///        written the host Frame back.
+    ///
+    /// The one point after setup where a component may read device-decided
+    /// state synchronously (iron law 10) and fail the run: a throw here
+    /// propagates out of the driver's `run()`; the host Frame already holds
+    /// the retrieved state. Default: nothing.
+    ///
+    /// @param ctx Runtime and device Frame of the finished run.
+    virtual void on_retrieve(const BuildContext& ctx) {}
 
     /// @brief Resource cleanup.
     ///

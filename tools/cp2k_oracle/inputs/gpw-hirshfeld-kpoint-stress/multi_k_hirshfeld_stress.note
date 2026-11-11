@@ -28,9 +28,11 @@ Hard pin:
 1. Product-kernel energy dual under strain (fixed dual volume table on the
    water dimer) — \(\sigma_{\mathrm{disp}} = -\Delta E_{\mathrm{disp}}/(2h\Omega)\).
 2. Multi-k product wiring on H₂ (`k_mesh={1,1,2}`):
-   `gpw_stress(atoms, cfg, scf)` with `ts+hirshfeld` / `mbd+hirshfeld` shifts
+   `GpwDft::stress(frame)` (one SCF + fixed-\(P\) stress at that SCF's state,
+   σ returned in eV/Å³) with `ts+hirshfeld` / `mbd+hirshfeld` shifts
    diagonal stress by geometry-only FD of \(E_{\mathrm{disp}}\) at
-   `scf.volume_ratios`, not free-atom.
+   `scf.volume_ratios`, not free-atom. The wiring bound below is in Ha/Bohr³:
+   divide σ by `units::kHartreePerBohr3InEvPerAngstrom3` before comparing.
 3. E_disp isolated MBD with fixed dual volumes
    `{0.7403,0.6529,0.6529,0.7153,0.5784,0.5784}` =
    **−1.1479717148086300×10⁻³ Ha** (same dual table as `gpw-hirshfeld-forces`).

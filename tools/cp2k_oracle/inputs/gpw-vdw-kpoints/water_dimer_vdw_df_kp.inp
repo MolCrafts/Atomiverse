@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-vdw-kpoints — nonlocal vdW-DF (DRSLL)
+! CP2K twin for regressions/gpw/vdw-df — nonlocal vdW-DF (DRSLL)
 ! on the Monkhorst-Pack k-point path: periodic water dimer (gpw-vdw-df-ice /
 ! gpw-vdw-multigrid family geometry), PBE + NON_LOCAL DRSLL, CUTOFF 200,
 ! NGRIDS 4 / REL_CUTOFF 40, &KPOINTS MONKHORST-PACK 2 1 1.
@@ -6,7 +6,7 @@
 ! tools/cp2k_oracle/inputs/gpw-multigrid-kpoints/si_kpoints_mg.inp.
 ! Run OFFLINE only (tools/cp2k_oracle/README.md); never at ctest time.
 ! Pins: `ENERGY| Total` and `Dispersion energy` [Ha] ->
-! regressions/gpw/gpw-vdw-kpoints/REFERENCE.md.
+! regressions/gpw/vdw-df/REFERENCE.md.
 &GLOBAL
   PROJECT water_dimer_vdw_df_kp
   RUN_TYPE ENERGY

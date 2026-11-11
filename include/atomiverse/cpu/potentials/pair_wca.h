@@ -5,6 +5,7 @@
 #include <string>
 
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
 namespace cpu {
@@ -24,6 +25,9 @@ class PairWCA : public Pair {
         return nullptr;
     }
 
+    /// @brief Forget the walk's cached row partition.
+    void build(const BuildContext&) override { loop_.reset(); }
+
   protected:
     void compute(const LaunchContext& ctx) override;
 
@@ -32,6 +36,7 @@ class PairWCA : public Pair {
     double sigma_ = 0;
     double cutoff_sq_ = 0;
     double v_shift_ = 0; ///< 4ε[(σ/rc)¹²−(σ/rc)⁶] so U(rc)=0
+    md::PairLoop loop_;  ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

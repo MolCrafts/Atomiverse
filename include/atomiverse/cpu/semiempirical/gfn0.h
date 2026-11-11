@@ -32,11 +32,13 @@ namespace semiempirical {
 class GFN0 : public cpu::Semiempirical {
   public:
     /// @brief Molecular charge [e] (EEQ constraint).
-    int charge = 0;
+    const int charge;
     /// @brief When true, write analytic forces F=−∇E [eV/Å] on launch.
     bool with_forces = false;
 
-    GFN0() = default;
+    /// @brief GFN0-xTB.
+    /// @param charge Net molecular charge [e].
+    explicit GFN0(int charge = 0) : charge(charge) {}
 
     std::string name() const override { return "gfn0"; }
 

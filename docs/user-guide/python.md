@@ -1,66 +1,83 @@
 # Python Package
 
 Install, configure and run Atomiverse from Python: `pip install atomiverse`
-for the pure-Python shell, then an on-demand native build. The C++
-toolchain, CMake flags and first C++ run are a separate page —
+for the pure-Python shell, then a native build from a source checkout. The
+C++ toolchain, CMake flags and first C++ run are a separate page —
 [Getting started](getting-started.md) — and the Driver / Component / Frame
 vocabulary these bindings mirror is in [Core concepts](concepts.md).
 
 ## Installation
 
-Atomiverse uses a **two-phase** Python install: a pure-Python package first,
-then an optional on-demand native build.
+Atomiverse uses a **two-phase** Python install: a pure-Python package from
+PyPI, then a native extension you build for your machine. Both phases go
+through pip, so `pip uninstall atomiverse` removes everything and a new
+release replaces everything.
 
 ### Phase 1 — pure Python package
 
 ```bash
 pip install atomiverse
-# or, from a source checkout (development):
-#   pip install -e python/
 ```
 
 This installs the Python API shell and CLI only — **no C++ compile**, no
-prebuilt `_atomiverse` binary. Requires Python ≥ 3.9, NumPy, and
-`molcrafts-molpy` (the only user-facing Frame type). **Do not `import molrs`**
-from user code — molrs is an engine-private schema, pulled transitively
-by molpy.
-
-After phase 1 you can run:
+prebuilt `_atomiverse` binary. Requires Python ≥ 3.12, NumPy, and
+`molcrafts-molpy` (the only user-facing Frame type). **Do not `import molpy`**
+from user code — molpy's Rust core is an engine-private schema.
 
 ```bash
-python -m atomiverse          # shows version + install guidance
-python -m atomiverse status  # no native build yet
-python -m atomiverse run script.py   # after a native install
+python -m atomiverse            # version + install guidance
+python -m atomiverse status     # extension: not installed
 ```
 
 Importing compute symbols (`atomiverse.MD`, …) without a native extension
 raises `ImportError` pointing at phase 2.
 
-### Phase 2 — native build (CMake stages)
+### Phase 2 — native build from a checkout
 
-The CLI mirrors the cmake pipeline and **streams raw cmake output**:
+The extension is compiled from the **source tag matching the installed
+version**, together with a local molpy checkout, using the toolchain described in
+[Getting started](getting-started.md) — a C++20 compiler, CMake, BLAS/LAPACK,
+a Rust toolchain for molpy's native core, and FFTW3 for `pw` / `kspace`.
 
 ```bash
-# 1) configure  (cmake -S -B -D…)
-python -m atomiverse config md pw --mpi --src /path/to/Atomiverse
+V=$(python -m atomiverse --version)
+git clone --recursive --branch v$V https://github.com/MolCrafts/Atomiverse
+export ATV_MOLPY_PATH=/absolute/path/to/merged/molpy
+pip install 'atomiverse[native]'        # build-time: scikit-build-core, nanobind, maturin
 
-# 2) compile    (cmake --build)
+# 1) config   resolve modules → CMake defines, record the build
+python -m atomiverse config md pw --mpi --src Atomiverse
+
+# 2) compile  pip wheel → scikit-build-core → CMake, and molpy from the local checkout
 python -m atomiverse compile -j 8
 
-# 3) install    (cmake --install → site-packages)
+# 3) install  pip install of both wheels over the pure package
 python -m atomiverse install
 
 python -m atomiverse status
-
-# 4) run a script (same CLI)
-python -m atomiverse run python/examples/md_lj_argon.py
-python -m atomiverse python/examples/md_lj_argon.py
+python -m atomiverse run Atomiverse/examples/python/md_lj_argon.py
 ```
+
+`compile` builds in `<src>/build-python` (override with `config
+--build-dir`); a repeat `compile` reuses that CMake tree and only rebuilds
+what changed. It builds two wheels into `<build-dir>/dist/`: the extension,
+and molpy from `<ATV_MOLPY_PATH>/molpy` (cargo output kept in
+`<build-dir>/molpy-target`, so that rebuild is incremental too). `install`
+hands both to `pip install --force-reinstall --no-deps` — the extension and
+its `_build_info.json` (the defines it was compiled with, which `status`
+prints) are ordinary files of the installed distribution.
+
+**Why molpy is rebuilt:** its Python extension and Atomiverse's `molcxx`
+bridge exchange a shared native Frame handle. They must use the same local
+source tree and compatible ABI. `install` replaces the installed molpy wheel
+with the one built from that checkout. No molpy release is pinned yet.
 
 **Modules** are positional on `config` only: `md`, `minimize`, `mc`, `evaluate`,
 `vib`, `path`, `hf`, `pw`, `gpw`, `am1`, `cuda`, `kspace`, `potentials`,
-`neighbor`.
-Enabling `md` / `mc` / `minimize` auto-enables `potentials` + `neighbor`.
+`neighbor`. The wheel contains **exactly** the modules listed (plus their
+closure) — every other product module is set OFF. Enabling `md` / `mc` /
+`minimize` auto-enables `potentials` + `neighbor`; `path` pulls in
+`minimize`; `kspace` pulls in `potentials`.
 
 **Global options** (on `config`, never under a module name):
 
@@ -70,12 +87,12 @@ Enabling `md` / `mc` / `minimize` auto-enables `potentials` + `neighbor`.
 | `--real-storage {float,double}` | `ATV_REAL_STORAGE` |
 | `--real-work {float,double}` | `ATV_REAL_WORK` |
 | `--id-size {bigbig,smallbig}` | `ATV_ID_SIZE` |
-| `-D KEY=VALUE` | unbound defines only |
+| `-D KEY=VALUE` | unbound defines only (e.g. `-D BLA_VENDOR=OpenBLAS`) |
 
 TOML recipe (XOR with positional modules; globals in `[global]` only):
 
 ```bash
-python -m atomiverse config --config atomiverse-build.toml --src /path/to/Atomiverse
+python -m atomiverse config --config atomiverse-build.toml --src Atomiverse
 ```
 
 ```toml
@@ -91,16 +108,21 @@ real_storage = "double"
 **`--hf`** is the flag spelling of the `hf` module: it configures Gaussian
 SCF (`ATV_BUILD_HF=ON`) exactly like every other product module.
 
-**Version lock:** checkout `python/pyproject.toml` must match the installed
-package version. **`--src` is required** for the staged cmake pipeline.
+**Version lock:** the checkout's `__version__` must equal the installed
+package version — `config` refuses otherwise, so a native build never
+silently swaps the release you installed for a different tree.
 
-**Dry-run:**
+**Dry-run** prints the resolved defines and the exact pip commands:
 
 ```bash
-python -m atomiverse config md --mpi --src /path/to/Atomiverse --dry-run
+python -m atomiverse config md --mpi --src Atomiverse --dry-run
 python -m atomiverse compile --dry-run
 python -m atomiverse install --dry-run
 ```
+
+**Developing Atomiverse itself:** `pip install -e 'python/[dev,native]'`
+installs the source tree editable; the same `config` / `compile` /
+`install` stages then build the extension against it.
 
 ## What this package exposes (and what it doesn't)
 
@@ -115,17 +137,21 @@ Current surface:
 - **MD** — the `MD` driver and its components under the canonical C++
   (LAMMPS-style) names: `VelocityVerlet`, `NoseHooverNPT`,
   `ParrinelloRahmanNPT`, `InitVelocity`, `NoseHoover`, `Langevin`, `CSVR`,
-  `BerendsenBarostat`, `NeighborList`, `Thermo`, `XYZ`.
+  `BerendsenBarostat`, `NeighborList`, `Thermo`, `XYZ`, `MrecRecorder`.
 - **Real-space force field** — the plural `set_evaluator` menu. Pair styles
   `PairLJCut`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`
   and `PairDpd`; bonded styles `BondHarmonic`, `BondFene`, `AngleHarmonic`,
-  `DihedralMultiHarmonic`, `DihedralCharmm` and `ImproperHarmonic`. A
-  real-space style has no build flag of its own, so all of them are on every
-  wheel. The table under *MD driver* below gives the signatures and units.
+  `AngleCosine`, `DihedralMultiHarmonic`, `DihedralCharmm` and
+  `ImproperHarmonic`; the uniform field `FixEfield` (`atomiverse.md`). A
+  real-space style has no build flag of its own, so all of them are in every
+  native build. The table under *MD driver* below gives the signatures and units.
 - **Electrostatics** — `PairCoulCut` (truncated Coulomb) and the Ewald
   split `CoulLong` + `KSpacePME`. The reciprocal solver needs FFTW3, so
-  `KSpacePME` is present only on wheels built with `ATV_BUILD_KSPACE=ON`
-  (the default).
+  `KSpacePME` is present only when the `kspace` module is built.
+  `PairCoulCut` takes 1-2/1-3/1-4 weights and an explicit Coulomb constant,
+  and `PairLJCut([LJTypeCoeff, ...], cutoff, ...)` is the per-type LJ form
+  with weights and an `energy_shift` switch — the two kernels a molpy `lj/cut` + `coul/cut`
+  force field translates to (see *Force fields from molpy*).
 - **Geometry optimization** — CPU `minimizer.Minimize` with three fixed-cell
   optimizers (`LBFGS`, `CG`, `FIRE`), four variable-cell relaxers
   (`IsotropicCellRelax`, `AnisotropicCellRelax`, `TriclinicCellRelax`,
@@ -134,22 +160,18 @@ Current surface:
   one. Any force source `MD` accepts is accepted here.
 - **Vibrational analysis** — `Hessian` (central finite differences over any
   registered force source) and `HessianResult` (wavenumbers, normal modes,
-  RRHO thermochemistry). `ATV_BUILD_VIB` defaults ON, so these are on the
-  shipped wheel; a staged CLI build must list `vib`
+  RRHO thermochemistry). Present when the `vib` module is built
   (`python -m atomiverse config md vib …`).
 - **Monte Carlo** — the three ensemble presets `MC` (NVT), `NptMC` and
   `GCMC` with their movers `TranslateMove`, `VolumeMove`,
-  `InsertDeleteMove` and `MoveSelector`. `ATV_BUILD_MC` defaults ON, so
-  these are on the shipped wheel; a staged CLI build selects its modules
-  explicitly, so list `mc` there (`python -m atomiverse config md mc …`) or
-  the extension is built without them.
-- **Plane-wave DFT** — `PW` / `PWResult` / `PWEvaluator`, i.e. energy,
-  forces, cell stress and plane-wave Born-Oppenheimer MD (PW-enabled wheels
-  only; PW types are absent from wheels built without the backend).
+  `InsertDeleteMove` and `MoveSelector`. Present when the `mc` module is
+  built (`python -m atomiverse config md mc …`).
+- **Plane-wave DFT** — `PW` / `PWResult`, i.e. energy,
+  forces, cell stress and plane-wave Born-Oppenheimer MD (present when the
+  `pw` module is built).
 - **Gaussian SCF** — the concrete mean-field methods `RHF`, `UHF`, `RKS`,
-  `UKS` for molecular Hartree-Fock and Kohn-Sham DFT. Needs
-  `ATV_BUILD_HF=ON`, which the shipped wheel sets by default; on a wheel
-  built without it the four names are absent.
+  `UKS` for molecular Hartree-Fock and Kohn-Sham DFT (present when the `hf`
+  module is built).
 
 GPU minimization fails loud and remains deferred.
 
@@ -222,7 +244,15 @@ The full mapping table lives in `help(atomiverse)`.
 
 Backend selection is a `device=` constructor parameter (PyTorch-style),
 never a namespace: `av.md.MD(dt=0.001, device="cpu")` is the default;
-`device="cuda"` raises `ValueError` until the CUDA bindings land.
+`device="cuda"` selects the CUDA driver on an extension built with CUDA and
+raises `ValueError` otherwise. The setter tables below say which components
+the CUDA driver binds.
+
+Periodic image flags are the optional `ix`, `iy`, `iz` columns of the `atoms`
+block, dtype `int32` (molpy's dtype for them). A run reads them, counts every
+wrap of an atom back into the cell, and writes them back, so
+\(x + H\,(ix, iy, iz)\) is the unwrapped position on both backends. A 64-bit
+column is rejected, not narrowed: insert `np.int32` values.
 
 ## Charged systems: Coulomb and PME
 
@@ -289,9 +319,94 @@ the rock-salt Madelung constant (a purely geometric lattice sum),
 `k_e = 14.399645 eV·Å/e²` is the Coulomb constant in these units, and `d` is
 the nearest-neighbour spacing. The Python gate is 5e-4 relative, which is
 the PME discretization budget at 0.5 Å / order 6; the equivalent C++ case
-`regressions/md/npt_pme_nacl` measures 3.8e-8 on the same settings.
+`npt_pme_nacl` measures 3.8e-8 on the same settings.
+
+## Force fields from molpy
+
+molpy composes a force field from LAMMPS-standard styles
+(`ff.def_style(category, name, params)` plus that style's types) and types a
+molecule against it — GAFF / GAFF2, OPLS-AA, MMFF or a hand-built one.
+`atomiverse.forcefield.compile(forcefield, frame)` translates it **style by
+style, one molpy style to one Atomiverse evaluator**, with no knowledge of
+which force field it is reading:
+
+| molpy style | Atomiverse evaluator |
+|---|---|
+| `pair lj/cut` | `PairLJCut([LJTypeCoeff, ...], cutoff)` — per-type rows, cross pairs by the style's `mixing` (arithmetic / geometric / sixthpower), LJ weights from `ff.special_bonds`, the style's `cutoff` and `shift` |
+| `pair coul/cut` | `PairCoulCut` — Coulomb weights, the style's `cutoff`, its `coulomb` constant over `dielectric` |
+| `bond harmonic`, `angle harmonic` | `BondHarmonic`, `AngleHarmonic` |
+| `dihedral periodic` / `charmm` | `DihedralCharmm` (one row per nonzero periodic term) |
+| `improper cvff` / `periodic` / `harmonic` | `ImproperCvff` (periodic converted exactly by molpy) / `ImproperHarmonic` |
+
+Parameters convert by the dimensions molpy's style registry declares
+(`E`, `L`, `Q`, `A`) from the force field's `units` (`real` or `metal`) to
+eV / Å / e / rad. Any other style — including `coul/long` / `coul/long/pme`,
+whose Coulomb weights and constant `CoulLong` cannot take — is refused by
+name, never approximated. The result is a `Compiled(frame, evaluators,
+cutoff)`: the frame the driver runs on (the force-field atom type as integer
+`atoms.type_id`), the evaluators in style order, and the largest pair cutoff
+for the `NeighborList`.
+
+There is no vacuum mode: a gas-phase calculation of one molecule is
+composition. Set the pair styles' cutoff beyond the molecule and make the box
+large enough that no periodic image comes within it — every pair is then
+counted once with bare Coulomb, the Amber `ntb=0, cut=999` model:
+
+```python
+import numpy as np
+import molpy as mp
+import atomiverse as av
+from atomiverse import forcefield as avff
+
+mol = mp.io.smiles.read_smiles("C[N+](C)(C)CCBr").to_atomistic()
+mol, _ = mp.conformer.Conformer(seed=1).generate(mol)
+typed = mp.ff.typifier.AtdTypifier(parameter_set="gaff2").typify(mol)
+gaff = mp.ff.typifier.GaffTypifier(parameter_set="gaff2")
+typed = gaff.typify(typed)
+ff = gaff.forcefield()                       # pair lj/cut + pair coul/cut, ...
+
+frame = typed.to_frame()
+charges = av.AM1BCCCharges(method=av.AM1(charge=1)).assign(mol)
+frame["atoms"].insert("charge", charges)
+
+xyz = np.stack([np.asarray(frame["atoms"][k]) for k in "xyz"], axis=1)
+diameter = max(np.linalg.norm(xyz - p, axis=1).max() for p in xyz)
+rc, skin = diameter + 5.0, 2.0
+for name in ("lj/cut", "coul/cut"):
+    ff.get_style("pair", name).set(cutoff=rc)
+box = diameter + rc + 2 * skin
+for i, k in enumerate("xyz"):
+    frame["atoms"][k] = xyz[:, i] - xyz[:, i].mean() + box / 2
+frame.box = mp.Box.cube(box)
+
+system = avff.compile(ff, frame)
+opt = av.Minimize()
+opt.set_optimizer(av.LBFGS())
+opt.add_criterion(av.ForceConverged(ftol=1e-4))
+opt.set_neighbor(av.NeighborList(system.cutoff, skin))
+for term in system.evaluators:
+    opt.set_evaluator(term)
+opt.run(system.frame, 2000)
+```
+
+For a periodic system keep the force field's own cutoffs (GAFF: 10 Å) — or,
+for Ewald electrostatics, replace its `coul/cut` style and compose `CoulLong` +
+`KSpacePME` / `KSpacePPPM` yourself; that is a different model, not a
+translation. `compile` refuses a frame without a box, a type a style leaves
+unparameterized, or a style parameter the kernel cannot honour (LJ exponents
+other than 12-6, a Coulomb `delta`, a CHARMM dihedral weight `w`). The frame's
+atom kind is the force-field type, so the XYZ recorder, which spells a kind as
+an element, does not apply to it; write structures with molpy's writers from
+the typed frame.
 
 ## AM1 semiempirical single point, forces and BOMD
+
+This section uses **CPU AM1**. C++ also has CPU RM1 and a restricted CUDA
+AM1/RM1 energy/charge/analytic-force implementation with short MD and
+steepest-descent composition checks. Neither RM1 nor CUDA NDDO has matching
+Python bindings yet; these C++ checks do not establish Python CUDA support. `device="cuda"` does not turn `av.AM1` into the native
+CUDA method. CPU NDDO is molecular and closed shell; non-singlet requests
+are rejected even though the constructor accepts a `multiplicity` argument.
 
 **AM1** — *Austin Model 1* — is a **semiempirical** electronic-structure
 method: it solves an approximate quantum model of the valence electrons in
@@ -301,10 +416,10 @@ are replaced by numbers fitted once per chemical element. It costs far less
 than the Gaussian-basis Hartree-Fock of the next section and far more than a
 classical force field, and it is only as good as its fit.
 
-`AM1Evaluator` computes energy [eV], Mulliken charges [e] — per-atom partial
+`AM1` computes energy [eV], Mulliken charges [e] — per-atom partial
 charges obtained by splitting each electron's population among the orbitals it
 occupies — and nuclear forces [eV/Å]. The `atomic_number` column carries the
-atomic number Z, which is how the evaluator knows which element parameters to
+atomic number Z, which is how the method knows which element parameters to
 use:
 
 ```python
@@ -312,42 +427,46 @@ import numpy as np
 import atomiverse as av
 
 # `frame` is a molpy.Frame with x/y/z + atomic_number columns.
-ev = av.AM1Evaluator(charge=0)
-av.single_point(frame, ev)                     # energy + charges onto frame
+am1 = av.AM1(charge=0)
+av.single_point(frame, am1)                    # overwrite energy + charges; preserve forces
 q = np.asarray(frame["atoms"]["charge"])       # Mulliken charges [e]
-res = ev.last_result()                         # Hartree / kcal-mol detail
+res = am1.last_result()                        # Hartree / kcal-mol detail
 print(res.heat_of_formation_kcal_mol, res.iterations)
 ```
 
-`forces(frame)` runs the same solve and *returns* the gradient as an
+`forces(frame)` runs the same solve and *returns* the forces (negative energy
+gradient) as an
 `(n_atoms, 3)` array [eV/Å], writing the same numbers into the frame's
 fx/fy/fz columns:
 
 ```python
-f = ev.forces(frame)          # (n_atoms, 3) [eV/Å]
-print(f.sum(axis=0))          # exactly 0 — see below, this is not a check
+f = am1.forces(frame)         # (n_atoms, 3) [eV/Å]
+print(f.sum(axis=0))          # near 0 from equal-and-opposite pair contributions
 ```
 
-The gradient is a **central finite difference of the energy at fixed
-density**, with a step of `h = 1e-4` Å per Cartesian component. The SCF loop —
-*self-consistent field*, the iteration that re-solves the electrons in the
-averaged field they themselves generate, until the two agree — is run once;
-then its converged electron density `P` is held while the energy is
-re-evaluated at the displaced geometries and differenced.
+CPU AM1 and RM1 compute **analytic forces** by propagating three Cartesian
+derivatives through each pair's one-electron, two-electron and core-repulsion
+expressions, then contracting with the converged density. No displaced
+geometries are needed for forces; the model parameters are unchanged.
 
-Holding `P` fixed is not where the approximation lives. At convergence the
-energy is stationary against any change of the density that keeps the electron
-count, so the density-response part of `dE/dR` drops out; and NDDO treats its
-orbital basis as orthonormal, so there is no basis-derivative ("Pulay") term to
-recover either. What is approximate is the difference quotient itself, which
-reproduces the exact NDDO gradient to `O(h²)` plus round-off. Closed-form NDDO
-derivatives are a separate engine queue.
+The SCF solve must satisfy both `density_tol` and `energy_tol`. At electronic
+stationarity the density-response term vanishes, and the NDDO orthonormal
+basis has no overlap Pulay term. Incomplete SCF convergence still limits force
+accuracy. Equal-and-opposite pair contributions make the net force vanish to
+round-off; this alone does not validate individual force components. The
+existing AM1/RM1 C++ regression independently checks all force components
+against executed OpenMOPAC 23.2.5 H₂O, CO and NH₃ fixtures for both methods.
+See the [semiempirical roadmap](../roadmap/semiempirical.md) for the exact
+element, backend and evidence limits; passing the AM1 Python suite does not
+establish RM1/CUDA Python support.
 
-One consequence worth knowing before you use it as a sanity check: only
-`3·(n_atoms − 1)` differences are actually taken, and the force on the last
-atom is filled in as minus the sum of all the others — exact for an isolated
-molecule, since a rigid translation cannot change `E`. So `f.sum(axis=0)` is
-zero *by construction* and tells you nothing about the quality of the gradient.
+Before the SCF, CPU AM1/RM1/MNDO/PM3 (and `AM1BCCCharges`) refuse a geometry
+in which two atoms are closer than 0.6 × the sum of their covalent radii
+(C–C 0.912 Å, C–H 0.642 Å, H–H 0.372 Å; the shortest real bonds sit near 0.77
+of the sum). The `ValueError` gives the number of offending pairs and the
+closest ones by 0-based atom index, element, distance and limit. An SCF that
+exhausts `max_iter` raises `RuntimeError` with the iteration count, the last
+density and energy changes, and both tolerances.
 
 ### Born-Oppenheimer MD
 
@@ -365,15 +484,18 @@ frame["atoms"].insert("mass", np.array([15.999, 1.008, 1.008]))
 sim = av.MD()
 sim.set_integrator(av.VelocityVerlet(0.25))    # [fs] — light atoms, short dt
 sim.set_observer(av.InitVelocity(300.0, 42))   # [K], seed
-sim.set_evaluator(av.AM1Evaluator(charge=0))
+sim.set_evaluator(av.AM1(charge=0))
 sim.run(frame, 100)
 
 print(frame.meta["energy"], frame.meta["kinetic"])   # [eV]
 ```
 
-The driver installs its own gradient-enabled copy of the evaluator's five SCF
-parameters, so `ev.last_result()` is *not* updated by `run()`; the per-step
-results (energy, charges, forces) land on the frame.
+The Python driver constructs its own method from the supplied parameters.
+It retains that method's SCF workspace and accepted density during the run;
+initial-force preparation and trial evaluations do not advance the accepted
+electronic guess. The standalone `am1.last_result()` object is not updated by
+`sim.run()`; per-step energy, charges and forces land on the Frame. This
+Python ownership rule does not apply to a C++ `.add_ref(method)` mount.
 
 ## Gaussian SCF single point and forces
 
@@ -415,17 +537,18 @@ forces = rhf.forces(frame)            # (N, 3) numpy array [eV/Å]
 fz = np.asarray(frame["atoms"]["fz"]) # same values written back to the frame
 ```
 
-The four constructors and their defaults:
+The four constructors. `basis`, `charge`, the α/β counts and `xc` are fixed
+at construction and read-only afterwards; `tol` / `max_iter` stay writable.
 
 | Method | Signature |
 | --- | --- |
-| `RHF` | `RHF(basis="STO-3G", charge=0, tol=1e-9, max_iter=100)` |
-| `UHF` | `UHF(basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)` |
-| `RKS` | `RKS(functional="PBE", basis="STO-3G", charge=0, tol=1e-9, max_iter=100)` |
-| `UKS` | `UKS(functional="LSDA", basis="STO-3G", charge=0, multiplicity=1, tol=1e-8, max_iter=100)` |
+| `RHF` | `RHF(basis, charge=0, tol=1e-9, max_iter=100)` |
+| `UHF` | `UHF(basis, n_alpha, n_beta, charge=0, tol=1e-8, max_iter=100)` |
+| `RKS` | `RKS(basis, xc, charge=0, tol=1e-9, max_iter=100)` |
+| `UKS` | `UKS(basis, n_alpha, n_beta, xc="LSDA", charge=0, tol=1e-8, max_iter=100)` |
 
 `basis` is one of `STO-3G`, `6-31G`, `6-31G*`, `6-31+G*`, `def2-SVP`,
-`def2-TZVP`, `aug-cc-pVDZ`; `functional` is one of `LSDA`, `PBE`, `PBEsol`,
+`def2-TZVP`, `aug-cc-pVDZ`; `xc` is one of `LSDA`, `PBE`, `PBEsol`,
 `RevPBE`, `RPBE`, `BLYP`, `OptB88VdW`, `B3LYP`, `PBE0`, `B2PLYP`. An
 unsupported name raises `ValueError` listing the supported ones — there is
 no fallback basis or functional.
@@ -481,17 +604,16 @@ atoms.insert("atomic_number", np.array([8, 1, 1], dtype=np.uint32))
 frame["atoms"] = atoms
 frame.box = molpy.Box.cube(20.0)                    # gas phase
 
-rhf = av.RHF()                                      # STO-3G defaults
+rhf = av.RHF("STO-3G")
 rhf.run(frame)
 assert rhf.converged()
 print(rhf.energy())        # total energy [Hartree]
 ```
 
 The printed energy reproduces **−74.961754 Ha**, the value
-`regressions/scf/h2o_rhf_sto3g` pins at exactly this geometry (LibreTexts
+section `h2o_rhf_sto3g` of case `scf/rhf` pins at exactly this geometry (LibreTexts
 *Live Textbook of Physical Chemistry* §28.2, cross-checked against PySCF
-2.13), inside that case's stated **1 × 10⁻³ Ha** window —
-see `regressions/scf/h2o_rhf_sto3g/REFERENCE.md`. `python/tests/test_scf.py`
+2.13), inside that section's stated **1 × 10⁻³ Ha** window. `python/tests/test_scf.py`
 grades this same geometry against the same number and window.
 
 ## CPU geometry minimization
@@ -527,6 +649,13 @@ alternatives, not a stack:
 | `CG(alpha0)` | Polak-Ribière⁺ conjugate gradient | low memory, or L-BFGS curvature keeps getting discarded |
 | `FIRE(dt0, dt_max, …)` | damped dynamics, no line search | far from the minimum, or the force source is noisy |
 
+When a CPU `LBFGS` or `CG` line search finds no lower energy within its trial
+budget, the optimizer drops its curvature history (CG restarts) and searches
+once more along steepest descent from the same geometry. If that fails too,
+the run stops at the last accepted geometry with `converged == False` and
+`stop_reason` `"lbfgs_line_search_failed"` / `"cg_line_search_failed"`; it no
+longer raises. Only an evaluator error during a trial is an exception.
+
 `memory` and `max_ls` are counts; `alpha0` is a step size in Å²/eV for `LBFGS`
 and `CG` — the trial displacement per unit force — but a dimensionless
 velocity-mixing fraction for `FIRE`, whose own step scale is `dt0` / `dt_max`
@@ -544,7 +673,7 @@ opt.add_criterion(av.ForceConverged(ftol=0.01, rms_ftol=0.005))
 `FIRE`'s defaults are ASE's and assume O(1) eV/Å forces. A soft system — an Ar
 Lennard-Jones dimer has a residual of ~10⁻² eV/Å — needs a longer pseudo-time
 scale, hence the `dt0=1.0, dt_max=20.0` retune above
-(`regressions/minimizer/fire_lj_dimer`).
+(`fire_lj_dimer`).
 
 `ForceConverged` has five tolerances and **all five** must hold at once: the
 largest per-atom force `ftol` and the RMS force `rms_ftol` (both eV/Å), the
@@ -553,8 +682,8 @@ the energy change `etol` (eV).
 
 Any force source `MD.set_evaluator` accepts works here too — the two facades
 read one dispatch table — so a bonded force field, an Ewald split
-(`CoulLong` + `KSpacePME` at the same `alpha`), `AM1Evaluator` or
-`PWEvaluator` all drive an optimization.
+(`CoulLong` + `KSpacePME` at the same `alpha`), `AM1` or
+`PW` all drive an optimization.
 
 One iteration is free, whichever optimizer you choose: the minimizer phase
 order runs `search_direction` before `force`, so iteration 0 has no force
@@ -590,13 +719,13 @@ Two more gates the API cannot check for you.
 default — the pair styles (`PairLJCut`, `PairCoulCut`, `CoulLong` +
 `KSpacePME`, `PairMorse`, `PairBuck`, `PairBorn`, `PairYukawa`, `PairWCA`,
 `PairDpd`) and the bonded ones alike; `PairDpd` contributes its *conservative*
-virial only, which is the term a pressure is built from. `AM1Evaluator` writes
-none — it is a molecular method with no cell — and
-`PWEvaluator` is installed by this facade as a gradient-only copy. With a zero
-virial the cell never moves and `PressureConverged(P_target=0.0, …)` reports
-success on the untouched cell. (`PW.stress(frame)` still returns the
-plane-wave cell stress as a Voigt 6-vector in eV/Å³; it just does not feed a
-relaxer.)
+virial only, which is the term a pressure is built from. `AM1` writes
+none — it is a molecular method with no cell — so it cannot drive a cell step.
+A mounted `PW` computes its analytic virial whenever the plan consumes stress
+(a cell relaxer or a `StressConverged` / `PressureConverged` criterion). With a
+zero virial the cell never moves and `PressureConverged(P_target=0.0, …)`
+reports success on the untouched cell. (`PW.stress(frame)` standalone returns
+the plane-wave cell stress as a Voigt 6-vector in eV/Å³.)
 
 **And the first iteration is free.** The step uses the stress the previous
 iteration's force pass left behind, and iteration 0 has none of its own — it
@@ -629,7 +758,7 @@ Set expectations from what the C++ regression actually measures. Two Ar atoms
 3.0 Å apart in a 6.0 Å cube — compressed well inside the Lennard-Jones
 minimum — expand to L ≈ 6.32 Å with |P| ≈ 1.1×10⁻³ eV/Å³ after 200 iterations,
 and reach |P| < 5×10⁻⁴ eV/Å³ after 559
-(`regressions/minimizer/cell_lj_pressure`). These are steepest-descent
+(`cell_lj_pressure`). These are steepest-descent
 skeletons with a soft modulus, not equation-of-state solvers: budget iterations
 generously and check `result.converged` rather than assuming the budget was
 enough.
@@ -730,7 +859,7 @@ do not:
 ```python
 # `h2` is a molpy.Frame of two H atoms (atomic_number = 1) in a large cell.
 driver = av.Hessian()
-driver.set_evaluator(av.AM1Evaluator())    # 6N SCF solves, no neighbor list
+driver.set_evaluator(av.AM1())    # 6N SCF solves, no neighbor list
 result = driver.run(h2)
 ```
 
@@ -901,7 +1030,7 @@ gcmc.set_neighbor(av.NeighborList(8.5, 1.0))
 gcmc.set_mover(
     av.MoveSelector()
     .add(av.TranslateMove(1.36), 0.5)
-    .add(av.InsertDeleteMove(18, 39.948), 0.5)      # z = 18 (Ar), m [amu]
+    .add(av.InsertDeleteMove(1, 18, 39.948), 0.5)   # type 1, Z = 18 (Ar), m [amu]
 )
 
 gcmc.run(frame, 50_000)                             # equilibrate
@@ -920,7 +1049,7 @@ the quantum length scale of a free particle of mass m at temperature T. For
 an ideal gas z *is* the number density, so μ = k_BT·ln(zΛ³) turns a target
 density into the number you pass. The −0.177 eV above is exactly that:
 zσ³ = 0.05 for argon (m = 39.948 amu, σ = 3.4 Å) at T = 180 K. This is the
-convention of `regressions/mc/gcmc_lj/REFERENCE.md` (Frenkel & Smit
+convention of section `gcmc_lj` of case `mc/metropolis` (Frenkel & Smit
 eq. 5.6.9), which is what its ⟨N⟩(z) pin measures.
 
 **Match the mass.** The `InsertDeleteMove` mass **must** be the mass `GCMC`
@@ -929,8 +1058,11 @@ not the one you asked for, and nothing compares them.
 
 Because N fluctuates, `run()` **rebuilds** the frame's `atoms` block
 whenever the population changed: every column comes back at the new N,
-including `mass` and `atomic_number`, which the fixed-N path treats as
-immutable inputs and never writes.
+including `mass` and whichever identity columns the frame carried
+(`atomic_number`, `type_id`), which the fixed-N path treats as immutable
+inputs and never writes. `InsertDeleteMove(type, atomic_number, mass)`
+stamps each identity on an inserted atom only where the frame carries that
+column.
 
 Monte Carlo is single-rank by design — no MC task exists in the MPI
 launcher protocol — so `run()` raises `RuntimeError` under
@@ -938,25 +1070,40 @@ launcher protocol — so `run()` raises `RuntimeError` under
 per rank.
 
 The quantitative ensemble physics is pinned in the C++ regressions, not
-here: `regressions/mc/npt_lj` grades ⟨V⟩ against the exact finite-N result
+here: `npt_lj` grades ⟨V⟩ against the exact finite-N result
 ⟨V⟩ = (N+1)k_BT/P + N·B₂ (Frenkel & Smit, *Understanding Molecular
 Simulation* 2nd ed. §5.4) — it lands 0.05 % off, inside a tolerance of
 3 blocked standard errors plus 0.2 % for the virial truncation, and it also
 grades the ensemble *width* σ_V = √(N+1)·k_BT/P — and
-`regressions/mc/gcmc_lj` grades ⟨N⟩(z) at two activities against the Mayer
+`gcmc_lj` grades ⟨N⟩(z) at two activities against the Mayer
 expansion ρ = z − 2B₂z² (Hill, *An Introduction to Statistical
 Thermodynamics* §15-3). B₂ is the second virial coefficient, the leading
 correction to ideal-gas behaviour, evaluated by quadrature for exactly the
-cut-and-shifted potential the engine samples. Read their `REFERENCE.md`
+cut-and-shifted potential the engine samples. Read their pin notes
 before choosing a state point.
 
 ## Key concepts
 
 ### molpy.Frame in, molpy.Frame out
 
-The frame must carry an `atoms` block with `x, y, z, atomic_number` columns
-(`mass` required for MD; `atomic_number` [uint] carries Z — the string
-`type` column is a force-field label Atomiverse does not read). After
+The frame must carry an `atoms` block with `x, y, z` columns (`mass`
+required for MD) and the identity columns its methods read — two columns,
+one meaning each:
+
+- `atomic_number` [uint] — the chemical species Z (0 = no element). Read by
+  every element lookup: SCF / DFT / semiempirical methods, D3, AM1-BCC,
+  vibrational masses, element symbols in `XYZ` output.
+- `type_id` [uint] — the force-field type index, the same convention the
+  `bonds` / `angles` blocks use. Read by every per-type table: typed
+  `PairLJCut` (`LJTypeCoeff`), `PairLJCutCoulLong`, `PairBorn`, the DPD
+  `a_matrix`, MC insertion.
+
+A coarse-grained model carries `type_id` only; a QM geometry `atomic_number`
+only; QM/MM both. A method whose column is missing raises with the how-to —
+no type is ever derived from Z or the other way round. The string `type`
+column is a force-field label Atomiverse does not read, and `element`
+symbols are converted to `atomic_number` only explicitly (molpy
+`Element.fill_atomic_numbers`). After
 `run()` the frame holds updated `x/y/z`, `vx/vy/vz`, and `fx/fy/fz`. Global
 results are exact-dtype typed metadata in `frame.meta`, read back as plain
 Python values: `energy`, `kinetic`, and `conserved` are `float` (`f64` on
@@ -967,7 +1114,7 @@ fail loud with a `RuntimeError` naming the field.
 ### MD driver
 
 Components register through **categorical setters**, mirroring the C++
-`cpu::md::MD` / `Driver` API (same shape as `examples/07_md_lj.cpp`):
+`cpu::md::MD` / `Driver` API (same shape as `examples/cpp/08_md_lj.cpp`):
 
 - `sim.set_integrator(VelocityVerlet(dt))`
 - `sim.set_thermostat(NoseHoover(T, tau_T, dt))`
@@ -980,6 +1127,8 @@ Components register through **categorical setters**, mirroring the C++
 - `sim.set_record(XYZ(path, freq))` — trajectory output (LAMMPS `dump`):
   one XYZ frame every `freq` steps, element symbols taken from the frame's
   per-atom `atomic_number` column
+- `sim.set_record(MrecRecorder(path, every))` — molrec (`*.mrec`)
+  trajectory on CPU **and** CUDA (see *Trajectories: MrecRecorder* below)
 
 Escape hatch for custom phase/order: `sim.on(phase).add(comp, order=0)`. It
 covers exactly the six components listed under `_PHASE_DISPATCH` in
@@ -1019,25 +1168,76 @@ own.
 | `set_thermostat` | `CSVR(T, tau, dt, seed)` | Bussi velocity rescale |
 | `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
-| `set_evaluator` | `PairLJCut(ε, σ, cutoff)` | Lennard-Jones 12-6 |
-| `set_evaluator` | `PairCoulCut(cutoff)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
+| `set_evaluator` | `PairLJCut(ε, σ, cutoff, s12=1, s13=1, s14=1, energy_shift=True)` or `PairLJCut([LJTypeCoeff(type_i, type_j, ε, σ, cutoff=None), …], cutoff, s12=1, s13=1, s14=1, energy_shift=True)` | Lennard-Jones 12-6, single-type or per-type table |
+| `set_evaluator` | `PairCoulCut(cutoff, s12=1, s13=1, s14=1, coulomb=1)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
 | `set_evaluator` | `CoulLong(alpha, cutoff)` | Ewald/PME **real-space** half; `alpha` [1/Å] must match its reciprocal partner |
 | `set_evaluator` | `KSpacePME(alpha, grid_spacing=1.0, order=6)` | Ewald/PME **reciprocal-space** half; only on `ATV_BUILD_KSPACE=ON` wheels |
 | `set_evaluator` | `PairMorse(D, alpha, r0, cutoff)` | Morse well `D(1−e^{−α(r−r₀)})²`, shifted at the cutoff. `D` [eV], `alpha` [1/Å], `r0` [Å], `cutoff` [Å] |
 | `set_evaluator` | `PairBuck(A, rho, C, cutoff)` | Buckingham `A e^{−r/ρ} − C/r⁶`, shifted at the cutoff. `A` [eV], `rho` [Å], `C` [eV·Å⁶], `cutoff` [Å] |
-| `set_evaluator` | `PairBorn(type_i, type_j, A, rho, sigma, C, D, cutoff)` | Born-Mayer-Huggins / Fumi-Tosi table, one entry per row across the parallel sequences; type keys are **atomic numbers**, unlisted pairs do not interact. `A` [eV], `rho` [Å], `sigma` [Å], `C` [eV·Å⁶], `D` [eV·Å⁸], `cutoff` [Å] |
+| `set_evaluator` | `PairBorn(type_i, type_j, A, rho, sigma, C, D, cutoff)` | Born-Mayer-Huggins / Fumi-Tosi table, one entry per row across the parallel sequences; type keys are **force-field types** (the frame's `type_id`), unlisted pairs do not interact. `A` [eV], `rho` [Å], `sigma` [Å], `C` [eV·Å⁶], `D` [eV·Å⁸], `cutoff` [Å] |
 | `set_evaluator` | `PairYukawa(A, kappa, cutoff)` | Screened Coulomb `A e^{−κr}/r` — reads no `charge` column; `A` [eV·Å] is the whole strength. `kappa` [1/Å], `cutoff` [Å] |
 | `set_evaluator` | `PairWCA(epsilon, sigma)` | Purely repulsive LJ, cut and shifted at `2^(1/6)·σ` — the cutoff is **derived**, not an argument. `epsilon` [eV], `sigma` [Å] |
 | `set_evaluator` | `PairDpd(a, gamma, temperature, cutoff, dt, seed=1)` | Groot-Warren DPD — a *thermostat* as well as a potential, so install it instead of one; stress carries the conservative virial only and the random force is redrawn every step. `a` [eV/Å] (a force), `gamma` [eV·fs/Å²], `temperature` [K], `cutoff` [Å], `dt` [fs] and must equal the integrator's |
 | `set_evaluator` | `BondHarmonic(K, r0)` | Bond stretching `K(r − r₀)²`. `K` [eV/Å²], `r0` [Å], per bond type |
 | `set_evaluator` | `BondFene(K, R0)` | Kremer-Grest FENE bond `−½KR₀²ln(1 − (r/R₀)²)`; `r ≥ R0` raises `RuntimeError` rather than reporting an infinite energy. `K` [eV/Å²], `R0` [Å], per bond type |
 | `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending `K(θ − θ₀)²`. `K` [eV/rad²], `θ0` [rad], per angle type |
+| `set_evaluator` | `AngleCosine(K)` | LAMMPS `angle_style cosine` `K(1 + cos θ)`, minimum at θ = π (Kremer–Grest bending). `K` [eV], per angle type. Also on `MD(device="cuda")`, where the angle slot holds one style |
+| `set_evaluator` | `FixEfield(Ex, Ey, Ez)` | Uniform electric field (LAMMPS `fix efield`): `F = qE`, `E` [V/Å], so `F` [eV/Å] for `charge` [e]. Energy `−Σ q E·r^u` on unwrapped coordinates (image flags); no virial. Needs a `charge` column; also on `MD(device="cuda")` |
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral `Σₙ Cₙ cosⁿφ`. `Cn` [eV], one coefficient list per dihedral type |
 | `set_evaluator` | `DihedralCharmm(K, n, delta)` | CHARMM periodic torsion `K(1 + cos(nφ − δ))`. `K` [eV], `n` an integer multiplicity ≥ 1 (minima per full turn), `delta` [rad], per dihedral type |
 | `set_evaluator` | `ImproperHarmonic(K, chi0)` | Harmonic out-of-plane torsion `K(χ − χ₀)²`; reads the frame's `impropers` block. `K` [eV/rad²], `chi0` [rad], per improper type |
-| `set_thermo` | `N` (int) | Thermo print every N steps |
+| `set_thermo` | `N` (int) | Thermo print every N steps: the initial state (step 0), every N-th completed step and the last step of each run; `step` counts completed steps (LAMMPS `thermo`). `N=0` prints the first and last step only (LAMMPS `thermo 0`). Also on `MD(device="cuda")` (`cuda::Thermo`, printed asynchronously) |
 | `Thermo(freq)` | end_of_step | Thermodynamic output |
-| `set_record` | `XYZ(filename, freq=1)` | XYZ trajectory at end_of_step — one frame whenever `step % freq == 0`. Within a `run()` call `step` is zero-based (`0 … n_steps-1`), so 10 steps at `freq=5` write 2 frames (steps 0 and 5), never 3. A recorder truncates the file on its first write and appends afterwards, so give a second run its own `XYZ(...)` |
+| `set_record` | `XYZ(filename, freq=1)` | XYZ trajectory — one frame whenever the completed-step count is a multiple of `freq`, the frame being the state after that many steps (LAMMPS `dump`). A run writes the initial state (step 0) and then the end of every `freq`-th step, so 10 steps at `freq=5` write 3 frames (steps 0, 5 and 10). A recorder truncates the file on its first write and appends afterwards, so give a second run its own `XYZ(...)` |
+| `set_record` | `MrecRecorder(path, every=1, flush_every=0, durable=True)` | molrec trajectory at end_of_step, same cadence rule as `XYZ`; CPU and `MD(device="cuda")`. Path must end in `.mrec`; replaced on the first frame |
+
+#### Trajectories: MrecRecorder
+
+`MrecRecorder` writes a *molrec* store (`*.mrec`, the MolCrafts record
+format; reference implementation molpy `io::mrec`). It is the one trajectory
+recorder that runs on both devices with the same frames:
+
+```python
+from pathlib import Path
+import atomiverse as av
+from molpy.io.mrec import MrecReader
+
+sim = av.MD(device="cuda")                  # or "cpu"
+sim.set_integrator(av.VelocityVerlet(1.0))
+sim.set_neighbor(av.NeighborList(8.5, 0.5))
+sim.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
+sim.set_record(av.MrecRecorder("traj.mrec", every=100))
+sim.run(frame, 10_000)
+
+with MrecReader(Path("traj.mrec")) as traj:
+    print(traj.step[:3], traj.time[:3])     # [0, 100, 200] [0.0, 100.0, 200.0]
+    first = traj[0]                          # a molpy.Frame
+    x_unwrapped = first["atoms"]["x"] + first["atoms"]["ix"] * first.box.matrix[0, 0]
+```
+
+| Stored | Content |
+| ------ | ------- |
+| `atoms` columns | `x y z` [Å], `vx vy vz` [Å/fs], `fx fy fz` [eV/Å], `charge` [e], `ix iy iz` (int32 image counts), `tag`, `atomic_number`, `mass` [amu] — rows in ascending tag order |
+| box | the cell of that step (a barostat or deform moves it) |
+| meta | `energy`, `energy_pair`/`_bond`/`_angle`/`_dihedral`/`_improper` (CPU only so far: CUDA styles fill just the total `energy`, the terms read 0), `kinetic`, `conserved`, `stress` (the step's virial), `stress_kinetic` [eV] |
+| axes | `step` — completed MD steps, the frame being the state after that many (LAMMPS `dump`; a run of `n` steps at `every=k` records `0, k, …, n`) — and `time = step · dt` [fs] when an integrator is set |
+
+- **After `run()` returns, the store holds every frame of that run** on both
+  devices; open it with `MrecReader(Path(path))` (a plain `str` is refused
+  as ambiguous by molpy).
+- **CPU:** each `run()` is an independent simulation that restarts at step
+  0, so one recorder records one `run()` — use a new `MD` and recorder for
+  another run.
+- **CUDA:** `run()` calls on the same frame continue one trajectory, and the
+  recorder keeps appending to it; the step axis continues and the boundary
+  step is written once (`run(f, 4); run(f, 4)` at `every=2` gives steps
+  0, 2, 4, 6, 8). Frames are frozen on the device at
+  end_of_step, copied to the host asynchronously and written by worker
+  threads; the MD loop never waits for the disk. A few frames can queue on
+  the device and on the host; if the writer falls further behind (a very slow
+  filesystem at a very small `every`), the device skips frames and the count
+  is logged as a warning. Raise `every` if that happens.
+- Not carried by the MPI launcher (`MD.run` under it refuses the recorder).
 
 #### Constant pressure: NPT
 
@@ -1127,13 +1327,11 @@ argument optional and already at its C++ default:
 | Temperature | K |
 | Force | eV/Å |
 
-## Plane-wave DFT (PW-enabled wheels)
+## Plane-wave DFT (`pw` module)
 
 ```python
-pw = av.PW()
-pw.gth_name = "GTH-PBE-q4"   # analytic GTH for Si; no external file
-pw.ecut_ry = 30.0
-pw.k_mesh = 4
+pw = av.PW(potentials=[av.GthPseudopotential(14, "GTH-PBE-q4")],   # analytic GTH for Si; no external file
+           ecut_ry=30.0, k_mesh=4)
 pw.build(frame)
 result = pw.run(frame)
 print(result.energy)      # [Ry]
@@ -1165,20 +1363,28 @@ by differencing energies — and are written back to the frame's `fx`/`fy`/`fz`
 columns along with that SCF's total energy in eV. `stress` is the
 Nielsen-Martin cell derivative in the mechanical (CP2K) sign,
 σ = −(1/V)·∂E/∂ε, so a cell compressed below its equilibrium lattice
-constant returns a positive diagonal; it reports on the cell and writes
-nothing back. Each call runs its own SCF (the stress adds twelve
-non-self-consistent strained diagonalizations on top of it) and neither
-updates `last_result`, which stays the result of the last `run`.
+constant returns a positive diagonal. Its returned vector is intensive
+[eV/Å³], while `frame.meta["stress"]` stores the extensive virial
+`stress * frame.box.volume()` [eV], excluding the kinetic contribution.
+Each standalone derivative call runs its own reference SCF and updates
+`last_result` with that call's convergence status and energy. Recorded
+closed-form domains consume certified unstrained final bands; other domains
+retain frozen-density NSCF strain differences. The current domain limits and
+validation records are listed in the [DFT roadmap](../roadmap/dft.md).
 
 Note the unit split: `PWResult` keeps the solver's Rydberg — 1 Ry = ½
 Hartree, spelled 1 Ry = 13.605693 eV in the engine
 (`cpu::pw::qe_units::rydberg_to_ev`, the Quantum ESPRESSO-rounded value) —
-while everything reaching the frame is in engine units: eV, eV/Å, eV/Å³.
+while Frame energies use eV, forces use eV/Å, and the Frame's extensive
+virial uses eV. Divide that virial by the cell volume [Å³] to obtain stress
+[eV/Å³]. Molecular SCF and GPW result energies use Hartree; these method
+result conventions do not change the shared Frame units.
 
 ### Spin, functionals and metals
 
 ```python
-pw.xc = "LSDA"              # name, not an enum; unknown names raise ValueError
+pw = av.PW(potentials=[av.GthPseudopotential(14, "GTH-PBE-q4")], ecut_ry=30.0, k_mesh=4,
+           xc="LSDA")       # name, not an enum; unknown names raise ValueError
 pw.spin_polarized = True    # collinear; needed for an odd electron count
 pw.multiplicity = 2         # fixed occupations: N↑ − N↓ = M − 1 exactly
 pw.smearing = "gaussian"    # or "none" (default), "fermi_dirac",
@@ -1186,7 +1392,7 @@ pw.degauss = 0.01           #    "methfessel_paxton"; width [Ry]
 pw.extra_bands = 8          # empty states above E_F for the μ search
 ```
 
-`xc` takes the same functional names as `RKS(functional=...)`: `"LSDA"`,
+`xc` takes the same functional names as `RKS(xc=...)`: `"LSDA"`,
 `"PBE"` (default), `"PBEsol"`, `"RevPBE"`, `"RPBE"`, `"BLYP"`,
 `"OptB88VdW"`, `"B3LYP"`, `"PBE0"`, `"B2PLYP"`. There is no fallback — an
 unknown name raises `ValueError` listing them.
@@ -1204,7 +1410,7 @@ A pinned example: Si₂ in the fcc primitive cell at *a* = 5.43 Å with one atom
 displaced +0.08 Å along *x*, `GTH-PBE-q4`, `ecut_ry = 8`, Γ-only
 (`k_mesh = 1`), `tol = 1e-6`, `max_iter = 40`, `xc = "LSDA"` gives
 max|F| = 2.517979 eV/Å — the CPU number
-`regressions/pw/cuda-pw-forces/REFERENCE.md` pins (GH200 job 1050105), where
+section `cuda-pw-forces` of case `pw/rks` pins, where
 it is the oracle for the CUDA twin.
 
 ### Plane-wave Born-Oppenheimer MD
@@ -1212,56 +1418,45 @@ it is the oracle for the CUDA twin.
 ```python
 from atomiverse.md import MD
 from atomiverse.md.integrator import VelocityVerlet
-from atomiverse.pw import PW, PWEvaluator
+from atomiverse.pw import PW, GthPseudopotential
 
-pw = PW()
-pw.gth_name = "GTH-PBE-q4"
-pw.ecut_ry = 8.0
-pw.k_mesh = 1
+pw = PW(potentials=[GthPseudopotential(14, "GTH-PBE-q4")], ecut_ry=8.0, k_mesh=1)
 pw.tol = 1e-4
-pw.max_iter = 12            # one step is two whole SCFs — budget it
+pw.max_iter = 12            # one step is one whole SCF — budget it
 
 sim = MD()
 sim.set_integrator(VelocityVerlet(0.5))    # dt [fs]
-sim.set_evaluator(PWEvaluator(pw))
+sim.set_evaluator(pw)
 sim.run(frame, 3)
 print(frame.meta["energy"])  # [eV]
 ```
 
-`PWEvaluator` rides the same plural `set_evaluator` slot as the pair styles
-and `AM1Evaluator`; registering it makes the loop Born-Oppenheimer dynamics —
+`PW` rides the same plural `set_evaluator` slot as the pair styles
+and `AM1`; registering it makes the loop Born-Oppenheimer dynamics —
 the electrons re-converged at every geometry the nuclei reach, with analytic
 forces from the converged density. It takes no `NeighborList` (a plane-wave
 Hamiltonian is not a pair style), needs the frame's `atomic_number` [Z] and
-`mass` [amu] columns and a box, and — like the AM1 evaluator — the driver
-installs its own gradient-enabled copy of the parameters, so per-step results
-land on the frame rather than on the object you passed. Cost is the thing to
-plan around: a step is *two* SCF solves, the energy solve and then the
-analytic force path's own, each seconds of work at production settings. A
+`mass` [amu] columns and a box, and the driver borrows the same method instance, keeping its Python owner
+alive. Per-step results land on both the frame and the method's `last_result()`. Cost is the thing to
+plan around: a step is *one* SCF solve (the analytic forces reuse the
+converged density), seconds of work at production settings. A
 Python-side run therefore wants a small cell, a low `ecut_ry` and a modest
 `max_iter`.
 
-### Pseudopotential: exactly one of two, and there is no default
+### Immutable norm-conserving potentials
 
 | Member | What it takes |
 |--------|---------------|
-| `gth_name` | In-tree analytic Goedecker-Teter-Hutter parameterization, e.g. `"GTH-PBE-q4"` (Si), `"GTH-PBE-q1"` (H), `"GTH-PBE-q6"` (O). No file needed. In-tree coverage: H, O, Na, Cl, Ar, Si, Ni, Zn. One potential serves the whole cell, so the frame must be single-species. |
-| `upf_path` | Path to a **norm-conserving** UPF file, e.g. the in-tree `tests/data/pw/Si_lda_nc.upf` (ONCVPSP). |
+| `potentials` | Sequence of immutable `GthPseudopotential(atomic_number, name)` and `UpfPseudopotential(path)` providers, keyed by atomic number. GTH selects a published table for an explicit element; UPF loads its declared element and integral valence once. |
 
-Setting both, or neither, raises. Ultrasoft (`pseudo_type="USPP"`) and PAW
-files are rejected when read: the plane-wave path applies no augmentation
-charge, so integrating one would be wrong by an unbounded amount. There is
-no toy/bare-Coulomb fallback either — a bare valence-charge potential is not
-representable in a plane-wave basis at any finite cutoff.
+Supply exactly one provider for each element in the Frame. A single
+calculation can combine GTH and NC-UPF providers. USPP, PAW, NLCC and
+spin-orbit channels are rejected at admission. The CPU PW path uses one
+NC operator implementation for built-in and independently authored C++
+providers. A physical provider never owns an electronic Driver.
 
-Either source makes the run single-species: one potential and one valence
-count are applied to every atom. `gth_name` enforces that (a frame mixing
-atomic numbers raises `ValueError`); `upf_path` does not check, so a
-mixed-species frame there is silently treated as the file's own element
-throughout. Multi-species plane-wave runs are not implemented.
-
-On a default wheel (`ATV_BUILD_PW=OFF`) the PW types are not exported;
-rebuild with `ATV_BUILD_PW=ON` to use this API.
+Without the `pw` module the PW types are not exported; rebuild with
+`python -m atomiverse config pw …` to use this API.
 
 ## Timing
 
@@ -1274,11 +1469,10 @@ print(sim.summary())   # per-phase wall-clock breakdown
 
 ## Examples
 
-`python/examples/` holds four scripts. They use the MolCrafts stack only —
-molpy, numpy, and (for the plane-wave one) molplot — never ASE or
-matplotlib.
+`examples/python/` holds four scripts. They use the MolCrafts stack only —
+molpy and numpy — never ASE or matplotlib.
 
-Three of them run on any wheel, need no external program, finish in
+The first three run on a `config md minimize am1` build, need no external program, finish in
 seconds, and **exit nonzero** when their own sanity check fails, so they
 can be smoke-run:
 
@@ -1293,30 +1487,17 @@ cd /path/to/Atomiverse
 # Development tree; an installed wheel needs no PYTHONPATH at all.
 export PYTHONPATH="$PWD/build-py:$PWD/python/src"
 
-python python/examples/md_lj_argon.py
-python python/examples/minimize_lj_dimer.py
-python python/examples/am1_ch4.py
+python examples/python/md_lj_argon.py
+python examples/python/minimize_lj_dimer.py
+python examples/python/am1_ch4.py
 ```
 
-The fourth, `pw_qe_compare.py`, is a plane-wave DFT convergence study of Si
-diamond (energy vs cutoff, k-mesh and lattice constant) against Quantum
-ESPRESSO on the same norm-conserving UPF. It is **not** smoke-runnable
-alongside the three above, for three reasons: plane waves are OFF by default
-(`ATV_BUILD_PW`), so `av.PW` is absent from a stock wheel; the reference half
-needs a `pw.x` binary at the path in the script header, and `--skip-qe` runs
-the Atomiverse side alone; and the figures need the `examples` extra. It
-sweeps 26 SCF solves, so budget minutes rather than seconds.
-
-```bash
-pip install -e './python[examples]'          # molcrafts-molplot + molcrafts-molpy
-python -m atomiverse config pw --src /path/to/Atomiverse   # ATV_BUILD_PW=ON
-python -m atomiverse compile -j 8
-python -m atomiverse install
-python python/examples/pw_qe_compare.py --skip-qe --sweep ecut
-```
+`gaff_parameterize.py` types ethanol with molpy's GAFF2 typifiers, assigns
+AM1-BCC charges with `atomiverse.AM1BCCCharges` (needs the `semiempirical`
+module) and writes `ethanol.mol2` / `ethanol.frcmod` to the working directory.
 
 ## Next steps
 
-- **Benchmarks** — `python/benchmarks/bench_md.py` for system-size scaling.
+- **Benchmarks** — `python -m benchmarks` (see `benchmarks/README.md`).
 - **Tests** — `python/tests/test_surface.py` documents the exact exported
   surface and its fail-loud contract.

@@ -2,7 +2,7 @@
 /// @brief GPW spectral G0W0 quasiparticle result (public value type).
 ///
 /// User path: `GpwDft::g0w0(atoms)` after a converged `run()` — the GPW
-/// analogue of molecular `RHF::g0w0()` (`cpu/scf/g0w0.h`). Supports:
+/// analogue of molecular `G0W0<RHF>::run()` (`cpu/scf/g0w0.h`). Supports:
 /// - **Γ RKS** (real MOs; RI-GPW or Poisson) and **multi-k RKS**
 ///   (complex Bloch + **finite-\(q\) inter-\(k\)** dRPA; RI-GPW product);
 /// - **Γ / multi-k UKS** unrestricted spectral G0W0 (UGW): spin-conserving
@@ -26,7 +26,7 @@
 ///
 /// References: Hybertsen & Louie, Phys. Rev. B **34**, 5390 (1986);
 /// Furche, J. Chem. Phys. **114**, 5982 (2001); molecular twin
-/// `RHF::g0w0` / PySCF `gw.gw_exact.GWExact` form.
+/// `G0W0<RHF>::run` / PySCF `gw.gw_exact.GWExact` form.
 #pragma once
 
 #include <vector>

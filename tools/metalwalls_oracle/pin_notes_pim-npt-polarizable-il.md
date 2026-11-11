@@ -2,7 +2,7 @@
 
 Slug: `pim-npt-polarizable-il` (metalwalls-method-loop wave 5;
 re-pinned 2026-07-29 against the real MetalWalls binary).
-Regression: `regressions/md/pim-npt-polarizable-il/`.
+Regression: `regressions/md/polarizable/`.
 
 ## Oracle — corrected
 
@@ -14,7 +14,7 @@ cited as "MetalWalls JOSS **5**, 2373 (2020) bulk PIM + Thole,
 `mw_expressible=false`. The Thole half of the old citation was wrong —
 **MetalWalls implements no Thole damping** — and the pinned numbers are not
 MetalWalls numbers. Full evidence, raw MW output and the unit conversions
-are in `regressions/md/pim-npt-polarizable-il/REFERENCE.md`; the short form:
+are in `regressions/md/polarizable/REFERENCE.md`; the short form:
 
 - MW binary `git c8ad175d` (release branch 2026-06-18) reproduces its own
   shipped `tests/pim/3D-ishii-nodisp/energies_breakdown.ref` to 1e-14

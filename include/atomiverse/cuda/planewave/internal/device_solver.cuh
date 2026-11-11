@@ -31,13 +31,14 @@
 #include <cublas_v2.h>
 #include <cufft.h>
 #include <cusolverDn.h>
+#include <span>
 #include <vector>
 
 namespace ATV {
 namespace cpu {
 namespace pw {
 namespace internal {
-struct PWProblem; ///< Defined in cpu/planewave/internal/pw_setup.h.
+struct PWKMesh; ///< Defined in cpu/planewave/internal/pw_setup.h.
 } // namespace internal
 } // namespace pw
 } // namespace cpu
@@ -46,6 +47,19 @@ namespace cuda {
 namespace pw {
 namespace internal {
 
+// Internal final-band destination: caller-owned device cache and residual work.
+// No allocation or scientific array host transfer; host_norms is 2*bands scalars.
+struct FinalBandDestination {
+    int ng, bands;
+    cufftDoubleComplex *coefficients, *residual_work;
+    double* device_norms;
+    std::span<double> host_norms;
+    int expected_k = 0;
+};
+struct FinalBandStatus {
+    bool complete = false;
+    double max_residual_ha = 0, max_normalization_error = 0;
+};
 /// @brief GPU band solver for one plane-wave SCF run.
 ///
 /// The real-space V_eff(r) it reads and the density accumulator it writes are
@@ -101,7 +115,7 @@ class DeviceBandSolver {
     /// Everything this uploads is a pure function of the geometry — the
     /// G→FFT index map, T(G), q = k+G, the KB projector descriptors and
     /// radial f_G, and the initial Davidson subspace (`init_subspace`, which
-    /// reads only T_G / atom_wfc / gvec / atom_pos_bohr). None of it depends
+    /// reads the k-point operators, ionic positions and any trial orbitals). None of it depends
     /// on V_eff or ρ, so rebuilding it per SCF iteration — as the loop did
     /// before — was repeating identical work `max_iter` times.
     ///
@@ -110,10 +124,13 @@ class DeviceBandSolver {
     /// against free device memory and throws a message naming the figure
     /// rather than surfacing a bare cudaMalloc failure.
     ///
-    /// @param prob Problem assembled by `setup_pw_problem`. `prob.ws` is
-    ///        temporarily rebound to each k-sphere and left bound to the
-    ///        density sphere (`prob.gv0`) on return.
-    void build_kpoints(cpu::pw::internal::PWProblem& prob);
+    /// @param mesh Assembled wavefunction modes and operator tables.
+    /// @param positions Ionic positions [Bohr] in projector order.
+    /// @param volume Cell volume [Bohr³].
+    /// @param trial Optional trial wavefunctions.
+    void build_kpoints(const cpu::pw::internal::PWKMesh& mesh,
+                       std::span<const Vec3> positions, AccReal volume,
+                       const xt::xarray<std::complex<AccReal>>& trial);
 
     /// @brief Select a k-point built by `build_kpoints`.
     ///
@@ -123,21 +140,20 @@ class DeviceBandSolver {
     /// because it is the one \f$O(n_G n_\mathrm{proj})\f$ array here, and
     /// caching it over all k would dominate device memory on any real cell.
     ///
-    /// @param ik k-point index into `prob.gv_k` (0-based).
+    /// @param ik k-point index into the mesh (0-based).
     void bind_kpoint(int ik);
 
     /// @brief Block-Davidson diagonalization for the bound k-point,
     /// algorithmically identical to `cpu::pw::internal::DavidsonSolver::step`,
-    /// including its fixed |R|² residual threshold. Writes ws.eigenvalues;
+    /// including its fixed |R|² residual threshold. Writes the host eigenvalues;
     /// band wavefunctions stay device-resident.
     ///
     /// The starting subspace is copied device→device from the table
     /// `build_kpoints` produced, so no O(n_G) array crosses PCIe here.
     ///
-    /// @param ws       Workspace, used only to receive `eigenvalues`; the
-    ///                 k-sphere comes from `bind_kpoint`, not from `ws`.
+    /// @param eigenvalues Output eigenvalues for the bound k-point.
     /// @param max_iter Maximum Davidson expansion rounds (capped at 20).
-    void solve(cpu::pw::internal::PWWorkspace& ws, int max_iter);
+    void solve(xt::xarray<AccReal>& eigenvalues, int max_iter);
 
     /// @brief rho_accum += weight·occ·|ψ_b(r)|²/Ω over the first `n_occ`
     /// bands of the most recent solve(). Restricted closed-shell default is
@@ -164,6 +180,10 @@ class DeviceBandSolver {
     /// @param n_use   Number of bands to accumulate (`≤ n_bands`).
     void accumulate_density(AccReal weight, AccReal omega, const AccReal* occ,
                             int n_use);
+    // Final-state density: every nonzero finite occupation participates,
+    // including tails below the legacy SCF accumulation threshold.
+    void accumulate_final_density(AccReal weight, AccReal omega,
+                                  std::span<const AccReal> occupations);
 
     /// @brief Allocate the per-k Ritz cache (metallic multi-k density rebuild).
     ///
@@ -224,7 +244,14 @@ class DeviceBandSolver {
     void apply_h_host(const std::complex<AccReal>* psi,
                       std::complex<AccReal>* hpsi);
 
+    // Reapply the actual bound physical H, certify the existing 1e-6-Ha
+    // residual policy, then D2D-copy the completed block. No new solver flag.
+    FinalBandStatus solve_final_bands(xt::xarray<AccReal>& eigenvalues,
+                                      FinalBandDestination, int max_iter = 20);
+
   private:
+    FinalBandStatus copy_final_bands(FinalBandDestination,
+                                     std::span<const AccReal> eigenvalues);
     /// H·ψ for one device vector (cuFFT + V_eff + KB projectors).
     void apply_h(const cufftDoubleComplex* psi, cufftDoubleComplex* hpsi);
     void ensure_subspace_capacity(int ng, int cap);
@@ -233,6 +260,10 @@ class DeviceBandSolver {
 
     int nx_, ny_, nz_, nr_;
     int n_bands_;
+    void accumulate_fractional_density_(AccReal weight, AccReal omega,
+                                        const AccReal* occupations, int count,
+                                        bool exact);
+
     int ng_ = 0;       ///< G-sphere size of the bound k-point.
     int n_proj_ = 0;   ///< KB projector columns (Σ_atoms Σ_proj (2l+1)).
     int n_sub0_ = 0;   ///< Initial subspace vectors of the bound k-point.
@@ -255,15 +286,16 @@ class DeviceBandSolver {
     // Dense-grid buffers
     cufftDoubleComplex* d_grid_ = nullptr; ///< nr c2c work grid (owned).
     // Borrowed from internal::DeviceDensity — never allocated or freed here.
-    double* rho_accum_ = nullptr;     ///< nr density accumulator (device).
-    const double* veff_r_ = nullptr;  ///< nr V_eff(r) [Hartree] (device).
+    double* rho_accum_ = nullptr;    ///< nr density accumulator (device).
+    const double* veff_r_ = nullptr; ///< nr V_eff(r) [Hartree] (device).
 
     // ── Views into the packed tables below, moved by bind_kpoint(). ──
     // NOT owned: never pass these to device_free().
-    const int* d_idx_ = nullptr;    ///< G → flat FFT-grid index (bound k).
-    const double* d_tg_ = nullptr;  ///< T(G) kinetic diagonal (bound k).
+    const int* d_idx_ = nullptr;      ///< G → flat FFT-grid index (bound k).
+    const double* d_tg_ = nullptr;    ///< T(G) kinetic diagonal (bound k).
     const double* d_betad_ = nullptr; ///< per-column KB strength D (bound k).
-    const cufftDoubleComplex* d_sub0_ = nullptr; ///< initial subspace (bound k).
+    const cufftDoubleComplex* d_sub0_ =
+        nullptr; ///< initial subspace (bound k).
 
     // Owned, sized to the largest k-sphere; contents rebuilt per bind_kpoint.
     cufftDoubleComplex* d_beta_ = nullptr;   ///< β matrix (ng × n_proj_).
@@ -282,11 +314,11 @@ class DeviceBandSolver {
     double* d_qx_all_ = nullptr; ///< q = k+G, x component [Bohr⁻¹].
     double* d_qy_all_ = nullptr;
     double* d_qz_all_ = nullptr;
-    int* d_cl_all_ = nullptr;  ///< β column: l.
-    int* d_cm_all_ = nullptr;  ///< β column: m.
-    int* d_co_all_ = nullptr;  ///< β column: offset into this k's f_G block.
-    int* d_cn_all_ = nullptr;  ///< β column: length of its f_G run.
-    int* d_cia_all_ = nullptr; ///< β column: atom index (force reduction).
+    int* d_cl_all_ = nullptr;    ///< β column: l.
+    int* d_cm_all_ = nullptr;    ///< β column: m.
+    int* d_co_all_ = nullptr;    ///< β column: offset into this k's f_G block.
+    int* d_cn_all_ = nullptr;    ///< β column: length of its f_G run.
+    int* d_cia_all_ = nullptr;   ///< β column: atom index (force reduction).
     double* d_cd_all_ = nullptr; ///< β column: KB strength D.
     double* d_cp_all_ = nullptr; ///< β column: atom position (3 per column).
     double* d_fg_all_ = nullptr; ///< concatenated radial f_G.
@@ -306,16 +338,16 @@ class DeviceBandSolver {
     /// in place with the eigenvectors, whose first n_bands columns ARE the
     /// Ritz rotation — so no separate rotation buffer exists.
     cufftDoubleComplex* d_hs_ = nullptr;
-    double* d_eig_ = nullptr;               ///< subspace eigenvalues (cap).
+    double* d_eig_ = nullptr;                  ///< subspace eigenvalues (cap).
     cufftDoubleComplex* d_evd_work_ = nullptr; ///< Zheevd workspace.
-    int* d_evd_info_ = nullptr;             ///< Zheevd convergence flag.
-    int evd_lwork_ = 0;                     ///< Allocated Zheevd workspace.
-    cufftDoubleComplex* d_work_ = nullptr;  ///< ng scratch (R / δ).
+    int* d_evd_info_ = nullptr;                ///< Zheevd convergence flag.
+    int evd_lwork_ = 0;                        ///< Allocated Zheevd workspace.
+    cufftDoubleComplex* d_work_ = nullptr;     ///< ng scratch (R / δ).
     // Residual-expansion scalars, device-resident for a whole band step.
-    double* d_nrm_ = nullptr;  ///< [3]: ‖R‖, ‖precond‖, ‖δ‖.
-    double* d_inv_ = nullptr;  ///< [2]: guarded 1/‖precond‖, 1/‖δ‖.
-    int* d_accept_ = nullptr;  ///< 1 = append this band's δ to the subspace.
-    cufftDoubleComplex* d_ovlp_ = nullptr;  ///< cap scratch (⟨V|δ⟩).
+    double* d_nrm_ = nullptr; ///< [3]: ‖R‖, ‖precond‖, ‖δ‖.
+    double* d_inv_ = nullptr; ///< [2]: guarded 1/‖precond‖, 1/‖δ‖.
+    int* d_accept_ = nullptr; ///< 1 = append this band's δ to the subspace.
+    cufftDoubleComplex* d_ovlp_ = nullptr; ///< cap scratch (⟨V|δ⟩).
 };
 
 } // namespace internal

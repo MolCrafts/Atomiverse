@@ -6,8 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h" // LJTypeCoeff
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/potentials/pair_lj_cut.h" // LJTypeCoeff
 
 namespace ATV {
 namespace cpu {

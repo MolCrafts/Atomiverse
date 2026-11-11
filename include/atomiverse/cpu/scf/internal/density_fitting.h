@@ -112,7 +112,7 @@ class DensityFitting {
     ///        P = C·Cᵀ) [n_ao × n_occ, dimensionless].
     /// @return Fitted exchange K[C·Cᵀ] [n_ao × n_ao, Hartree]; with the
     ///         total RHF density factorization (C√occ scaling included)
-    ///         this matches `ShellBlockPairList::k`'s normalization
+    ///         this matches `ExactJK`'s normalization
     ///         (F = Hcore + J − 0.5·K for RHF).
     RealMatrix k_fitted(const RealMatrix& C_occ) const;
 
@@ -128,6 +128,10 @@ class DensityFitting {
     RealMatrix k_fitted_from_density(const RealMatrix& P) const;
 
   private:
+    /// K[C₊] − K[C₋] in one pass over B: columns [0, n_pos) of C enter with
+    /// +1, the rest with −1 (level-3 BLAS per auxiliary block).
+    RealMatrix k_signed_(const RealMatrix& C, int n_pos) const;
+
     int n_ao_ = 0;
     int n_aux_ = 0;
     double lindep_threshold_;

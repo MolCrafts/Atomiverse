@@ -5,37 +5,40 @@
 
 #include "atomiverse/cpu/minimize/lbfgs.h"
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/iteration_status.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/minimize/global_reduce.h"
 #include "atomiverse/cpu/minimize/lbfgs_history.h"
+#include "atomiverse/cpu/minimize/vector_loop.h"
 
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <stdexcept>
 
 namespace ATV {
 namespace cpu {
 namespace minimizer {
 
-namespace {
-
-/// Owned-row inner product (per-rank partial; reduce with `global_sum`).
-double dot_local(const std::vector<double>& a, const std::vector<double>& b,
-                 int dim) {
-    double s = 0;
-#pragma omp parallel for schedule(static) reduction(+ : s)
-    for (int j = 0; j < dim; ++j)
-        s += a[j] * b[j];
-    return s;
-}
-
-} // namespace
-
 LBFGS::LBFGS(int memory, double alpha0, int max_ls)
     : memory_(memory), alpha0_(alpha0), max_ls_(max_ls) {}
+
+void LBFGS::steepest_descent_(int dim, double& gg, double& dir_max) {
+    const double* __restrict g = g_ws_.data();
+    double* __restrict d = direction_.data();
+    double sum = 0;
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : sum) if (parallel : dim >= kParallelMinElements)
+    for (int j = 0; j < dim; ++j) {
+        d[j] = -g[j];
+        sum += g[j] * g[j];
+    }
+    gg = sum;
+    dir_max = max_abs_local(g, dim); // |d_j| = |g_j|
+}
 
 double LBFGS::reduce_(double v) const {
     // `hist_` must not know MPI exists — that coupling is exactly what welded the
@@ -86,6 +89,8 @@ void LBFGS::build(const cpu::BuildContext& ctx) {
     ls_dir_max_ = 0;
     last_generation_ = ~std::uint64_t{0};
     trace_.clear();
+    steepest_ = true;
+    ls_recoveries_ = 0;
 
     const char* mode_name = (ls_mode_ == LineSearchMode::StrongWolfe)
                                 ? "strong_wolfe"
@@ -109,9 +114,10 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     StorageReal* __restrict sp_x = f.span(kAtom_x);
     StorageReal* __restrict sp_y = f.span(kAtom_y);
     StorageReal* __restrict sp_z = f.span(kAtom_z);
-    const AccReal* __restrict sp_fx = f.span(kAtom_fx);
-    const AccReal* __restrict sp_fy = f.span(kAtom_fy);
-    const AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    AccReal* __restrict sp_fx = f.span(kAtom_fx);
+    AccReal* __restrict sp_fy = f.span(kAtom_fy);
+    AccReal* __restrict sp_fz = f.span(kAtom_fz);
+    require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
 
     // Capacity growth (driver-level rebuild_frame after a migration influx)
     // is the one legal re-allocation point.
@@ -129,7 +135,7 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     {
         const auto* dd = ctx.runtime.md.dd;
         const std::uint64_t gen =
-            (dd && ctx.runtime.mpi_size > 1) ? dd->neighbor_generation : 0;
+            (cpu::multi_rank_dd(ctx.runtime)) ? dd->neighbor_generation : 0;
         if (gen != last_generation_) {
             if (last_generation_ != ~std::uint64_t{0}) {
                 hist_->reset();
@@ -144,34 +150,17 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
 
     // ── Convergence check phase ──────────────────────────────────────
     if (ctx.at(ATV::minimizer::Phase::convergence_check)) {
-        double local_max_force = 0;
-        double sum_f2 = 0;
-#pragma omp parallel for schedule(static) reduction(+ : sum_f2)                \
-    reduction(max : local_max_force)
-        for (int i = 0; i < n; ++i) {
-            const double fx = sp_fx[i], fy = sp_fy[i], fz = sp_fz[i];
-            const double f2 = fx * fx + fy * fy + fz * fz;
-            sum_f2 += f2;
-            local_max_force = std::max(local_max_force, std::sqrt(f2));
-        }
+        double sum_f2 = 0, max_f2 = 0;
+        force_norms_local(sp_fx, sp_fy, sp_fz, n, sum_f2, max_f2);
+        const double local_max_force = std::sqrt(max_f2);
 
         const bool disp_valid = step_ > 0 && x_prev_valid_;
         const auto& xp = hist_->x_prev();
         double local_max_disp = 0;
         double sum_d2 = 0;
-        if (disp_valid) {
-#pragma omp parallel for schedule(static) reduction(+ : sum_d2)                \
-    reduction(max : local_max_disp)
-            for (int i = 0; i < n; ++i) {
-                const double dx = sp_x[i] - xp[i * 3 + 0];
-                const double dy = sp_y[i] - xp[i * 3 + 1];
-                const double dz = sp_z[i] - xp[i * 3 + 2];
-                sum_d2 += dx * dx + dy * dy + dz * dz;
-                local_max_disp = std::max(
-                    local_max_disp,
-                    std::max({std::abs(dx), std::abs(dy), std::abs(dz)}));
-            }
-        }
+        if (disp_valid)
+            displacement_norms_local(sp_x, sp_y, sp_z, xp.data(), n, sum_d2,
+                                     local_max_disp);
 
         double sums[3] = {sum_f2, sum_d2, static_cast<double>(n)};
         global_sum(ctx, sums, 3);
@@ -185,10 +174,10 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
         const double rms_disp =
             disp_valid ? std::sqrt(sums[1] / (3 * n_global)) : double(0);
         const double energy_change =
-            (step_ > 0) ? std::abs(f.meta.get(kEnergy) - energy_prev_)
-                        : double(1e30);
+            (!trace_.empty()) ? std::abs(f.meta.get(kEnergy) - energy_prev_)
+                              : double(1e30);
 
-        OptRecord rec;
+        ATV::minimizer::OptRecord rec;
         rec.step = step_;
         rec.energy = f.meta.get(kEnergy);
         rec.max_force = max_force_;
@@ -234,11 +223,6 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     // convergence check, so we do not re-evaluate after committing alpha.
     if (ctx.at(ATV::minimizer::Phase::line_search)) {
         const auto& xp = hist_->x_prev();
-        // Displacement cap: bound the trial step so a wild move cannot blow up
-        // an expensive (SCF) evaluator. alpha is dimensionless on direction_.
-        const double cap =
-            (ls_dir_max_ > 1e-20) ? ls_max_step_ / ls_dir_max_ : 1.0;
-
         // Fixed mode (or no re-eval handle available): legacy single step.
         if (ls_mode_ == LineSearchMode::Fixed
             || !ctx.runtime.opt.reeval_forces) {
@@ -246,7 +230,7 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
             if (ls_dir_max_ > 1e-20)
                 alpha =
                     std::min(alpha0_, 0.1 / ls_dir_max_); // legacy 0.1 Å cap
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
                 sp_x[i] = xp[i * 3 + 0] + alpha * direction_[i * 3 + 0];
                 sp_y[i] = xp[i * 3 + 1] + alpha * direction_[i * 3 + 1];
@@ -263,56 +247,149 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
         // phi(alpha) writes the trial geometry, replays the force phase via
         // the driver's re-eval handle, and returns the globally-reduced
         // energy and directional derivative g(x+alpha p).p.
+        // The last trial evaluated with forces: if the search accepts exactly
+        // that step, the frame already holds the committed geometry's forces.
+        double last_alpha = 0;
+        bool last_valid = false;
         auto phi = [&](double alpha, bool need_slope) -> LsSample {
-#pragma omp parallel for schedule(static)
+            last_valid = false;
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
                 sp_x[i] = xp[i * 3 + 0] + alpha * direction_[i * 3 + 0];
                 sp_y[i] = xp[i * 3 + 1] + alpha * direction_[i * 3 + 1];
                 sp_z[i] = xp[i * 3 + 2] + alpha * direction_[i * 3 + 2];
             }
             ctx.runtime.opt.reeval_forces(need_slope);
+            if (need_slope)
+                require_finite_forces(ctx, sp_fx, sp_fy, sp_fz);
+            last_alpha = alpha;
+            last_valid = need_slope;
             LsSample s;
             s.f = f.meta.get(kEnergy); // globally reduced by md::mpi::Reduce
             double gd_local = 0;
-#pragma omp parallel for schedule(static) reduction(+ : gd_local)
+            const double* __restrict dir = direction_.data();
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(+ : gd_local) if (parallel : n >= kParallelMinElements)
             for (int i = 0; i < n; ++i) {
-                gd_local += -sp_fx[i] * direction_[i * 3 + 0]
-                            + -sp_fy[i] * direction_[i * 3 + 1]
-                            + -sp_fz[i] * direction_[i * 3 + 2];
+                gd_local += -sp_fx[i] * dir[i * 3 + 0]
+                            + -sp_fy[i] * dir[i * 3 + 1]
+                            + -sp_fz[i] * dir[i * 3 + 2];
             }
             s.dphi = global_sum(ctx, gd_local);
             return s;
         };
 
-        const double alpha_max = std::max(cap, ls_min_alpha_);
-        const double alpha_init = std::min(1.0, alpha_max);
+        // One line search along the current direction_, its trial step capped
+        // at ls_max_step_ so a wild move cannot blow up an expensive (SCF)
+        // evaluator (alpha is dimensionless on direction_). A trial evaluator
+        // failure is an error (rethrown); an exhausted search is a result.
+        auto search = [&]() -> LineSearchResult {
+            const double cap_now =
+                (ls_dir_max_ > 1e-20) ? ls_max_step_ / ls_dir_max_ : 1.0;
+            const double alpha_max = std::max(cap_now, ls_min_alpha_);
+            const double alpha_init = std::min(1.0, alpha_max);
+            if (ls_mode_ == LineSearchMode::StrongWolfe)
+                return strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                    ls_c2_, max_ls_, alpha_max);
+            return armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
+                                    ls_contract_, max_ls_, ls_min_alpha_);
+        };
+        // Trials never own the accepted geometry: put back the origin,
+        // its forces and its energy.
+        auto restore_origin = [&] {
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
+            for (int i = 0; i < n; ++i) {
+                sp_x[i] = xp[i * 3 + 0];
+                sp_y[i] = xp[i * 3 + 1];
+                sp_z[i] = xp[i * 3 + 2];
+                sp_fx[i] = -g_ws_[i * 3 + 0];
+                sp_fy[i] = -g_ws_[i * 3 + 1];
+                sp_fz[i] = -g_ws_[i * 3 + 2];
+            }
+            f.meta.get(kEnergy) = ls_phi0_;
+            last_valid = false;
+        };
         LineSearchResult lr;
+        bool accepted = false;
         // Suppress migration while trials replay the force phase (see
         // Context::line_search_trial); halo exchange still refreshes ghosts.
-        ctx.runtime.opt.line_search_trial = true;
-        if (ls_mode_ == LineSearchMode::StrongWolfe)
-            lr = strong_wolfe(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
-                              ls_c2_, max_ls_, alpha_max);
-        else // Armijo
-            lr = armijo_backtrack(phi, ls_phi0_, ls_gd0_, alpha_init, ls_c1_,
-                                  ls_contract_, max_ls_, ls_min_alpha_);
-        ctx.runtime.opt.line_search_trial = false;
+        try {
+            struct RestoreTrial {
+                cpu::Context& context;
+                bool migration, evaluation;
+                ~RestoreTrial() {
+                    context.opt.line_search_trial = migration;
+                    context.exec.trial_evaluation = evaluation;
+                }
+            } restore{ctx.runtime, ctx.runtime.opt.line_search_trial,
+                      ctx.runtime.exec.trial_evaluation};
+            ctx.runtime.opt.line_search_trial = true;
+            ctx.runtime.exec.trial_evaluation = true;
+            lr = search();
+            accepted = lr.ok || lr.sufficient_decrease;
+            if (!accepted && !steepest_) {
+                // As LAMMPS/ASE recover: the curvature history produced a
+                // direction the search cannot descend along (noise in the
+                // energy, a stale pair). Drop the history and search once
+                // more along steepest descent from the same origin.
+                restore_origin();
+                hist_->reset();
+                ++ls_recoveries_;
+                double gg = 0, dir_max = 0;
+                steepest_descent_(dim, gg, dir_max);
+                ls_gd0_ = -global_sum(ctx, gg);
+                ls_dir_max_ = global_max(ctx, dir_max);
+                ATV_INFO("[lbfgs] step={} line search failed along the "
+                         "quasi-Newton direction; history reset, retrying "
+                         "steepest descent",
+                         step_);
+                if (ls_gd0_ < 0) {
+                    lr = search();
+                    accepted = lr.ok || lr.sufficient_decrease;
+                }
+            }
+        } catch (...) {
+            restore_origin();
+            throw;
+        }
+        if (!accepted) {
+            // Even steepest descent finds no lower energy within max_ls
+            // trials: the origin is kept and the loop is asked to stop. This
+            // is a non-converged result, not an error.
+            restore_origin();
+            if (IterationStatus* status = ctx.runtime.loop.status) {
+                status->stop_requested = true;
+                status->reason = "lbfgs_line_search_failed";
+            }
+            ATV_WARN("[lbfgs] step={} line search failed along steepest "
+                     "descent; stopping without convergence",
+                     step_);
+            return;
+        }
 
-        // Commit the accepted geometry (the last trial may have been a
-        // different alpha). On a failed search (e.g. machine-flat near the
-        // minimum) lr.alpha may be ~0 → effectively no move, which the
-        // convergence check then resolves.
         const double alpha = lr.alpha;
-#pragma omp parallel for schedule(static)
-        for (int i = 0; i < n; ++i) {
-            sp_x[i] = xp[i * 3 + 0] + alpha * direction_[i * 3 + 0];
-            sp_y[i] = xp[i * 3 + 1] + alpha * direction_[i * 3 + 1];
-            sp_z[i] = xp[i * 3 + 2] + alpha * direction_[i * 3 + 2];
+        // The accepted step is the last trial evaluated (the common case):
+        // the frame holds x_prev + alpha*direction and its forces/energy, and
+        // when every force-phase op is trial-invariant the driver may skip
+        // re-evaluating it. Otherwise write the accepted geometry; the normal
+        // force phase evaluates it (and stages any electronic history for the
+        // enclosing physical-step transaction).
+        const bool reuse = ctx.runtime.opt.trial_forces_reusable && last_valid
+                           && alpha == last_alpha;
+        if (reuse) {
+            ctx.runtime.opt.forces_current = true;
+        } else {
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
+            for (int i = 0; i < n; ++i) {
+                sp_x[i] = xp[i * 3 + 0] + alpha * direction_[i * 3 + 0];
+                sp_y[i] = xp[i * 3 + 1] + alpha * direction_[i * 3 + 1];
+                sp_z[i] = xp[i * 3 + 2] + alpha * direction_[i * 3 + 2];
+            }
         }
         ATV_DEBUG("[lbfgs] line_search step={} mode={} alpha={:.6e} ok={} "
-                  "n_eval={}",
+                  "n_eval={} reuse={}",
                   step_, static_cast<int>(ls_mode_), alpha, lr.ok,
-                  lr.n_value_evals);
+                  lr.n_value_evals, reuse);
         return;
     }
 
@@ -321,7 +398,7 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     // Gradient = -force (we minimize energy, force = -grad E).
     auto& x = x_ws_;
     auto& g = g_ws_;
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) if (n >= kParallelMinElements)
     for (int i = 0; i < n; ++i) {
         x[i * 3 + 0] = sp_x[i];
         x[i * 3 + 1] = sp_y[i];
@@ -351,20 +428,20 @@ void LBFGS::launch(const cpu::LaunchContext& ctx) {
     // descent direction iff g.p < 0. A bad (s,y) history or numerical noise
     // can violate it; reset to steepest descent so the line search is
     // well-posed. The dot products are globally reduced for rank-uniformity.
-    double gd0 = global_sum(ctx, dot_local(g, direction_, dim));
-    if (!(gd0 < 0)) {
-#pragma omp parallel for schedule(static)
-        for (int j = 0; j < dim; ++j)
-            direction_[j] = -g[j];
-        gd0 = -global_sum(ctx, dot_local(g, g, dim));
-        ATV_DEBUG("[lbfgs] non-descent direction step={} — reset to -g", step_);
-    }
-
-    // Global max|direction| component for the line-search displacement cap.
+    double gd0 = global_sum(ctx, dot_local(g.data(), direction_.data(), dim));
+    // With no stored pair the recursion returns -g scaled: already steepest.
+    steepest_ = hist_->stored() == 0;
+    // Max|direction| component for the line-search displacement cap.
     double dir_max = 0;
-#pragma omp parallel for schedule(static) reduction(max : dir_max)
-    for (int j = 0; j < dim; ++j)
-        dir_max = std::max(dir_max, std::abs(direction_[j]));
+    if (!(gd0 < 0)) {
+        steepest_ = true;
+        double gg = 0;
+        steepest_descent_(dim, gg, dir_max);
+        gd0 = -global_sum(ctx, gg);
+        ATV_DEBUG("[lbfgs] non-descent direction step={} — reset to -g", step_);
+    } else {
+        dir_max = max_abs_local(direction_.data(), dim);
+    }
     ls_dir_max_ = global_max(ctx, dir_max);
     ls_gd0_ = gd0;
     ls_phi0_ =

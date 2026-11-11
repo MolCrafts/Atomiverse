@@ -9,8 +9,9 @@
 #include "atomiverse/core/vec3.h"
 #include "atomiverse/cpu/planewave/internal/ewald.h"
 #include "atomiverse/cpu/planewave/internal/pw_setup.h"
-#include "atomiverse/cpu/planewave/internal/smearing.h"
 #include "atomiverse/cuda/device/error.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
+#include "atomiverse/electronic/smearing.h"
 
 #include <cmath>
 #include <stdexcept>
@@ -32,12 +33,37 @@ T* device_alloc(std::size_t n) {
     return p;
 }
 
-template <typename T>
-void device_free(T*& p) {
-    if (p) {
-        cudaFree(p);
-        p = nullptr;
+struct StreamFence {
+    cudaStream_t stream;
+    ~StreamFence() { cudaStreamSynchronize(stream); }
+};
+
+struct ForceScratch {
+    void* buffers[8] = {};
+    int count = 0;
+    template <class T = double>
+    T* allocate(std::size_t n) {
+        T* p = device_alloc<T>(n);
+        buffers[count++] = p;
+        return p;
     }
+    ~ForceScratch() {
+        for (int i = count - 1; i >= 0; --i)
+            cudaFree(buffers[i]);
+    }
+};
+
+__global__ void publish_force(cuda::Frame target, const double* force,
+                              const double* ewald, int n, double scale) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
+    add_force(target.atoms.fx, i, (force[3 * i] + ewald[3 * i]) * scale,
+              target.force_fault);
+    add_force(target.atoms.fy, i, (force[3 * i + 1] + ewald[3 * i + 1]) * scale,
+              target.force_fault);
+    add_force(target.atoms.fz, i, (force[3 * i + 2] + ewald[3 * i + 2]) * scale,
+              target.force_fault);
 }
 
 /// Local Hellmann–Feynman: one thread per G; loops atoms.
@@ -46,7 +72,8 @@ __global__ void
 k_local_hf_forces(const cufftDoubleComplex* __restrict__ rho,
                   const double* __restrict__ gx, const double* __restrict__ gy,
                   const double* __restrict__ gz, const double* __restrict__ vg,
-                  const double* __restrict__ pos, int ng, int n_atoms,
+                  const double* __restrict__ pos,
+                  const int* __restrict__ atom_species, int ng, int n_atoms,
                   double omega, double* __restrict__ forces) {
     const int ig = blockIdx.x * blockDim.x + threadIdx.x;
     if (ig >= ng)
@@ -56,8 +83,8 @@ k_local_hf_forces(const cufftDoubleComplex* __restrict__ rho,
     if (g2 < 1e-16)
         return;
     const cufftDoubleComplex r = rho[ig];
-    const double v = vg[ig];
     for (int ia = 0; ia < n_atoms; ++ia) {
+        const double v = vg[std::size_t(atom_species[ia]) * ng + ig];
         const double ax = pos[3 * ia + 0];
         const double ay = pos[3 * ia + 1];
         const double az = pos[3 * ia + 2];
@@ -76,115 +103,131 @@ k_local_hf_forces(const cufftDoubleComplex* __restrict__ rho,
 void accumulate_local_forces_device(const cufftDoubleComplex* d_rho_G,
                                     const double* d_gx, const double* d_gy,
                                     const double* d_gz, const double* d_vg,
-                                    const double* d_pos, int ng, int n_atoms,
-                                    double omega, double* d_forces,
+                                    const double* d_pos,
+                                    const int* d_atom_species, int ng,
+                                    int n_atoms, double omega, double* d_forces,
                                     cudaStream_t stream) {
     if (ng <= 0 || n_atoms <= 0)
         return;
     k_local_hf_forces<<<n_blocks(ng), kBlock, 0, stream>>>(
-        d_rho_G, d_gx, d_gy, d_gz, d_vg, d_pos, ng, n_atoms, omega, d_forces);
+        d_rho_G, d_gx, d_gy, d_gz, d_vg, d_pos, d_atom_species, ng, n_atoms,
+        omega, d_forces);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
 std::vector<std::array<double, 3>> pw_forces_analytic_impl(
-    const cpu::Frame& frame, const std::string& upf_path,
-    const std::string& gth_name, double ecut_ry, DeviceDensity& den,
-    DeviceBandSolver& solver, cpu::pw::internal::PWProblem& prob,
-    cpu::pw::internal::PWWorkspace& ws, int n_alpha, int n_beta, bool use_smear,
-    int n_elec, cpu::pw::internal::SmearKind smear_kind, double degauss_ha,
-    int mp_order) {
+    const cpu::Frame& frame, DeviceDensity& den, DeviceBandSolver& solver,
+    const cpu::pw::internal::PWIons& ions,
+    const cpu::pw::internal::GVectorList& density_modes,
+    std::span<const AccReal> k_weights, xt::xarray<AccReal>& eigenvalues,
+    int n_alpha, int n_beta, bool use_smear, int n_elec,
+    ATV::electronic::Smearing smear_kind, double degauss_ha, int mp_order,
+    cuda::Frame* accumulate_into) {
     const int n = frame.nlocal();
     if (n <= 0)
-        throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: frame has no atoms");
+        throw std::invalid_argument("cuda::pw::PW::forces: frame has no atoms");
 
     const int ng0 = den.n_g0();
     const double omega = den.omega();
     if (ng0 <= 0 || !(omega > 0.0))
         throw std::runtime_error(
-            "cuda::pw::pw_forces_analytic: density sphere empty or omega=0");
+            "cuda::pw::PW::forces: density sphere empty or omega=0");
 
     const bool spin = (n_alpha >= 0);
     if (spin && !den.spin_polarized())
         throw std::runtime_error(
-            "cuda::pw::pw_forces_analytic: spin occupations require a spin "
+            "cuda::pw::PW::forces: spin occupations require a spin "
             "DeviceDensity");
     if (spin && n_beta < 0)
         throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: n_beta must be >= 0 on spin path");
+            "cuda::pw::PW::forces: n_beta must be >= 0 on spin path");
     if (use_smear && !(degauss_ha > 0.0))
         throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: degauss must be > 0 for smear force "
+            "cuda::pw::PW::forces: degauss must be > 0 for smear force "
             "path");
     if (use_smear && n_elec <= 0)
         throw std::invalid_argument(
-            "cuda::pw::pw_forces_analytic: n_elec must be > 0 on smear force "
+            "cuda::pw::PW::forces: n_elec must be > 0 on smear force "
             "path");
 
-    double* d_F = device_alloc<double>(static_cast<std::size_t>(3 * n));
-    ATV_CUDA_CHECK(
-        cudaMemset(d_F, 0, static_cast<std::size_t>(3 * n) * sizeof(double)));
+    if (accumulate_into
+        && (accumulate_into->n_atoms() != n || !accumulate_into->atoms.fx
+            || !accumulate_into->atoms.fy || !accumulate_into->atoms.fz))
+        throw std::invalid_argument(
+            "cuda::pw::forces: incomplete parent force columns");
+    ForceScratch scratch;
+    double* d_F = scratch.allocate(static_cast<std::size_t>(3 * n));
+    ATV_CUDA_CHECK(cudaMemsetAsync(
+        d_F, 0, static_cast<std::size_t>(3 * n) * sizeof(double),
+        den.stream()));
 
     // G vectors + local form factor (host → device once).
     std::vector<double> h_gx(static_cast<std::size_t>(ng0));
     std::vector<double> h_gy(static_cast<std::size_t>(ng0));
     std::vector<double> h_gz(static_cast<std::size_t>(ng0));
     for (int ig = 0; ig < ng0; ++ig) {
-        h_gx[static_cast<std::size_t>(ig)] = prob.gv0.g[ig][0];
-        h_gy[static_cast<std::size_t>(ig)] = prob.gv0.g[ig][1];
-        h_gz[static_cast<std::size_t>(ig)] = prob.gv0.g[ig][2];
+        h_gx[static_cast<std::size_t>(ig)] = density_modes.g[ig][0];
+        h_gy[static_cast<std::size_t>(ig)] = density_modes.g[ig][1];
+        h_gz[static_cast<std::size_t>(ig)] = density_modes.g[ig][2];
     }
-    const auto upf =
-        cpu::pw::internal::load_pseudopotential(frame, upf_path, gth_name);
-    const std::vector<AccReal> upf_vg =
-        cpu::pw::internal::upf_vloc_to_gspace(upf, prob.gv0, AccReal(omega));
-    std::vector<double> h_vg(static_cast<std::size_t>(ng0));
-    for (int ig = 0; ig < ng0; ++ig)
-        h_vg[static_cast<std::size_t>(ig)] =
-            static_cast<double>(upf_vg[static_cast<std::size_t>(ig)]);
+    const auto vloc = cpu::pw::internal::nc_vloc_to_gspace(
+        ions.species, density_modes, ions.vol_bohr);
+    std::vector<double> h_vg;
+    h_vg.reserve(std::size_t(ng0) * vloc.size());
+    for (const auto& form : vloc)
+        h_vg.insert(h_vg.end(), form.begin(), form.end());
+    const std::vector<int> atom_species(ions.atom_species.begin(),
+                                        ions.atom_species.end());
 
     std::vector<double> h_pos(static_cast<std::size_t>(3 * n));
     for (int ia = 0; ia < n; ++ia) {
         h_pos[static_cast<std::size_t>(3 * ia + 0)] = static_cast<double>(
-            ws.atom_pos_bohr[static_cast<std::size_t>(ia)][0]);
+            ions.positions[static_cast<std::size_t>(ia)][0]);
         h_pos[static_cast<std::size_t>(3 * ia + 1)] = static_cast<double>(
-            ws.atom_pos_bohr[static_cast<std::size_t>(ia)][1]);
+            ions.positions[static_cast<std::size_t>(ia)][1]);
         h_pos[static_cast<std::size_t>(3 * ia + 2)] = static_cast<double>(
-            ws.atom_pos_bohr[static_cast<std::size_t>(ia)][2]);
+            ions.positions[static_cast<std::size_t>(ia)][2]);
     }
 
-    double* d_gx = device_alloc<double>(static_cast<std::size_t>(ng0));
-    double* d_gy = device_alloc<double>(static_cast<std::size_t>(ng0));
-    double* d_gz = device_alloc<double>(static_cast<std::size_t>(ng0));
-    double* d_vg = device_alloc<double>(static_cast<std::size_t>(ng0));
-    double* d_pos = device_alloc<double>(static_cast<std::size_t>(3 * n));
-    ATV_CUDA_CHECK(cudaMemcpy(d_gx, h_gx.data(),
-                              static_cast<std::size_t>(ng0) * sizeof(double),
-                              cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMemcpy(d_gy, h_gy.data(),
-                              static_cast<std::size_t>(ng0) * sizeof(double),
-                              cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMemcpy(d_gz, h_gz.data(),
-                              static_cast<std::size_t>(ng0) * sizeof(double),
-                              cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMemcpy(d_vg, h_vg.data(),
-                              static_cast<std::size_t>(ng0) * sizeof(double),
-                              cudaMemcpyHostToDevice));
-    ATV_CUDA_CHECK(cudaMemcpy(d_pos, h_pos.data(),
-                              static_cast<std::size_t>(3 * n) * sizeof(double),
-                              cudaMemcpyHostToDevice));
+    double* d_gx = scratch.allocate(static_cast<std::size_t>(ng0));
+    double* d_gy = scratch.allocate(static_cast<std::size_t>(ng0));
+    double* d_gz = scratch.allocate(static_cast<std::size_t>(ng0));
+    double* d_vg = scratch.allocate(h_vg.size());
+    int* d_species = scratch.allocate<int>(atom_species.size());
+    double* d_pos = scratch.allocate(static_cast<std::size_t>(3 * n));
+    StreamFence geometry_fence{den.stream()};
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_gx, h_gx.data(), static_cast<std::size_t>(ng0) * sizeof(double),
+        cudaMemcpyHostToDevice, den.stream()));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_gy, h_gy.data(), static_cast<std::size_t>(ng0) * sizeof(double),
+        cudaMemcpyHostToDevice, den.stream()));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_gz, h_gz.data(), static_cast<std::size_t>(ng0) * sizeof(double),
+        cudaMemcpyHostToDevice, den.stream()));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_vg, h_vg.data(),
+                                   h_vg.size() * sizeof(double),
+                                   cudaMemcpyHostToDevice, den.stream()));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(
+        d_pos, h_pos.data(), static_cast<std::size_t>(3 * n) * sizeof(double),
+        cudaMemcpyHostToDevice, den.stream()));
+
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_species, atom_species.data(),
+                                   atom_species.size() * sizeof(int),
+                                   cudaMemcpyHostToDevice, den.stream()));
 
     // Local HF uses total ρ (restricted or ρ↑+ρ↓ after spin mix).
     if (spin)
         den.sync_total_rho();
     accumulate_local_forces_device(den.device_rho_G(), d_gx, d_gy, d_gz, d_vg,
-                                   d_pos, ng0, n, omega, d_F, den.stream());
+                                   d_pos, d_species, ng0, n, omega, d_F,
+                                   den.stream());
 
     // Nonlocal KB: rebuild V_eff from the final mixed density, then re-solve.
     // Restricted fixed: one V_eff, f=2. Restricted smear: fractional f_b.
     // Collinear: V_eff_σ per channel, f=1, N_σ.
-    if (!prob.kb_proj_k.empty()) {
-        const int n_kpts = static_cast<int>(prob.kg.kpoints.size());
+    if (!k_weights.empty()) {
+        const int n_kpts = static_cast<int>(k_weights.size());
         if (spin && use_smear) {
             den.sync_total_rho();
             den.hartree();
@@ -195,17 +238,16 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                 den.assemble_veff_spin(s);
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
+                    solver.solve(eigenvalues, 40);
                     evals_sk[static_cast<std::size_t>(s * n_kpts + ik)].assign(
-                        ws.eigenvalues.begin(), ws.eigenvalues.end());
+                        eigenvalues.begin(), eigenvalues.end());
                 }
             }
             std::vector<AccReal> all_evals;
             std::vector<AccReal> all_weights;
             for (int s = 0; s < 2; ++s) {
                 for (int ik = 0; ik < n_kpts; ++ik) {
-                    const AccReal w =
-                        prob.kg.weights[static_cast<std::size_t>(ik)];
+                    const AccReal w = k_weights[static_cast<std::size_t>(ik)];
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     for (AccReal e : ev) {
@@ -214,25 +256,25 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                     }
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), AccReal(degauss_ha),
                 smear_kind, mp_order, AccReal(1));
             for (int s = 0; s < 2; ++s) {
                 den.assemble_veff_spin(s);
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
+                    solver.solve(eigenvalues, 40);
                     const auto& ev =
                         evals_sk[static_cast<std::size_t>(s * n_kpts + ik)];
                     const int nb = static_cast<int>(ev.size());
                     std::vector<double> occ(static_cast<std::size_t>(nb));
                     for (int b = 0; b < nb; ++b)
-                        occ[static_cast<std::size_t>(b)] = static_cast<double>(
-                            cpu::pw::internal::smear_f_spinor(
+                        occ[static_cast<std::size_t>(b)] =
+                            static_cast<double>(ATV::electronic::smear_f_spinor(
                                 ev[static_cast<std::size_t>(b)], mu_ha,
                                 AccReal(degauss_ha), smear_kind, mp_order));
                     const double weight = static_cast<double>(
-                        prob.kg.weights[static_cast<std::size_t>(ik)]);
+                        k_weights[static_cast<std::size_t>(ik)]);
                     solver.accumulate_nl_forces(weight, n, d_F, occ.data(), nb);
                 }
             }
@@ -247,9 +289,9 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                 den.assemble_veff_spin(s);
                 for (int ik = 0; ik < n_kpts; ++ik) {
                     solver.bind_kpoint(ik);
-                    solver.solve(ws, 40);
+                    solver.solve(eigenvalues, 40);
                     const double weight = static_cast<double>(
-                        prob.kg.weights[static_cast<std::size_t>(ik)]);
+                        k_weights[static_cast<std::size_t>(ik)]);
                     solver.accumulate_nl_forces(weight, n, d_F, n_occ[s],
                                                 /*occ=*/1.0);
                 }
@@ -263,23 +305,23 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                 static_cast<std::size_t>(n_kpts));
             for (int ik = 0; ik < n_kpts; ++ik) {
                 solver.bind_kpoint(ik);
-                solver.solve(ws, 40);
+                solver.solve(eigenvalues, 40);
                 evals_k[static_cast<std::size_t>(ik)].assign(
-                    ws.eigenvalues.begin(), ws.eigenvalues.end());
+                    eigenvalues.begin(), eigenvalues.end());
                 solver.stash_ritz();
             }
 
             std::vector<AccReal> all_evals;
             std::vector<AccReal> all_weights;
             for (int ik = 0; ik < n_kpts; ++ik) {
-                const AccReal w = prob.kg.weights[static_cast<std::size_t>(ik)];
+                const AccReal w = k_weights[static_cast<std::size_t>(ik)];
                 const auto& ev = evals_k[static_cast<std::size_t>(ik)];
                 for (std::size_t b = 0; b < ev.size(); ++b) {
                     all_evals.push_back(ev[b]);
                     all_weights.push_back(w);
                 }
             }
-            const AccReal mu_ha = cpu::pw::internal::find_fermi_level(
+            const AccReal mu_ha = ATV::electronic::find_fermi_level(
                 all_evals, all_weights, AccReal(n_elec), AccReal(degauss_ha),
                 smear_kind, mp_order);
 
@@ -290,11 +332,11 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                 std::vector<double> occ(static_cast<std::size_t>(nb));
                 for (int b = 0; b < nb; ++b)
                     occ[static_cast<std::size_t>(b)] =
-                        static_cast<double>(cpu::pw::internal::smear_f_band(
+                        static_cast<double>(ATV::electronic::smear_f_band(
                             ev[static_cast<std::size_t>(b)], mu_ha,
                             AccReal(degauss_ha), smear_kind, mp_order));
                 const double weight = static_cast<double>(
-                    prob.kg.weights[static_cast<std::size_t>(ik)]);
+                    k_weights[static_cast<std::size_t>(ik)]);
                 solver.accumulate_nl_forces(weight, n, d_F, occ.data(), nb);
             }
         } else {
@@ -303,30 +345,15 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
             den.assemble_veff();
             for (int ik = 0; ik < n_kpts; ++ik) {
                 solver.bind_kpoint(ik);
-                solver.solve(ws, 40);
+                solver.solve(eigenvalues, 40);
                 const double weight = static_cast<double>(
-                    prob.kg.weights[static_cast<std::size_t>(ik)]);
+                    k_weights[static_cast<std::size_t>(ik)]);
                 solver.accumulate_nl_forces(weight, n, d_F);
             }
         }
     }
 
-    std::vector<double> h_F(static_cast<std::size_t>(3 * n));
-    ATV_CUDA_CHECK(cudaStreamSynchronize(den.stream()));
-    ATV_CUDA_CHECK(cudaMemcpy(h_F.data(), d_F,
-                              static_cast<std::size_t>(3 * n) * sizeof(double),
-                              cudaMemcpyDeviceToHost));
-
-    device_free(d_F);
-    device_free(d_gx);
-    device_free(d_gy);
-    device_free(d_gz);
-    device_free(d_vg);
-    device_free(d_pos);
-
     // Ewald (host classical, shared with CPU energy/force path).
-    const std::vector<AccReal> ion_charges(static_cast<std::size_t>(n),
-                                           static_cast<AccReal>(upf.z_val));
     std::vector<Vec3> pos_ang(static_cast<std::size_t>(n));
     const StorageReal* sx = frame.span(kAtom_x);
     const StorageReal* sy = frame.span(kAtom_y);
@@ -336,21 +363,37 @@ std::vector<std::array<double, 3>> pw_forces_analytic_impl(
                                                 static_cast<AccReal>(sy[i]),
                                                 static_cast<AccReal>(sz[i])};
 
-    const AccReal ecut_ht = static_cast<AccReal>(ecut_ry) * AccReal(0.5);
-    cpu::pw::internal::EwaldSummation ewald(pos_ang, ion_charges, frame.box,
-                                            ecut_ht);
+    cpu::pw::internal::EwaldSummation ewald(pos_ang, ions.ionic_charges,
+                                            frame.box);
     const auto& few = ewald.forces_bohr();
-    for (int i = 0; i < n; ++i) {
-        h_F[static_cast<std::size_t>(3 * i + 0)] +=
-            static_cast<double>(few[static_cast<std::size_t>(i)][0]);
-        h_F[static_cast<std::size_t>(3 * i + 1)] +=
-            static_cast<double>(few[static_cast<std::size_t>(i)][1]);
-        h_F[static_cast<std::size_t>(3 * i + 2)] +=
-            static_cast<double>(few[static_cast<std::size_t>(i)][2]);
-    }
-
     const double ha_per_bohr_to_ev_per_ang = units::convert(
         1.0, units::Force::HartreePerBohr, units::Force::eVPerAngstrom);
+    if (accumulate_into) {
+        // The complete local+KB force never crosses the device boundary.
+        // Ewald remains the existing host classical term, uploaded once.
+        std::vector<double> h_ewald(static_cast<std::size_t>(3 * n));
+        for (int i = 0; i < n; ++i)
+            for (int d = 0; d < 3; ++d)
+                h_ewald[3 * i + d] = few[static_cast<std::size_t>(i)][d];
+        double* d_ewald = scratch.allocate(h_ewald.size());
+        StreamFence ewald_fence{den.stream()};
+        ATV_CUDA_CHECK(cudaMemcpyAsync(d_ewald, h_ewald.data(),
+                                       h_ewald.size() * sizeof(double),
+                                       cudaMemcpyHostToDevice, den.stream()));
+        publish_force<<<n_blocks(n), kBlock, 0, den.stream()>>>(
+            *accumulate_into, d_F, d_ewald, n, ha_per_bohr_to_ev_per_ang);
+        ATV_CUDA_CHECK(cudaGetLastError());
+        ATV_CUDA_CHECK(cudaStreamSynchronize(den.stream()));
+        return {};
+    }
+    // Standalone result boundary: final vector only, then host Ewald sum.
+    std::vector<double> h_F(static_cast<std::size_t>(3 * n));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(h_F.data(), d_F, h_F.size() * sizeof(double),
+                                   cudaMemcpyDeviceToHost, den.stream()));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(den.stream()));
+    for (int i = 0; i < n; ++i)
+        for (int d = 0; d < 3; ++d)
+            h_F[3 * i + d] += few[static_cast<std::size_t>(i)][d];
 
     std::vector<std::array<double, 3>> out(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {

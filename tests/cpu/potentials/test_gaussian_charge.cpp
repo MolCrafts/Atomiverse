@@ -10,6 +10,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/gaussian_charge.h"
 #include "atomiverse/cpu/potentials/pair_gaussian_coul.h"
 
@@ -37,6 +38,27 @@ cpu::Frame dimer(double r, double q0, double q1, int t0, int t1) {
 }
 
 } // namespace
+
+TEST(PairGaussianCoul, SpatialHalfRowsMayPointToALowerLocalIndex) {
+    auto frame = dimer(2.5, 1.0, -1.0, 0, 0);
+    cpu::md::PairList pairs;
+    pairs.inum = 1;
+    pairs.ilist = {1};
+    pairs.numneigh = {0, 1};
+    pairs.firstneigh = {0, 0};
+    pairs.neighbors = {0};
+    pairs.total_pairs = 1;
+    cpu::Context context;
+    context.md.pair_list = &pairs;
+    cpu::PairGaussianCoul potential(8.0, {}, false);
+    potential.build({context, frame});
+    potential.launch({context, frame, 0, 0});
+    EXPECT_NEAR(frame.meta.get(kEnergy),
+                -units::UnitSystem::lj().qqrd2e() / 2.5, 1e-12);
+    EXPECT_NEAR(frame.span(kAtom_fx)[0],
+                units::UnitSystem::lj().qqrd2e() / (2.5 * 2.5), 1e-12);
+    potential.destroy({context, frame});
+}
 
 TEST(GaussianChargeKernel, EtaEffEqualWidths) {
     const double eta = 1.0;
@@ -74,7 +96,7 @@ TEST(GaussianChargeKernel, DGreensMatchesFD) {
 
 TEST(PairGaussianCoul, AnalyticDimerEnergyForce) {
     const double r = 3.0, eta = 1.0, q0 = 1.0, q1 = 1.0;
-    const double K = ATV::units::coulomb;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double G = cpu::GaussianChargeKernel::greens(r, eta, eta);
     const double dG = cpu::GaussianChargeKernel::dgreens_dr(r, eta, eta);
     const double U_pair = K * q0 * q1 * G;
@@ -102,7 +124,7 @@ TEST(PairGaussianCoul, AnalyticDimerEnergyForce) {
 
 TEST(PairGaussianCoul, PointPointRecoversCoulomb) {
     const double r = 4.0, q0 = 0.5, q1 = -1.0;
-    const double K = ATV::units::coulomb;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double U = K * q0 * q1 / r;
     const double F0x = K * q0 * q1 * (-1.0 / (r * r)); // dG/dr = -1/r²
 
@@ -124,7 +146,7 @@ TEST(PairGaussianCoul, PointPointRecoversCoulomb) {
 
 TEST(PairGaussianCoul, GaussianPointCross) {
     const double r = 5.0, eta = 1.0, qg = 0.3, qp = 1.0;
-    const double K = ATV::units::coulomb;
+    const double K = ATV::units::UnitSystem::lj().qqrd2e();
     const double G = cpu::GaussianChargeKernel::greens(r, eta, 0.0);
     const double U =
         K * qg * qp * G + cpu::GaussianChargeKernel::self_energy(K, qg, eta);
@@ -148,7 +170,8 @@ TEST(PairGaussianCoul, GaussianPointCross) {
 /// energy, the force and the induced charge all change, and nothing says a
 /// row was left out of the table. House rule: lookup tables throw.
 TEST(PairGaussianCoul, ThrowsOnATypeTheWidthTableDoesNotCover) {
-    auto f = dimer(4.0, 1.0, -1.0, /*t0=*/0, /*t1=*/2); // type 2, table has 0..1
+    auto f =
+        dimer(4.0, 1.0, -1.0, /*t0=*/0, /*t1=*/2); // type 2, table has 0..1
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;
     cpu::PairGaussianCoul pot(20.0, /*eta_by_type=*/{0.0, 1.0}, true);
@@ -162,7 +185,7 @@ TEST(PairGaussianCoul, ThrowsOnATypeTheWidthTableDoesNotCover) {
 /// type index.
 TEST(PairGaussianCoul, EmptyTableIsAllPointChargesAtAnyTypeIndex) {
     const double r = 4.0, q0 = 0.5, q1 = -1.0;
-    const double U = ATV::units::coulomb * q0 * q1 / r;
+    const double U = ATV::units::UnitSystem::lj().qqrd2e() * q0 * q1 / r;
     auto f = dimer(r, q0, q1, /*t0=*/7, /*t1=*/9);
     f.meta.get(kEnergy) = 0;
     cpu::Context ctx;

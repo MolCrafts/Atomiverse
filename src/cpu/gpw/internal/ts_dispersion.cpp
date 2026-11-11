@@ -70,7 +70,8 @@ TsResult ts_pbe(const std::vector<int>& Z,
         free_atom_params(Z[i], alpha[i], c6[i], rvdw[i]);
         const double v = vol_ratio.empty() ? 1.0 : vol_ratio[i];
         if (!(v > 0.0) || !std::isfinite(v))
-            throw std::runtime_error("GPW TS: volume ratio must be positive finite");
+            throw std::runtime_error(
+                "GPW TS: volume ratio must be positive finite");
         // α ∝ v, C6 ∝ v², R ∝ v^{1/3}
         alpha[i] *= v;
         c6[i] *= v * v;

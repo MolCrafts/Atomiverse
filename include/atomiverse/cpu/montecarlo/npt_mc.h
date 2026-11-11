@@ -31,15 +31,15 @@ namespace mc {
 class NptMetropolis : public OutcomePolicy {
   public:
     /// @brief Construct the NPT acceptance test.
-    /// @param temperature_K Ensemble temperature [K] (must be > 0).
-    /// @param pressure_ev_A3 External pressure [eV/Å³] (LAMMPS-standard sign:
-    ///        positive = compressive; same unit as the MD barostats).
+    /// @param temperature_K Ensemble temperature [temperature] (must be > 0).
+    /// @param pressure External pressure in the run's pressure unit
+    ///        (LAMMPS-standard sign: positive = compressive; the unit of the
+    ///        MD barostats and of thermo `press`).
     /// @param rng The run's single RNG stream (shared with the Movers so one
     ///        seed reproduces one trajectory). Must outlive this policy.
     /// @throws std::invalid_argument if `temperature_K <= 0`.
-    NptMetropolis(AccReal temperature_K, AccReal pressure_ev_A3,
-                  std::mt19937_64& rng)
-        : temperature_(temperature_K), pressure_(pressure_ev_A3), rng_(rng) {
+    NptMetropolis(AccReal temperature_K, AccReal pressure, std::mt19937_64& rng)
+        : temperature_(temperature_K), pressure_(pressure), rng_(rng) {
         if (!(temperature_K > AccReal(0)))
             throw std::invalid_argument(
                 "NptMetropolis: temperature must be > 0 K");
@@ -66,7 +66,7 @@ class NptMetropolis : public OutcomePolicy {
                 "under an MC preset");
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const double beta =
-            1.0 / (units::kB_ev_per_k * static_cast<double>(temperature_));
+            1.0 / (s.runtime.units.boltz * static_cast<double>(temperature_));
         const double dE = static_cast<double>(e_trial - e_cur_);
 
         double arg; // exponent of the Boltzmann acceptance factor
@@ -81,10 +81,11 @@ class NptMetropolis : public OutcomePolicy {
         case Transaction::Verb::Box: {
             const double v_trial = s.frame.box.volume();
             const double n = static_cast<double>(s.frame.nlocal());
-            arg =
-                beta
-                    * (dE + static_cast<double>(pressure_) * (v_trial - v_cur_))
-                - n * std::log(v_trial / v_cur_);
+            // P·ΔV in energy: the pressure over the run's nktv2p.
+            const double p_energy =
+                static_cast<double>(pressure_) / s.runtime.units.nktv2p;
+            arg = beta * (dE + p_energy * (v_trial - v_cur_))
+                  - n * std::log(v_trial / v_cur_);
             break;
         }
         default:
@@ -117,7 +118,7 @@ class NptMetropolis : public OutcomePolicy {
     }
 
     AccReal temperature_;  ///< Ensemble temperature [K].
-    AccReal pressure_;     ///< External pressure [eV/Å³].
+    AccReal pressure_;     ///< External pressure [style pressure].
     std::mt19937_64& rng_; ///< The run's RNG stream, shared with the Movers.
     AccReal e_cur_ = 0;    ///< Energy of the last accepted state [eV].
     double v_cur_ = 0;     ///< Volume of the last accepted state [Å³].
@@ -128,7 +129,7 @@ class NptMetropolis : public OutcomePolicy {
 ///
 /// Pair it with a `MoveSelector` mixing `TranslateMove` and `VolumeMove`:
 /// @code{.cpp}
-///   cpu::mc::NptMc mc{300.0, /*P [eV/Å³]=*/1e-4, /*seed=*/7u};
+///   cpu::mc::NptMc mc{300.0, /*P [style pressure]=*/1e-4, /*seed=*/7u};
 ///   mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
 ///   mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});
 ///   mc.set_mover(cpu::mc::MoveSelector{}
@@ -141,12 +142,12 @@ class NptMc : public McBase {
   public:
     /// @brief Construct the NPT sampler.
     /// @param temperature_K Ensemble temperature [K] (must be > 0).
-    /// @param pressure_ev_A3 External pressure [eV/Å³].
+    /// @param pressure External pressure [style pressure].
     /// @param seed Seed for the single reproducible RNG stream.
     /// @throws std::invalid_argument if `temperature_K <= 0`.
-    NptMc(AccReal temperature_K, AccReal pressure_ev_A3, std::uint64_t seed)
-        : McBase(seed), policy_(this->set_outcome(NptMetropolis{
-                            temperature_K, pressure_ev_A3, rng_})) {}
+    NptMc(AccReal temperature_K, AccReal pressure, std::uint64_t seed)
+        : McBase(seed), policy_(this->set_outcome(
+                            NptMetropolis{temperature_K, pressure, rng_})) {}
 
     /// @brief Energy [eV] of the current (last-accepted) configuration.
     AccReal current_energy() const { return policy_.current_energy(); }

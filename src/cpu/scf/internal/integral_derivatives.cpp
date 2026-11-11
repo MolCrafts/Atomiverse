@@ -26,7 +26,7 @@
 #include "atomiverse/cpu/scf/internal/shell_pair.h"
 #include "atomiverse/cpu/scf/native_integrals.h"
 #include "atomiverse/cpu/scf/rys_eri.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -310,52 +310,6 @@ void nuclear_deriv_prim_nuc_general(const int a_ang[3], const int b_ang[3],
     }
 }
 
-/// @brief Derivative of primitive ERI w.r.t. center A in all 3 directions.
-///
-/// d/dA_d (ab|cd) = 2*alpha_a * (a+1_d b|cd) - a_d * (a-1_d b|cd)
-///
-/// @param a_ang, b_ang, c_ang, d_ang  Cartesian angular momenta [3] each.
-/// @param alpha_a..alpha_d  Primitive exponents.
-/// @param A..D  Center positions [3] each.
-/// @param dERI_dA  Output: d(ERI)/dA in each direction [3].
-static void eri_deriv_prim_general(const int a_ang[3], const int b_ang[3],
-                                   const int c_ang[3], const int d_ang[3],
-                                   double alpha_a, const double A[3],
-                                   double alpha_b, const double B[3],
-                                   double alpha_c, const double C[3],
-                                   double alpha_d, const double D[3],
-                                   double dERI_dA[3]) {
-    for (int d = 0; d < 3; ++d) {
-        int a_plus[3] = {a_ang[0], a_ang[1], a_ang[2]};
-        a_plus[d] += 1;
-        double ERI_plus =
-            native::eri_prim(a_plus, b_ang, c_ang, d_ang, alpha_a, A, alpha_b,
-                             B, alpha_c, C, alpha_d, D);
-
-        double result = 2.0 * alpha_a * ERI_plus;
-
-        if (a_ang[d] > 0) {
-            int a_minus[3] = {a_ang[0], a_ang[1], a_ang[2]};
-            a_minus[d] -= 1;
-            double ERI_minus =
-                native::eri_prim(a_minus, b_ang, c_ang, d_ang, alpha_a, A,
-                                 alpha_b, B, alpha_c, C, alpha_d, D);
-            result -= a_ang[d] * ERI_minus;
-        }
-
-        dERI_dA[d] = result;
-    }
-}
-
-struct QuartetDerivTotals {
-    double dA[3] = {0.0, 0.0, 0.0};
-    double dB[3] = {0.0, 0.0, 0.0};
-    double dC[3] = {0.0, 0.0, 0.0};
-    double dD[3] = {0.0, 0.0, 0.0};
-};
-
-static inline int pair_multiplicity(int a, int b) { return (a == b) ? 1 : 2; }
-
 static std::vector<int>
 build_shell_to_atom_from_integrals(const internal::IntegralView& integrals) {
     const int n = integrals.n_basis;
@@ -378,76 +332,46 @@ build_shell_to_atom_from_integrals(const internal::IntegralView& integrals) {
     return shell_to_atom;
 }
 
-static QuartetDerivTotals
-compute_quartet_derivatives(const native::Shell& shell_a, const int a_ang[3],
-                            const native::Shell& shell_b, const int b_ang[3],
-                            const native::Shell& shell_c, const int c_ang[3],
-                            const native::Shell& shell_d, const int d_ang[3]) {
-    QuartetDerivTotals totals;
-
-    for (int p = 0; p < shell_a.n_prim; ++p) {
-        for (int q = 0; q < shell_b.n_prim; ++q) {
-            for (int r = 0; r < shell_c.n_prim; ++r) {
-                for (int s = 0; s < shell_d.n_prim; ++s) {
-                    const double coeff = shell_a.coeff[p] * shell_b.coeff[q]
-                                         * shell_c.coeff[r] * shell_d.coeff[s];
-
-                    double dA[3];
-                    eri_deriv_prim_general(
-                        a_ang, b_ang, c_ang, d_ang, shell_a.alpha[p],
-                        shell_a.center, shell_b.alpha[q], shell_b.center,
-                        shell_c.alpha[r], shell_c.center, shell_d.alpha[s],
-                        shell_d.center, dA);
-
-                    double dB[3];
-                    eri_deriv_prim_general(
-                        b_ang, a_ang, c_ang, d_ang, shell_b.alpha[q],
-                        shell_b.center, shell_a.alpha[p], shell_a.center,
-                        shell_c.alpha[r], shell_c.center, shell_d.alpha[s],
-                        shell_d.center, dB);
-
-                    double dC[3];
-                    eri_deriv_prim_general(
-                        c_ang, d_ang, a_ang, b_ang, shell_c.alpha[r],
-                        shell_c.center, shell_d.alpha[s], shell_d.center,
-                        shell_a.alpha[p], shell_a.center, shell_b.alpha[q],
-                        shell_b.center, dC);
-
-                    double dD[3];
-                    eri_deriv_prim_general(
-                        d_ang, c_ang, a_ang, b_ang, shell_d.alpha[s],
-                        shell_d.center, shell_c.alpha[r], shell_c.center,
-                        shell_a.alpha[p], shell_a.center, shell_b.alpha[q],
-                        shell_b.center, dD);
-
-                    for (int axis = 0; axis < 3; ++axis) {
-                        totals.dA[axis] += coeff * dA[axis];
-                        totals.dB[axis] += coeff * dB[axis];
-                        totals.dC[axis] += coeff * dC[axis];
-                        totals.dD[axis] += coeff * dD[axis];
-                    }
-                }
+/// @brief Shell-center → atom index. Centers are Bohr and come from the
+///        same Frame, so equality is bit-exact.
+static std::vector<int> shell_owner(const std::vector<native::Shell>& shells,
+                                    const std::vector<native::Atom>& atoms,
+                                    int n_shell, const char* who) {
+    const int natm = static_cast<int>(atoms.size());
+    std::vector<int> owner(static_cast<std::size_t>(n_shell), -1);
+    for (int i = 0; i < n_shell; ++i) {
+        const double* c = shells[static_cast<std::size_t>(i)].center;
+        for (int a = 0; a < natm; ++a) {
+            const double* p = atoms[static_cast<std::size_t>(a)].pos;
+            if (c[0] == p[0] && c[1] == p[1] && c[2] == p[2]) {
+                owner[static_cast<std::size_t>(i)] = a;
+                break;
             }
         }
+        if (owner[static_cast<std::size_t>(i)] < 0)
+            throw std::runtime_error(std::string(who) + ": shell "
+                                     + std::to_string(i)
+                                     + " center has no matching atom");
     }
-
-    return totals;
+    return owner;
 }
 
-static void accumulate_quartet_into_gradient(xt::xtensor<double, 2>& grad,
-                                             int atom_a, int atom_b, int atom_c,
-                                             int atom_d,
-                                             const QuartetDerivTotals& totals,
-                                             double factor) {
-    if (std::abs(factor) < 1e-18)
-        return;
-
-    for (int axis = 0; axis < 3; ++axis) {
-        grad(atom_a, axis) += factor * totals.dA[axis];
-        grad(atom_b, axis) += factor * totals.dB[axis];
-        grad(atom_c, axis) += factor * totals.dC[axis];
-        grad(atom_d, axis) += factor * totals.dD[axis];
+/// @brief dO^sph[A,d] = c2sᵀ · dO^cart[A,d] · c2s. `c2s` is (n_cart, n_sph).
+static xt::xtensor<double, 4>
+deriv_to_spherical(const xt::xtensor<double, 4>& d_cart,
+                   const xt::xtensor<double, 2>& c2s, int n_sph) {
+    const auto ct = xt::transpose(c2s);
+    const int natm = static_cast<int>(d_cart.shape(0));
+    xt::xtensor<double, 4> d_sph = xt::zeros<double>({natm, 3, n_sph, n_sph});
+    for (int a = 0; a < natm; ++a) {
+        for (int d = 0; d < 3; ++d) {
+            const xt::xtensor<double, 2> blk =
+                xt::view(d_cart, a, d, xt::all(), xt::all());
+            xt::view(d_sph, a, d, xt::all(), xt::all()) =
+                xt::linalg::dot(ct, xt::linalg::dot(blk, c2s));
+        }
     }
+    return d_sph;
 }
 
 // ── Main entry point ─────────────────────────────────────────────────
@@ -475,22 +399,8 @@ IntegralDerivPack::IntegralDerivPack(const internal::IntegralView& ipack) {
     // Shell → atom mapping via shell-center vs atom-position match.
     // Both are in Bohr and constructed from the same Frame positions,
     // so bit-exact equality holds.
-    std::vector<int> shell_to_atom(n_basis, -1);
-    for (int i = 0; i < n_basis; ++i) {
-        const double* c = shells[i].center;
-        for (int a = 0; a < natm; ++a) {
-            const double* p = atoms[a].pos;
-            if (c[0] == p[0] && c[1] == p[1] && c[2] == p[2]) {
-                shell_to_atom[i] = a;
-                break;
-            }
-        }
-        if (shell_to_atom[i] < 0) {
-            throw std::runtime_error("cpu::scf::IntegralDerivPack: shell "
-                                     + std::to_string(i)
-                                     + " center has no matching atom");
-        }
-    }
+    const std::vector<int> shell_to_atom =
+        shell_owner(shells, atoms, n_basis, "cpu::scf::IntegralDerivPack");
 
     // ── 1e integral derivatives ──────────────────────────────────────
 
@@ -648,36 +558,139 @@ IntegralDerivPack::IntegralDerivPack(const internal::IntegralView& ipack) {
     // basis-independent and untouched. After this the dS/dT/dV blocks align
     // with the spherical P/W that ScfGradient::compute contracts against.
     if (ipack.spherical()) {
-        const auto& c2s = ipack.c2s;
-        const auto ct = xt::transpose(c2s);
         const int n_sph = ipack.n_basis;
-        xt::xtensor<double, 4> dS_s =
-            xt::zeros<double>({natm, 3, n_sph, n_sph});
-        xt::xtensor<double, 4> dT_s =
-            xt::zeros<double>({natm, 3, n_sph, n_sph});
-        xt::xtensor<double, 4> dV_s =
-            xt::zeros<double>({natm, 3, n_sph, n_sph});
-        for (int a = 0; a < natm; ++a) {
-            for (int d = 0; d < 3; ++d) {
-                const xt::xtensor<double, 2> S_blk =
-                    xt::view(dS, a, d, xt::all(), xt::all());
-                const xt::xtensor<double, 2> T_blk =
-                    xt::view(dT, a, d, xt::all(), xt::all());
-                const xt::xtensor<double, 2> V_blk =
-                    xt::view(dV, a, d, xt::all(), xt::all());
-                xt::view(dS_s, a, d, xt::all(), xt::all()) =
-                    xt::linalg::dot(ct, xt::linalg::dot(S_blk, c2s));
-                xt::view(dT_s, a, d, xt::all(), xt::all()) =
-                    xt::linalg::dot(ct, xt::linalg::dot(T_blk, c2s));
-                xt::view(dV_s, a, d, xt::all(), xt::all()) =
-                    xt::linalg::dot(ct, xt::linalg::dot(V_blk, c2s));
-            }
-        }
-        dS = std::move(dS_s);
-        dT = std::move(dT_s);
-        dV = std::move(dV_s);
+        dS = deriv_to_spherical(dS, ipack.c2s, n_sph);
+        dT = deriv_to_spherical(dT, ipack.c2s, n_sph);
+        dV = deriv_to_spherical(dV, ipack.c2s, n_sph);
         this->n_basis = n_sph;
     }
+}
+
+namespace {
+
+/// @brief Add `coeff` times the nuclear derivatives of one ⟨a|1/r_C|b⟩ term.
+void acc_pvp_term(const int a_ang[3], const int b_ang[3], double coeff,
+                  double aa, const double* A, double ab, const double* B,
+                  const double* C, double dA[3], double dB[3], double dC[3]) {
+    if (coeff == 0.0)
+        return;
+    double da[3], db[3], dc[3];
+    nuclear_deriv_prim_center_general(a_ang, b_ang, aa, A, ab, B, C, da);
+    nuclear_deriv_prim_center_general(b_ang, a_ang, ab, B, aa, A, C, db);
+    nuclear_deriv_prim_nuc_general(a_ang, b_ang, aa, A, ab, B, C, dc);
+    for (int k = 0; k < 3; ++k) {
+        dA[k] += coeff * da[k];
+        dB[k] += coeff * db[k];
+        dC[k] += coeff * dc[k];
+    }
+}
+
+/// @brief Nuclear derivatives of Σ_d ⟨∂_d g_a | 1/r_C | ∂_d g_b⟩ (no −Z).
+///
+/// Same four-term Gaussian-derivative expansion as `pvp_prim_dir` in
+/// one_electron.cpp. Each term is a bare nuclear attraction of raised or
+/// lowered angular momentum, differentiated with the same center / nucleus
+/// kernels the non-relativistic dV path uses.
+void pvp_prim_deriv(const int a_ang[3], const int b_ang[3], double aa,
+                    const double* A, double ab, const double* B,
+                    const double* C, double dA[3], double dB[3], double dC[3]) {
+    for (int k = 0; k < 3; ++k)
+        dA[k] = dB[k] = dC[k] = 0.0;
+    for (int d = 0; d < 3; ++d) {
+        int a_plus[3] = {a_ang[0], a_ang[1], a_ang[2]};
+        int b_plus[3] = {b_ang[0], b_ang[1], b_ang[2]};
+        a_plus[d] += 1;
+        b_plus[d] += 1;
+        acc_pvp_term(a_plus, b_plus, 4.0 * aa * ab, aa, A, ab, B, C, dA, dB,
+                     dC);
+        if (b_ang[d] > 0) {
+            int b_minus[3] = {b_ang[0], b_ang[1], b_ang[2]};
+            b_minus[d] -= 1;
+            acc_pvp_term(a_plus, b_minus,
+                         -2.0 * aa * static_cast<double>(b_ang[d]), aa, A, ab,
+                         B, C, dA, dB, dC);
+        }
+        if (a_ang[d] > 0) {
+            int a_minus[3] = {a_ang[0], a_ang[1], a_ang[2]};
+            a_minus[d] -= 1;
+            acc_pvp_term(a_minus, b_plus,
+                         -static_cast<double>(a_ang[d]) * 2.0 * ab, aa, A, ab,
+                         B, C, dA, dB, dC);
+            if (b_ang[d] > 0) {
+                int b_minus[3] = {b_ang[0], b_ang[1], b_ang[2]};
+                b_minus[d] -= 1;
+                acc_pvp_term(a_minus, b_minus,
+                             static_cast<double>(a_ang[d] * b_ang[d]), aa, A,
+                             ab, B, C, dA, dB, dC);
+            }
+        }
+    }
+}
+
+} // namespace
+
+xt::xtensor<double, 4> pvp_nuclear_deriv(const internal::IntegralView& ipack) {
+    const int natm = static_cast<int>(ipack.atoms.size());
+    const int n_cart = ipack.n_ao_cart();
+    xt::xtensor<double, 4> dW = xt::zeros<double>({natm, 3, n_cart, n_cart});
+
+    const auto& shells = ipack.shells;
+    const auto& atoms = ipack.atoms;
+    if (static_cast<int>(shells.size()) != n_cart)
+        throw std::runtime_error(
+            "pvp_nuclear_deriv: shell count does not match the Cartesian "
+            "AO dimension");
+
+    const std::vector<int> shell_to_atom =
+        shell_owner(shells, atoms, n_cart, "pvp_nuclear_deriv");
+
+    for (int i = 0; i < n_cart; ++i) {
+        const int atom_i = shell_to_atom[static_cast<std::size_t>(i)];
+        int a_ang[3];
+        cart_exponents(shells[static_cast<std::size_t>(i)], a_ang);
+        for (int j = 0; j <= i; ++j) {
+            const int atom_j = shell_to_atom[static_cast<std::size_t>(j)];
+            int b_ang[3];
+            cart_exponents(shells[static_cast<std::size_t>(j)], b_ang);
+            const auto& shi = shells[static_cast<std::size_t>(i)];
+            const auto& shj = shells[static_cast<std::size_t>(j)];
+            for (int p = 0; p < shi.n_prim; ++p) {
+                for (int q = 0; q < shj.n_prim; ++q) {
+                    const double ci = shi.coeff[p];
+                    const double cj = shj.coeff[q];
+                    const double cpq = ci * cj;
+                    for (int c = 0; c < natm; ++c) {
+                        if (atoms[static_cast<std::size_t>(c)].Z == 0)
+                            continue;
+                        double dA[3], dB[3], dC[3];
+                        pvp_prim_deriv(a_ang, b_ang, shi.alpha[p], shi.center,
+                                       shj.alpha[q], shj.center,
+                                       atoms[static_cast<std::size_t>(c)].pos,
+                                       dA, dB, dC);
+                        const double mz = -static_cast<double>(
+                            atoms[static_cast<std::size_t>(c)].Z);
+                        for (int k = 0; k < 3; ++k) {
+                            const double va = cpq * mz * dA[k];
+                            const double vb = cpq * mz * dB[k];
+                            const double vc = cpq * mz * dC[k];
+                            dW(atom_i, k, i, j) += va;
+                            dW(atom_j, k, i, j) += vb;
+                            dW(c, k, i, j) += vc;
+                            if (i != j) {
+                                dW(atom_i, k, j, i) += va;
+                                dW(atom_j, k, j, i) += vb;
+                                dW(c, k, j, i) += vc;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (ipack.spherical())
+        return deriv_to_spherical(dW, ipack.c2s, ipack.n_basis);
+    return dW;
 }
 
 void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
@@ -685,7 +698,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                       const xt::xtensor<double, 2>& P_total_sph,
                                       const SlaterDeterminant& det,
                                       MeanFieldType method, SpinType spin,
-                                      XCType xc_type) {
+                                      xc::XCType xc_type) {
     const auto t_total = LogClock::now();
     const int natm = static_cast<int>(integrals.atoms.size());
     // GHF (generalized): the spin-off-diagonal blocks P^{αβ}, P^{βα} are
@@ -858,7 +871,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                       const xt::xtensor<double, 2>& P_alpha_in,
                                       const xt::xtensor<double, 2>& P_beta_in,
                                       MeanFieldType method, SpinType spin,
-                                      XCType xc_type) {
+                                      xc::XCType xc_type) {
     const auto t_total = LogClock::now();
     const int natm = static_cast<int>(integrals.atoms.size());
     // The on-the-fly ERI-derivative engines index Cartesian AOs; n is the
@@ -915,8 +928,10 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
     // PBE0) for a KS hybrid. It enters as a pure scalar multiplier on top of
     // the existing closed-shell exchange prefactors and the
     // 0.5*[P(i,k)P(j,l)+P(j,k)P(i,l)] symmetrization, which are unchanged.
-    const double alpha_hf = is_ks ? hybrid_exchange_fraction(xc_type) : 1.0;
-    const bool do_exchange = (alpha_hf > 0.0);
+    const xc::RshExchangeParams rsh = xc::rsh_exchange_params(xc_type);
+    const double alpha_hf = is_ks ? rsh.alpha : 1.0;
+    const double beta_lr = is_ks ? rsh.beta : 0.0;
+    const bool do_exchange = alpha_hf != 0.0 || beta_lr != 0.0;
 
     // ── Native 2e gradient: block-level + Schwarz + OpenMP + Rys ───────
     //
@@ -1031,6 +1046,18 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
             native::rys_eri_block_deriv(Bsi, Bsj, Bsk, Bsl, 0, deriv_A.data());
             native::rys_eri_block_deriv(Bsi, Bsj, Bsk, Bsl, 1, deriv_B.data());
             native::rys_eri_block_deriv(Bsi, Bsj, Bsk, Bsl, 2, deriv_C.data());
+            std::vector<double> lr_A, lr_B, lr_C;
+            if (beta_lr != 0.0) {
+                lr_A.assign(3 * block_n, 0.0);
+                lr_B.assign(3 * block_n, 0.0);
+                lr_C.assign(3 * block_n, 0.0);
+                native::rys_eri_erf_block_deriv(Bsi, Bsj, Bsk, Bsl, 0, rsh.mu,
+                                                lr_A.data());
+                native::rys_eri_erf_block_deriv(Bsi, Bsj, Bsk, Bsl, 1, rsh.mu,
+                                                lr_B.data());
+                native::rys_eri_erf_block_deriv(Bsi, Bsj, Bsk, Bsl, 2, rsh.mu,
+                                                lr_C.data());
+            }
 
             // Multiplicities are BLOCK-level (matching the libcint
             // branch above and operators.cpp's Fock build): within a
@@ -1058,12 +1085,10 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                             const double factor_J =
                                 0.5 * mult * P_total(i, j) * P_total(k, l);
 
-                            // Exchange factor (K) — scaled by the exact-
-                            // exchange fraction alpha_hf: 1.0 for HF, 0.0 for
-                            // a pure functional (K skipped), and the
-                            // global-hybrid admixture for B3LYP / PBE0. The
-                            // grid XC handles the semi-local exchange
-                            // separately.
+                            // Unscaled exchange density factor. Bare and
+                            // erf-attenuated integral derivatives carry their
+                            // respective alpha and beta weights below. The
+                            // grid XC carries the semilocal contribution.
                             //
                             // Canonical enumeration of (ij|kl) uses 8-fold
                             // ERI symmetry, but the exchange density product
@@ -1071,24 +1096,26 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                             // k↔l. Symmetrize (average over the 8 perms):
                             //   sym_factor = ½·[P(i,k)·P(j,l) + P(j,k)·P(i,l)]
                             // so canonical + mult recovers the full sum.
-                            // alpha_hf multiplies that whole expression.
+                            // Both exchange operators use that same factor.
                             double factor_K = 0.0;
                             if (do_exchange) {
                                 if (restricted) {
                                     factor_K =
-                                        -0.25 * mult * alpha_hf * 0.5
+                                        -0.25 * mult * 0.5
                                         * (P_total(i, k) * P_total(j, l)
                                            + P_total(j, k) * P_total(i, l));
                                 } else {
-                                    factor_K = -0.5 * mult * alpha_hf * 0.5
+                                    factor_K = -0.5 * mult * 0.5
                                                * (Pa(i, k) * Pa(j, l)
                                                   + Pa(j, k) * Pa(i, l)
                                                   + Pb(i, k) * Pb(j, l)
                                                   + Pb(j, k) * Pb(i, l));
                                 }
                             }
-                            const double factor = factor_J + factor_K;
-                            if (std::abs(factor) < 1e-18)
+                            const double factor =
+                                factor_J + alpha_hf * factor_K;
+                            const double factor_lr = beta_lr * factor_K;
+                            if (std::abs(factor) + std::abs(factor_lr) < 1e-18)
                                 continue;
 
                             const int ao_idx =
@@ -1105,6 +1132,16 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                 Gl(atom_j, axis) += factor * dB;
                                 Gl(atom_k, axis) += factor * dC;
                                 Gl(atom_l, axis) += factor * dD;
+                                if (beta_lr != 0.0) {
+                                    const int idx = axis * block_n + ao_idx;
+                                    const double a = factor_lr * lr_A[idx];
+                                    const double b = factor_lr * lr_B[idx];
+                                    const double c = factor_lr * lr_C[idx];
+                                    Gl(atom_i, axis) += a;
+                                    Gl(atom_j, axis) += b;
+                                    Gl(atom_k, axis) += c;
+                                    Gl(atom_l, axis) -= a + b + c;
+                                }
                             }
                         }
                     }
@@ -1477,7 +1514,7 @@ void accumulate_two_electron_fock_derivative(
     // Coulomb feeds dJ(i,j) += P(k,l)·dg; exchange dK(i,k) −= ½·P(j,l)·dg
     // (closed-shell G = J − ½K contraction with the total density).
     // O(n_blocks⁴) without Schwarz screening — Hessian-assembly scale,
-    // executed once per RHF::hessian() call.
+    // executed once per Hessian<RHF>::run() call.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic)
 #endif

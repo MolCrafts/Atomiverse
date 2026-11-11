@@ -1,4 +1,4 @@
-! Offline CP2K twin for regressions/dynamics/cpmd-rattle-water
+! Offline CP2K twin for regressions/dynamics/car-parrinello
 ! Isolated H2O, PBE / DZVP-MOLOPT-GTH / GTH-PBE, MT 10 Å, short NVE.
 ! ctest NEVER launches CP2K — pin is literature E_cons envelope + structure.
 ! Run offline only; record version + wall in REFERENCE.md / pin_notes if available.

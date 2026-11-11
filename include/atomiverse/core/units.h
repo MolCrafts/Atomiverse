@@ -51,6 +51,9 @@ inline constexpr double kAuDipoleInDebye = 2.541746473;
 inline constexpr double kHartreeInEv = 1.0 / kEvInHartree;
 inline constexpr double kHartreePerBohrInEvPerAngstrom =
     1.0 / kEvPerAngstromInHartreePerBohr;
+/// Pressure / stress: 1 Hartree/Bohr³ in eV/Å³.
+inline constexpr double kHartreePerBohr3InEvPerAngstrom3 =
+    kHartreeInEv / (kBohrInAngstrom * kBohrInAngstrom * kBohrInAngstrom);
 
 // ── Dimension enums ──────────────────────────────────────────────────
 
@@ -165,33 +168,35 @@ inline constexpr double atm_to_ev_per_a3 = 6.324209069697368e-7;
 inline constexpr double force_to_accel = 1.0 / 103.6427;
 inline constexpr double mass_v2_to_energy = 103.6427;
 
-// Electrostatic coupling in MD "metal" units (LAMMPS `qqr2e`):
-//
-//   E [eV] = coulomb * q_i q_j / r   with q in elementary charge, r in Å
-//
-// Equals 1/(4πε₀) · e²/Å expressed in eV (CODATA): 14.399645 eV·Å/e².
+// Electrostatic coupling of one elementary-charge pair at 1 Å, in eV
+// (CODATA). Electronic-structure Hamiltonians (SCF, PW, DFTB, NDDO,
+// Hartree) keep this constant. Classical MD multiplies the run's qqrd2e.
 inline constexpr double coulomb = 14.399645;
 
-/// Planck constant in MD-internal units: eV·fs (CODATA 2018 exact value,
-/// 4.135667696e-15 eV·s). Needed by the thermal de Broglie wavelength in
-/// grand-canonical acceptance rules.
+/// Planck constant in eV·fs (CODATA 2018, 4.135667696e-15 eV·s).
+/// Classical MD uses the run's `UnitSystem::hplanck`, not this.
 inline constexpr double h_planck_ev_fs = 4.135667696;
-
-/// @brief Thermal de Broglie wavelength `Λ = h / sqrt(2π m k_B T)` [Å].
-///
-/// The `mass_v2_to_energy` factor inside the root converts the amu·eV
-/// product into the Å/fs-consistent mass–energy coupling, so the result
-/// lands directly in Å (H at 300 K → 1.008 Å).
-/// @param mass_amu Particle mass [amu].
-/// @param temperature_K Temperature [K].
-/// @return Λ [Å].
-[[nodiscard]] inline double lambda_thermal(double mass_amu,
-                                           double temperature_K) {
-    return h_planck_ev_fs
-           / std::sqrt(2.0 * pi * mass_amu * kB_ev_per_k * temperature_K
-                       * mass_v2_to_energy);
-}
 
 } // namespace units
 
 } // namespace ATV
+
+#include "atomiverse/core/unit_system.h"
+
+namespace ATV::units {
+
+/// @brief de Broglie thermal wavelength in a LAMMPS `units` style.
+///
+/// `Λ = hplanck / sqrt(2 π m boltz T mvv2e)` (LAMMPS `fix gcmc`), with mass,
+/// temperature and the result in the style's own units.
+/// @param mass Particle mass in the style's mass unit.
+/// @param temperature Temperature in the style's temperature unit.
+/// @param u The run's unit system.
+/// @return Λ in the style's length unit.
+[[nodiscard]] inline double lambda_thermal(double mass, double temperature,
+                                           const UnitSystem& u) {
+    return u.hplanck
+           / std::sqrt(2.0 * pi * mass * u.boltz * temperature * u.mvv2e);
+}
+
+} // namespace ATV::units

@@ -1,48 +1,51 @@
-# Chapter 6. Hybrid Functionals
+# Hybrid Functionals
 
-Use `cpu::scf::RKS` with hybrid `XCType::{B3LYP,PBE0}` and `forces()`.
+Status tables: [DFT roadmap](../roadmap/dft.md).
 
-Hybrids mix a fraction of exact Hartree–Fock exchange into the KS functional.
-Analytic nuclear gradients (`RKS::forces(frame)`, or the method nested at a
-`force` phase with `with_gradient(true)`) are
-what turn a single-point energy into geometry optimization and AIMD
-([Chapter 12](ch12-geometry-optimization.md), [Chapter 15](ch15-cross-method.md)).
+Semilocal DFT and HF describe exchange differently. A hybrid combines
+orbital-dependent exchange with density-functional contributions, changing
+both the energy approximation and the self-consistent electronic state.
 
-Validate gradients with finite differences (policy from
-[Chapter 1](ch01-foundations.md)): analytic and FD forces must agree within a
-documented tolerance before trusting an optimizer step.
+**Learning goals.** Interpret exchange mixing, recognize property-dependent
+accuracy, and validate gradients before using a hybrid force provider.
 
-[Chapter 5](ch05-kohn-sham-dft.md) introduced Kohn-Sham DFT with the pure functionals
-LSDA and PBE, where the exchange-correlation energy is a semi-local integral
-over the density on a grid. This chapter adds the two most widely used
-**global hybrid** functionals — B3LYP and PBE0 — which mix a fixed fraction
-of *exact* Hartree-Fock exchange into that semi-local recipe, and then shows
-how to get **analytic nuclear gradients** (forces) for them. Hybrids are the
-workhorse of molecular DFT precisely because that exchange admixture
-corrects the self-interaction error that plagues pure functionals; analytic
-gradients are what make geometry optimization and vibrational analysis on top
-of them affordable.
+**Before you begin.** Exchange in [Hartree–Fock Theory](ch02-rhf.md) and
+energy functionals in [Density Functional Theory](ch05-kohn-sham-dft.md).
 
-The six questions:
+## Mixing exchange descriptions
 
-1. **The concept.** Why mix exact exchange in, and what "global hybrid"
-   means.
-2. **The Atomiverse representation.** `XCType::B3LYP` / `PBE0`, the
-   exact-exchange fraction, and how the Fock builder splits the work.
-3. **The C++ API.** `RKS` with `XCType::B3LYP` / `PBE0`, and
-   `forces()`.
-4. **The expected result.** A converged hybrid energy and forces that match
-   PySCF's `grad.RKS`.
-5. **The validation.** Analytic force vs PySCF *and* vs an independent
-   finite-difference oracle, to 1e-5 Ha/Bohr.
-6. **The recurring pattern.** The gradient plugs into the same force-phase
-   binding that drives AIMD and geometry optimization.
+A simple global hybrid has the form
 
-This chapter assumes you are comfortable with the SCF loop and the
-concrete-method surface — `run(frame)`, `energy()`, `determinant()` — from
-Tutorials 2 and 4.
+$$E_{\mathrm{xc}}^{\mathrm{hyb}}
+=aE_x^{\mathrm{HF}}+(1-a)E_x^{\mathrm{DFA}}+E_c^{\mathrm{DFA}}.$$
 
-## The Concept: A Fraction of Exact Exchange
+This describes a family, not every hybrid. PBE0 uses one-quarter HF exchange
+with PBE components; B3LYP has a different multi-term parameterization.
+The orbital-dependent term yields a nonlocal operator, naturally leading
+to generalized Kohn–Sham equations. It is not an energy correction applied
+after an unchanged semilocal density has been found.
+
+More exact exchange is not uniformly more accurate. Charge localization,
+reaction energies, strongly correlated bonds, and optical excitations can
+respond differently. A changed orbital gap is not automatically a corrected
+optical gap. Hold basis, grid, geometry, and numerical accuracy fixed when
+trying to identify the effect of the functional.
+
+## Differentiating the full model
+
+With atom-centered functions the basis moves with the nuclei, giving Pulay
+terms in derivatives. Stationarity is important, but does not authorize
+dropping all basis and grid contributions. For a coordinate $R_{A\alpha}$,
+compare the force with a central difference of freshly converged energies:
+
+$$F_{A\alpha}^{\mathrm{FD}}=-\frac{E(\mathbf R+h\mathbf e_{A\alpha})
+-E(\mathbf R-h\mathbf e_{A\alpha})}{2h}.$$
+
+Small $h$ reduces truncation error but amplifies electronic and round-off
+noise. A stable interval of displacements is more convincing than a match
+at one arbitrarily chosen step.
+
+## Exchange mixing
 
 Pure semi-local functionals (LDA, GGA) describe exchange approximately, from
 the local density and its gradient. That approximation carries a
@@ -77,12 +80,22 @@ The word "global" means the fraction is a single constant everywhere in
 space (as opposed to range-separated hybrids, where it varies with
 interelectronic distance — out of scope here).
 
-## The Representation: The Fock Builder Splits the Work
+## Practice plan
+
+Use a slightly distorted water molecule, where nonzero forces reveal more
+than symmetry-enforced zeros. Compare two hybrids at the same geometry and
+numerical settings. Then check oxygen and hydrogen force components with
+finite differences and test the net force for an isolated field-free model.
+
+The code's placeholder frame must be replaced by an explicit initialized
+geometry. Record settings instead of treating historical comments about
+defaults as guarantees. Attach the evaluator to optimization only after its
+energy and force conventions have been checked.
+
+## Matrix construction
 
 Atomiverse selects a functional with the `XCType` enum
-([`xc_functional.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/xc_functional.h)):
-
-```cpp
+([`xc_functional.h`cpp
 enum class XCType { LSDA, PBE, B3LYP, PBE0 };
 ```
 
@@ -105,7 +118,7 @@ Hartree-Fock exchange (K) matrix build every SCF iteration, so it is
 meaningfully more expensive than a pure GGA. That expense is the price of the
 self-interaction correction.
 
-## The C++ API: A Concrete Method, Then Gradients
+## Hybrid energies and forces
 
 Constructing `RKS` with a hybrid `XCType` presets a production-grade
 closed-shell configuration — restricted KS, the PySCF-matching
@@ -117,8 +130,7 @@ using namespace ATV;
 
 cpu::Frame frame = /* H2O, positions in Å, type = Z */;
 
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);  // or XCType::PBE0
-rks.basis = cpu::scf::BasisSet::Pople631Gs;
+cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, cpu::scf::XCType::B3LYP};  // or XCType::PBE0
 rks.max_iter = 300;
 
 rks.run(frame);                  // eV energy on frame.meta[kEnergy]
@@ -130,13 +142,11 @@ Either constructor argument sets only the functional, so everything else —
 grid, guess, convergence — is the same locked production default. The
 hybrids use a GGA grid, so a polarized basis such as
 6-31G* (`Pople631Gs`) or def2-SVP is the natural choice; see
-[Chapter 4](ch04-basis-sets.md).
+[Basis Sets](ch04-basis-sets.md).
 
 Forces come from `forces(frame)` on the same method object, which runs a
 fresh SCF and then the analytic gradient. The return type is
-[`gradient_result.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/gradient_result.h):
-
-```cpp
+[`gradient_result.h`cpp
 cpu::scf::GradientResult grad = rks.forces(frame);
 
 // grad.forces : xtensor [n_atoms, 3] in eV/Å   (FORCE = -dE/dR)
@@ -159,14 +169,46 @@ routine for a hybrid is:
 
 ```cpp
 auto run_hybrid = [](cpu::Frame& frame, cpu::scf::XCType xc) {
-    cpu::scf::RKS rks(xc);
-    rks.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, xc};
     rks.max_iter = 300;
     return rks.forces(frame);   // runs the SCF, then the analytic gradient
 };
 ```
 
-## The Expected Result: Converged Energy, PySCF-Grade Forces
+## Using the force provider
+
+Everything in this chapter produced a `GradientResult` by hand, which is the
+right way to *validate* a gradient. In a real workflow you rarely call
+`forces()` directly — you bind the **method itself** at the `force` phase.
+Nested there, `RKS` runs exactly this "rebuild integrals → run SCF → compute
+analytic gradient → write forces into the frame" sequence on every outer
+step, and it is functional-agnostic: construct it with `XCType::B3LYP` and it
+provides B3LYP forces to whichever driver it is plugged into.
+
+```cpp
+// B3LYP geometry optimization: hybrid forces into the Minimize driver
+cpu::minimizer::Minimize opt;
+opt.set_optimizer(cpu::minimizer::LBFGS{/* memory, alpha0, max_ls */});
+opt.add_criterion(cpu::ForceConverged{/* the five tolerances */});
+cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, cpu::scf::XCType::B3LYP};
+opt.on(minimizer::Phase::force).add(std::move(rks));
+opt.build();
+opt.run(frame, /*max_iter=*/100);
+```
+
+The same `RKS{basis, XCType::B3LYP}` drops into `cpu::md::MD` for
+hybrid-functional AIMD ([Comparing Models](ch15-cross-method.md)) and into `cpu::vib::Hessian`
+for hybrid vibrational frequencies ([Molecular Vibrations](ch14-vibrations.md)). One
+gradient routine, one method object, three drivers — the "swap the
+method, keep the driver" architecture that
+[Comparing Models](ch15-cross-method.md) makes explicit. The functional you chose
+in this chapter travels with the method wherever forces are needed.
+
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
+
+## Energy and force reference data
 
 For a closed-shell molecule at a sensible geometry, a hybrid SCF should
 converge in a modest number of DIIS iterations (the MINAO guess and
@@ -185,7 +227,7 @@ sub-milliångström RMS. This is the pay-off of the self-interaction
 correction — pure LDA over-binds and gives too-short bonds; the hybrid gets
 the structure right.
 
-## The Validation: Analytic vs PySCF *and* vs Finite Difference
+## Independent gradient checks
 
 Hybrid gradients are validated two independent ways, and the redundancy is
 deliberate:
@@ -193,14 +235,14 @@ deliberate:
 1. **Against PySCF (`grad.RKS`).** The Atomiverse analytic force is compared,
    component by component, against a genuine PySCF 2.x `nuc_grad_method`
    reference at the same functional / basis / grid, to **≤ 1e-5 Ha/Bohr** on
-   H₂O, CH₄, and NH₃. This certifies the gradient against a trusted external
-   engine.
+   H₂O, CH₄, and NH₃. These retained cases provide evidence of agreement
+   with an independent engine at the stated settings, not universal certification.
 2. **Against a moving-grid finite difference.** Because a shared bug could in
    principle affect *both* Atomiverse and PySCF's analytic derivations, the
    test *also* compares the analytic force against central differences of the
    hybrid energy, with the XC grid regenerated at each displaced geometry —
    again to **≤ 1e-5 Ha/Bohr**. This oracle trusts nothing but the energy
-   itself (the pattern from [Chapter 1](ch01-foundations.md)), and you can
+   itself (the pattern from [Systems and Units](ch01-foundations.md)), and you can
    write it from the public surface alone — each displaced energy is just a
    fresh `run(frame)`:
 
@@ -209,8 +251,7 @@ const double h_ang = 1e-3 / ATV::units::kAngstromInBohr;   // 1e-3 Bohr in Å
 auto e_at = [&](int A, int d, double h) {         // E at a displaced geometry
     cpu::Frame moved = frame;
     /* shift atom A's coordinate d by h [Å] */
-    cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-    rks.basis = cpu::scf::BasisSet::Pople631Gs;
+    cpu::scf::RKS rks{cpu::scf::BasisSet::Pople631Gs, cpu::scf::XCType::B3LYP};
     rks.run(moved);
     return rks.energy();                          // [Hartree]
 };
@@ -234,45 +275,19 @@ down. Each result carries its class: the analytic-vs-FD agreement is a
 optimized-geometry-vs-experiment gap is a **physical-approximation** claim
 (the functional, not the code).
 
-## The Recurring Pattern: The Gradient Is a Force Provider
-
-Everything in this chapter produced a `GradientResult` by hand, which is the
-right way to *validate* a gradient. In a real workflow you rarely call
-`forces()` directly — you bind the **method itself** at the `force` phase.
-Nested there, `RKS` runs exactly this "rebuild integrals → run SCF → compute
-analytic gradient → write forces into the frame" sequence on every outer
-step, and it is functional-agnostic: construct it with `XCType::B3LYP` and it
-provides B3LYP forces to whichever driver it is plugged into.
-
-```cpp
-// B3LYP geometry optimization: hybrid forces into the Minimize driver
-cpu::minimizer::Minimize opt;
-opt.set_optimizer(cpu::minimizer::LBFGS{/* memory, alpha0, max_ls */});
-opt.add_criterion(cpu::ForceConverged{/* the five tolerances */});
-cpu::scf::RKS rks(cpu::scf::XCType::B3LYP);
-rks.basis = cpu::scf::BasisSet::Pople631Gs;
-opt.on(minimizer::Phase::force).add(std::move(rks));
-opt.build();
-opt.run(frame, /*max_iter=*/100);
-```
-
-The same `RKS{XCType::B3LYP}` drops into `cpu::md::MD` for
-hybrid-functional AIMD ([Chapter 15](ch15-cross-method.md)) and into `cpu::vib::Hessian`
-for hybrid vibrational frequencies ([Chapter 14](ch14-vibrations.md)). One
-gradient routine, one method object, three drivers — the "swap the
-method, keep the driver" architecture that
-[Chapter 15](ch15-cross-method.md) makes explicit. The functional you chose
-in this chapter travels with the method wherever forces are needed.
-
-## Validation Reference
+## Reference provenance
 
 Hybrid single-point energies are pinned against PySCF in
-[`regressions/scf/b3lyp-fused-jk-h2o`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/b3lyp-fused-jk-h2o)
+`b3lyp-fused-jk-h2o`
 and, for the range-separated case,
-[`regressions/scf/cam-b3lyp-h2-sto3g`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/cam-b3lyp-h2-sto3g);
+`cam-b3lyp-h2-sto3g`;
 the double hybrid is
-[`regressions/scf/b2plyp-h2o`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/scf/b2plyp-h2o).
+`b2plyp-h2o`.
 The semi-local XC parts are checked against libxc to 1e-12 in
-[`tests/cpu/scf/test_xc_vs_libxc.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/scf/test_xc_vs_libxc.cpp)
+[`tests/cpu/scf/test_xc_vs_libxc.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/scf/test_xc_vs_libxc.cpp)
 (built only with `ATV_BUILD_XC_ORACLE=ON`; libxc is never a runtime
 dependency).
+
+## Questions for reflection
+
+Why is a distorted geometry useful for gradient validation? Why might improving a hybrid total energy leave an excitation energy inaccurate?

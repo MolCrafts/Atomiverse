@@ -1,11 +1,184 @@
-# Chapter 11. Ensembles
+# Statistical Ensembles
 
-Thermostats and barostats: `NoseHoover`, `FixLangevin`, Berendsen `Barostat`,
-`NoseHooverNPT`.
+Status tables: [MD roadmap](../roadmap/molecular-dynamics.md).
 
-NVE must be solid before NVT/NPT. From the live NVE run (Chapter 10):
+A thermally isolated sample and one immersed in a heat bath are different
+experiments. Ensembles describe these conditions as probability distributions
+over possible microscopic states. A thermostat is useful when it samples the
+intended distribution, not merely when a plotted temperature looks smooth.
 
-```molplot preset="molplot" theme="auto" width="100%" aspect="16:9"
+**Learning goals.** Distinguish NVE, NVT, and NPT; interpret fluctuations;
+separate equilibration from statistical measurement.
+
+**Before you begin.** Read [Molecular Dynamics](ch10-classical-md.md) and the
+discussion of probability in [Mathematical Tools](mathematical-tools.md).
+
+## Microstates and ensembles
+
+A microstate specifies positions and momenta. An observable, such as
+potential energy or pressure, assigns a value to that microstate. An
+ensemble specifies a probability distribution over possible microstates
+under stated macroscopic conditions. It describes how observations are
+weighted, not a single configuration that must look representative.
+
+For **NVE**, particle number $N$, volume $V$, and total energy $E$ are fixed.
+The microcanonical distribution is supported on the allowed constant-energy
+surface. A Hamiltonian trajectory remains on that surface in exact dynamics,
+but conservation alone does not show that it explores all relevant regions.
+Using time averages as ensemble averages requires adequate sampling of the
+accessible states, an assumption that should be tested rather than presumed.
+
+For **NVT**, the system exchanges energy with a much larger heat reservoir
+at temperature $T$, while $N$ and $V$ remain fixed. The temperature is a
+reservoir parameter; the system's instantaneous kinetic energy fluctuates.
+
+## The canonical distribution
+
+The probability of a system state is proportional to the number of reservoir
+states compatible with it. Write reservoir entropy as $S_{\mathrm{res}}=k_{\mathrm B}\ln\Omega_{\mathrm{res}}$. If the system has
+energy $H$ and the combined energy is $E_{\mathrm{tot}}$, a first-order
+expansion for a sufficiently large reservoir gives
+
+$$S_{\mathrm{res}}(E_{\mathrm{tot}}-H)
+\simeq S_{\mathrm{res}}(E_{\mathrm{tot}})-\frac{H}{T}.$$
+
+Here $\partial S_{\mathrm{res}}/\partial E=1/T$ defines temperature.
+Exponentiating the entropy relation yields the Boltzmann weight. With
+$H(\mathbf R,\mathbf p)=K+U$,
+
+$$p(\mathbf R,\mathbf p)=Z^{-1}e^{-\beta H},\qquad
+\beta=\frac{1}{k_{\mathrm B}T},\qquad
+Z=\int e^{-\beta H}\,d\mathbf R\,d\mathbf p.$$
+
+The partition function $Z$ normalizes the density. Constant factors in the
+classical phase-space measure cancel from normalized averages here; they
+must be treated consistently when comparing absolute free energies or
+systems with different particle numbers. At fixed $N,V,T$, an observable
+is averaged with this probability, not by setting its value to a target
+at every time step.
+
+## Kinetic temperature
+
+For an unconstrained Cartesian momentum component of mass $m$, the canonical
+density is Gaussian: $p(p_\alpha)\propto
+\exp[-p_\alpha^2/(2m k_{\mathrm B}T)]$. Its second moment is
+$\langle p_\alpha^2\rangle=m k_{\mathrm B}T$, so the corresponding mean
+kinetic energy is $k_{\mathrm B}T/2$. This is classical equipartition for
+independent quadratic momentum degrees of freedom.
+
+If $f$ such degrees of freedom remain, define the kinetic-temperature
+estimator $T_{\mathrm{inst}}=2K/(f k_{\mathrm B})$. In the corresponding
+canonical momentum distribution,
+
+$$\langle K\rangle=\frac{f}{2}k_{\mathrm B}T,\qquad
+\operatorname{Var}(K)=\frac{f}{2}(k_{\mathrm B}T)^2,\qquad
+\frac{\sqrt{\operatorname{Var}(T_{\mathrm{inst}})}}{T}
+=\sqrt{\frac{2}{f}}.$$
+
+For an unconstrained three-dimensional atomic sample with only its total
+center-of-mass momentum fixed, $f=3N-3$. Additional independent constraints
+change that count. Use the degrees of freedom and any streaming-velocity
+subtraction associated with the actual temperature estimator. These kinetic
+relations are classical; they are not quantum equipartition statements.
+
+Fluctuations are therefore expected, especially in a small system. Forcing
+the instantaneous estimator to equal the reservoir temperature removes part
+of the canonical kinetic-energy distribution rather than demonstrating
+better sampling.
+
+## Pressure and volume
+
+In **NPT**, the reservoir also imposes pressure $p_{\mathrm{ext}}$, and the
+volume can fluctuate. For isotropic volume changes, the joint weight in
+physical coordinates contains $e^{-\beta(H+p_{\mathrm{ext}}V)}$. If positions
+are instead represented by scaled coordinates $\mathbf R_A=L\mathbf s_A$
+in a cubic cell with $V=L^3$, their integration measure contributes $V^N$.
+
+That Jacobian is why a barostat is more than a rule for driving mean pressure
+toward a number. The equations, cell variables, measure, and constraints
+must together produce the intended distribution. Instantaneous pressure can
+be noisy; the reservoir fixes neither the instantaneous pressure nor the
+instantaneous volume. General cell-shape sampling requires additional care.
+
+## Choosing a control method
+
+Deterministic Nosé–Hoover dynamics uses auxiliary variables to exchange
+energy with the system. It can sample poorly for small, nearly harmonic
+systems, so a plausible mean is not a sufficient check. Langevin dynamics
+balances friction with stochastic forcing; their relation is needed for
+the intended equilibrium distribution. Stochastic velocity rescaling uses
+a random global rescaling chosen to preserve canonical kinetic statistics.
+
+Weak-coupling methods can be useful for preparing a state, but matching a
+mean temperature or pressure does not establish canonical or NPT
+fluctuations. If a different method is used for production, allow that
+production distribution to equilibrate before measuring it.
+
+The system's ordinary $K+U$ need not be constant under a thermostat. Some
+methods provide an extended conserved quantity or an energy-exchange
+diagnostic; its meaning is method-specific. None by itself proves that all
+slow configurations have been visited. Controls can also alter time
+correlations, which matters when the target is a transport coefficient.
+
+## From a trajectory to an estimate
+
+For stationary samples $A_j$, the joint statistics do not change when the
+sample indices are shifted together. Let $C_\ell$ be the covariance between
+samples separated by $\ell$ saved intervals. In terms of deviations
+$\delta A_j=A_j-\langle A\rangle$, this means
+$C_\ell=\langle\delta A_j\delta A_{j+\ell}\rangle$, and $C_0$ is the variance.
+Positive covariance means that deviations tend to persist with the same
+sign across that interval. Expanding the variance of the sample mean gives
+the finite-sample identity
+
+$$\operatorname{Var}(\overline A)
+=\frac{1}{M}\left[C_0+2\sum_{\ell=1}^{M-1}
+\left(1-\frac{\ell}{M}\right)C_\ell\right].$$
+
+Independence removes the nonzero-lag terms. Positive correlations usually
+increase uncertainty relative to that independent-sample estimate. The
+correlation time depends on the observable: temperature may settle long
+before density, molecular orientation, or a phase change is sampled.
+
+A practical check divides an equilibrated trajectory into $B$ equal blocks,
+each long compared with the relevant correlation time. If their means are
+approximately independent and have sample standard deviation $s_b$, estimate
+the standard error of the overall mean as $s_b/\sqrt B$. Increase block
+length to look for a stable estimate while retaining enough blocks to judge
+its variability. If neither condition can be met, more simulation is needed.
+A smooth running mean alone does not establish a small uncertainty.
+
+## Practice plan
+
+Use one argon parameterization and density for the initial NVE and NVT
+comparison. Changing the model or density at the same time would obscure
+what the thermostat changes.
+
+1. Establish the time-step and force checks of
+   [Molecular Dynamics](ch10-classical-md.md) without heat or pressure control.
+2. Prepare an NVT state. Record target temperature, coupling parameters,
+   degrees of freedom, initialization, and any random seeds. Inspect the
+   kinetic-energy mean and distribution, not only the last temperature.
+3. Choose and justify an equilibration interval. Estimate uncertainty from
+   the remaining trajectory using sufficiently long blocks, and repeat from
+   independent initial conditions when feasible.
+4. For NPT, additionally record the pressure convention, cell degrees of
+   freedom, mean volume, and volume fluctuations. Check the supported stress
+   evaluation and input pressure units before starting.
+5. Compare means within statistical uncertainties and separately study
+   time-step and coupling-parameter effects. For transport, check whether the
+   control scheme perturbs the time correlation being measured.
+
+The reference fragments below illustrate several controls, not instructions
+to combine them into one run. Choose the ensemble from the physical question
+before choosing the corresponding software components.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
+
+```molplot preset="molplot" theme="auto" width="100%" aspect="16:10"
 mark: {type: line, point: true}
 data:
   values:
@@ -20,66 +193,7 @@ encoding:
   y: {field: E, type: quantitative, title: "E_total (eV)", scale: {zero: false}}
 ```
 
-Relative drift \(\sim 3\times 10^{-7}\) over 1000 steps. Thermostats **exchange**
-energy with a bath (total energy is no longer conserved); acceptance is then
-mean temperature and pressure vs set points — exercised in unit tests and
-benchmarks, not in the 1000-step tutorial binary.
-
-[Chapter 10](ch10-classical-md.md) built a complete classical MD run and, at
-the end, added a thermostat and a barostat almost in passing. This chapter
-takes ensembles seriously. An MD trajectory does not just "run" — it samples
-a *statistical ensemble*, and which ensemble you sample (microcanonical NVE,
-canonical NVT, isothermal-isobaric NPT) is decided entirely by which
-temperature- and pressure-control components you attach to the driver. The
-loop, the frame, and the force evaluator are identical across all three.
-
-The six questions:
-
-1. **The concept.** What NVE / NVT / NPT are and why you would want each.
-2. **The Atomiverse representation.** Thermostats and barostats as
-   role-tagged components, not driver modes.
-3. **The C++ API.** `set_integrator`, `set_thermostat`, `set_barostat`,
-   `set_nvt`, and the five control components.
-4. **The expected result.** ⟨T⟩ and ⟨P⟩ that converge to their setpoints
-   with the correct fluctuations.
-5. **The validation.** Ensemble means against LAMMPS; conserved-quantity
-   drift for the deterministic thermostats.
-6. **The recurring pattern.** The same ensemble machinery drives *ab
-   initio* MD by swapping only the force provider.
-
-This chapter assumes the FCC-argon setup and the `cpu::md::MD` categorical
-setters from [Chapter 10](ch10-classical-md.md); code below reuses its
-`make_fcc_argon(n_cells, a)` helper.
-
-## The Concept: A Trajectory Samples an Ensemble
-
-Statistical mechanics computes observables as averages over an *ensemble* —
-a distribution of microstates consistent with a set of fixed macroscopic
-constraints. MD generates that ensemble as a time series, and the constraints
-you impose choose which ensemble:
-
-- **NVE (microcanonical).** Fixed particle number, volume, and total energy.
-  No thermostat, no barostat — just Newton's equations. Energy is conserved
-  (up to integrator error), temperature fluctuates freely. This is the
-  ensemble to certify your *integrator*: a flat total-energy trace is the
-  canary for time-step and force-consistency bugs.
-- **NVT (canonical).** Fixed N, V, and *temperature*. A thermostat exchanges
-  energy with a fictitious heat bath so the system samples the Boltzmann
-  distribution at temperature $T$. This is the everyday equilibrium ensemble
-  — you want a target temperature, not a target energy.
-- **NPT (isothermal-isobaric).** Fixed N, *pressure*, and temperature. A
-  barostat rescales the box to hold pressure at $P$ while a thermostat holds
-  temperature. This is what you use to find equilibrium densities, model
-  phase behavior, or match experimental conditions.
-
-The subtlety that trips up newcomers: a thermostat is *not* just "rescale
-velocities to the target every step." A correct thermostat reproduces the
-right *fluctuations*, not merely the right mean — a system pinned exactly at
-⟨T⟩ every step is not sampling the canonical ensemble at all. That is why
-Atomiverse ships several thermostats with different fluctuation properties,
-not one.
-
-## The Representation: Ensemble Control Is a Set of Components
+## Control components
 
 There is no `NVTDriver` or `NPTDriver`. The ensemble is assembled from
 components attached to the one `cpu::md::MD` driver, each tagged by its
@@ -108,7 +222,7 @@ existing NVE trajectory, so you pair them with `VelocityVerlet`.
 barostat into one Trotter splitting, so it *replaces* `VelocityVerlet` and is
 registered as the integrator.
 
-## The C++ API: Building Each Ensemble
+## Ensemble configurations
 
 The categorical setters on `cpu::md::MD` are the primary API:
 `set_integrator` (singular — one integrator), `set_thermostat` and
@@ -120,7 +234,7 @@ phase is always either implied by a setter or written out.
 
 ### NVE — the baseline
 
-No thermostat, no barostat. This is [Chapter 10](ch10-classical-md.md)'s run,
+No thermostat, no barostat. This is [Molecular Dynamics](ch10-classical-md.md)'s run,
 restated as the reference point:
 
 ```cpp
@@ -151,15 +265,17 @@ sim.set_integrator(cpu::md::VelocityVerlet{4.0});
 sim.set_thermostat(cpu::md::NoseHoover{/*T=*/100.0, /*tau_T=*/200.0, /*dt=*/4.0});
 ```
 
-Nosé-Hoover couples the velocities to a single deterministic thermostat
-variable $\xi$ that itself relaxes toward the target; it carries a
-**conserved quantity** (the extended Hamiltonian), which the driver writes to
-`frame.meta.get(kConserved)` and `Thermo` logs. A flat `conserved` trace is the
-correctness check that the thermostat is sampling correctly. Use Nosé-Hoover
-when you want a smooth, reproducible time series — a clean vibrational power
-spectrum, or a trajectory you can rerun bit-for-bit. (It is a single-chain
-thermostat; for the full LAMMPS M-chain with `drag`, use `NoseHooverNPT`,
-which carries `mtchain`/`drag` fields even at zero pressure coupling.)
+Nosé–Hoover couples motion to a deterministic auxiliary variable whose
+evolution responds to a kinetic-energy deviation from the target. The
+inherited interface describes an extended-energy diagnostic through
+`frame.meta.get(kConserved)`. Check its definition and time-step dependence
+for the selected implementation. A small drift is not proof of canonical
+sampling or adequate exploration of configuration space.
+
+Deterministic control avoids explicit random forcing, but it does not
+guarantee an unperturbed vibrational spectrum or bitwise agreement across
+hardware and parallel decompositions. Check the observable and the sampling
+behavior before choosing a coupling scheme for production.
 
 A linear temperature ramp — anneal from `T_start` to `T_stop` over a run — is
 opt-in through chained setters, mirroring LAMMPS `fix nvt temp Tstart Tstop`:
@@ -185,9 +301,11 @@ sim.set_thermostat(cpu::md::FixCSVR{/*T=*/100.0, /*tau=*/100.0,
                                     /*dt=*/4.0, /*seed=*/12345u});
 ```
 
-CSVR is a good default when you want canonical fluctuations, gentle coupling,
-and reproducibility across MPI rank counts (its randoms are seeded only from
-`(seed, step)`, so the trajectory is identical regardless of decomposition).
+CSVR provides a canonical velocity-rescaling scheme. Even if the rescaling
+random numbers depend only on `(seed, step)`, trajectories need not be
+bitwise identical across MPI decompositions: force reductions and other
+floating-point operations can change their rounding order. Test ensemble
+statistics separately from random-stream and bitwise reproducibility.
 
 ### NVT with Langevin — canonical, stochastic, force-based
 
@@ -234,7 +352,7 @@ dilation factor each `end_of_step`. Berendsen relaxes pressure smoothly but
 does *not* produce a rigorous NPT distribution — for production NPT
 statistics, prefer the MTK integrator below.
 
-### Rigorous NPT — `NoseHooverNPT`
+### Extended-system NPT
 
 `NoseHooverNPT` is a Martyna-Tobias-Klein integrator that fuses velocity
 integration, an M-chain Nosé-Hoover thermostat, and an NHC barostat into one
@@ -280,48 +398,7 @@ It expands into `VelocityVerlet{dt}` plus the chosen thermostat
 bindings — exactly the two explicit calls, so it composes with `set_evaluator` /
 `set_neighbor` and even with a DFT evaluator on the force phase the same way.
 
-## The Expected Result: Means at the Setpoint, Correct Fluctuations
-
-A correctly thermostatted run has two signatures, and both matter:
-
-- **The mean converges to the setpoint.** After equilibration, the running
-  average ⟨T⟩ from `Thermo` should sit at the target temperature (within a
-  couple of percent for a stochastic thermostat over a finite run), and for
-  NPT the average box volume should settle so that ⟨P⟩ matches the target.
-- **The fluctuations are physical.** Instantaneous $T$ swings around ⟨T⟩ with
-  a spread that *shrinks* as $1/\sqrt{N}$ — for 256 argon atoms the swings
-  are modest; for a 3-atom molecule they are enormous and *correct* (a small
-  system genuinely has large relative energy fluctuations; see
-  [Chapter 15](ch15-cross-method.md)). A thermostat that pins $T$ dead-flat is a red
-  flag, not a success.
-
-For the deterministic thermostats there is a third, sharper check: the
-`frame.meta.get(kConserved)` trace (Nosé-Hoover extended Hamiltonian, or the MTK
-Hamiltonian for `NoseHooverNPT`) should be *flat* over the run. Drift in the
-conserved quantity means the time step is too large or the coupling time too
-short.
-
-Reading the class of each claim: ⟨T⟩ and ⟨P⟩ matching their setpoints is a
-**stochastic-variation** result — you validate it with a fixed seed and an
-ensemble mean, with a tolerance (e.g. Langevin ⟨T⟩ vs LAMMPS ≤ 2%), never as
-a single-step exact value. The conserved-quantity flatness is closer to a
-**numerical-tolerance** check on the integrator.
-
-## The Validation: Ensemble Means Against LAMMPS
-
-Because every Atomiverse thermostat and barostat is a deliberate port of its
-LAMMPS `fix`, the validation is ensemble-level agreement with LAMMPS under
-matched parameters: the same target, coupling time, time step, and (for the
-stochastic thermostats) a controlled seed, comparing the *equilibrium mean*
-temperature and pressure — not individual trajectories, which necessarily
-differ because the RNG streams differ. The tolerance is a small percentage on
-the means (stochastic-variation class), and for the deterministic thermostats
-the conserved-quantity drift bound is tighter. The component-level ports are
-each audited against the verbatim LAMMPS source and regression-tested in the
-CPU MD suite; the ensemble-mean-vs-LAMMPS benchmark is the manual's
-designated ensemble validation case.
-
-## The Recurring Pattern: Ensembles Are Force-Provider-Agnostic
+## Controls and force models
 
 Every ensemble in this chapter was built on classical `PairLJCut` forces, but
 nothing in the thermostat or barostat touches the force *source*. Replace the
@@ -334,7 +411,7 @@ cpu::md::MD aimd;
 aimd.set_integrator(cpu::md::VelocityVerlet{0.5});
 aimd.set_thermostat(cpu::md::NoseHoover{300.0, 100.0, 0.5});   // NVT, unchanged
 aimd.on(md::Phase::force)
-    .add(cpu::scf::RHF{}.predictor(3));            // quantum forces
+    .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G}.predictor(3));            // quantum forces
 aimd.build();
 aimd.run(frame, n_steps);
 ```
@@ -342,24 +419,81 @@ aimd.run(frame, n_steps);
 The thermostat does not know, and does not care, whether the forces it is
 regulating came from a Lennard-Jones cutoff or a converged Kohn-Sham
 calculation. This is the same "swap the evaluator, keep the loop" invariant
-that unifies the whole engine — [Chapter 15](ch15-cross-method.md) runs it end-to-end,
-and [Chapter 15](ch15-cross-method.md) makes the pattern explicit as a design
+that unifies the whole engine — [Comparing Models](ch15-cross-method.md) runs it end-to-end,
+and [Comparing Models](ch15-cross-method.md) makes the pattern explicit as a design
 principle. Learn the ensembles once, on cheap classical forces; apply them
 unchanged to any level of theory.
 
-## Validation Reference
+The following numerical material is retained from the source snapshot.
+It was not rerun for this editorial revision; match its input and provenance
+before using it as a validation target.
+
+## Interpreting the diagnostics
+
+After equilibration, compare the mean kinetic temperature with the reservoir
+temperature using its estimated standard error. For NPT, inspect pressure
+and volume together. A fixed percentage is not a universal statistical
+tolerance: the expected uncertainty depends on correlation, run length,
+system size, and the estimator.
+
+Check fluctuations as well as means. The classical kinetic prediction
+$\sqrt{\operatorname{Var}(T_{\mathrm{inst}})}/T=\sqrt{2/f}$ applies to the
+canonical momentum distribution with the specified degrees of freedom.
+It does not state that every observable's fluctuations scale the same way,
+particularly near a phase transition.
+
+When a component reports an extended conserved quantity, examine its
+time-step dependence rather than demanding an exactly flat discrete trace.
+Drift can indicate inadequate resolution, force or stress inconsistency,
+or an implementation problem; it does not identify a unique cause. The
+availability and definition of `kConserved` must be checked for the selected
+method and source revision.
+
+Separate three questions in the report: are the mean and fluctuations
+consistent with the intended distribution, is numerical error controlled,
+and has the trajectory explored the configurations relevant to the observable?
+
+## Ensemble validation
+
+An external comparison should match the potential, cutoff treatment, state,
+constraints, estimator definitions, and numerical settings. Agreement of
+individual stochastic trajectories is neither expected nor required. Compare
+equilibrated distributions and means with quantified uncertainty, and use
+independent initial conditions where practical.
+
+The inherited material names LAMMPS comparisons and component tests as
+reference routes. Their presence is not a new execution of those tests, nor
+does a shared algorithm name guarantee identical scheduling or conventions.
+Treat any quoted percentage threshold as belonging to its documented case,
+not as a general definition of correct ensemble sampling.
+
+## Reference provenance
 
 The thermostats and barostats are exercised end-to-end by the ensemble
-regressions — [`regressions/md/lj_argon`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/lj_argon) (NVE
-drift), [`regressions/md/npt_lj_mtk`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/npt_lj_mtk) (diagonal
-MTK NPT), [`regressions/md/pr_npt_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/pr_npt_lj)
+regressions — `lj_argon` (NVE
+drift), `npt_lj_mtk` (diagonal
+MTK NPT), `pr_npt_lj`
 (full-cell Parrinello-Rahman) and
-[`regressions/md/nph_lj`](https://github.com/MolCrafts/Atomiverse/blob/dev/regressions/md/nph_lj) (thermostat-free NPH) and the categorical
+`nph_lj` (thermostat-free NPH) and the categorical
 setter wiring — including the automatic `Virial` injection triggered by a
 barostat's `reads() == Stress` — in
-[`tests/cpu/dynamics/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/cpu/dynamics/test_md_set_api.cpp).
+[`tests/cpu/dynamics/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/dynamics/test_md_set_api.cpp).
 Multi-rank NPT correctness (box consistency across ranks) is covered by
-[`tests/mpi/test_nose_hoover_npt_multirank.cpp`](https://github.com/MolCrafts/Atomiverse/blob/dev/tests/mpi/test_nose_hoover_npt_multirank.cpp).
-The ensemble-means-vs-LAMMPS benchmark is the designated external validation
-case, alongside the LJ and polyethylene cases under
-[`benchmarks/md`](https://github.com/MolCrafts/Atomiverse/blob/dev/benchmarks/md).
+[`tests/mpi/test_nose_hoover_npt_multirank.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/mpi/test_nose_hoover_npt_multirank.cpp).
+The ensemble-means-vs-LAMMPS comparison is the designated external validation
+case; the LJ comparison lives in
+[`benchmarks/compare/lj-lammps`](https://github.com/MolCrafts/Atomiverse/blob/master/benchmarks/compare/lj-lammps).
+
+## Further reading
+
+- G. Bussi, D. Donadio, and M. Parrinello, *Canonical sampling through velocity
+  rescaling*, J. Chem. Phys. 126, 014101 (2007), DOI: 10.1063/1.2408420.
+  The [authors' manuscript](https://arxiv.org/abs/0803.4060) explains the
+  stochastic rescaling method and its diagnostic quantity.
+- The official [LAMMPS thermostat guide](https://docs.lammps.org/Howto_thermostat.html)
+  describes temperature estimators and control choices. Use its conventions
+  as a comparison reference, not as an Atomiverse API specification.
+
+## Questions for reflection
+
+Why does a mean of 300 K not prove canonical sampling? Why can adding more saved frames leave the uncertainty of the mean almost unchanged?

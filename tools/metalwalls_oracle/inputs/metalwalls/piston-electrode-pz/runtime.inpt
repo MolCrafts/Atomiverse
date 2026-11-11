@@ -1,4 +1,4 @@
-# MetalWalls twin of ATV regressions/md/piston-electrode-pz
+# MetalWalls twin of ATV regressions/md/constant-potential
 # ---------------------------------------------------------
 # Static (step-0) readout of the LJ z-force and P_z = F_z/A on the
 # rigid upper piston electrode.  All charges are zero, so every Coulomb

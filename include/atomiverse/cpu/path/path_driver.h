@@ -74,6 +74,7 @@ namespace cpu {
 
 class PathDriver : public Driver<ATV::path::Phase> {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @brief The coupled-replica preset. Attaches its default termination criterion.
     ///
     /// `AllReplicasConverged` reads `ConvergenceMetrics::replicas_converged` (the

@@ -4,13 +4,13 @@
 ///
 /// Launched under `mpirun -n N`. Runs at N=1, 2, 4 per CTest config.
 ///
-/// Session shape: every TEST is one complete "handshake → task(s) →
-/// SHUTDOWN" session, coordinated by rank branches INSIDE the test body —
+/// Session shape: every TEST is one complete "task(s) → SHUTDOWN"
+/// session, coordinated by rank branches INSIDE the test body —
 /// rank 0 constructs a TaskDispatcher and dispatches, ranks > 0 construct a
 /// WorkerLoop and block in run() until rank 0 broadcasts SHUTDOWN. Every
 /// collective is entered by every rank in the same order (lockstep), so no
-/// scenario can deadlock a passing binary; the version-mismatch and
-/// bad-TaskSpec scenarios pin exactly the lockstep-preserving error paths.
+/// scenario can deadlock a passing binary; the bad-TaskSpec scenario pins
+/// exactly the lockstep-preserving error path.
 ///
 /// Reference tiering for the physics equivalence (a, c, e): the protocol
 /// result must equal the SAME TaskSpec run directly (no protocol) through
@@ -33,8 +33,6 @@
 ///   - (a) dispatched ~10-atom LJ MD task ≡ direct run          [ac-002/003]
 ///   - (b) clean SHUTDOWN releases every worker, exit 0          [ac-004]
 ///   - (c) two sequential tasks in one session, worker loop-back [ac-005]
-///   - (d) asymmetric version mismatch → every rank throws
-///         std::runtime_error naming both versions, no deadlock  [ac-006]
 ///   - (e) materialize-failing TaskSpec → dispatch() throws on
 ///         rank 0, workers survive, next valid task succeeds     [ac-007]
 ///   - (f) Minimize uses the same result/gather protocol shape
@@ -54,10 +52,12 @@
 
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 #include "atomiverse/core/mat3.h"
@@ -65,6 +65,9 @@
 #include "atomiverse/cpu/task/task_materializer.h"
 #include "atomiverse/cpu/task/task_protocol.h"
 #include "atomiverse/cpu/task/task_spec.h"
+#ifdef ATV_HAS_IO
+#include "atomiverse/molpy.hpp"
+#endif
 
 using namespace ATV;
 using namespace ATV::cpu::task;
@@ -117,8 +120,8 @@ StorageReal fixture_charge(int i) {
 /// @brief Expected image flag of fixture atom `i` on axis `d` — nonzero and
 ///        untouched by this run (all atoms stay > cutoff inside the 30 Å
 ///        box for 5 steps at 10 K, so nothing wraps).
-std::int8_t fixture_image(int i, int d) {
-    return static_cast<std::int8_t>((d + 1) * (i - 4));
+ATV::ImageInt fixture_image(int i, int d) {
+    return static_cast<ATV::ImageInt>((d + 1) * (i - 4));
 }
 
 /// @brief Deterministic 10-atom LJ cluster (two rows of five along x) in a
@@ -245,23 +248,33 @@ void expect_result_frame_contract(const cpu::Frame& result,
 /// @brief N == 1 deep comparison: the whole direct frame is on this rank,
 ///        so positions/velocities compare per atom within 1e-10 absolute
 ///        (same physics, different code path — NOT bitwise by contract).
+///        The direct run leaves its rows in the engine's spatially sorted
+///        order while the protocol result is tag-ordered, so rows are joined
+///        by tag — the atom's identity — not by index.
 void expect_trajectory_close_serial(const cpu::Frame& result,
                                     const cpu::Frame& direct) {
     ASSERT_EQ(result.nlocal(), direct.nlocal());
-    for (int i = 0; i < direct.nlocal(); ++i) {
-        SCOPED_TRACE("atom " + std::to_string(i));
-        EXPECT_NEAR(result.span(ATV::kAtom_x)[i], direct.span(ATV::kAtom_x)[i],
+    std::unordered_map<ATV::TagInt, int> direct_row;
+    for (int j = 0; j < direct.nlocal(); ++j)
+        direct_row[direct.span(ATV::kAtom_tag)[j]] = j;
+    for (int i = 0; i < result.nlocal(); ++i) {
+        const ATV::TagInt tag = result.span(ATV::kAtom_tag)[i];
+        SCOPED_TRACE("tag " + std::to_string(tag));
+        const auto it = direct_row.find(tag);
+        ASSERT_NE(it, direct_row.end()) << "tag missing from the direct run";
+        const int j = it->second;
+        EXPECT_NEAR(result.span(ATV::kAtom_x)[i], direct.span(ATV::kAtom_x)[j],
                     1e-10);
-        EXPECT_NEAR(result.span(ATV::kAtom_y)[i], direct.span(ATV::kAtom_y)[i],
+        EXPECT_NEAR(result.span(ATV::kAtom_y)[i], direct.span(ATV::kAtom_y)[j],
                     1e-10);
-        EXPECT_NEAR(result.span(ATV::kAtom_z)[i], direct.span(ATV::kAtom_z)[i],
+        EXPECT_NEAR(result.span(ATV::kAtom_z)[i], direct.span(ATV::kAtom_z)[j],
                     1e-10);
         EXPECT_NEAR(result.span(ATV::kAtom_vx)[i],
-                    direct.span(ATV::kAtom_vx)[i], 1e-10);
+                    direct.span(ATV::kAtom_vx)[j], 1e-10);
         EXPECT_NEAR(result.span(ATV::kAtom_vy)[i],
-                    direct.span(ATV::kAtom_vy)[i], 1e-10);
+                    direct.span(ATV::kAtom_vy)[j], 1e-10);
         EXPECT_NEAR(result.span(ATV::kAtom_vz)[i],
-                    direct.span(ATV::kAtom_vz)[i], 1e-10);
+                    direct.span(ATV::kAtom_vz)[j], 1e-10);
     }
 }
 
@@ -276,14 +289,11 @@ void expect_trajectory_close_serial(const cpu::Frame& result,
 TEST(MpiTaskProtocol, WireConstantsAreStable) {
     EXPECT_EQ(static_cast<std::int32_t>(Command::RUN_TASK), 1);
     EXPECT_EQ(static_cast<std::int32_t>(Command::SHUTDOWN), 2);
-    EXPECT_EQ(kProtocolVersion, 2);
 
     static_assert(std::is_same_v<std::underlying_type_t<Command>, std::int32_t>,
                   "Command must be int32 on the wire");
     static_assert(std::is_trivially_copyable_v<CommandHeader>,
                   "CommandHeader is broadcast as MPI_BYTE");
-    static_assert(
-        std::is_same_v<decltype(CommandHeader::version), std::int32_t>);
     static_assert(
         std::is_same_v<decltype(CommandHeader::command), std::int32_t>);
     static_assert(
@@ -294,8 +304,7 @@ TEST(MpiTaskProtocol, WireConstantsAreStable) {
 //
 // Every rank checks its own wrong-side construction: rank 0 may not be a
 // WorkerLoop, ranks > 0 may not be a TaskDispatcher, nobody may pass
-// MPI_COMM_NULL to WorkerLoop. The rank/null checks are local (they must
-// precede the handshake, or a throwing ctor would desync the collective),
+// MPI_COMM_NULL to WorkerLoop. The constructors make no collective call,
 // so no rank enters a collective here and lockstep is trivially preserved.
 
 TEST(MpiTaskProtocol, WrongSideConstructionThrowsWithoutCollectives) {
@@ -344,8 +353,8 @@ TEST(MpiTaskProtocol, DispatchedLjMdTaskMatchesDirectRun) {
 
 // ── (b) Clean SHUTDOWN: ac-004 ──────────────────────────────────────────────
 //
-// A zero-task session: constructing the pair completes the handshake, then
-// SHUTDOWN must release every worker's run() and let every rank fall
+// A zero-task session: SHUTDOWN right after constructing the pair must
+// release every worker's run() and let every rank fall
 // through to MPI_Finalize in main (exit 0 is the binary completing; no
 // destructor may issue an MPI call, or finalize would blow up).
 
@@ -358,6 +367,77 @@ TEST(MpiTaskProtocol, ShutdownReleasesEveryWorkerCleanly) {
         EXPECT_NO_THROW(worker.run());
     }
 }
+
+// ── (g) The `*.mrec` recorder rides the task wire ──────────────────────────
+//
+// An MD task carrying `MrecRecorderParams` records on every rank count: each
+// rank gathers its owned rows to rank 0 in tag order (the LAMMPS `dump`
+// gather, `md::mpi::gather_for_root_io`) and only rank 0 writes. Rank 0's
+// store must hold the initial state plus one frame per step (LAMMPS dump
+// convention: steps 0…kNSteps) with the WHOLE system, tag-ordered, and its
+// last frame must be the state the dispatcher gathered back.
+#ifdef ATV_HAS_IO
+TEST(MpiTaskProtocol, DispatchedMdTaskRecordsTheWholeSystemOnRankZero) {
+    const std::string path =
+        (std::filesystem::temp_directory_path()
+         / ("atv_mpi_task_mrec_n" + std::to_string(world_size()) + ".mrec"))
+            .string();
+    if (world_rank() == 0) {
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    std::vector<MDComponentEntry> entries = make_lj_spec().md().entries;
+    entries.push_back(MDComponentEntry{
+        MrecRecorderParams{path, /*every=*/1, 0, /*durable=*/false},
+        std::nullopt});
+    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+
+    if (world_rank() == 0) {
+        TaskDispatcher dispatcher(MPI_COMM_WORLD);
+        DispatchResult dispatched = dispatcher.dispatch(spec, make_lj_frame());
+        dispatcher.shutdown();
+        const cpu::Frame& result = dispatched.frame;
+        ASSERT_EQ(result.nlocal(), kNAtoms);
+
+        for (std::uint64_t f = 0; f <= static_cast<std::uint64_t>(kNSteps);
+             ++f) {
+            SCOPED_TRACE("frame " + std::to_string(f));
+            auto fr = molrs::read_mrec_trajectory_frame(
+                {path.data(), path.size()}, f);
+            auto tag = molrs::frame_column_i32(*fr, "atoms", "tag");
+            ASSERT_EQ(tag.size(), static_cast<std::size_t>(kNAtoms))
+                << "rank 0 must write every rank's atoms";
+            for (int i = 0; i < kNAtoms; ++i)
+                EXPECT_EQ(tag[static_cast<std::size_t>(i)], i);
+            auto mass = molrs::frame_column_f64(*fr, "atoms", "mass");
+            for (double m : mass)
+                EXPECT_DOUBLE_EQ(m, 39.948);
+        }
+        EXPECT_THROW(molrs::read_mrec_trajectory_frame(
+                         {path.data(), path.size()},
+                         static_cast<std::uint64_t>(kNSteps + 1)),
+                     std::exception);
+        // The last recorded step is the end of the run: the gathered state.
+        auto last = molrs::read_mrec_trajectory_frame(
+            {path.data(), path.size()}, static_cast<std::uint64_t>(kNSteps));
+        auto x = molrs::frame_column_f64(*last, "atoms", "x");
+        auto vx = molrs::frame_column_f64(*last, "atoms", "vx");
+        for (int i = 0; i < kNAtoms; ++i) {
+            EXPECT_NEAR(x[static_cast<std::size_t>(i)],
+                        result.span(ATV::kAtom_x)[i], 1e-12);
+            EXPECT_NEAR(vx[static_cast<std::size_t>(i)],
+                        result.span(ATV::kAtom_vx)[i], 1e-12);
+        }
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    } else {
+        WorkerLoop worker(MPI_COMM_WORLD);
+        EXPECT_NO_THROW(worker.run());
+    }
+}
+#endif
 
 // ── (f) A second staged task reuses the protocol without MD erasure ────
 
@@ -435,44 +515,6 @@ TEST(MpiTaskProtocol, TwoSequentialTasksInOneSessionBothMatch) {
     }
 }
 
-// ── (d) Asymmetric version mismatch aborts lockstep: ac-006 ─────────────────
-//
-// Rank 1 constructs at kProtocolVersion + 1 (the test seam); every other
-// rank at the default. The handshake's allreduce must surface the mismatch
-// on EVERY rank — including ranks whose local version matches rank 0's —
-// and every rank's ctor must throw std::runtime_error naming BOTH version
-// numbers. The allreduce is the handshake's last collective, so throwing
-// afterwards keeps lockstep: the test completing at all is the no-deadlock
-// assertion.
-
-TEST(MpiTaskProtocol, VersionMismatchThrowsOnEveryRankNamingBothVersions) {
-    if (world_size() == 1)
-        GTEST_SKIP() << "single-rank handshake is trivially self-consistent";
-
-    const std::int32_t good = kProtocolVersion;
-    const std::int32_t bad = kProtocolVersion + 1;
-
-    bool threw = false;
-    std::string message;
-    try {
-        if (world_rank() == 0) {
-            TaskDispatcher dispatcher(MPI_COMM_WORLD, good);
-        } else {
-            WorkerLoop worker(MPI_COMM_WORLD, world_rank() == 1 ? bad : good);
-        }
-    } catch (const std::runtime_error& e) {
-        threw = true;
-        message = e.what();
-    }
-
-    EXPECT_TRUE(threw) << "rank " << world_rank()
-                       << " must throw on the version mismatch";
-    EXPECT_NE(message.find(std::to_string(good)), std::string::npos)
-        << "message must name version " << good << ": \"" << message << "\"";
-    EXPECT_NE(message.find(std::to_string(bad)), std::string::npos)
-        << "message must name version " << bad << ": \"" << message << "\"";
-}
-
 // ── (e) Bad TaskSpec propagates, session survives: ac-007 ───────────────────
 //
 // The bad spec is VALID at TaskSpec construction (integrator only, n_steps
@@ -523,12 +565,3 @@ TEST(MpiTaskProtocol, MaterializeFailurePropagatesAndSessionSurvives) {
 //
 // See test_topology.cpp for the OpenMPI 5.0.x teardown rationale (CTest
 // reads the gtest summary via PASS_REGULAR_EXPRESSION, not the exit code).
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

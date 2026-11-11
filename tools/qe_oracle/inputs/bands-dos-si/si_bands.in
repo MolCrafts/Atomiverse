@@ -1,4 +1,4 @@
-! Fair-wall twin of regressions/pw/bands-dos-si, step 2 of 4: NSCF bands.
+! Fair-wall twin of regressions/pw/bands-dos, step 2 of 4: NSCF bands.
 ! Exactly ATV's Bands::set_diamond_path(4) list: 16 crystal k-points on
 ! G-X-W-L-G-K (4 samples per leg, shared joins deduplicated), 8 bands.
 &control

@@ -23,12 +23,13 @@
 #include <string>
 
 #include "atomiverse/core/mat3.h"
+#include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/communication/domain_runtime.h"
 #include "atomiverse/cpu/communication/halo.h"
 #include "atomiverse/cpu/component/component.h"
-#include "atomiverse/cpu/dynamics/md.h"
-#include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/frame/pbc.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -105,17 +106,6 @@ double brute_force_energy(const cpu::Frame& frame, double cutoff) {
     return total;
 }
 
-/// Build the standard LJ MD pipeline and run one frozen step.
-void run_one_frozen_step(cpu::Frame& frame, double cutoff) {
-    cpu::md::MD sim;
-    sim.set_integrator(
-        cpu::md::VelocityVerlet{0.0}); // dt = 0: positions frozen
-    sim.on(ATV::md::Phase::force).add(cpu::md::NeighborList<>{cutoff}, -10);
-    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, cutoff});
-    sim.build();
-    sim.run(frame, 1);
-}
-
 // ── narrow-subdomain (multi-hop) support ───────────────────────────────
 //
 // Spec `.claude/specs/comm-topology-02-multihop.md`: with the ghost shell
@@ -125,9 +115,9 @@ void run_one_frozen_step(cpu::Frame& frame, double cutoff) {
 /// @brief Scoped `ATV_FORCE_DIMS` override — the single parse point is
 /// `DomainDecomposition::choose_dims` (`src/cpu/communication/domain.cpp:74`),
 /// read when the runtime builds its topology, so the variable must be set
-/// before the `MD` is built and cleared afterwards (an early `ASSERT_*`
+/// before the domain is allocated and cleared afterwards (an early `ASSERT_*`
 /// return must not leak it into the next TEST). In-tree precedent:
-/// `regressions/md/const-pot-charge-halo-mpi/reg_const-pot-charge-halo-mpi.cpp:200`.
+/// `regressions/md/constant-potential/const-pot-charge-halo-mpi.cpp:200`.
 class ForcedDims {
   public:
     explicit ForcedDims(const char* grid) {
@@ -150,8 +140,8 @@ class GhostCountProbe : public cpu::Component {
         const auto* dd = ctx.runtime.md.dd;
         if (dd == nullptr)
             return;
-        n_local = dd->n_local;
-        n_ghost = dd->n_ghost;
+        n_local = ctx.frame.nlocal();
+        n_ghost = ctx.frame.nghost();
         // Hop counts are a pure function of the published DD + box + shell.
         if (dd->ghost_shell_width > 0.0) {
             const auto need = cpu::comm::Halo::derive_hops(
@@ -168,26 +158,41 @@ class GhostCountProbe : public cpu::Component {
     int launches = 0;
 };
 
-/// Same pipeline as `run_one_frozen_step`, with the probe bound after the
-/// pair kernel so it sees the post-halo counts of the step it reports on.
-///
-/// @param skin Verlet skin [A]; negative = the `NeighborList` auto default
-///        (0.3 * cutoff). The skin is what sizes the auto-injected ghost
-///        shell — `MD::install_defaults` takes
-///        `max(1.1 * cutoff, NeighborList::neighbor_reach())`
-///        (`include/atomiverse/cpu/dynamics/md.h:438`) — so a case that
-///        states its halo width in the comment must state its skin here.
-void run_one_frozen_step(cpu::Frame& frame, double cutoff,
-                         GhostCountProbe& probe, double skin = -1.0) {
-    cpu::md::MD sim;
-    sim.set_integrator(
-        cpu::md::VelocityVerlet{0.0}); // dt = 0: positions frozen
-    sim.on(ATV::md::Phase::force)
-        .add(cpu::md::NeighborList<>{cutoff, skin}, -10);
-    sim.on(ATV::md::Phase::force).add(cpu::PairLJCut{kEps, kSigma, cutoff});
-    sim.on(ATV::md::Phase::force).add_ref(probe, +500);
-    sim.build();
-    sim.run(frame, 1);
+/// Evaluate the owning communication / neighbor / pair methods once on frozen
+/// coordinates. This pins halo geometry independently of MD initialization and
+/// integration. Match the MD halo contract: max(1.1 * cutoff, neighbor reach).
+/// Negative skin selects NeighborList's default (0.3 * cutoff).
+void evaluate_frozen(cpu::Frame& frame, double cutoff,
+                     GhostCountProbe* probe = nullptr, double skin = -1.0) {
+    cpu::Context context;
+    MPI_Comm_rank(MPI_COMM_WORLD, &context.mpi_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &context.mpi_size);
+    cpu::communication::DomainRuntime domain;
+    domain.allocate(context);
+    cpu::md::wrap_owned(frame, frame.nlocal());
+    domain.bind_frame(frame, context);
+    cpu::md::NeighborList<> neighbors{cutoff, skin};
+    cpu::PairLJCut pair{kEps, kSigma, cutoff};
+    domain.comm()->set_ghost_cutoff(
+        std::max(1.1 * cutoff, neighbors.neighbor_reach()));
+    const cpu::LaunchContext launch{context, frame, 0, 0};
+    domain.comm()->setup(launch);
+    domain.comm()->borders(launch);
+    neighbors.build({context, frame});
+    neighbors.launch(launch);
+    pair.build({context, frame});
+    pair.launch(launch);
+    domain.comm()->reverse_comm(launch);
+    if (probe)
+        probe->launch(launch);
+    const double local_energy = frame.meta.get(kEnergy);
+    double total_energy = 0.0;
+    MPI_Allreduce(&local_energy, &total_energy, 1, MPI_DOUBLE, MPI_SUM,
+                  MPI_COMM_WORLD);
+    frame.meta.get(kEnergy) = total_energy;
+    pair.destroy({context, frame});
+    neighbors.destroy({context, frame});
+    domain.release_comm(context);
 }
 
 /// @brief One narrow-subdomain case: force `grid`, run one frozen step of
@@ -218,7 +223,7 @@ void expect_narrow_subdomain_matches_brute_force(
 
     GhostCountProbe local_probe;
     GhostCountProbe& probe = (out_probe != nullptr) ? *out_probe : local_probe;
-    run_one_frozen_step(frame, 6.0, probe, skin);
+    evaluate_frozen(frame, 6.0, &probe, skin);
     ASSERT_EQ(probe.launches, 1) << "the probe never ran: test is vacuous";
 
     const double rel =
@@ -256,7 +261,7 @@ TEST(HaloDualImageGhosts, OverlappingFaceBandsMatchBruteForce) {
     const double e_bf = brute_force_energy(ref, 6.0);
     ASSERT_GT(std::abs(e_bf), 1e-9);
 
-    run_one_frozen_step(frame, 6.0);
+    evaluate_frozen(frame, 6.0);
 
     const double rel =
         std::abs(frame.meta.get(ATV::kEnergy) - e_bf) / std::abs(e_bf);
@@ -280,7 +285,7 @@ TEST(HaloDualImageGhosts, NonOverlappingGeometryStillMatchesBruteForce) {
     const double e_bf = brute_force_energy(ref, 6.0);
     ASSERT_GT(std::abs(e_bf), 1e-9);
 
-    run_one_frozen_step(frame, 6.0);
+    evaluate_frozen(frame, 6.0);
 
     const double rel =
         std::abs(frame.meta.get(ATV::kEnergy) - e_bf) / std::abs(e_bf);
@@ -379,18 +384,9 @@ TEST(HaloDualImageGhosts, ProductionGridTwoNarrowAxesMatchBruteForce) {
     EXPECT_EQ(probe.hops[1], 1)
         << "y (dims 2, span 7.0 A >= halo 6.6 A) must be a single hop; a "
            "second round there would wrap onto this rank itself";
-    EXPECT_EQ(probe.hops[2], 0) << "z is undecomposed: zero hops";
+    EXPECT_EQ(probe.hops[2], 1) << "z supplies local periodic images";
 }
 
 // ── Custom main that initializes MPI before/after GoogleTest ────────────
 //
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

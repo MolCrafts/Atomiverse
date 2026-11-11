@@ -11,7 +11,7 @@
 /// evaluator writes into a running sum. Central-differencing a running sum of a
 /// linear restoring force yields exactly HALF the true curvature — the "k or
 /// k/2 depending on FD assembly convention" hedge fossilized in
-/// `regressions/architecture/harmonic_driver_matrix` is that bug, not a
+/// `regressions/response/vibrations` is that bug, not a
 /// convention.
 ///
 /// `vib::Phonon` already binds `ZeroForces` @ -1000 / `ZeroEnergy` @ -999 on its
@@ -87,7 +87,7 @@ ATV::cpu::Frame atom_at_origin() {
     f.span(ATV::kAtom_y)[0] = 0.0;
     f.span(ATV::kAtom_z)[0] = 0.0;
     f.span(ATV::kAtom_mass)[0] = 12.0;
-    f.span(ATV::kAtom_type)[0] = 6;
+    f.span(ATV::kAtom_atomic_number)[0] = 6;
     f.span(ATV::kAtom_tag)[0] = 1;
     f.box = ATV::cpu::Box::cubic(50.0);
     return f;
@@ -166,7 +166,7 @@ TEST(HessianZeroing, BothConstructorsBindZeroForcesAndZeroEnergyOnForcePhase) {
     }
 
     { // WithoutAccumulator ctor — a caller-supplied accumulator gets it past
-      // validate_components() so the compiled Plan is observable.
+        // validate_components() so the compiled Plan is observable.
         ATV::cpu::vib::HessianWorkspace ws;
         ATV::cpu::vib::Hessian hess{
             ATV::cpu::vib::Hessian::WithoutAccumulator{}};

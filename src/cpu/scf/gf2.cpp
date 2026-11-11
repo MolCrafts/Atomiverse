@@ -326,17 +326,22 @@ double energy_mp2_gm(const RealVector& mo_energy, const AuxSlice& se,
 
 } // namespace
 
-GF2Result RHF::gf2() const {
-    if (!has_result())
-        throw std::runtime_error(
-            "RHF::gf2: no SCF result — call run(frame) first");
+template <typename Method>
+GF2<Method>::GF2(const Method& mf) : mf_(&mf) {}
 
-    const SlaterDeterminant& det = determinant();
+template <typename Method>
+GF2Result GF2<Method>::run() const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
+        throw std::runtime_error(
+            "GF2::run: no SCF result — call run(frame) first");
+
+    const SlaterDeterminant& det = mf.determinant();
     if (!det.restricted() || det.generalized())
         throw std::runtime_error(
-            "RHF::gf2: closed-shell RHF reference required (no fallback)");
+            "GF2::run: closed-shell RHF reference required (no fallback)");
 
-    const internal::IntegralView pack = integral_view_();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -345,7 +350,7 @@ GF2Result RHF::gf2() const {
     const RealVector& eps_raw = det.orbital_energies(Spin::alpha);
     const int n_mo = static_cast<int>(C.shape()[1]);
     if (n_mo != static_cast<int>(eps_raw.size()))
-        throw std::runtime_error("RHF::gf2: MO dimension mismatch");
+        throw std::runtime_error("GF2::run: MO dimension mismatch");
 
     int n_occ = 0;
     for (int p = 0; p < n_mo; ++p) {
@@ -355,12 +360,12 @@ GF2Result RHF::gf2() const {
             ++n_occ;
         else if (f != 0.0)
             throw std::invalid_argument(
-                "RHF::gf2: fractional occupation — integer occupations only");
+                "GF2::run: fractional occupation — integer occupations only");
     }
     const int n_vir = n_mo - n_occ;
     if (n_occ < 1 || n_vir < 1)
         throw std::invalid_argument(
-            "RHF::gf2: need at least one occupied and one virtual orbital "
+            "GF2::run: need at least one occupied and one virtual orbital "
             "(no fallback)");
 
     // Full MO ERI
@@ -462,7 +467,7 @@ GF2Result RHF::gf2() const {
         // Still fill what we can; caller may check converged.
         out.qp_energy_ha = out.mf_energy_ha;
         out.e_corr = 0.0;
-        out.e_tot = energy();
+        out.e_tot = mf.energy();
         return out;
     }
 
@@ -485,9 +490,11 @@ GF2Result RHF::gf2() const {
 
     // Galitskii–Migdal e_corr from one-shot SE (= MP2 on HF reference)
     out.e_corr = energy_mp2_gm(eps_raw, se, mu_hf);
-    out.e_tot = energy() + out.e_corr;
+    out.e_tot = mf.energy() + out.e_corr;
     return out;
 }
+
+template class GF2<RHF>;
 
 } // namespace scf
 } // namespace cpu

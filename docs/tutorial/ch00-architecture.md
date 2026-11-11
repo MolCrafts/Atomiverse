@@ -1,396 +1,161 @@
-# Chapter 0. CPU Backend
+# Simulation Workflows
 
-This is the orientation chapter — no physics yet. By the end you know the
-three pillars (**Driver**, **Component**, **Frame**), how termination works
-(**Criterion** vs **OutcomePolicy**), and why swapping an evaluator changes
-the method without rewriting the loop.
+A physical question should determine the calculation. For the same pair of
+atoms, we might ask for the energy at a chosen separation, a nearby resting
+geometry, or the motion after release. These questions can use one potential
+energy function while requiring different mathematical procedures.
+
+**Learning goals.** Distinguish evaluation, minimization, and dynamics;
+connect state, evaluator, and driver to their physical roles; identify the
+evidence required before accepting an outcome.
+
+**Before you begin.** Read [Systems and Units](ch01-foundations.md) and the
+derivative discussion in [Mathematical Tools](mathematical-tools.md). You do
+not need the class hierarchy to understand the three physical questions.
+
+## Energy, structure, and motion
+
+An evaluation holds the coordinates fixed and computes $U(\mathbf R)$ and,
+when supported, the forces $-\nabla U$. It answers a question about the chosen
+configuration; it neither locates an equilibrium nor measures a temperature.
+
+A geometry optimization changes coordinates to seek a stationary point.
+For a harmonic bond, this means approaching the minimum of
+$U(r)=k(r-r_0)^2/2$. A small gradient is necessary for an unconstrained
+minimum, but it does not distinguish a minimum from every other stationary
+point. Curvature and the constraints of the problem matter as well.
+
+Dynamics instead advances positions and velocities with equations of motion.
+A stretched harmonic bond released from rest accelerates toward equilibrium
+and can pass through it. In an isolated conservative model, potential energy
+becomes kinetic energy; motion need not settle at the minimum. An optimization
+step is therefore not a physical time step, even if both produce pictures
+of atoms moving toward one another.
+
+These distinctions determine what to inspect: the energy and forces for an
+evaluation, stationary-point criteria for optimization, and time resolution
+and sampling for a trajectory. A successfully completed process is not by
+itself evidence for any of these physical conclusions.
+
+## State and operations
+
+The frame holds coordinates, velocities when needed, atom information,
+the cell, and calculated quantities. An evaluator applies a particular
+energy model to that state. A driver schedules operations and controls
+their repetition. Components perform the individual operations needed by
+the driver, such as an integration update or a measurement.
+
+The tutorial's CPU interface uses `cpu::Frame` for this shared state. The
+important question is not how many classes to remember, but which fields an
+operation reads and which results it makes available. A force measurement
+must follow the evaluation at the geometry it is intended to describe.
+Stored numbers may otherwise belong to an earlier state.
+
+For velocity Verlet, the order is a half velocity update, a position update,
+a force evaluation at the new position, and the remaining half velocity
+update. The detailed equations appear in
+[Molecular Dynamics](ch10-classical-md.md). The same scheduling idea is useful
+for optimization, but the optimizer's search direction has a different
+meaning from a velocity.
+
+## Inner and outer iterations
+
+An electronic energy evaluator introduces another calculation at fixed
+nuclear coordinates: the electronic state must become self-consistent.
+Only then can the outer optimization or dynamics step use the resulting
+energy and supported derivatives with the intended accuracy.
+
+There are therefore two distinct questions. Did the inner electronic solve
+meet its criteria? Did the outer calculation reach its requested endpoint?
+A small outer force cannot repair an inadequately converged electronic
+state. Likewise, many converged electronic calculations do not prove that a
+trajectory has sampled equilibrium.
+
+In the inherited C++ design, concrete methods such as `cpu::scf::RHF` can
+run their own electronic iteration and be composed with an outer driver.
+This is a software arrangement, not a new physical approximation. Before
+using it, check that the selected binding actually supplies the forces and,
+if required, stresses used by the outer procedure.
+
+## Stopping and accepting a result
+
+A work budget limits cost. A convergence criterion describes an endpoint
+within a numerical model. A validation check supports the interpretation of
+that endpoint. Keep all three in the calculation record.
+
+- For a fixed-geometry evaluation, check finite values, units, and any inner
+  convergence requirement. Confirm that an energy-only request has not been
+  mistaken for a force calculation.
+- For optimization, inspect the stopping reason and the requested force and
+  displacement criteria. Exhausting the iteration budget does not establish
+  a stationary geometry; a stationary geometry still needs interpretation.
+- For dynamics, record the elapsed physical time and time step, check the
+  relevant conservation or ensemble diagnostics, and estimate uncertainty
+  in the observable. Completing the requested steps is not a sampling test.
+
+When an inner solve fails, record that failure and follow an explicit retry
+or stopping policy. Do not silently reuse a last available force and present
+the resulting outer step as a validated calculation.
+
+## Practice plan
+
+Use the two-argon model introduced in
+[Molecular Dynamics](ch10-classical-md.md). Before running a full example,
+trace one force evaluation and one complete time step on paper:
+
+1. List the initial coordinates, masses, velocities, cell, and pair parameters.
+2. Identify where the initial forces are obtained. The first half velocity
+   update already needs forces at the initial geometry.
+3. Record which coordinates the next force evaluation uses and when both
+   halves of the velocity update are complete.
+4. Decide when to record potential and kinetic energy so that they describe
+   the same completed state. Then identify a separate test of time-step error.
+
+Only after these classical checks should an electronic evaluator be composed
+with the loop. That substitution additionally requires elements, charge and
+spin conventions, electronic model data, convergence controls, and supported
+derivatives. A shared interface does not make an argon pair model and a
+molecular electronic model physically interchangeable.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
 
 | Pillar | Owns | Example types |
 |--------|------|---------------|
 | **Runtime** (`cpu::Backend`) | frame binding, plan storage, MPI, timing | one per run |
 | **Driver** (`cpu::Driver<P>`) | stages + plan + criteria | `MD`, `Minimize`, `MC`, `Evaluate`, … |
 | **Component** | one step of physics | `PairLJCut`, `LBFGS`, `Thermo` |
-| **Frame** | device-resident state | `blocks` + `meta` + `box` |
+| **Frame** | host-side CPU state | `blocks` + `meta` + `box` |
 
 ```cpp
 // Same MD loop — different physics by swapping the force component
 cpu::md::MD sim;
 sim.set_integrator(cpu::md::VelocityVerlet{0.5});
 sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});       // classical
-// sim.on(md::Phase::force).add(cpu::scf::RHF{});       // AIMD
+// sim.on(md::Phase::force).add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G});       // AIMD
 sim.build();
 sim.run(frame, 1000);
 ```
 
-If you arrived at Atomiverse looking for "how do I run a simulation?" the
-honest answer is: it depends on what you mean by *run*. Three different
-loops live inside the project, and the first thing a beginner needs is a
-mental map of which loop to reach for and why.
-
-This chapter draws that map. It does not run any code. It explains the
-three pillars of the CPU backend — **Frame**, **Component**, and
-**Driver** — and the three loops that share them: classical molecular
-dynamics, geometry minimization, and electronic-structure self-consistent
-field. Each later chapter then drills into one of those loops with a
-concrete example.
-
-A shorter, task-oriented version of this vocabulary is in
-[User Guide → Core concepts](../user-guide/concepts.md). If you have not built
-the project yet, see [Getting Started](../user-guide/getting-started.md) first.
-
-## The One Truth: `cpu::Frame`
-
-Every CPU simulation in Atomiverse begins and ends with a single host-side
-object,
-[`cpu::Frame`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/frame.h). A frame holds:
-
-- **per-atom arrays** — positions $x, y, z$, velocities $v_x, v_y, v_z$,
-  forces $f_x, f_y, f_z$, masses, atom types, and global tags;
-- **topology blocks** — bonds, angles, dihedrals (each is an SoA block
-  matching the `molpy` "Block" model);
-- **system scalars** — potential energy, kinetic energy, and a six-component
-  stress tensor;
-- **a simulation cell** — `cpu::Box`, the canonical 3×3 cell with cached
-  inverse, half-edge, and minimum-image helpers.
-
-You never create a separate "system" object alongside the frame. The frame
-*is* the system. You fill it once with starting coordinates, hand it to a
-driver, and read final coordinates and energies out of the same fields
-when the run finishes. Units are eV, Å, fs, amu throughout.
-
-The same frame is reused across MD, minimization, and SCF. That is why we
-can compose, for example, `cpu::md::MD` with `cpu::scf::RHF` to do *ab
-initio* molecular dynamics: the velocity-Verlet integrator and the SCF
-method agree to write to the same `kAtom_fx/fy/fz` columns, and the
-driver routes them in the right order.
-
-## What a Component Is, and What It Is Not
-
-A **component** is one well-scoped piece of work that runs at a specific
-phase of one step of one driver. The base class
-[`cpu::Component`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/component/component.h)
-defines exactly three lifecycle hooks:
-
-```cpp
-void build  (...);   // one-time setup (allocate scratch)
-void launch (...);   // per-step compute (no allocation)
-void destroy(...);   // teardown
-```
-
-Every concrete piece of physics — Lennard-Jones forces, harmonic bonds,
-the Nose-Hoover thermostat, the L-BFGS optimizer step, the SCF force
-component — is a class that inherits a thin **kind** (`Potential`,
-`Integrator`, `HF`, …) which itself inherits `Component`. One kind per
-header under `cpu/component/`; depth ≤ 2.
-
-The contract is strict, and the strictness is the point:
-
-1. **`build` may allocate; `launch` may not.** Per-step allocation
-   destroys cache locality and parallel scaling, so the project enforces
-   it as a structural rule, not a guideline.
-2. **Kind is the C++ type; Role is a bitset.** Inheritance says *what
-   class of work* this is (`Potential`, `HF`, `Optimizer`, …). `role()`
-   returns `RoleFlag`s (`FrameImmutable`, `Deferred`, `ExternalIO`) —
-   how the loop may treat it. There is no `Capability` write-set; outputs
-   are Frame keys (`kEnergy`, `kAtom_fx`, …).
-3. **A component does not own a loop.** The driver does. A component
-   advances state by exactly one step's worth of work and returns.
-
-This last rule is what lets you swap, say, L-BFGS for conjugate-gradient
-inside `cpu::minimizer::Minimize` without touching the minimizer driver
-at all. Both inherit `Optimizer`; the driver's run loop is identical.
-
-## What a Driver Is
-
-A **driver** owns the outer loop. It collects components, validates that
-the registered set is sensible (does an MD driver have an integrator? a
-minimizer have an optimizer? both have something that produces forces?),
-compiles a sorted **plan** of `(phase, order, component)` triples, and
-then iterates that plan with the right termination condition for the
-job at hand.
-
-There is exactly **one** driver class in each backend — the *loop node*,
-`cpu::Driver<PhaseEnum>` — and the classes you actually construct are
-**presets** over it. A preset is a class whose constructor attaches the
-default policy and infrastructure a given kind of run wants. It is a
-convenience, not a layer of the architecture.
-
-| Preset | Loop semantics | Phase enum |
-|---|---|---|
-| `cpu::Evaluate` | exactly one pass | `evaluate::Phase` |
-| `cpu::md::MD` | the step budget you pass to `run()` | `md::Phase` |
-| `cpu::minimizer::Minimize` | stop early when converged | `minimizer::Phase` |
-| `cpu::vib::Hessian` | a fixed 6N-displacement schedule, then finalize | `vib::Phase` |
-| `cpu::mc::MC` | a trial-move budget | `sampling::Phase` |
-| `cpu::PathDriver` | stop when every replica of a chain has converged | `path::Phase` |
-
-The three you will meet in this tutorial are the first three; the rest
-appear in the later chapters.
-
-*How the loop decides to stop* is not a property of the class at all.
-It is a **criterion** — a Component (`cpu::Criterion`) the
-driver polls once per iteration, which answers `Continue`, `Converged`,
-or `Stop`. `Minimize` attaches a `ForceConverged` criterion in its
-constructor (via `add_criterion`); `MD` attaches none and simply runs its budget. You can
-attach your own, and you can attach several — their verdicts compose by
-severity (`Stop` beats `Converged` beats `Continue`). We come back to
-this at the end of the chapter.
-
-Algorithm choice (velocity-Verlet vs leapfrog, L-BFGS vs CG vs FIRE,
-RHF vs UKS) lives in components, not in driver subclasses. There will
-never be a `cpu::minimizer::LBFGS` driver class — there is a *component*
-called `LBFGS` that plugs into the `Minimize` driver. The same goes for
-integrators and thermostats.
-
-The reason for this layout is that algorithm choice is something you
-want to swap mid-experiment, and so is the stopping rule. Neither is
-worth a class hierarchy.
-
-## A Single Step, Phase by Phase
-
-Each preset compiles its plan against a fixed, named **phase order**
-([`core/stage.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/stage.h)).
-
-For `cpu::md::MD` the phase order matches LAMMPS:
-
-```text
-initial_integrate → pre_force → force → post_force → final_integrate → end_of_step
-```
-
-For `cpu::minimizer::Minimize` the order is:
-
-```text
-search_direction → line_search → force → convergence_check → end_of_step
-```
-
-For `cpu::Evaluate` (single-point work) the order is:
-
-```text
-prepare → evaluate → finalize
-```
-
-There is **no `driver.add(component)`**. Every registration goes one of two
-ways:
-
-- A **categorical setter** — `set_evaluator`, `set_neighbor`, `set_integrator`,
-  `set_thermostat`, `set_barostat`, `set_optimizer`, `set_observer`,
-  `set_record`, `set_thermo`. The setter consults the component's
-  `default_bindings()` (or a fixed phase of its own) to decide where it lands,
-  so you never name the phase.
-- **Explicit placement** — `driver.on(phase).add(Component{...}, order)`. The
-  `PhaseBuilder` returned by `on(phase)` is the only public carrier of `add`,
-  and the phase is always written out. This is the road for anything without a
-  categorical setter of its own.
-
-Both roads have the same ownership rule: the `add` / `set_*` form takes an
-**rvalue** and transfers ownership into the driver; `add_ref` / `set_*_ref`
-**borrows** a component you own (declare it before the driver so the driver
-dies first). Plain `add(lvalue)` is `= delete`d — there is no implicit borrow.
-
-Negative orders run before positive orders, so user observers (default `0`) sit
-naturally after infrastructure (negative orders).
-
-(Python's `sim.add(...)` *is* a single dispatching convenience on the binding
-layer. It has no C++ counterpart; do not translate it back.)
-
-You will see this concretely in every later tutorial. The takeaway here
-is just that **the loop has names**. You are never expected to read
-through a thousand-line scheduler — you ask "what runs at the *force*
-phase?" and the answer is the list of components bound there.
-
-## The Three Loops in One Picture
-
-Here is the same picture for all three CPU drivers, with the bits that
-differ called out.
-
-### Classical molecular dynamics — `cpu::md::MD`
-
-```text
-loop for n_steps:
-    initial_integrate  ← VelocityVerlet first half-kick + drift
-    pre_force          ← NeighborList rebuild
-    force              ← PairLJCut / BondHarmonic / AngleHarmonic / …
-    post_force         ← (constraints, long-range corrections)
-    final_integrate    ← VelocityVerlet second half-kick
-    end_of_step        ← KineticEnergy, Thermo, Recorder, RDF observer
-```
-
-`MD::run(frame, n_steps)` exits after `n_steps` iterations. There is no
-convergence concept — time evolution does not "succeed" and "fail", it
-just runs — so `MD` attaches no criterion by default. If you want it to
-bail out early (energy has gone to NaN, the box has melted), attach a
-criterion: `sim.add_criterion(cpu::StopOnNaN{})`.
-
-### Geometry minimization — `cpu::minimizer::Minimize`
-
-```text
-loop until converged or max_iter:
-    search_direction   ← LBFGS / CG computes a descent direction
-    line_search        ← (optional Armijo backtracking)
-    force              ← PairLJCut / SCF / … (same evaluators as MD!)
-    convergence_check  ← LBFGS / CG *measure*: max force, displacement, ΔE
-    end_of_step        ← OptLog, FinalGeometry, TrajectoryWriter
-```
-
-`Minimize::run(frame, max_iter)` exits as soon as its criterion says
-`Converged`. Note the division of labour, because it is the one thing
-newcomers get backwards: at the `convergence_check` phase the optimizer
-**measures** (it publishes max force, RMS force, displacement and ΔE
-into the loop's `ConvergenceMetrics`), and the **criterion decides** whether
-those numbers are good enough. `Minimize` attaches `cpu::ForceConverged`
-— the five-criteria test — for you, so a single `LBFGS{...}` instance is
-still all you have to add. But the tolerances live on the criterion, and
-you ask the *driver* for the verdict afterwards:
-
-```cpp
-opt.run(frame, 100);
-if (opt.converged()) { /* … */ }
-std::cout << opt.stop_reason() << "\n";   // which criterion ended the loop
-```
-
-### Single-point evaluation — `cpu::Evaluate`
-
-```text
-exactly once:
-    prepare    ← ZeroForces, ZeroEnergy
-    evaluate   ← SCF / PairLJCut / BondHarmonic / …
-    finalize   ← (recorders that read the final state)
-```
-
-`Evaluate::run(frame)` runs the registered evaluators once and stops.
-This is the tool for "compute the energy and forces at this geometry, do
-not change the geometry". `cpu::single_point(frame, evaluator)` is the
-tiny convenience helper around it.
-
-## Where SCF Sits
-
-A common point of confusion is whether SCF is its own driver. It is —
-but not a *category* of driver, and there is no method-agnostic class
-standing in front of it.
-
-The real thing is the **concrete method**: `cpu::scf::RHF`, `UHF`, `RKS`,
-`UKS`, … Each derives
-[`MeanFieldMethod<D>`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/scf/mean_field_method.h),
-which is itself a `cpu::Driver<ATV::scf::Phase>` with the typed stages
-`fock → mix → diagonalize → density → check`. Each stage is a Component
-the method owns as a direct member; the algorithms those stages call
-(`DIISMixer`, `EigenSolver`) stay `cpu::scf::internal::` helpers and are
-never registered into an outer Plan. Integrals and AO workspaces are
-private members of the method, rebuilt from the `Frame`.
-
-There is no `cpu::scf::SCFSolver` bag, no `SCFConfig`, and no generic
-`cpu::scf::SCF` — parameters are constructor arguments on the concrete
-class, and `Frame` is the only I/O currency.
-
-Because a Driver is an executable node, the *same object* is the right
-answer for three very different workflows — standalone it runs its own
-loop, nested at an outer force phase it runs via `run_nested`:
-
-- **Single-point energy.** `cpu::scf::RHF rhf{BasisSet::STO3G}; rhf.run(frame);`
-- **Geometry optimization.** `cpu::minimizer::Minimize + LBFGS`, with
-  `opt.on(minimizer::Phase::force).add(cpu::scf::RHF{basis})` (the example in
-  [Chapter 12](ch12-geometry-optimization.md))
-- **Ab initio molecular dynamics.** `cpu::md::MD + VelocityVerlet + NoseHoover`,
-  with `sim.on(md::Phase::force).add(cpu::scf::RHF{basis}.predictor(3))` —
-  the ASPC predictor warm-starts the density across steps (the example in
-  [Chapter 15](ch15-cross-method.md))
-
-Same method. Three different drivers. Same `cpu::Frame`.
-
-## How the Subsystems Compose
-
-The thing that is genuinely powerful about Atomiverse, once you have the
-mental model, is that the three loops compose by *swapping force
-providers*, not by writing a new driver.
-
-```text
-cpu::md::MD              + PairLJCut         = classical MD
-cpu::md::MD              + scf::RHF          = AIMD
-cpu::minimizer::Minimize + LBFGS + PairLJCut = classical relaxation
-cpu::minimizer::Minimize + LBFGS + scf::RHF  = ab initio geometry opt
-cpu::Evaluate            + PairLJCut         = classical single-point
-scf::RHF{basis}.run(frame)                   = quantum single-point
-```
-
-The driver code does not know whether the force is empirical or
-quantum-mechanical; it only requires that *something* registered on the
-`force` phase produces `a force-writing energy kind (Potential / HF / …)`. That single architectural
-choice is what unifies the rest of the documentation.
-
-## Two Types You Will Meet Often
-
-You can read the rest of the tutorials with just three names in your
-head — `cpu::Frame`, the driver class for your loop, and the components
-you add to it. There are two more types that show up so often it is
-worth naming them now.
-
-[`cpu::Box`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/box.h) is the simulation cell.
-It holds the cell matrix, plus a per-step-immutable cache of inverses
-and minimum-image helpers (`min_image`, `wrap_axis`, `length`,
-`volume`). For an orthorhombic box the helpers are branch-light scalar
-math; an `xsimd` batched overload (`min_image_batch<B>`) lives in
-[`cpu/box_simd.h`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/cpu/frame/box_simd.h) for hot pair
-loops. You will rarely call these directly; force kernels and
-thermostats use them on your behalf.
-
-[`ConvergenceMetrics`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/verdict.h)
-is how a component tells the loop what it measured: energy, max force,
-RMS force, the displacement since the previous iteration, |ΔE|. The
-optimizer writes it; the criterion reads it; the driver records the
-resulting verdict in an
-[`IterationStatus`](https://github.com/MolCrafts/Atomiverse/blob/dev/include/atomiverse/core/iteration_status.h)
-(`converged`, `stop_requested`, and a human-readable `reason`) that it
-**owns**. A component may *request* a stop; only a criterion can declare
-convergence. And because each loop owns its own status rather than
-sharing one on the Context, a loop nested inside another cannot
-accidentally stop its parent. SCF internals manage their own internal
-convergence and never touch any of this.
-
-That is the whole termination story, and it is why writing your own
-stopping rule takes about ten lines:
-
-```cpp
-class StopWhenTooHot : public cpu::Criterion {
-  public:
-    explicit StopWhenTooHot(double t_max) : t_max_(t_max) {}
-    std::string name() const override { return "stop_when_too_hot"; }
-    void launch(...) override {}  // verdict-only — no per-step work
-    ATV::Verdict verdict(const cpu::LoopState& s) override {
-        return (temperature(s.frame) > t_max_) ? ATV::Verdict::Stop
-                                                      : ATV::Verdict::Continue;
-    }
-  private:
-    double t_max_;
-};
-
-sim.add_criterion(StopWhenTooHot{2000.0});   // LAMMPS's `fix halt`, from outside the library
-```
-
-## What Each Later Chapter Adds
-
-You can now read the rest of the manual without losing your bearings.
-
-- **Chapter 1 — SCF From First Principles.** Strips chemistry away and
-  shows the SCF feedback loop on a 2×2 toy system. Best read first if
-  the very idea of "self-consistent" is new to you.
-- **Chapter 2 — Restricted Hartree-Fock (RHF).** Same loop, real
-  molecule. Introduces the concrete `RHF` method and its
-  `rhf.run(frame)` entry point.
-- **Chapter 3 — Unrestricted Hartree-Fock (UHF).** Adds spin
-  polarization. Same Driver shape, different concrete method (`UHF` / `RKS` / …).
-- **Chapter 4 — Unrestricted Kohn-Sham DFT (UKS).** Adds the XC grid.
-  Same Driver shape, same method-node shape, different XC member.
-- **Chapter 6 — *Ab Initio* Molecular Dynamics.** Switches the driver to
-  `cpu::md::MD`, adds an integrator and a thermostat, keeps the
-  concrete method (`scf::RHF`) at the force phase.
-- **Chapter 7 — Classical Molecular Dynamics.** Replaces the
-  method with `PairLJCut` and bonded force-field components. Shows the
-  full thermo / trajectory / RDF observer stack.
-- **Chapter 8 — Geometry Minimization.** Switches the driver to
-  `cpu::minimizer::Minimize`, swaps `LBFGS` and `CG` as the optimizer
-  component, keeps the concrete method (`scf::RHF`) at the force phase.
-
-If you only have time for one example to start with, build and run
-Chapter 1 next for systems and units.
-Everything that follows reuses the same loop with progressively more
-realistic physics.
+## Reading paths
+
+- [Molecular Dynamics](ch10-classical-md.md) develops the argon potential and
+  a first trajectory; [Statistical Ensembles](ch11-ensembles.md) then introduces
+  heat and pressure control.
+- [Basis Sets](ch04-basis-sets.md) and [Hartree–Fock Theory](ch02-rhf.md) introduce
+  the representation and physics of a molecular electronic evaluator.
+- [Geometry Optimization](ch12-geometry-optimization.md) develops stationary
+  structures, while [Comparing Models](ch15-cross-method.md) explains controlled
+  comparisons between different physical approximations.
+- [CPU Workflow Reference](../developer/cpu-workflow-reference.md) retains
+  lifecycle, phase, ownership, and stopping fragments for readers extending
+  the implementation. It is also included in the print appendix.
+
+## Questions for reflection
+
+Why can a stretched bond pass through its equilibrium separation in dynamics
+but approach it in minimization? Which force is needed before the first
+velocity update? What should an outer driver do with a failed electronic
+evaluation, and what evidence is still needed after a successful run?

@@ -73,15 +73,16 @@ struct DeviceSolve {
     double e_hartree = 0.0;
 };
 
-DeviceSolve run_device(const UniformGrid& grid, const std::vector<double>& rho) {
+DeviceSolve run_device(const UniformGrid& grid,
+                       const std::vector<double>& rho) {
     const long ng = grid.npts();
     if (static_cast<long>(rho.size()) != ng)
         throw std::runtime_error("run_device: rho size mismatch");
 
-    auto* d_rho = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
-    auto* d_v = static_cast<double*>(
-        dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    auto* d_rho =
+        static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
+    auto* d_v =
+        static_cast<double*>(dmalloc(static_cast<size_t>(ng) * sizeof(double)));
     check_cuda(cudaMemcpy(d_rho, rho.data(),
                           static_cast<size_t>(ng) * sizeof(double),
                           cudaMemcpyHostToDevice),
@@ -128,8 +129,9 @@ TEST(CudaGpwDevicePoisson, PlaneWaveMatchesCpu) {
 
     double max_dv = 0.0;
     for (long i = 0; i < ng; ++i)
-        max_dv = std::max(max_dv, std::abs(dev.v[static_cast<std::size_t>(i)]
-                                           - cpu.v_r[static_cast<std::size_t>(i)]));
+        max_dv =
+            std::max(max_dv, std::abs(dev.v[static_cast<std::size_t>(i)]
+                                      - cpu.v_r[static_cast<std::size_t>(i)]));
     EXPECT_LT(max_dv, 1e-10) << "max |V_cuda - V_cpu|";
     EXPECT_NEAR(dev.e_hartree, cpu.e_hartree,
                 1e-12 * std::max(1.0, std::abs(cpu.e_hartree)));
@@ -158,8 +160,9 @@ TEST(CudaGpwDevicePoisson, SuperpositionMatchesCpu) {
     DeviceSolve dev = run_device(grid, rho);
     double max_dv = 0.0;
     for (long i = 0; i < ng; ++i)
-        max_dv = std::max(max_dv, std::abs(dev.v[static_cast<std::size_t>(i)]
-                                           - cpu.v_r[static_cast<std::size_t>(i)]));
+        max_dv =
+            std::max(max_dv, std::abs(dev.v[static_cast<std::size_t>(i)]
+                                      - cpu.v_r[static_cast<std::size_t>(i)]));
     EXPECT_LT(max_dv, 1e-10);
     EXPECT_NEAR(dev.e_hartree, cpu.e_hartree,
                 1e-12 * std::max(1.0, std::abs(cpu.e_hartree)));
@@ -197,10 +200,12 @@ TEST(CudaGpwDevicePoisson, WaterLikeGaussianHartreeMatchesCpu) {
         {{6.0, 6.0, 6.0}, 1.0, 8.0}, // O-like
         {{6.0 + rOH * std::cos(half_angle), 6.0 + rOH * std::sin(half_angle),
           6.0},
-         0.5, 1.0}, // H
+         0.5,
+         1.0}, // H
         {{6.0 + rOH * std::cos(-half_angle), 6.0 + rOH * std::sin(-half_angle),
           6.0},
-         0.5, 1.0}, // H
+         0.5,
+         1.0}, // H
     };
 
     for (long i = 0; i < ng; ++i) {
@@ -233,8 +238,9 @@ TEST(CudaGpwDevicePoisson, WaterLikeGaussianHartreeMatchesCpu) {
 
     double max_dv = 0.0;
     for (long i = 0; i < ng; ++i)
-        max_dv = std::max(max_dv, std::abs(dev.v[static_cast<std::size_t>(i)]
-                                           - cpu.v_r[static_cast<std::size_t>(i)]));
+        max_dv =
+            std::max(max_dv, std::abs(dev.v[static_cast<std::size_t>(i)]
+                                      - cpu.v_r[static_cast<std::size_t>(i)]));
     // cuFFT vs FFTW: not bit-identical; tight absolute bar for this grid size.
     EXPECT_LT(max_dv, 1e-9) << "max |V_cuda - V_cpu| water-like";
     EXPECT_NEAR(dev.e_hartree, cpu.e_hartree,

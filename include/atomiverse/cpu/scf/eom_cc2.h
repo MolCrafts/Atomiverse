@@ -1,7 +1,7 @@
 /// @file cpu/scf/eom_cc2.h
 /// @brief EOM-CC2 singlet excitation energies (public API).
 ///
-/// User path: `RHF::eom_cc2(frame, n_states)` — drives closed-shell RHF,
+/// User path: `CC2<RHF>{rhf}.eom_cc2(frame, n_states)` — drives closed-shell RHF,
 /// spin-orbital Christiansen–Koch–Jørgensen CC2 ground state, then the
 /// EOM-EE Jacobian of the similarity-transformed Hamiltonian on those
 /// amplitudes (same right-hand σ as EOM-EE-CCSD / PySCF `eom_gccsd`,

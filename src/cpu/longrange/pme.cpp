@@ -12,7 +12,10 @@
 
 #include <fftw3.h>
 
+#include "atomiverse/cpu/device/fftw_threads.h"
+
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/longrange_math.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -68,7 +71,7 @@ void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
 
     int next_K[3];
     for (int d = 0; d < 3; ++d) {
-        const double len = box.length(d);
+        const double len = box.lengths()[d];
         next_K[d] = longrange::good_fft_size(
             static_cast<int>(std::ceil(len / spacing_)));
         if (next_K[d] < order_ + 1)
@@ -100,12 +103,14 @@ void KSpacePME::ensure_grid(const cpu::Frame& frame, bool initial_build) {
         grid_.assign(static_cast<std::size_t>(ntot),
                      std::complex<double>(0, 0));
         auto* data = reinterpret_cast<fftw_complex*>(grid_.data());
-        // FFTW_MEASURE times the planner once; overwrites the buffer (ok —
-        // we rebuild before first physics step). Plans bind to this array.
+        device::ensure_fftw_threads();
+        // FFTW_ESTIMATE: a timed (MEASURE) plan can differ between processes
+        // and change the rounding, so identical inputs would not reproduce.
+        // Plans bind to this array.
         plan_fwd_ = fftw_plan_dft_3d(K_[0], K_[1], K_[2], data, data,
-                                     FFTW_FORWARD, FFTW_MEASURE);
+                                     FFTW_FORWARD, FFTW_ESTIMATE);
         plan_bwd_ = fftw_plan_dft_3d(K_[0], K_[1], K_[2], data, data,
-                                     FFTW_BACKWARD, FFTW_MEASURE);
+                                     FFTW_BACKWARD, FFTW_ESTIMATE);
         if (!plan_fwd_ || !plan_bwd_) {
             if (plan_fwd_)
                 fftw_destroy_plan(static_cast<fftw_plan>(plan_fwd_));
@@ -204,7 +209,8 @@ void KSpacePME::compute(const LaunchContext& ctx) {
                          reinterpret_cast<fftw_complex*>(grid_.data()),
                          reinterpret_cast<fftw_complex*>(grid_.data()));
         longrange::pme_apply_influence_tables(grid_.data(), ntot, influence_,
-                                              vol, e_recip, stress);
+                                              vol, ctx.runtime.units.qqrd2e(),
+                                              e_recip, stress);
         fftw_execute_dft(static_cast<fftw_plan>(plan_bwd_),
                          reinterpret_cast<fftw_complex*>(grid_.data()),
                          reinterpret_cast<fftw_complex*>(grid_.data()));
@@ -216,9 +222,11 @@ void KSpacePME::compute(const LaunchContext& ctx) {
 #endif
 
     // ── Interpolate reciprocal forces onto owned atoms ─────────────────
-    longrange::pme_interpolate_forces(
-        q, n_local, order_, K_, ic, vol, base_.data(), theta_.data(),
-        dtheta_.data(), grid_.data(), sp_fx, sp_fy, sp_fz);
+    if (ctx.forces_requested)
+        longrange::pme_interpolate_forces(
+            q, n_local, order_, K_, ic, vol, ctx.runtime.units.qqrd2e(),
+            base_.data(), theta_.data(), dtheta_.data(), grid_.data(), sp_fx,
+            sp_fy, sp_fz);
 
     // ── Self energy (per-rank owned) + net-charge (rank 0) ─────────────
     double qsq_local = 0, q_local = 0;
@@ -227,7 +235,8 @@ void KSpacePME::compute(const LaunchContext& ctx) {
         q_local += q[i];
     }
     const double e_self =
-        -ATV::units::coulomb * alpha_ / std::sqrt(ATV::units::pi) * qsq_local;
+        longrange::self_energy_prefactor(alpha_, ctx.runtime.units.qqrd2e())
+        * qsq_local;
     f.meta.get(kEnergy) += e_self;
     f.meta.get(kEnergyPair) += e_self;
 
@@ -238,17 +247,18 @@ void KSpacePME::compute(const LaunchContext& ctx) {
                       dd->cart_comm);
 #endif
     if (first_rank) {
-        const double e_net = -ATV::units::coulomb * ATV::units::pi
-                             / (2.0 * vol * alpha_ * alpha_) * q_total
-                             * q_total;
+        const double e_net = longrange::background_energy(
+            q_total, vol, alpha_, ctx.runtime.units.qqrd2e());
         f.meta.get(kEnergy) += e_recip + e_net;
         f.meta.get(kEnergyPair) += e_recip + e_net;
-        f.meta.get(kStress)[0] += stress[0];
-        f.meta.get(kStress)[1] += stress[1];
-        f.meta.get(kStress)[2] += stress[2];
-        f.meta.get(kStress)[3] += stress[3];
-        f.meta.get(kStress)[4] += stress[4];
-        f.meta.get(kStress)[5] += stress[5];
+        if (ctx.stress_requested) {
+            f.meta.get(kStress)[0] += stress[0] + e_net;
+            f.meta.get(kStress)[1] += stress[1] + e_net;
+            f.meta.get(kStress)[2] += stress[2] + e_net;
+            f.meta.get(kStress)[3] += stress[3];
+            f.meta.get(kStress)[4] += stress[4];
+            f.meta.get(kStress)[5] += stress[5];
+        }
     }
 }
 

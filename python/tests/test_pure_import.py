@@ -126,7 +126,31 @@ def test_main_stub_runs_without_extension() -> None:
     assert "Traceback" not in out
 
 
-def test_extension_present_path_still_loads() -> None:
+def _is_package_module(key: str) -> bool:
+    return key == "atomiverse" or (
+        key.startswith("atomiverse.") and key != "atomiverse._atomiverse"
+    )
+
+
+@pytest.fixture
+def fresh_package(monkeypatch: pytest.MonkeyPatch):
+    """Re-import the package from the source tree, then put the original back.
+
+    Without the restore, later tests would hold the installed package while
+    its submodules resolve to the source copy: two ``_binding`` modules, two
+    distinct exception classes.
+    """
+    saved = {k: v for k, v in sys.modules.items() if _is_package_module(k)}
+    for key in saved:
+        del sys.modules[key]
+    monkeypatch.syspath_prepend(str(_SRC_ROOT))
+    yield
+    for key in [k for k in sys.modules if _is_package_module(k)]:
+        del sys.modules[key]
+    sys.modules.update(saved)
+
+
+def test_extension_present_path_still_loads(fresh_package: None) -> None:
     """When the native extension is available, soft-load must not hide it.
 
     ``_atomiverse`` itself is deliberately kept in ``sys.modules``:
@@ -134,13 +158,6 @@ def test_extension_present_path_still_loads() -> None:
     duplicate type registrations, and the soft-import probe finds the
     cached module either way.
     """
-    for key in list(sys.modules):
-        if key == "atomiverse" or (
-            key.startswith("atomiverse.") and key != "atomiverse._atomiverse"
-        ):
-            del sys.modules[key]
-    if str(_SRC_ROOT) not in sys.path:
-        sys.path.insert(0, str(_SRC_ROOT))
 
     av = importlib.import_module("atomiverse")
     binding = importlib.import_module("atomiverse._binding")
@@ -149,9 +166,35 @@ def test_extension_present_path_still_loads() -> None:
         pytest.skip("C++ extension not built in this environment")
     mod = binding.require_cpp()
     assert mod is not None
-    assert hasattr(av, "MD")
-    assert av.MD is not None
+    # Any build carries some public name; MD itself is optional.
+    assert av.__all__
+    assert getattr(av, av.__all__[0]) is not None
     if hasattr(binding._cpp, "PW"):
         assert hasattr(av, "PW")
     else:
         assert "PW" not in getattr(av, "__all__", [])
+
+
+def test_single_point_uses_public_method_entry(monkeypatch) -> None:
+    from unittest.mock import Mock
+    import atomiverse.driver as driver
+
+    require = Mock()
+    monkeypatch.setattr(driver, "require_cpp", require)
+    method = Mock(device="cpu")
+    frame = object()
+    assert driver.single_point(frame, method) is None
+    require.assert_called_once_with()
+    method.run.assert_called_once_with(frame)
+
+
+def test_single_point_rejects_non_evaluator(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import atomiverse.driver as driver
+
+    monkeypatch.setattr(driver, "require_cpp", Mock())
+    monkeypatch.setattr(driver, "has_domain", lambda _: False)
+    monkeypatch.setattr(driver, "_cpp", SimpleNamespace(_Component=SimpleNamespace))
+    with pytest.raises(TypeError, match="method with run"):
+        driver.single_point(object(), object())

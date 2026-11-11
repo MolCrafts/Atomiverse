@@ -42,7 +42,7 @@ PRODUCT_MODULES: tuple[str, ...] = tuple(MODULE_TO_DEFINE.keys())
 #   MD, MC, MINIMIZER → POTENTIALS + NEIGHBOR
 #   PATH → MINIMIZER  (then inherits minimizer → potentials+neighbor)
 #   KSPACE → POTENTIALS
-# HF has no product-module edge (its only dependency, MOLRS, is derived).
+# HF has no product-module edge (its only dependency, MOLPY, is derived).
 AUTO_ENABLE: Dict[str, tuple[str, ...]] = {
     "md": ("potentials", "neighbor"),
     "mc": ("potentials", "neighbor"),
@@ -111,15 +111,8 @@ def parse_bool(raw: str) -> Optional[bool]:
 
 
 def _load_toml(path: Path) -> Mapping[str, Any]:
-    try:
-        import tomllib  # py>=3.11
-    except ModuleNotFoundError:  # pragma: no cover - exercised on 3.9/3.10
-        try:
-            import tomli as tomllib  # type: ignore[no-redef]
-        except ModuleNotFoundError as exc:
-            raise ConfigError(
-                "TOML config requires Python 3.11+ (tomllib) or the 'tomli' package"
-            ) from exc
+    import tomllib
+
     with path.open("rb") as fh:
         return tomllib.load(fh)
 
@@ -146,7 +139,9 @@ def load_toml_config(path: Path | str) -> InstallConfig:
             raise ConfigError("'global' is not a product module; use [global]")
         if name not in MODULE_TO_DEFINE:
             raise ConfigError(f"unknown module in [modules]: {name!r}")
-        cfg.modules[name] = bool(enabled)
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"module {name!r} in [modules] must be a boolean")
+        cfg.modules[name] = enabled
 
     global_tbl = data.pop("global", None) or {}
     if not isinstance(global_tbl, Mapping):
@@ -312,6 +307,8 @@ def resolve_defines(cfg: InstallConfig) -> Dict[str, str]:
         defines[MODULE_TO_DEFINE[name]] = "ON" if modules.get(name) else "OFF"
 
     defines["ATV_BUILD_PYTHON"] = "ON"
+    # Reset a reused build tree: MPI is always opt-in.
+    defines["ATV_USE_MPI"] = "OFF"
 
     for key, value in cfg.options.items():
         if key not in BINDING_TABLE:

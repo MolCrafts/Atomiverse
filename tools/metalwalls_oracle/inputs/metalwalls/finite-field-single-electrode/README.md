@@ -44,7 +44,7 @@ with \(q=0\) it contributes nothing to \(b_i\), to the polarization, or to the
 external-field energy.
 
 Full analysis, raw MW output and conversions:
-`regressions/md/finite-field-single-electrode/REFERENCE.md`.
+`regressions/md/electric-fields/REFERENCE.md`.
 
 ## Offline analytic pin (Atomiverse's own model, unchanged)
 

@@ -1,7 +1,7 @@
 /// @file cpu/vibration/supercell.h
 /// @brief Expand a unit-cell Frame into an \(n_a\times n_b\times n_c\) supercell.
 ///
-/// Rows of `frame.box.cell()` are lattice vectors \(\mathbf{a},\mathbf{b},
+/// Columns of `frame.box.cell()` are lattice vectors \(\mathbf{a},\mathbf{b},
 /// \mathbf{c}\) [Å]. The supercell uses \(\mathbf{a}'=n_a\mathbf{a}\), etc.,
 /// and places one image of every unit-cell atom at
 /// \(\mathbf{R} + i\mathbf{a} + j\mathbf{b} + k\mathbf{c}\).

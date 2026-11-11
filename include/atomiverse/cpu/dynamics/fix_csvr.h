@@ -2,6 +2,10 @@
 /// @brief CPU CSVR (Bussi) stochastic-velocity-rescaling thermostat.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -41,8 +45,17 @@ namespace md {
 /// `N_f = 3N − 3` (COM removed), cached at `build()`. `τ` is the coupling
 /// time [fs] (CP2K `TIMECON`). Supports the same `T_start`→`T_stop` linear
 /// ramp as `cpu::md::NoseHoover` via `set_T_stop` + `set_run_span`.
-class FixCSVR : public cpu::Thermostat {
+class FixCSVR : public cpu::Thermostat, public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixCSVR: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @param T_start Target / ramp-start temperature [K].
     /// @param tau     Coupling time constant [fs] (CP2K `TIMECON`).
     /// @param dt      Timestep [fs].

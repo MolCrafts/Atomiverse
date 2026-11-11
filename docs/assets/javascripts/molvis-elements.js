@@ -1,20 +1,28 @@
 /**
- * Load the MolVis web-component bundle for documentation pages.
+ * Load `@molcrafts/molvis-stage-viewer` for documentation pages.
  *
- * Prefer the staged package under assets/molvis-core/ (built from the monorepo).
- * Fall back to jsDelivr only when that file exists on the published package.
+ * Prefer the copy staged from the local monorepo
+ * (`../molvis/stage-viewer/dist` → `assets/molvis-stage-viewer/`) so the
+ * docs site exercises the latest workspace build. Fall back to jsDelivr
+ * when no staged build exists.
+ *
+ * molpy is wasm-bindgen bundler-target only; the viewer entry
+ * (`dist/main.js`) must ship a properly wired WASM module.
  */
-const packageBundle = new URL("../molvis-core/elements.js", import.meta.url);
+const packageBundle = new URL(
+  "../molvis-stage-viewer/main.js",
+  import.meta.url,
+);
 
 try {
   await import(packageBundle.href);
 } catch (packageError) {
   console.info(
-    "MolVis package bundle not staged under assets/molvis-core; " +
-      "trying @molcrafts/molvis-core from jsDelivr.",
+    "MolVis stage-viewer bundle is not staged under assets/molvis-stage-viewer; " +
+      "loading @molcrafts/molvis-stage-viewer from the jsDelivr npm CDN.",
     packageError,
   );
   await import(
-    "https://cdn.jsdelivr.net/npm/@molcrafts/molvis-core@latest/dist/elements.js"
+    "https://cdn.jsdelivr.net/npm/@molcrafts/molvis-stage-viewer@0.3.0/dist/main.js"
   );
 }

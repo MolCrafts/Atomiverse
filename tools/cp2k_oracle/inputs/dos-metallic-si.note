@@ -77,5 +77,5 @@ Documents the Quickstep product counterpart of metallic-occupation DOS.
 ## Pin policy
 
 Record CP2K version, wall, and qualitative \(E_F\) / electron count in
-`regressions/pw/dos-metallic-si/REFERENCE.md` when a binary is available.
+`regressions/pw/bands-dos/REFERENCE.md` when a binary is available.
 Never launch CP2K from ctest.

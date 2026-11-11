@@ -1,16 +1,15 @@
 /// @file tests/cuda/planewave/test_pw_cell_stress.cu
-/// @brief Unit gates for CUDA plane-wave Nielsen–Martin cell stress.
+/// @brief Admission gates for CUDA plane-wave strain-FD cell stress.
 ///
-/// UNIT SCOPE: empty-frame / open-shell reject; CUDA↔CPU parity on a cheap
-/// closed-shell H₂ cell (LSDA + PBE). Full Si dual-gates live in
-/// regressions/pw/cuda-pw-stress (LSDA) and cuda-pw-stress-pbe (PBE) —
-/// never under ctest as an e2e product.
+/// Empty-frame, occupation and thermal-width rejection only; no SCF.
+/// Complete-SCF CUDA stress cases live in regressions/pw (rks, collinear-spin).
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/planewave/pw_solver.h"
-#include "atomiverse/cpu/scf/xc_functional.h"
+#include "atomiverse/cpu/xc/xc_functional.h"
 #include "atomiverse/cuda/planewave/pw_solver.cuh"
+#include <memory>
 
 #include <cmath>
 #include <gtest/gtest.h>
@@ -22,7 +21,7 @@ namespace {
 
 cpu::Frame make_h_cubic(double L) {
     cpu::Frame f(1);
-    f.span(kAtom_type)[0] = 1;
+    f.span(kAtom_atomic_number)[0] = 1;
     f.span(kAtom_mass)[0] = 1.008;
     f.span(kAtom_x)[0] = 0.0;
     f.span(kAtom_y)[0] = 0.0;
@@ -35,7 +34,7 @@ cpu::Frame make_h_cubic(double L) {
 cpu::Frame make_h2_cubic(double L) {
     cpu::Frame f(2);
     for (int i = 0; i < 2; ++i) {
-        f.span(kAtom_type)[i] = 1;
+        f.span(kAtom_atomic_number)[i] = 1;
         f.span(kAtom_mass)[i] = 1.008;
     }
     f.span(kAtom_x)[0] = 0.0;
@@ -48,24 +47,18 @@ cpu::Frame make_h2_cubic(double L) {
     return f;
 }
 
-void fill_cuda_method(cuda::pw::PW& m) {
-    m.gth_name = "GTH-PBE-q1";
-    m.ecut_ry = 5.0;
-    m.k_mesh = 1;
+/// @brief Cheap H GTH plane-wave settings shared by the CPU and CUDA twins.
+/// @param xc Exchange–correlation functional.
+/// @return Method with ecut 5 Ry, Γ-only mesh, loose SCF tolerance.
+template <typename Method>
+Method h_gth_method(cpu::xc::XCType xc = cpu::xc::XCType::LSDA) {
+    auto potential = std::make_shared<cpu::pw::GthPseudopotential>(
+        molrs::Element::H, "GTH-PBE-q1");
+    Method m{{potential}, 5.0, 1, xc};
     m.tol = 1e-4;
     m.max_iter = 12;
     m.mix_beta = 0.5;
-    m.xc = cpu::scf::XCType::LSDA;
-}
-
-void fill_cpu_method(cpu::pw::PW& m) {
-    m.gth_name = "GTH-PBE-q1";
-    m.ecut_ry = 5.0;
-    m.k_mesh = 1;
-    m.tol = 1e-4;
-    m.max_iter = 12;
-    m.mix_beta = 0.5;
-    m.xc = cpu::scf::XCType::LSDA;
+    return m;
 }
 
 } // namespace
@@ -73,119 +66,23 @@ void fill_cpu_method(cpu::pw::PW& m) {
 TEST(CudaPWCellStress, EmptyFrameThrows) {
     cpu::Frame f(0);
     f.box = cpu::Box::cubic(6.0);
-    cuda::pw::PW method;
-    fill_cuda_method(method);
-    EXPECT_THROW(cuda::pw::pw_stress(f, method), std::invalid_argument);
+    auto method = h_gth_method<cuda::pw::PW>();
+    EXPECT_THROW(method.stress(f), std::invalid_argument);
 }
 
 TEST(CudaPWCellStress, OpenShellThrows) {
-    // Single H: 1 valence e — CUDA density path is closed-shell only.
+    // Single H needs spin or smearing; this fixture requests fixed RKS.
     auto f = make_h_cubic(6.0);
-    cuda::pw::PW method;
-    fill_cuda_method(method);
+    auto method = h_gth_method<cuda::pw::PW>();
     method.build(f);
-    EXPECT_THROW(cuda::pw::pw_stress(f, method), std::invalid_argument);
-}
-
-TEST(CudaPWCellStress, H2ClosedShellCpuTwin) {
-    auto frame = make_h2_cubic(6.0);
-
-    cpu::pw::PW cpu_m;
-    fill_cpu_method(cpu_m);
-    cpu_m.build(frame);
-    const auto s_cpu = cpu::pw::pw_stress(frame, cpu_m);
-
-    cuda::pw::PW cuda_m;
-    fill_cuda_method(cuda_m);
-    cuda_m.build(frame);
-    double e_ry = 0.0;
-    const auto s_cuda = cuda::pw::pw_stress(frame, cuda_m, &e_ry);
-
-    for (int k = 0; k < 6; ++k) {
-        EXPECT_TRUE(std::isfinite(s_cuda[static_cast<std::size_t>(k)])) << k;
-        EXPECT_TRUE(std::isfinite(s_cpu[static_cast<std::size_t>(k)])) << k;
-    }
-    EXPECT_TRUE(std::isfinite(e_ry));
-
-    // Dual-gate vs same-settings CPU analytic stress.
-    // Cheap ecut/tol: design-time 5e-2 eV/Å³ (matches Si regression window).
-    constexpr double kTol = 5.0e-2;
-    double max_abs = 0.0;
-    for (int k = 0; k < 6; ++k) {
-        max_abs = std::max(
-            max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
-                              - s_cpu[static_cast<std::size_t>(k)]));
-    }
-    EXPECT_LT(max_abs, kTol) << "max|σ_cuda-σ_cpu|=" << max_abs
-                             << " cpu=(" << s_cpu[0] << "," << s_cpu[1] << ","
-                             << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
-                             << s_cuda[1] << "," << s_cuda[2] << ")";
+    EXPECT_THROW(method.stress(f), std::invalid_argument);
 }
 
 TEST(CudaPWCellStress, SmearZeroDegaussThrows) {
     auto frame = make_h2_cubic(6.0);
-    cuda::pw::PW method;
-    fill_cuda_method(method);
-    method.smearing = cuda::pw::Smearing::fermi_dirac;
+    auto method = h_gth_method<cuda::pw::PW>();
+    method.smearing = ::ATV::electronic::Smearing::fermi_dirac;
     method.degauss = 0.0;
     method.build(frame);
-    EXPECT_THROW(cuda::pw::pw_stress(frame, method), std::invalid_argument);
-}
-
-/// Restricted FD metallic smear: monatomic H (odd valence) is accepted —
-/// finite free-energy stress. Full CUDA↔CPU dual-gate is
-/// regressions/pw/cuda-pw-smear-stress (never under ctest as e2e product).
-/// CUDA-only to stay inside the 10 s unit-timeout budget (dual SCF twin
-/// would push the suite over the hard TIMEOUT).
-TEST(CudaPWCellStress, HSmearRestrictedFinite) {
-    auto frame = make_h_cubic(6.0);
-    cuda::pw::PW cuda_m;
-    fill_cuda_method(cuda_m);
-    cuda_m.smearing = cuda::pw::Smearing::fermi_dirac;
-    cuda_m.degauss = 0.02;
-    cuda_m.extra_bands = 2;
-    cuda_m.max_iter = 12;
-    cuda_m.build(frame);
-    double e_ry = 0.0;
-    const auto s_cuda = cuda::pw::pw_stress(frame, cuda_m, &e_ry);
-    for (int k = 0; k < 6; ++k)
-        EXPECT_TRUE(std::isfinite(s_cuda[static_cast<std::size_t>(k)])) << k;
-    EXPECT_TRUE(std::isfinite(e_ry));
-}
-
-/// Closed-shell H₂ under device PBE — stress path routes XCType through
-/// DeviceDensity (spectral GGA). Si e2e dual-gate is reg_cuda-pw-stress-pbe.
-TEST(CudaPWCellStress, H2ClosedShellPbeCpuTwin) {
-    auto frame = make_h2_cubic(6.0);
-
-    cpu::pw::PW cpu_m;
-    fill_cpu_method(cpu_m);
-    cpu_m.xc = cpu::scf::XCType::PBE;
-    cpu_m.build(frame);
-    const auto s_cpu = cpu::pw::pw_stress(frame, cpu_m);
-
-    cuda::pw::PW cuda_m;
-    fill_cuda_method(cuda_m);
-    cuda_m.xc = cpu::scf::XCType::PBE;
-    cuda_m.build(frame);
-    double e_ry = 0.0;
-    const auto s_cuda = cuda::pw::pw_stress(frame, cuda_m, &e_ry);
-
-    for (int k = 0; k < 6; ++k) {
-        EXPECT_TRUE(std::isfinite(s_cuda[static_cast<std::size_t>(k)])) << k;
-        EXPECT_TRUE(std::isfinite(s_cpu[static_cast<std::size_t>(k)])) << k;
-    }
-    EXPECT_TRUE(std::isfinite(e_ry));
-
-    constexpr double kTol = 5.0e-2;
-    double max_abs = 0.0;
-    for (int k = 0; k < 6; ++k) {
-        max_abs = std::max(
-            max_abs, std::abs(s_cuda[static_cast<std::size_t>(k)]
-                              - s_cpu[static_cast<std::size_t>(k)]));
-    }
-    EXPECT_LT(max_abs, kTol) << "PBE max|σ_cuda-σ_cpu|=" << max_abs
-                             << " cpu=(" << s_cpu[0] << "," << s_cpu[1] << ","
-                             << s_cpu[2] << ") cuda=(" << s_cuda[0] << ","
-                             << s_cuda[1] << "," << s_cuda[2] << ")";
+    EXPECT_THROW(method.stress(frame), std::invalid_argument);
 }

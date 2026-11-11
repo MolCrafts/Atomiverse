@@ -1,4 +1,4 @@
-! Fair-wall twin of regressions/pw/pw-pbe-gga-si, run 2 of 2 (local LDA).
+! Fair-wall twin of regressions/pw/rks, run 2 of 2 (local LDA).
 ! ATV's XCType::LSDA is Slater + PW92 -> QE input_dft='SLA PW'. No forces
 ! (the ATV regression computes forces only on the PBE run).
 &control

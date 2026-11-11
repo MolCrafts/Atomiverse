@@ -1,5 +1,9 @@
 /// @file cpu/dynamics/atom_sort.cpp
 /// @brief Spatial reordering of owned atoms (LAMMPS atom_modify sort).
+/// Triclinic Cartesian bounding bins follow src/atom.cpp Atom::setup_sort_bins,
+/// LAMMPS a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b.
+/// Copyright (2003) Sandia Corporation. Under Contract DE-AC04-94AL85000,
+/// the U.S. Government retains certain rights. GPL-2.0-only.
 #include "atomiverse/cpu/dynamics/atom_sort.h"
 
 #include <algorithm>
@@ -17,9 +21,10 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize) {
     if (n_local < 2 || !(binsize > 0.0))
         return false;
 
-    const double Lx = f.box.length(0);
-    const double Ly = f.box.length(1);
-    const double Lz = f.box.length(2);
+    const auto [lower, upper] = f.box.cartesian_bounds({0, 0, 0}, {1, 1, 1});
+    const double Lx = upper[0] - lower[0];
+    const double Ly = upper[1] - lower[1];
+    const double Lz = upper[2] - lower[2];
     if (!(Lx > 0.0) || !(Ly > 0.0) || !(Lz > 0.0))
         return false;
 
@@ -44,11 +49,11 @@ bool sort_owned_atoms(Frame& f, int n_local, double binsize) {
     // bin counts → prefix → scatter order[new_pos] = old_index
     std::vector<int> counts(static_cast<std::size_t>(nbin), 0);
     auto bin_of = [&](int i) -> int {
-        // Fold into [0, L) then bin (orthorhombic).
         double px = x[i], py = y[i], pz = z[i];
-        px -= Lx * std::floor(px / Lx);
-        py -= Ly * std::floor(py / Ly);
-        pz -= Lz * std::floor(pz / Lz);
+        f.box.wrap_into(px, py, pz, /*image=*/nullptr); // bin of a copy
+        px -= lower[0];
+        py -= lower[1];
+        pz -= lower[2];
         int ix = static_cast<int>(px * inv_dx);
         int iy = static_cast<int>(py * inv_dy);
         int iz = static_cast<int>(pz * inv_dz);

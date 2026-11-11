@@ -1,75 +1,31 @@
-"""Plane-wave DFT Python surface tests (spec py-pw-forces).
+"""Python PW entry points, Frame publication and existing workflow checks.
 
-The binding now carries the whole tier the CPU engine claims, and this file
-pins it: analytic ionic **forces** (local Hellmann-Feynman + Ewald +
-Kleinman-Bylander), Nielsen-Martin cell **stress**, the spin / smearing /
-functional knobs of ``cpu::pw::PW``, the extra ``PWResult`` channels, a
-fail-loud missing-cell guard, and PW as an MD force source (plane-wave
-Born-Oppenheimer MD via ``MD.set_evaluator(PWEvaluator(...))``). Before this
-spec it stopped at the single-point SCF energy.
+The Si2 fixture keeps a=5.43 Å, a primitive FCC cell, a +.08 Å displacement,
+GTH-PBE-q4, Gamma, 8/32 Ry, eight electrons and four fixed-occupation bands.
+LSDA means Slater exchange plus VWN5 correlation. Energy and all six force
+components are compared with an actual QE7.5 execution recorded in
+``tests/data/pw/si2_fcc_qe75_reference.json`` (captured by
+``tools/qe_oracle/inputs/pw-python-si2-fcc/capture.py``). The reference uses
+QE's native GTH reader and records input, stdout, executable/source hashes
+and settings.
+The force reference sums the printed contributions before QE's subtraction
+of the total force; that subtraction cannot validate translation invariance.
 
-No new oracle work happens here. Every physical number below is a
-**hard-coded golden** transcribed from an in-tree reference:
+The original bounds remain 1e-3 eV for energy, 5e-3 eV/Å for each force
+component, and 1e-4 eV/Å for the native force sum. The independent net-force
+check also exercises the XC quadrature and finite SCF accuracy. This fixture
+is not a claim of cutoff-converged Si material properties.
 
-=====================================  ======================================
-Pinned quantity                        Source (hard-coded golden)
-=====================================  ======================================
-Stretched Si2 fixture: fcc primitive   ``regressions/pw/cuda-pw-forces/
-cell rows [[0,a/2,a/2],[a/2,0,a/2],    reg_cuda-pw-forces.cu:60-83`` +
-[a/2,a/2,0]] with a = 5.43 Å; Si at    ``REFERENCE.md`` (settings table).
-(0,0,0) and (a/4+0.08, a/4, a/4);
-``GTH-PBE-q4``, ecut 8 Ry, k_mesh 1,
-tol 1e-6, max_iter 40
-LSDA analytic max|F| = 2.517979 eV/Å   ``regressions/pw/cuda-pw-forces/
-at parity bound 5e-3 eV/Å; force-path  REFERENCE.md:39,42,44-46`` (GH200 job
-SCF energy -13.85556302 Ry;            1050105; the CPU number *is* the
-non-vacuity floor max|F| > 0.05 eV/Å   oracle for the CUDA twin there)
-Stress symmetry window 0.025 eV/Å³     ``regressions/pw/pw-analytic-stress-si/
-(``kSymTol``: soft, incomplete ecut/k) reg_pw-analytic-stress-si.cpp:28``
-Si a0 ≈ 5.468 Å (PseudoDojo EOS), so   ``regressions/pw/pw-analytic-stress-si/
-a = 5.43 Å is compressed and the       REFERENCE.md`` (sign + a0 rows)
-mechanical diagonal must be positive
-Single-H cell: 6 Å cube, ``GTH-PBE-q1``  ``regressions/pw/pw-bomd-h/
-ecut 5 Ry, mix_beta 0.5                reg_pw-bomd-h.cpp:28-46``
-PW BOMD step budget tol 1e-4 /         same file (``pw-bomd-h`` speed
-max_iter 12                            settings), reused on Si2 here
-=====================================  ======================================
-
-Member names, defaults and units are read off the C++ header, not invented:
-``include/atomiverse/cpu/planewave/pw_solver.h:52-70`` (``PWResult``
-channels), ``:79-84`` (the four ``Smearing`` spellings — ``none``,
-``fermi_dirac``, ``methfessel_paxton``, ``gaussian``), ``:104-139`` (PW
-members and their documented defaults). Functional names are the shared SCF
-table of ``python/src/bindings/bind_scf.cpp:101-116`` (``LSDA``, ``PBE``,
-``PBEsol``, ``RevPBE``, ``RPBE``, ``BLYP``, ``OptB88VdW``, ``B3LYP``,
-``PBE0``, ``B2PLYP``) — an unknown name raises, no fallback.
-
-Units: ``PWResult.energy`` [Ry], ``energy_ha`` [Hartree], ``e_fermi`` /
-``e_entropy`` [Ry], ``magnetization`` [electrons]; ``forces`` [eV/Å];
-``stress`` [eV/Å³] Voigt xx,yy,zz,xy,xz,yz with the mechanical (CP2K) sign;
-``frame.meta['energy']`` [eV].
-
-Two Ry→eV constants are in play, deliberately. The *binding* converts with
-the Quantum ESPRESSO-rounded 13.605693 eV/Ry
-(``cpu::pw::qe_units::rydberg_to_ev``); the pin below converts the quoted Ry
-energy with the CODATA Hartree of ``core/units.h:40`` (27.211386245988, so
-13.605693122994 eV/Ry). They differ by 9e-9 relative — 1.7e-6 eV on this
-fixture's -188 eV — which the 1e-3 eV window absorbs by three orders of
-magnitude, so the pin is testing the SCF, not the constant.
-
-Tolerances. The force pin keeps the regression's own 5e-3 eV/Å bound. The
-translation-invariance (ΣF = 0) gate is the 1e-4 eV/Å *numerical* force tier:
-the plane-wave force sum is not analytically exact on a discrete FFT grid at
-a finite SCF tolerance, and the CPU path measures |ΣF| ≈ 3.4e-5 eV/Å (default
-PBE) / 6.5e-6 eV/Å (LSDA) on this fixture — 1e-6 would be a false gate. The
-energy pin is compared at 1e-3 eV, which covers the ~3e-6 Ry spread between
-the force path's own SCF and a standalone ``run()`` on the same geometry.
-
-This file is a unit suite: it exercises one binding entry point per test on a
-sub-second fixture. The end-to-end PW physics lives in ``regressions/pw/``.
+``PWResult.energy`` is Ry, ``energy_ha`` is Hartree; Frame energy is eV,
+forces are eV/Å, and returned stress is eV/Å³. Frame stress stores the
+extensive virial in eV. Stress symmetry/sign and small dynamics checks retain
+their existing settings and bounds; they do not use a new magnitude pin.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -80,10 +36,10 @@ from atomiverse._binding import _cpp, extension_available
 _HAS_PW: bool = extension_available() and hasattr(_cpp, "PW")
 
 if _HAS_PW:
-    from atomiverse.pw import PW, PWResult
+    from atomiverse.pw import PW, PWResult, GthPseudopotential
 
 
-# ── Fixture geometry / settings (regressions/pw/cuda-pw-forces) ──────
+# ── Fixture geometry / settings (regressions/pw/rks) ──────
 
 #: Si lattice constant [Å] — reg_cuda-pw-forces.cu:32.
 _A: float = 5.43
@@ -100,21 +56,20 @@ _MAX_ITER: int = 40
 #: Hartree → eV, include/atomiverse/core/units.h:40.
 _HARTREE_EV: float = 27.211386245988
 
-# ── Hard-coded goldens ───────────────────────────────────────────────
+# ── Independently executed QE reference ──────────────────────────────
 
-#: max|F| of the CPU analytic path on this fixture with xc = LSDA
-#: (REFERENCE.md:44-46; the CUDA twin reproduced it to 2.9e-13 eV/Å).
-_PIN_MAX_FORCE_EV_A: float = 2.517979
-#: Design-time parity bound of that regression (REFERENCE.md:39).
+_QE_REFERENCE = json.loads(
+    (Path(__file__).resolve().parents[2]
+     / "tests/data/pw/si2_fcc_qe75_reference.json").read_text()
+)
+_QE_LSDA = next(run for run in _QE_REFERENCE["runs"] if run["name"] == "lsda14")
+#: Preserve each component, including its sign; do not use a native freeze.
+_PIN_FORCE_EV_A = np.asarray(_QE_LSDA["preprojection_forces_ry_bohr"]) * (
+    .5 * _HARTREE_EV / .529177210903
+)
 _TOL_FORCE_PIN_EV_A: float = 5.0e-3
-#: Non-vacuity floor of the same regression (REFERENCE.md:42).
 _MIN_MAX_FORCE_EV_A: float = 0.05
-#: Force-path SCF total energy on this fixture, xc = LSDA (REFERENCE.md:46).
-_PIN_FORCE_PATH_ENERGY_RY: float = -13.85556302
-#: Ry → eV = Hartree/2.
-_PIN_FORCE_PATH_ENERGY_EV: float = _PIN_FORCE_PATH_ENERGY_RY * 0.5 * _HARTREE_EV
-#: Window on the pinned energy [eV] — covers the ~3e-6 Ry difference between
-#: the force path's own SCF and a standalone run() at the same geometry.
+_PIN_FORCE_PATH_ENERGY_EV: float = _QE_LSDA["energy_ry"] * .5 * _HARTREE_EV
 _TOL_PIN_ENERGY_EV: float = 1.0e-3
 
 #: Σ_i F_i = 0 gate [eV/Å]: numerical force tier (see the module docstring).
@@ -130,7 +85,7 @@ _TOL_STRESS_SYM_EV_A3: float = 0.025
 #: every symmetry gate above, so require a real hydrostatic component.
 _MIN_STRESS_EV_A3: float = 1.0e-3
 
-# ── Single-H cell (regressions/pw/pw-bomd-h) ─────────────────────────
+# ── Single-H cell (regressions/dynamics/bomd) ─────────────────────────
 
 _H_BOX_A: float = 6.0
 _GTH_H: str = "GTH-PBE-q1"
@@ -150,7 +105,7 @@ _BOMD_STEPS: int = 3
 _BOMD_TOL: float = 1.0e-4
 _BOMD_MAX_ITER: int = 12
 
-#: The four Smearing spellings of pw_solver.h:79-84.
+#: The four ATV::electronic::Smearing spellings of pw_solver.h:79-84.
 _SMEARING_NAMES: tuple[str, ...] = (
     "none",
     "fermi_dirac",
@@ -173,7 +128,7 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
     @param stretch: Displacement of atom 1 along x [Å]; 0 is the ideal
         diamond geometry.
     @param with_box: When false the cell is left unset — the reachable
-        degenerate case for the fail-loud gate (molrs itself refuses a
+        degenerate case for the fail-loud gate (molpy itself refuses a
         singular cell matrix, raising ValueError("SingularCell")).
     @return molpy.Frame with x/y/z [Å], mass [amu] and atomic_number columns.
     """
@@ -188,20 +143,21 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
     if with_box:
         half = _A / 2.0
         frame.box = molpy.Box(
-            np.array(
-                [[0.0, half, half], [half, 0.0, half], [half, half, 0.0]],
-                dtype=np.float64,
+            molpy.core.Cell.matrix(
+                [[0.0, half, half], [half, 0.0, half], [half, half, 0.0]]
             )
         )
     return frame
 
 
-def _si2_method() -> "PW":
-    """``PW`` carrying the pinned Si2 settings (members, no config bag)."""
-    pw = PW()
-    pw.gth_name = _GTH_SI
-    pw.ecut_ry = _ECUT_RY
-    pw.k_mesh = _K_MESH
+def _si2_method(xc: str = "PBE") -> "PW":
+    """``PW`` carrying the pinned Si2 settings: identity as constructor
+    arguments, knobs as members (no config bag).
+
+    @param xc: Exchange-correlation functional name (identity, fixed at
+        construction).
+    """
+    pw = PW(potentials=[GthPseudopotential(14, _GTH_SI)], ecut_ry=_ECUT_RY, k_mesh=_K_MESH, xc=xc)
     pw.tol = _TOL
     pw.max_iter = _MAX_ITER
     return pw
@@ -240,21 +196,21 @@ class TestPwKnobDefaults:
     def test_xc_defaults_to_pbe(self) -> None:
         """``xc`` is a functional *name* on the Python surface; the C++
         default is ``XCType::PBE`` (pw_solver.h:122)."""
-        assert PW().xc == "PBE"
+        assert _si2_method().xc == "PBE"
 
     def test_spin_defaults_to_restricted(self) -> None:
         """Default is restricted, multiplicity 1 (pw_solver.h:126,130)."""
-        pw = PW()
+        pw = _si2_method()
         assert pw.spin_polarized is False
         assert pw.multiplicity == 1
 
     def test_smearing_defaults_to_none(self) -> None:
         """Fixed occupations by default (pw_solver.h:133)."""
-        assert PW().smearing == "none"
+        assert _si2_method().smearing == "none"
 
     def test_smearing_parameter_defaults(self) -> None:
         """degauss [Ry], MP order and extra bands (pw_solver.h:134-139)."""
-        pw = PW()
+        pw = _si2_method()
         assert pw.degauss == pytest.approx(0.02)
         assert pw.mp_order == 1
         assert pw.extra_bands == 4
@@ -268,29 +224,26 @@ class TestPwKnobRoundTrip:
     @pytest.mark.parametrize("name", ("LSDA", "PBE"))
     def test_xc_name_roundtrip(self, name: str) -> None:
         """A supported functional name survives the enum mapping."""
-        pw = PW()
-        pw.xc = name
-        assert pw.xc == name
+        assert _si2_method(xc=name).xc == name
 
     def test_xc_unknown_raises(self) -> None:
-        """An unsupported functional fails loud and lists the supported
-        names — same no-fallback contract as RKS(functional=...)
-        (bind_scf.cpp:100-117)."""
-        pw = PW()
+        """An unsupported functional fails loud at construction and lists the
+        supported names — same no-fallback contract as RKS(xc=...)
+        (xc_names.h)."""
         with pytest.raises(ValueError, match="LSDA|PBE"):
-            pw.xc = "NOTAFUNCTIONAL"
+            _si2_method(xc="NOTAFUNCTIONAL")
 
     @pytest.mark.parametrize("name", _SMEARING_NAMES)
     def test_smearing_name_roundtrip(self, name: str) -> None:
-        """Every ``Smearing`` spelling of pw_solver.h:79-84 round-trips."""
-        pw = PW()
+        """Every ``ATV::electronic::Smearing`` spelling of pw_solver.h:79-84 round-trips."""
+        pw = _si2_method()
         pw.smearing = name
         assert pw.smearing == name
 
     def test_smearing_parameters_roundtrip(self) -> None:
         """Width [Ry], Methfessel-Paxton order and extra bands are plain
         members, set beside the smearing kind."""
-        pw = PW()
+        pw = _si2_method()
         pw.smearing = "gaussian"
         pw.degauss = 0.01
         pw.mp_order = 2
@@ -302,11 +255,39 @@ class TestPwKnobRoundTrip:
 
     def test_spin_knobs_roundtrip(self) -> None:
         """Collinear switch + multiplicity (pw_solver.h:126-130)."""
-        pw = PW()
+        pw = _si2_method()
         pw.spin_polarized = True
         pw.multiplicity = 3
         assert pw.spin_polarized is True
         assert pw.multiplicity == 3
+
+
+@pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
+class TestPwIdentity:
+    """Pseudopotential, cutoff, k-mesh and functional are constructor
+    arguments, fixed afterwards."""
+
+    def test_identity_reads_back(self) -> None:
+        pw = _si2_method(xc="LSDA")
+        assert pw.potentials[0].atomic_number == 14
+        assert pw.potentials[0].valence == 4
+        assert pw.ecut_ry == pytest.approx(_ECUT_RY)
+        assert pw.k_mesh == _K_MESH
+        assert pw.xc == "LSDA"
+
+    @pytest.mark.parametrize("name", ("potentials", "ecut_ry", "k_mesh", "xc"))
+    def test_identity_is_read_only(self, name: str) -> None:
+        pw = _si2_method()
+        with pytest.raises(AttributeError):
+            setattr(pw, name, getattr(pw, name))
+
+    def test_no_pseudopotential_raises(self) -> None:
+        with pytest.raises(TypeError):
+            PW(ecut_ry=_ECUT_RY, k_mesh=_K_MESH)
+
+    def test_null_pseudopotential_raises(self) -> None:
+        with pytest.raises((TypeError, ValueError)):
+            PW(potentials=None, ecut_ry=_ECUT_RY, k_mesh=_K_MESH)
 
 
 # ── forces(frame): (N,3) [eV/Å] + write-back ─────────────────────────
@@ -337,8 +318,7 @@ class TestPwForces:
     def lsda_forces() -> tuple["molpy.Frame", "np.ndarray"]:
         """The pinned run: same cell, ``xc = LSDA`` (REFERENCE.md settings)."""
         frame = _si2_frame(_STRETCH)
-        pw = _si2_method()
-        pw.xc = "LSDA"
+        pw = _si2_method(xc="LSDA")
         pw.build(frame)
         forces = np.asarray(pw.forces(frame), dtype=np.float64)
         return frame, forces
@@ -403,24 +383,18 @@ class TestPwForces:
         assert np.isfinite(energy)
         assert energy < 0.0
 
-    def test_lsda_max_force_matches_cpu_pin(
+    def test_lsda_all_force_components_match_qe(
         self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
-        """HARD-CODED GOLDEN: max|F| = 2.517979 eV/Å on this fixture with
-        xc = LSDA (regressions/pw/cuda-pw-forces/REFERENCE.md:44-46, GH200
-        job 1050105 — the CPU analytic path is the oracle there), graded at
-        that regression's own 5e-3 eV/Å parity bound."""
+        """Actual QE7.5 preprojection forces at the original component bound."""
         _, forces = lsda_forces
-        max_force = float(np.max(np.abs(forces)))
-        assert max_force == pytest.approx(_PIN_MAX_FORCE_EV_A, abs=_TOL_FORCE_PIN_EV_A)
+        np.testing.assert_allclose(forces, _PIN_FORCE_EV_A,
+                                   atol=_TOL_FORCE_PIN_EV_A, rtol=0)
 
-    def test_lsda_force_path_energy_matches_cpu_pin(
+    def test_lsda_force_path_energy_matches_qe(
         self, lsda_forces: tuple["molpy.Frame", "np.ndarray"]
     ) -> None:
-        """HARD-CODED GOLDEN: the force path's SCF total energy is
-        -13.85556302 Ry (same REFERENCE.md:46 line), read back in eV from
-        the frame metadata because ``last_result()`` is not published by the
-        analytic force path (``pw_forces_analytic`` leaves it untouched)."""
+        """Actual QE7.5 total energy, published to the same Frame in eV."""
         frame, _ = lsda_forces
         assert frame.meta["energy"] == pytest.approx(
             _PIN_FORCE_PATH_ENERGY_EV, abs=_TOL_PIN_ENERGY_EV
@@ -446,6 +420,11 @@ class TestPwStress:
         pw = _si2_method()
         pw.build(frame)
         stress = np.asarray(pw.stress(frame), dtype=np.float64)
+        # Frame stores extensive virial [eV]; the returned stress is [eV/Å³].
+        np.testing.assert_allclose(
+            np.asarray(frame.meta["stress"]), stress * frame.box.volume()
+        )
+        assert np.isfinite(frame.meta["energy"])
         return frame, stress, x_before
 
     def test_returns_voigt_six_vector(
@@ -515,7 +494,11 @@ class TestPwResultFields:
         frame = _si2_frame(_STRETCH)
         pw = _si2_method()
         pw.build(frame)
-        return pw.run(frame)
+        result = pw.run(frame)
+        assert frame.meta["energy"] == pytest.approx(
+            result.energy * 13.605693, rel=1e-12
+        )
+        return result
 
     def test_n_kpts_is_one_at_gamma(self, si2_result: "PWResult") -> None:
         """k_mesh = 1 is the Γ point only, so the Monkhorst-Pack set has a
@@ -555,10 +538,7 @@ class TestPwSpinPolarized:
     def h_atom_result() -> "PWResult":
         """Spin-polarized doublet H in the pw-bomd-h cell."""
         frame = _h_atom_frame()
-        pw = PW()
-        pw.gth_name = _GTH_H
-        pw.ecut_ry = _H_ECUT_RY
-        pw.k_mesh = _K_MESH
+        pw = PW(potentials=[GthPseudopotential(1, _GTH_H)], ecut_ry=_H_ECUT_RY, k_mesh=_K_MESH)
         pw.tol = _TOL
         pw.max_iter = _H_MAX_ITER
         pw.mix_beta = _H_MIX_BETA
@@ -630,13 +610,13 @@ class TestPwFailsLoud:
 
 @pytest.mark.skipif(not _HAS_PW, reason="extension built without ATV_BUILD_PW")
 class TestPwBomd:
-    """``MD.set_evaluator(PWEvaluator(pw))`` — the C++ twin is
-    regressions/pw/pw-bomd-h (reg_pw-bomd-h.cpp:39-60), whose speed settings
+    """``MD.set_evaluator(pw)`` — the C++ twin is
+    regressions/dynamics/bomd (reg_pw-bomd-h.cpp:39-60), whose speed settings
     (tol 1e-4, max_iter 12) are reused here on the stretched Si2 cell so one
     step stays ~0.3 s. Three steps is a smoke, not an energy-drift test:
     the drift pin belongs to that regression.
 
-    ``PWEvaluator`` and the MD names are imported inside the bodies for the
+    The MD names are imported inside the bodies for the
     same build-capability reason as test_md.py's AM1 class — they are absent
     from a wheel built without the matching domain.
     """
@@ -648,13 +628,12 @@ class TestPwBomd:
         the x column it started from."""
         from atomiverse.md import MD
         from atomiverse.md.integrator import VelocityVerlet
-        from atomiverse.pw import PWEvaluator
 
         frame = _si2_frame(_STRETCH)
         x_before = np.asarray(frame["atoms"]["x"], dtype=np.float64).copy()
         sim = MD()
         sim.set_integrator(VelocityVerlet(_BOMD_DT_FS))
-        sim.set_evaluator(PWEvaluator(_si2_bomd_method()))
+        sim.set_evaluator(_si2_bomd_method())
         sim.run(frame, _BOMD_STEPS)
         return frame, x_before
 
@@ -664,11 +643,10 @@ class TestPwBomd:
         whole point of the spec row."""
         from atomiverse.md import MD
         from atomiverse.md.integrator import VelocityVerlet
-        from atomiverse.pw import PWEvaluator
 
         sim = MD()
         sim.set_integrator(VelocityVerlet(_BOMD_DT_FS))
-        sim.set_evaluator(PWEvaluator(_si2_bomd_method()))
+        sim.set_evaluator(_si2_bomd_method())
 
     def test_potential_energy_finite_and_bound(
         self, bomd_si2: tuple["molpy.Frame", "np.ndarray"]

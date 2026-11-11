@@ -33,6 +33,12 @@
 ///
 /// Spec: `.claude/specs/esmm-cpmd-02-timestep-protocol/spec.md` (Design).
 
+#include "atomiverse/cpu/dynamics/barostat.h"
+#include "atomiverse/cpu/dynamics/berendsen.h"
+#include "atomiverse/cpu/dynamics/deform.h"
+#include "atomiverse/cpu/dynamics/fix_move.h"
+#include "atomiverse/cpu/dynamics/fix_oscillating_efield.h"
+#include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -47,6 +53,7 @@
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/integrator.h"
 #include "atomiverse/cpu/component/timestep_protocol.h"
+#include "atomiverse/cpu/driver/dof.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nve_limit.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
@@ -58,6 +65,23 @@ namespace {
 constexpr double kDt = 0.5;      // [fs] — the nuclear timestep under test
 constexpr double kOtherDt = 1.0; // [fs] — a DIFFERENT, conflicting one
 constexpr double kXmax = 0.1;    // [Å]  — NVELimit displacement cap
+
+TEST(IntegrationImages, VerletLeavesCrossingUnwrappedUntilNeighborRebuild) {
+    ATV::cpu::Frame frame(1);
+    frame.box = ATV::cpu::Box::cubic(10);
+    frame.span(ATV::kAtom_x)[0] = 9.9;
+    frame.span(ATV::kAtom_vx)[0] = 1;
+    frame.span(ATV::kAtom_mass)[0] = 1;
+    frame.grow(4);
+    frame.set_nghost(1);
+    frame.span(ATV::kAtom_x)[1] = -.1;
+    ATV::cpu::Context context;
+    ATV::cpu::md::VelocityVerlet integrator(.2);
+    integrator.launch(
+        {context, frame, ATV::slot_of(ATV::md::Phase::initial_integrate), 0});
+    EXPECT_NEAR(frame.span(ATV::kAtom_x)[0], 10.1, 1e-14);
+    EXPECT_DOUBLE_EQ(frame.span(ATV::kAtom_x)[1], -.1);
+}
 
 bool message_mentions(const std::exception& e, const std::string& needle) {
     return std::string(e.what()).find(needle) != std::string::npos;
@@ -183,9 +207,8 @@ TEST(TimestepProtocol, ConflictingProvidersThrowNamingBoth) {
     }
 }
 
-/// Agreement is not a conflict: two providers on the same clock build fine,
-/// and the agreed dt still reaches the consumer.
-TEST(TimestepProtocol, AgreeingProvidersPushTheSharedTimestep) {
+/// Equal timestep values do not make two independent integrators one owner.
+TEST(TimestepProtocol, DistinctIntegratorsWithEqualTimestepsAreRejected) {
     TimestepProviderStub one{"stub_integrator_a", kDt};
     TimestepProviderStub two{"stub_integrator_b", kDt};
     atv_test::NoOpForce force;
@@ -197,8 +220,8 @@ TEST(TimestepProtocol, AgreeingProvidersPushTheSharedTimestep) {
     sim.set_observer_ref(force);
     sim.set_observer_ref(consumer);
 
-    ASSERT_NO_THROW(sim.build());
-    EXPECT_DOUBLE_EQ(consumer.received_dt_fs, kDt);
+    EXPECT_THROW(sim.build(), std::runtime_error);
+    EXPECT_EQ(consumer.set_calls, 0);
 }
 
 /// A consumer that cannot run without a dt (`cpmd == true`) and no provider is
@@ -316,4 +339,213 @@ TEST(TimestepProtocol, NonFiniteProviderTimestepSurfacesAtBuild) {
         EXPECT_EQ(consumer.set_calls, 0) << e.what();
         EXPECT_FALSE(consumer.holds_usable_dt()) << e.what();
     }
+}
+
+TEST(TimestepConsumers, ConcreteOwnersUsePublishedTimestep) {
+    using namespace ATV;
+    auto check = [](auto make, ATV::md::Phase phase) {
+        cpu::Frame frame(2);
+        frame.box = cpu::Box::cubic(10);
+        for (int i = 0; i < 2; ++i) {
+            frame.span(kAtom_tag)[i] = i + 1;
+            frame.span(kAtom_type)[i] = 7;
+            frame.span(kAtom_mass)[i] = 39.9;
+            frame.span(kAtom_charge)[i] = i ? -1 : 1;
+            frame.span(kAtom_x)[i] = i + 1;
+            frame.span(kAtom_vx)[i] = i ? -0.01 : 0.01;
+        }
+        frame.meta.get(kStress).fill(10);
+        auto reference_frame = frame;
+        auto old_frame = frame;
+        auto consumer = make(0.5);
+        auto reference = make(1.0);
+        auto old = make(0.5);
+        SCOPED_TRACE(consumer.name());
+        ASSERT_NE(consumer.as_timestep_consumer(), nullptr);
+        consumer.as_timestep_consumer()->set_timestep(1.0);
+        EXPECT_THROW(consumer.as_timestep_consumer()->set_timestep(0),
+                     std::invalid_argument);
+        EXPECT_THROW(consumer.as_timestep_consumer()->set_timestep(
+                         std::numeric_limits<double>::infinity()),
+                     std::invalid_argument);
+        cpu::Context context;
+        // Direct owner calls need the same constraint-aware DOF publication
+        // that Driver performs before component build (two atoms => 3 DOF).
+        cpu::publish_global_dof(context, frame, 0);
+        ASSERT_EQ(context.md.n_dof_global, 3);
+        consumer.build({context, frame});
+        reference.build({context, reference_frame});
+        old.build({context, old_frame});
+        consumer.launch({context, frame, slot_of(phase), 3});
+        reference.launch({context, reference_frame, slot_of(phase), 3});
+        old.launch({context, old_frame, slot_of(phase), 3});
+        double changed = std::abs(frame.box.volume() - old_frame.box.volume());
+        EXPECT_DOUBLE_EQ(frame.box.volume(), reference_frame.box.volume());
+        for (auto column :
+             {kAtom_x, kAtom_y, kAtom_z, kAtom_vx, kAtom_vy, kAtom_vz})
+            for (int i = 0; i < 2; ++i) {
+                EXPECT_DOUBLE_EQ(frame.span(column)[i],
+                                 reference_frame.span(column)[i]);
+                changed +=
+                    std::abs(frame.span(column)[i] - old_frame.span(column)[i]);
+            }
+        for (auto column : {kAtom_fx, kAtom_fy, kAtom_fz})
+            for (int i = 0; i < 2; ++i) {
+                EXPECT_DOUBLE_EQ(frame.span(column)[i],
+                                 reference_frame.span(column)[i]);
+                changed +=
+                    std::abs(frame.span(column)[i] - old_frame.span(column)[i]);
+            }
+        EXPECT_GT(changed, 1e-12);
+        consumer.destroy({context, frame});
+        reference.destroy({context, reference_frame});
+        old.destroy({context, old_frame});
+    };
+    // lj units: the frame is at T ≈ 2.7e-3, so a 300 setpoint would pin
+    // λ to the 1.25 clamp for every dt. T₀ = 5e-3 keeps λ dt-dependent.
+    check([](double dt) { return cpu::md::Berendsen(0.005, 100, dt); },
+          md::Phase::end_of_step);
+    check([](double dt) { return cpu::md::NoseHoover(300, 100, dt); },
+          md::Phase::initial_integrate);
+    check([](double dt) { return cpu::md::Barostat(0, 100, dt); },
+          md::Phase::end_of_step);
+    check(
+        [](double dt) {
+            return cpu::md::Deform(cpu::md::Deform::Mode::erate, 0.01, dt);
+        },
+        md::Phase::end_of_step);
+    check([](double dt) { return cpu::md::FixMove(0.1, 0.2, 0.3, 7, dt); },
+          md::Phase::initial_integrate);
+    check(
+        [](double dt) {
+            return cpu::md::FixOscillatingEfield(1, 2, 3, 10, dt);
+        },
+        md::Phase::post_force);
+}
+
+TEST(FixMoveIdentity, RowPermutationPreservesOriginsAndForceVeto) {
+    using namespace ATV;
+    cpu::Frame frame(2);
+    frame.box = cpu::Box::cubic(10);
+    frame.span(kAtom_tag)[0] = 11;
+    frame.span(kAtom_tag)[1] = 22;
+    frame.span(kAtom_type)[0] = frame.span(kAtom_type)[1] = 7;
+    frame.span(kAtom_x)[0] = 2;
+    frame.span(kAtom_x)[1] = 4;
+    cpu::Context context;
+    cpu::md::FixMove move(1, 0, 0, 7, 0.5);
+    move.build({context, frame});
+    const auto original = frame;
+    frame.copy_row_from(original, 0, 1);
+    frame.copy_row_from(original, 1, 0);
+    move.launch({context, frame, slot_of(md::Phase::initial_integrate), 3});
+    EXPECT_EQ(frame.span(kAtom_x)[0], 5.5);
+    EXPECT_EQ(frame.span(kAtom_x)[1], 3.5);
+    frame.span(kAtom_fx)[0] = frame.span(kAtom_fx)[1] = 99;
+    move.launch(
+        {context, frame, slot_of(md::Phase::post_force), 3, false, false});
+    EXPECT_EQ(frame.span(kAtom_fx)[0], 99);
+    EXPECT_EQ(frame.span(kAtom_fx)[1], 99);
+    frame.span(kAtom_tag)[1] = 33;
+    EXPECT_THROW(
+        move.launch({context, frame, slot_of(md::Phase::initial_integrate), 4}),
+        std::runtime_error);
+    move.destroy({context, frame});
+}
+
+TEST(NoseHooverBoundary, ZeroPublishedDofPreservesVelocitiesAndChain) {
+    using namespace ATV;
+    cpu::Context context;
+    cpu::Frame single(1);
+    single.span(kAtom_mass)[0] = 39.9;
+    single.span(kAtom_vx)[0] = 0.01;
+    single.span(kAtom_vy)[0] = -0.02;
+    cpu::publish_global_dof(context, single, 0);
+    ASSERT_EQ(context.md.n_dof_global, 0);
+    cpu::md::NoseHoover thermostat(300, 100, 1);
+    thermostat.build({context, single});
+    for (auto phase :
+         {md::Phase::initial_integrate, md::Phase::final_integrate}) {
+        thermostat.launch({context, single, slot_of(phase), 0});
+        EXPECT_EQ(single.span(kAtom_vx)[0], 0.01);
+        EXPECT_EQ(single.span(kAtom_vy)[0], -0.02);
+        EXPECT_EQ(single.span(kAtom_vz)[0], 0);
+    }
+
+    // A later valid DOF publication must see an unpoisoned thermostat chain.
+    cpu::Frame pair(2);
+    for (int i = 0; i < 2; ++i) {
+        pair.span(kAtom_mass)[i] = 39.9;
+        pair.span(kAtom_vx)[i] = i ? -0.01 : 0.01;
+    }
+    auto reference_frame = pair;
+    cpu::publish_global_dof(context, pair, 0);
+    cpu::md::NoseHoover reference(300, 100, 1);
+    reference.build({context, reference_frame});
+    thermostat.launch(
+        {context, pair, slot_of(md::Phase::initial_integrate), 1});
+    reference.launch(
+        {context, reference_frame, slot_of(md::Phase::initial_integrate), 1});
+    for (int i = 0; i < 2; ++i) {
+        EXPECT_TRUE(std::isfinite(pair.span(kAtom_vx)[i]));
+        EXPECT_DOUBLE_EQ(pair.span(kAtom_vx)[i],
+                         reference_frame.span(kAtom_vx)[i]);
+    }
+    EXPECT_GT(std::abs(pair.span(kAtom_vx)[0] - 0.01), 1e-12);
+}
+
+TEST(TimestepProtocol, SameIntegratorMayOwnBothIntegrationPhases) {
+    TimestepProviderStub clock{"clock", kDt};
+    TimestepConsumerStub consumer{"consumer", true};
+    atv_test::NoOpForce force;
+    ATV::cpu::md::MD sim;
+    sim.on(ATV::md::Phase::initial_integrate).add_ref(clock);
+    sim.on(ATV::md::Phase::final_integrate).add_ref(clock);
+    sim.set_observer_ref(force);
+    sim.set_observer_ref(consumer);
+    EXPECT_NO_THROW(sim.build());
+    EXPECT_EQ(consumer.set_calls, 1);
+}
+
+TEST(TimestepProtocol, LiveConsumerReceivesClockBeforeItsBuild) {
+    atv_test::NoOpForce force;
+    TimestepConsumerStub consumer{"live_consumer", true};
+    ATV::cpu::md::MD sim;
+    sim.set_integrator(ATV::cpu::md::VelocityVerlet{kDt});
+    sim.set_observer_ref(force);
+    auto frame = atv_test::make_trivial_frame();
+    sim.run(frame, 0);
+    sim.set_observer_ref(consumer);
+    sim.run(frame, 0);
+    EXPECT_EQ(consumer.build_calls, 1);
+    EXPECT_TRUE(consumer.dt_known_at_build);
+    EXPECT_DOUBLE_EQ(consumer.received_dt_fs, kDt);
+}
+
+TEST(TimestepProtocol, LiveSecondIntegratorIsRejectedBeforeDispatch) {
+    TimestepProviderStub first{"first", kDt}, second{"second", kDt};
+    atv_test::NoOpForce force;
+    ATV::cpu::md::MD sim;
+    sim.on(ATV::md::Phase::initial_integrate).add_ref(first);
+    sim.set_observer_ref(force);
+    auto frame = atv_test::make_trivial_frame();
+    sim.run(frame, 0);
+    sim.on(ATV::md::Phase::final_integrate).add_ref(second);
+    EXPECT_THROW(sim.run(frame, 1), std::runtime_error);
+}
+
+// A zero / negative / non-finite setpoint, coupling time or step would make
+// the chain mass Q = N k_B T tau^2 vanish: refused at construction and by
+// set_T_target, the same refusal as cuda::md::NoseHoover.
+TEST(NoseHooverParameters, NonPositiveOrNonFiniteParametersAreRefused) {
+    using ATV::cpu::md::NoseHoover;
+    const double inf = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(NoseHoover(0.0, 100.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(-5.0, 100.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(300.0, 0.0, 1.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(300.0, 100.0, 0.0), std::invalid_argument);
+    EXPECT_THROW(NoseHoover(inf, 100.0, 1.0), std::invalid_argument);
+    NoseHoover nh(300.0, 100.0, 1.0);
+    EXPECT_THROW(nh.set_T_target(0.0), std::invalid_argument);
+    EXPECT_NO_THROW(nh.set_T_target(250.0));
 }

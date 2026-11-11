@@ -13,6 +13,8 @@
 #include <complex>
 #include <cuda_runtime.h>
 
+#include "atomiverse/cuda/gpw/internal/kpoint_basis.cuh"
+
 namespace ATV {
 namespace cuda {
 namespace gpw {
@@ -20,7 +22,7 @@ namespace internal {
 
 /// @brief Device workspace for multi-k χ^k density collocation.
 ///
-/// Owns χ buffers (nk · npts · nb complex) and a P_k scratch (nb · nb).
+/// Borrows χ and owns the P_k scratch (nb · nb).
 /// Caller owns `d_rho` and zeros it before the first `collocate_k` of an
 /// SCF iteration (or use `collocate_zero` to clear).
 class KpointCollocateDevice {
@@ -31,21 +33,8 @@ class KpointCollocateDevice {
     KpointCollocateDevice(const KpointCollocateDevice&) = delete;
     KpointCollocateDevice& operator=(const KpointCollocateDevice&) = delete;
 
-    /// @brief Allocate device χ stack + P scratch.
-    ///
-    /// @param stream Non-default SCF stream (caller-owned; may be null).
-    /// @param nk     Number of k-points.
-    /// @param nb     AO basis size.
-    /// @param npts   Real-space grid points.
-    void build(cudaStream_t stream, int nk, int nb, long npts);
-
-    /// @brief Upload one k's χ (length npts·nb, row-major g-major then u).
-    ///
-    /// Layout matches host `KpointBasisGrid::chi[ik][g * nb + u]`.
-    ///
-    /// @param ik        k index in [0, nk).
-    /// @param chi_host  Host complex buffer, length npts·nb.
-    void upload_chi(int ik, const std::complex<double>* chi_host);
+    /// @brief Borrow the AO table and allocate P scratch. The table outlives this workspace.
+    void build(const KpointBasisDevice& basis);
 
     /// @brief Zero device density (async on the bound stream).
     void zero_rho(double* d_rho) const;
@@ -92,7 +81,7 @@ class KpointCollocateDevice {
     int nb_ = 0;
     long npts_ = 0;
     /// Packed χ: [ik][g * nb + u] as interleaved double2 / cuDoubleComplex.
-    double2* d_chi_ = nullptr;
+    const double2* d_chi_ = nullptr;
     double2* d_P_ = nullptr; ///< nb×nb row-major scratch.
     bool built_ = false;
 };

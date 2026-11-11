@@ -1,0 +1,249 @@
+/// @file regressions/multiscale/qmmm_es_h2o_pyscf/reg_qmmm_es_h2o_pyscf.cpp
+/// @brief Electrostatic QM/MM coupling vs offline PySCF qmmm.mm_charge pin
+///        (esmm-qmmm-03). Public API only; zero cross-LJ so the coupling
+///        reproduces the bare embedding SCF of esmm-qmmm-01.
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <stdexcept>
+
+#include "atomiverse/core/stage.h"
+#include "atomiverse/core/units.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
+#include "atomiverse/cpu/frame/column.h"
+#include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/multiscale/qm_mask.h"
+#include "atomiverse/cpu/multiscale/qmmm_electrostatic.h"
+#include "atomiverse/cpu/scf/methods.h"
+#include "harness/registry.h"
+
+namespace atv_reg_multiscale_qmmm_es_h2o_pyscf {
+
+namespace {
+
+struct HistoryRequest : ATV::cpu::Component {
+    int& mode;
+    bool clear;
+    HistoryRequest(int& m, bool reset) : mode(m), clear(reset) {}
+    std::string name() const override { return "qmmm_history_request"; }
+    void launch(const ATV::cpu::LaunchContext& ctx) override {
+        ctx.runtime.exec.initializing_forces = !clear && mode == 1;
+        ctx.runtime.exec.trial_evaluation = !clear && mode == 2;
+    }
+};
+
+bool check_embedding_history(const ATV::cpu::Frame& reference) {
+    using namespace ATV;
+    cpu::scf::RHF normal{cpu::scf::BasisSet::STO3G};
+    cpu::scf::RHF probed{cpu::scf::BasisSet::STO3G};
+    const auto fail = [](const char* quantity, int step, double got,
+                         double want, double tolerance) {
+        std::fprintf(
+            stderr,
+            "FAIL: RHF QM/MM %s step=%d got=%.16e want=%.16e tol=%.3e\n",
+            quantity, step, got, want, tolerance);
+        return false;
+    };
+    normal.tol = probed.tol = 1e-12;
+    normal.max_iter = probed.max_iter = 200;
+    normal.predictor(1, 2, 1e-12, true);
+    probed.predictor(1, 2, 1e-12, true);
+    cpu::QmmmElectrostatic plain_qm{{}, 10, 20}, probe_qm{{}, 10, 20};
+    plain_qm.set_engine_ref(normal);
+    probe_qm.set_engine_ref(probed);
+    cpu::Evaluate plain, with_probes;
+    int mode = 0;
+    plain.on(evaluate::Phase::evaluate).add_ref(plain_qm);
+    with_probes.on(evaluate::Phase::evaluate)
+        .add(HistoryRequest{mode, false}, -1);
+    with_probes.on(evaluate::Phase::evaluate).add_ref(probe_qm);
+    with_probes.on(evaluate::Phase::evaluate)
+        .add(HistoryRequest{mode, true}, 1);
+    plain.set_threads(1);
+    with_probes.set_threads(1);
+    plain.build();
+    with_probes.build();
+    for (mode = 1; mode <= 2; ++mode) {
+        auto probe = reference;
+        probe.span(kAtom_x)[1] += 0.02 * mode;
+        with_probes.run(probe);
+    }
+    for (int step = 0; step < 4; ++step) {
+        mode = 0;
+        auto a = reference;
+        a.span(kAtom_y)[1] += 0.01 * step;
+        auto b = a;
+        plain.run(a);
+        with_probes.run(b);
+        if (normal.iterations() != probed.iterations())
+            return fail("iterations", step, probed.iterations(),
+                        normal.iterations(), 0);
+        if (std::abs(a.meta.get(kEnergy) - b.meta.get(kEnergy)) > 1e-9)
+            return fail("energy", step, b.meta.get(kEnergy),
+                        a.meta.get(kEnergy), 1e-9);
+        const AccReal* af[] = {a.span(kAtom_fx), a.span(kAtom_fy),
+                               a.span(kAtom_fz)};
+        const AccReal* bf[] = {b.span(kAtom_fx), b.span(kAtom_fy),
+                               b.span(kAtom_fz)};
+        for (int i = 0; i < 5; ++i)
+            for (int d = 0; d < 3; ++d)
+                if (std::abs(af[d][i] - bf[d][i]) > 1e-8) {
+                    std::fprintf(stderr, "atom=%d axis=%d ", i, d);
+                    return fail("force", step, bf[d][i], af[d][i], 1e-8);
+                }
+        probe_qm.reset_history_each_launch() = true;
+        for (mode = 1; mode <= 2; ++mode) {
+            auto trial = b;
+            trial.span(kAtom_z)[2] += 0.08 * mode;
+            with_probes.run(trial);
+        }
+        probe_qm.reset_history_each_launch() = false;
+        mode = 0;
+        auto failed = b;
+        failed.span(kAtom_z)[2] += 0.3;
+        probed.max_iter = 1;
+        bool rejected = false;
+        try {
+            with_probes.run(failed);
+        } catch (const std::runtime_error&) {
+            rejected = true;
+        }
+        probed.max_iter = 200;
+        if (!rejected)
+            return fail("failed SCF rejected", step, 0, 1, 0);
+        if (probed.converged())
+            return fail("failed SCF converged", step, 1, 0, 0);
+    }
+    // Parent release must restore the borrowed method's standalone posture.
+    auto replay = reference;
+    {
+        cpu::Evaluate another;
+        another.on(evaluate::Phase::evaluate).add_ref(probe_qm);
+        another.set_threads(1);
+        another.build();
+        another.run(replay);
+    }
+    if (!probed.converged())
+        return fail("new parent retry converged", 4, 0, 1, 0);
+    return true;
+}
+
+} // namespace
+
+int run() {
+    using namespace ATV;
+
+    // 3 QM water + 2 MM point-charge atoms (same geometry as embed_h2o_mm_forces)
+    cpu::Frame frame(5);
+    frame.span(kAtom_atomic_number)[0] = 8;
+    frame.span(kAtom_type)[0] = 8;
+    frame.span(kAtom_z)[0] = 0.1173;
+    frame.span(kAtom_atomic_number)[1] = 1;
+    frame.span(kAtom_type)[1] = 1;
+    frame.span(kAtom_y)[1] = 0.7572;
+    frame.span(kAtom_z)[1] = -0.4692;
+    frame.span(kAtom_atomic_number)[2] = 1;
+    frame.span(kAtom_type)[2] = 1;
+    frame.span(kAtom_y)[2] = -0.7572;
+    frame.span(kAtom_z)[2] = -0.4692;
+    frame.span(kAtom_type)[3] = 99; // MM site type
+    frame.span(kAtom_z)[3] = 3.0;
+    frame.span(kAtom_charge)[3] = 0.5;
+    frame.span(kAtom_type)[4] = 99; // MM site type
+    frame.span(kAtom_z)[4] = -3.0;
+    frame.span(kAtom_charge)[4] = -0.5;
+    for (int i = 0; i < 5; ++i)
+        frame.span(kAtom_tag)[i] = i + 1;
+    frame.box = cpu::Box::cubic(20.0);
+    frame.blocks.at("atoms").insert(
+        "qm", cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone,
+                              kDynamicFieldId});
+    auto qm = frame.span(cpu::kAtomQm);
+    qm[0] = 1;
+    qm[1] = 1;
+    qm[2] = 1;
+    qm[3] = 0;
+    qm[4] = 0;
+
+    // Zero cross-LJ → pure electrostatic embedding path.
+    cpu::QmmmElectrostatic qmmm{{}, 10.0, 20.0};
+    cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
+    rhf.tol = 1e-12;
+    rhf.max_iter = 200;
+    qmmm.set_engine(std::move(rhf));
+
+    cpu::Evaluate eval;
+    eval.on(evaluate::Phase::evaluate).add_ref(qmmm);
+    eval.build();
+    eval.run(frame);
+
+    auto g_ha = [&](int i, int d) {
+        const double f = d == 0 ? frame.span(kAtom_fx)[i]
+                                : (d == 1 ? frame.span(kAtom_fy)[i]
+                                          : frame.span(kAtom_fz)[i]);
+        return -units::convert(f, units::Force::eVPerAngstrom,
+                               units::Force::HartreePerBohr);
+    };
+
+    // PySCF 2.14 pins (embed_h2o_grad + embed_h2o_mm_forces, self-energy off)
+    const double want_qm[3][3] = {
+        {0.0, 0.0, -6.3053441384e-02},
+        {0.0, -1.7882928801e-02, 3.1195488026e-02},
+        {0.0, 1.7882928801e-02, 3.1195488026e-02},
+    };
+    const double want_mm[2][3] = {
+        {0.0, 0.0, 4.053776692103e-03},
+        {0.0, 0.0, -3.391311764744e-03},
+    };
+    const double tol = 1e-5;
+
+    double max_err = 0.0;
+    for (int A = 0; A < 3; ++A)
+        for (int d = 0; d < 3; ++d) {
+            const double err = std::fabs(g_ha(A, d) - want_qm[A][d]);
+            max_err = std::max(max_err, err);
+            std::printf("g_qm[%d][%d] got=% .10e want=% .10e |err|=%.2e\n", A,
+                        d, g_ha(A, d), want_qm[A][d], err);
+        }
+    for (int c = 0; c < 2; ++c)
+        for (int d = 0; d < 3; ++d) {
+            const int i = 3 + c;
+            const double err = std::fabs(g_ha(i, d) - want_mm[c][d]);
+            max_err = std::max(max_err, err);
+            std::printf("g_mm[%d][%d] got=% .10e want=% .10e |err|=%.2e\n", c,
+                        d, g_ha(i, d), want_mm[c][d], err);
+        }
+    std::printf("max_elementwise_err=%.3e tol=%.0e\n", max_err, tol);
+
+    double sum[3] = {0, 0, 0};
+    for (int i = 0; i < 5; ++i) {
+        sum[0] += frame.span(kAtom_fx)[i];
+        sum[1] += frame.span(kAtom_fy)[i];
+        sum[2] += frame.span(kAtom_fz)[i];
+    }
+    const double net =
+        std::sqrt(sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]);
+    std::printf("net_force_eVA=%.3e (tol 1e-9)\n", net);
+    std::printf("E_qm_eV=%.6f residual=(%.3e,%.3e,%.3e)\n",
+                qmmm.last_qm_energy(), qmmm.last_force_residual()[0],
+                qmmm.last_force_residual()[1], qmmm.last_force_residual()[2]);
+
+    if (!(max_err < tol) || !(net < 1e-9)) {
+        std::printf("FAIL\n");
+        return 1;
+    }
+    if (!check_embedding_history(frame)) {
+        std::fprintf(
+            stderr,
+            "FAIL: QM/MM predictor history or failed-retry isolation\n");
+        return 1;
+    }
+    std::printf("PASS\n");
+    return 0;
+}
+
+} // namespace atv_reg_multiscale_qmmm_es_h2o_pyscf
+
+ATV_REGRESSION("multiscale/qmmm", "qmmm_es_h2o_pyscf",
+               atv_reg_multiscale_qmmm_es_h2o_pyscf::run);

@@ -1,9 +1,15 @@
 /// @file cuda/dynamics/init.cu
-/// @brief Initializer implementations: ZeroForces, ZeroEnergy, ZeroKinetic, InitVelocity.
+/// @brief MD velocity initialization and momentum control.
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
+#include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
+#include <cublas_v2.h>
+#include <memory>
+#include <type_traits>
 
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
@@ -11,46 +17,8 @@
 
 namespace ATV {
 
-using cuda::prec_t;
-using cuda::real_t;
-using cuda::work_t;
-
 namespace cuda {
 namespace md {
-
-// ── Zero initializers ────────────────────────────────────────────────
-
-void ZeroForces::launch(const LaunchContext& ctx) {
-    auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    auto& frame = ctx.frame;
-    auto n = static_cast<size_t>(ctx.frame.n_atoms());
-    cudaMemsetAsync(frame.atoms.fx, 0, n * sizeof(real_t), stream);
-    cudaMemsetAsync(frame.atoms.fy, 0, n * sizeof(real_t), stream);
-    cudaMemsetAsync(frame.atoms.fz, 0, n * sizeof(real_t), stream);
-}
-
-void ZeroEnergy::launch(const LaunchContext& ctx) {
-    auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    auto& frame = ctx.frame;
-    // Zero `energy` + 4 per-term fields. The pair/bonded virial lives on
-    // `ZeroStress` (same split as `cpu::ZeroEnergy` / `cpu::ZeroStress`).
-    cudaMemsetAsync(&frame.scalars->energy, 0, 5 * sizeof(double), stream);
-}
-
-void ZeroStress::launch(const LaunchContext& ctx) {
-    auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    auto& frame = ctx.frame;
-    // Without this clear, force kernels (LJ + bond/angle/dihedral)
-    // accumulate virial across steps and `NoseHooverNPT` reads runaway
-    // pressure.
-    cudaMemsetAsync(&frame.scalars->stress[0], 0, 6 * sizeof(double), stream);
-}
-
-void ZeroKinetic::launch(const LaunchContext& ctx) {
-    auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    auto& frame = ctx.frame;
-    cudaMemsetAsync(&frame.scalars->kinetic, 0, sizeof(prec_t), stream);
-}
 
 // ── InitVelocity ─────────────────────────────────────────────────────
 
@@ -58,97 +26,103 @@ namespace {
 
 /// @brief Generate Gaussian-distributed velocities at target temperature.
 ///
-/// v_i ~ N(0, sigma) where sigma = sqrt(kB*T / (ATV::units::mass_v2_to_energy * m_i)).
+/// v_i ~ N(0, sigma) where sigma = sqrt(kB*T / (mvv2e * m_i)).
 /// Uses cuRAND device API (per-thread state, Philox generator).
 __global__ void
-generate_velocities(real_t* __restrict__ vx, real_t* __restrict__ vy,
-                    real_t* __restrict__ vz, const real_t* __restrict__ mass,
-                    work_t kbt_over_mvv2e, unsigned long long seed,
+generate_velocities(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+                    mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
+                    const std::int64_t* __restrict__ tag,
+                    mixed_t kbt_over_mvv2e, unsigned long long seed,
                     const int* __restrict__ n_ptr) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *n_ptr)
         return;
 
-    curandState state;
-    curand_init(seed, i, 0, &state);
-
-    work_t sigma = sqrt(kbt_over_mvv2e / static_cast<work_t>(mass[i]));
-    vx[i] = static_cast<real_t>(
-        static_cast<work_t>(curand_normal_double(&state)) * sigma);
-    vy[i] = static_cast<real_t>(
-        static_cast<work_t>(curand_normal_double(&state)) * sigma);
-    vz[i] = static_cast<real_t>(
-        static_cast<work_t>(curand_normal_double(&state)) * sigma);
+    curandStatePhilox4_32_10_t state;
+    curand_init(seed, static_cast<unsigned long long>(tag[i]), 0, &state);
+    const double2 xy = curand_normal2_double(&state);
+    const double2 zw = curand_normal2_double(&state);
+    const mixed_t sigma = sqrt(kbt_over_mvv2e / mass[i]);
+    vx[i] = mixed_t(xy.x) * sigma;
+    vy[i] = mixed_t(xy.y) * sigma;
+    vz[i] = mixed_t(zw.x) * sigma;
 }
 
-/// @brief Accumulate total momentum and total mass via atomicAdd.
-///
-/// Build-time only (atomicAdd precision acceptable for initialization).
+/// @brief CUB block sum of momentum/mass, one atomic per component/block.
 __global__ void accumulate_momentum(
-    const real_t* __restrict__ vx, const real_t* __restrict__ vy,
-    const real_t* __restrict__ vz, const real_t* __restrict__ mass,
-    work_t* __restrict__ px, work_t* __restrict__ py, work_t* __restrict__ pz,
-    work_t* __restrict__ total_mass, const int* __restrict__ n_ptr) {
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= *n_ptr)
-        return;
-
-    atomicAdd(px, static_cast<work_t>(mass[i]) * static_cast<work_t>(vx[i]));
-    atomicAdd(py, static_cast<work_t>(mass[i]) * static_cast<work_t>(vy[i]));
-    atomicAdd(pz, static_cast<work_t>(mass[i]) * static_cast<work_t>(vz[i]));
-    atomicAdd(total_mass, static_cast<work_t>(mass[i]));
+    const mixed_t* __restrict__ vx, const mixed_t* __restrict__ vy,
+    const mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
+    acc_t* __restrict__ px, acc_t* __restrict__ py, acc_t* __restrict__ pz,
+    acc_t* __restrict__ total_mass, const int* __restrict__ n_ptr) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    using Values = ::cuda::std::array<acc_t, 4>;
+    using Reduce = cub::BlockReduce<Values, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    Values values{};
+    if (i < *n_ptr) {
+        const acc_t m = static_cast<acc_t>(mass[i]);
+        values = {m * acc_t(vx[i]), m * acc_t(vy[i]), m * acc_t(vz[i]), m};
+    }
+    const auto sum =
+        Reduce(reduction).Reduce(values, SumComponents<acc_t, 4>{});
+    if (threadIdx.x == 0) {
+        atomicAdd(px, sum[0]);
+        atomicAdd(py, sum[1]);
+        atomicAdd(pz, sum[2]);
+        atomicAdd(total_mass, sum[3]);
+    }
 }
 
 /// @brief Subtract center-of-mass velocity from all atoms (host-provided v_cm).
-__global__ void remove_com(real_t* __restrict__ vx, real_t* __restrict__ vy,
-                           real_t* __restrict__ vz, work_t vcm_x, work_t vcm_y,
-                           work_t vcm_z, const int* __restrict__ n_ptr) {
+__global__ void remove_com(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+                           mixed_t* __restrict__ vz, acc_t vcm_x, acc_t vcm_y,
+                           acc_t vcm_z, const int* __restrict__ n_ptr) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *n_ptr)
         return;
 
-    vx[i] -= static_cast<real_t>(vcm_x);
-    vy[i] -= static_cast<real_t>(vcm_y);
-    vz[i] -= static_cast<real_t>(vcm_z);
+    vx[i] -= static_cast<mixed_t>(vcm_x);
+    vy[i] -= static_cast<mixed_t>(vcm_y);
+    vz[i] -= static_cast<mixed_t>(vcm_z);
 }
 
 /// @brief Subtract COM velocity computed from device-resident
-///        `scratch = {Σ m·v_x, Σ m·v_y, Σ m·v_z, Σ m}` (4 work_t words).
+///        `scratch = {Σ m·v_x, Σ m·v_y, Σ m·v_z, Σ m}` (4 acc_t words).
 ///
 /// Pure GPU — replaces the D2H + sync + host-divide + H2D-as-arg pattern
 /// used by the build()-time path with a single per-atom division. Cost:
 /// 3 FP64 divisions per atom (~60 cycles total on Hopper), dwarfed by the
 /// surrounding atomic-accumulate cost. Used by `ZeroMomentum::launch()`
-/// to keep the hot path GPU-pure (`CLAUDE.md ## Architecture § CUDA
+/// to keep the hot path GPU-pure (`docs/developer/project-contract.md ## Architecture § CUDA
 /// execution model` "launch() must be GPU-pure" rule).
 ///
 /// Each thread reads the 4-word scratch as broadcast — coalesced across
 /// the whole grid, served from L1 after the first warp.
-__global__ void remove_com_from_scratch(real_t* __restrict__ vx,
-                                        real_t* __restrict__ vy,
-                                        real_t* __restrict__ vz,
-                                        const work_t* __restrict__ scratch_pM,
-                                        const int* __restrict__ n_ptr) {
+__global__ void remove_com_from_scratch(mixed_t* __restrict__ vx,
+                                        mixed_t* __restrict__ vy,
+                                        mixed_t* __restrict__ vz,
+                                        const acc_t* __restrict__ scratch_pM,
+                                        const int* __restrict__ n_ptr,
+                                        const ForceFault* fault) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= *n_ptr)
+    if (i >= *n_ptr || state_frozen(fault))
         return;
 
-    work_t M = scratch_pM[3];
-    if (!(M > work_t(0))) // zero or NaN: no-op
+    acc_t M = scratch_pM[3];
+    if (!(M > acc_t(0))) // zero or NaN: no-op
         return;
 
-    work_t inv_M = work_t(1) / M;
-    work_t vcm_x = scratch_pM[0] * inv_M;
-    work_t vcm_y = scratch_pM[1] * inv_M;
-    work_t vcm_z = scratch_pM[2] * inv_M;
+    acc_t inv_M = acc_t(1) / M;
+    acc_t vcm_x = scratch_pM[0] * inv_M;
+    acc_t vcm_y = scratch_pM[1] * inv_M;
+    acc_t vcm_z = scratch_pM[2] * inv_M;
 
-    vx[i] -= static_cast<real_t>(vcm_x);
-    vy[i] -= static_cast<real_t>(vcm_y);
-    vz[i] -= static_cast<real_t>(vcm_z);
+    vx[i] -= static_cast<mixed_t>(vcm_x);
+    vy[i] -= static_cast<mixed_t>(vcm_y);
+    vz[i] -= static_cast<mixed_t>(vcm_z);
 }
 
 } // anonymous namespace
@@ -157,44 +131,46 @@ void InitVelocity::build(const BuildContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     auto& frame = ctx.frame;
     int n = ctx.frame.n_atoms();
+    if (n == 0)
+        return;
 
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
 
-    // sigma^2 = kB * T / (ATV::units::mass_v2_to_energy * m)  =>  pass kB*T/ATV::units::mass_v2_to_energy as common factor
-    work_t kbt_over_mvv2e =
-        ATV::units::kB_ev_per_k * temperature_ / ATV::units::mass_v2_to_energy;
+    // sigma^2 = kB * T / (mvv2e * m)  =>  pass kB*T/mvv2e as common factor
+    const mixed_t kbt_over_mvv2e = static_cast<mixed_t>(
+        ctx.runtime.units.boltz * temperature_ / ctx.runtime.units.mvv2e);
 
     // 1. Generate Gaussian velocities
     generate_velocities<<<grid, block, 0, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.mass,
-        kbt_over_mvv2e, seed_, frame.atoms.d_size);
+        frame.atoms.tag, kbt_over_mvv2e, seed_, frame.atoms.d_size);
 
     // 2. Compute total momentum + total mass
-    work_t* d_px;
-    work_t* d_py;
-    work_t* d_pz;
-    work_t* d_M;
-    cudaMalloc(&d_px, sizeof(work_t));
-    cudaMalloc(&d_py, sizeof(work_t));
-    cudaMalloc(&d_pz, sizeof(work_t));
-    cudaMalloc(&d_M, sizeof(work_t));
-    cudaMemsetAsync(d_px, 0, sizeof(work_t), stream);
-    cudaMemsetAsync(d_py, 0, sizeof(work_t), stream);
-    cudaMemsetAsync(d_pz, 0, sizeof(work_t), stream);
-    cudaMemsetAsync(d_M, 0, sizeof(work_t), stream);
+    acc_t* d_px;
+    acc_t* d_py;
+    acc_t* d_pz;
+    acc_t* d_M;
+    cudaMalloc(&d_px, sizeof(acc_t));
+    cudaMalloc(&d_py, sizeof(acc_t));
+    cudaMalloc(&d_pz, sizeof(acc_t));
+    cudaMalloc(&d_M, sizeof(acc_t));
+    cudaMemsetAsync(d_px, 0, sizeof(acc_t), stream);
+    cudaMemsetAsync(d_py, 0, sizeof(acc_t), stream);
+    cudaMemsetAsync(d_pz, 0, sizeof(acc_t), stream);
+    cudaMemsetAsync(d_M, 0, sizeof(acc_t), stream);
 
     accumulate_momentum<<<grid, block, 0, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.mass, d_px,
         d_py, d_pz, d_M, frame.atoms.d_size);
 
     // 3. D2H momentum + mass (build-time D2H allowed)
-    work_t px = 0, py = 0, pz = 0, M = 0;
+    acc_t px = 0, py = 0, pz = 0, M = 0;
     cudaStreamSynchronize(stream);
-    cudaMemcpy(&px, d_px, sizeof(work_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&py, d_py, sizeof(work_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&pz, d_pz, sizeof(work_t), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&M, d_M, sizeof(work_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&px, d_px, sizeof(acc_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&py, d_py, sizeof(acc_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&pz, d_pz, sizeof(acc_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&M, d_M, sizeof(acc_t), cudaMemcpyDeviceToHost);
 
     cudaFree(d_px);
     cudaFree(d_py);
@@ -202,14 +178,63 @@ void InitVelocity::build(const BuildContext& ctx) {
     cudaFree(d_M);
 
     // 4. Remove center-of-mass velocity
-    if (M > work_t(0)) {
-        work_t vcm_x = px / M;
-        work_t vcm_y = py / M;
-        work_t vcm_z = pz / M;
+    if (M > acc_t(0)) {
+        acc_t vcm_x = px / M;
+        acc_t vcm_y = py / M;
+        acc_t vcm_z = pz / M;
         remove_com<<<grid, block, 0, stream>>>(frame.atoms.vx, frame.atoms.vy,
                                                frame.atoms.vz, vcm_x, vcm_y,
                                                vcm_z, frame.atoms.d_size);
         cudaStreamSynchronize(stream);
+    }
+    // Match the CPU recipe: the random draw is followed by exact thermal
+    // rescaling with the backend's published global DOF. Reuse the existing
+    // fused CUB kinetic reduction and cuBLAS vector scaling.
+    if (ctx.runtime.md.n_dof_global > 0) {
+        ATV_CUDA_CHECK(cudaMemsetAsync(&frame.scalars->kinetic, 0,
+                                       sizeof(double), stream));
+        ATV_CUDA_CHECK(cudaMemsetAsync(frame.scalars->stress_kinetic, 0,
+                                       6 * sizeof(double), stream));
+        KineticEnergy kinetic;
+        kinetic.launch(
+            {ctx.runtime, frame, slot_of(ATV::md::Phase::end_of_step), 0});
+        double ke = 0;
+        ATV_CUDA_CHECK(cudaMemcpyAsync(&ke, &frame.scalars->kinetic,
+                                       sizeof(double), cudaMemcpyDeviceToHost,
+                                       stream));
+        ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+        if (ke > 0) {
+            const mixed_t factor =
+                mixed_t(sqrt(temperature_ * double(ctx.runtime.md.n_dof_global)
+                             * ctx.runtime.units.boltz / (2 * ke)));
+            cublasHandle_t handle = nullptr;
+            if (cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS)
+                throw std::runtime_error("InitVelocity: cublasCreate failed");
+            std::unique_ptr<std::remove_pointer_t<cublasHandle_t>,
+                            decltype(&cublasDestroy)>
+                guard(handle, cublasDestroy);
+            if (cublasSetStream(handle, stream) != CUBLAS_STATUS_SUCCESS)
+                throw std::runtime_error(
+                    "InitVelocity: cublasSetStream failed");
+            auto scale = [&]<typename T>(T* values, const T* alpha) {
+                if constexpr (std::is_same_v<T, double>)
+                    return cublasDscal(handle, n, alpha, values, 1);
+                else
+                    return cublasSscal(handle, n, alpha, values, 1);
+            };
+            for (auto* values :
+                 {frame.atoms.vx, frame.atoms.vy, frame.atoms.vz})
+                if (scale(values, &factor) != CUBLAS_STATUS_SUCCESS)
+                    throw std::runtime_error(
+                        "InitVelocity: cuBLAS scaling failed");
+            ATV_CUDA_CHECK(cudaMemsetAsync(&frame.scalars->kinetic, 0,
+                                           sizeof(double), stream));
+            ATV_CUDA_CHECK(cudaMemsetAsync(frame.scalars->stress_kinetic, 0,
+                                           6 * sizeof(double), stream));
+            kinetic.launch(
+                {ctx.runtime, frame, slot_of(ATV::md::Phase::end_of_step), 0});
+            ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+        }
     }
 }
 
@@ -227,10 +252,10 @@ void InitVelocity::launch(const LaunchContext& /*ctx*/) {
 // → subtract` flow.
 
 void ZeroMomentum::build(const BuildContext& /*ctx*/) {
-    // 4 contiguous work_t = {Σ mv_x, Σ mv_y, Σ mv_z, Σ m}. One alloc per
+    // 4 contiguous acc_t = {Σ mv_x, Σ mv_y, Σ mv_z, Σ m}. One alloc per
     // component instance; preserved across launches.
-    work_t* scratch = nullptr;
-    cudaMalloc(&scratch, 4 * sizeof(work_t));
+    acc_t* scratch = nullptr;
+    cudaMalloc(&scratch, 4 * sizeof(acc_t));
     d_scratch_ = scratch;
 }
 
@@ -251,16 +276,16 @@ void ZeroMomentum::launch(const LaunchContext& ctx) {
 
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
-    auto* scratch = static_cast<work_t*>(d_scratch_);
-    work_t* d_px = scratch + 0;
-    work_t* d_py = scratch + 1;
-    work_t* d_pz = scratch + 2;
-    work_t* d_M = scratch + 3;
+    auto* scratch = static_cast<acc_t*>(d_scratch_);
+    acc_t* d_px = scratch + 0;
+    acc_t* d_py = scratch + 1;
+    acc_t* d_pz = scratch + 2;
+    acc_t* d_M = scratch + 3;
 
     // 1. Zero the 4 accumulator words on the compute stream.
-    cudaMemsetAsync(scratch, 0, 4 * sizeof(work_t), stream);
+    cudaMemsetAsync(scratch, 0, 4 * sizeof(acc_t), stream);
 
-    // 2. Σ_i m_i v_i (3 axes) + Σ_i m_i via atomicAdd. Reusing the
+    // 2. CUB sums of m_i v_i (3 axes) + m_i. Reusing the
     //    same kernel as InitVelocity::build (anonymous-namespace helper
     //    declared earlier in this file).
     accumulate_momentum<<<grid, block, 0, stream>>>(
@@ -269,7 +294,7 @@ void ZeroMomentum::launch(const LaunchContext& ctx) {
 
     // 3. On-device v_cm broadcast — reads the 4-word scratch, computes
     //    v_cm = Σmv/Σm, subtracts. No D2H, no sync — keeps launch()
-    //    GPU-pure per the CLAUDE.md "## Architecture § CUDA execution
+    //    GPU-pure per the docs/developer/project-contract.md "## Architecture § CUDA execution
     //    model" contract (cuda-md-review-cleanup-03-launch-purity).
     //    The previous host-divide + H2D-as-arg pattern was the last
     //    `cudaStreamSynchronize` on the MD hot path; this rewrite
@@ -278,7 +303,7 @@ void ZeroMomentum::launch(const LaunchContext& ctx) {
     //    device-local sums are already the global sums.
     remove_com_from_scratch<<<grid, block, 0, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, scratch,
-        frame.atoms.d_size);
+        frame.atoms.d_size, frame.force_fault);
 }
 
 void ZeroMomentum::destroy(const DestroyContext& /*ctx*/) {

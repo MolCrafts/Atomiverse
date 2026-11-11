@@ -2,6 +2,10 @@
 /// @brief CPU Langevin thermostat -- LAMMPS-equivalent `fix langevin`.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -24,8 +28,8 @@ namespace md {
 /// 2. Random kick:              F_rand =   sqrt(2 m kB T / (damp · dt · mvv2e)) / ftm2v · ξ
 ///
 /// where `ξ ~ N(0, 1)` per Cartesian component per atom per step,
-/// `ftm2v = units::force_to_accel` and `mvv2e = units::mass_v2_to_energy` (the metal-unit conversion
-/// constants). The combined force satisfies the fluctuation-dissipation
+/// `ftm2v` and `mvv2e` the run's LAMMPS `units` factors
+/// (`ctx.runtime.units`). The combined force satisfies the fluctuation-dissipation
 /// theorem so velocity-Verlet integration of `f_total = f_phys + F_drag
 /// + F_rand` produces the canonical NVT ensemble at the live setpoint.
 ///
@@ -76,8 +80,17 @@ namespace md {
 /// total. Pair this component with `VelocityVerlet` (or `NVELimit`
 /// for far-from-equilibrium starts) -- the integrator picks up the
 /// modified forces in the next velocity half-kick.
-class FixLangevin : public cpu::Thermostat {
+class FixLangevin : public cpu::Thermostat, public cpu::TimestepConsumer {
   public:
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double dt) override {
+        if (!std::isfinite(dt) || dt <= 0.0)
+            throw std::invalid_argument(
+                "FixLangevin: timestep must be finite and positive");
+        dt_ = dt;
+    }
+
     /// @param T_start Ramp start temperature [K] (LAMMPS `Tstart`).
     /// @param T_stop  Ramp end temperature [K] (LAMMPS `Tstop`). A
     ///                negative value (the default) means "no ramp" —
@@ -125,6 +138,7 @@ class FixLangevin : public cpu::Thermostat {
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::post_force, +500)};
     }
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
   private:

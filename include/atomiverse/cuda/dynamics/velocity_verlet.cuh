@@ -20,6 +20,7 @@
 #pragma once
 
 #include "atomiverse/cuda/component/integrator.cuh"
+#include "atomiverse/cuda/component/timestep_protocol.cuh"
 
 #include <string>
 #include <vector>
@@ -37,8 +38,15 @@ namespace md {
 /// Dispatches to the appropriate kernel based on `ctx.stage`:
 /// - `Phase::initial_integrate`: updates velocities (half-step) and positions.
 /// - `Phase::final_integrate`: updates velocities (half-step).
-class VelocityVerlet : public cuda::Integrator {
+class VelocityVerlet : public cuda::Integrator, public cuda::TimestepProvider {
   public:
+    /// @brief Publishes the step to `cuda::md::MD` (timestep protocol).
+    const cuda::TimestepProvider* as_timestep_provider() const override {
+        return this;
+    }
+    /// @return The constructor `dt` [fs].
+    double timestep() const override { return dt_; }
+    bool supports_input_changes(InputChange) const override { return true; }
     /// @brief Construct with a time step.
     /// @param dt Time step [fs].
     explicit VelocityVerlet(double dt) : dt_(dt) {}
@@ -46,6 +54,7 @@ class VelocityVerlet : public cuda::Integrator {
     /// @brief Component name.
     /// @return "velocity_verlet".
     std::string name() const override { return "velocity_verlet"; }
+    bool graph_capturable() const override { return true; }
     Role role() const override { return 0; }
 
     /// @brief Structural role — the time-step integrator.

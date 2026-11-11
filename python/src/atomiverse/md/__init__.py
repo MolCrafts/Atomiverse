@@ -20,11 +20,15 @@ writes positions / velocities / forces / energy back into the *same*
 
 from __future__ import annotations
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, require_domain, backend_type
+
+require_domain(__name__, "md")
 from atomiverse._dispatch import (
     EVALUATOR_DISPATCH as _EVALUATOR_DISPATCH,
-    unsupported_evaluator_message as _unsupported_evaluator_message,
+    bind_evaluator as _bind_evaluator,
 )
+from atomiverse._units import resolve as _resolve_units
+from atomiverse._units import set_units, units_style
 
 # ---------------------------------------------------------------------------
 # Phase name → C++ enum (escape hatch for on(phase).add)
@@ -44,10 +48,12 @@ _PHASE_MAP: dict[str, object] = {
 # both. A second copy would be free to drift, accepting a component here and
 # refusing it there.
 
-# Recorder types accepted by MD.set_record. Both are unconditional: the
-# wheel forces ATV_BUILD_IO=ON through the CMake module DAG, so the
-# trajectory writer is never capability-probed (unlike KSpacePME above).
-_RECORDER_TYPES: tuple[type, ...] = (_cpp.Thermo, _cpp.XYZ)
+# Recorder types accepted by MD.set_record. All three are unconditional:
+# the wheel forces ATV_BUILD_IO=ON through the CMake module DAG, so the
+# trajectory writers are never capability-probed (unlike KSpacePME above).
+_RECORDER_TYPES: tuple[type, ...] = (_cpp.Thermo, _cpp.XYZ, _cpp.MrecRecorder)
+# The CUDA driver records `*.mrec` only (its Thermo is `set_thermo`).
+_CUDA_RECORDER_TYPES: tuple[type, ...] = (_cpp.MrecRecorder,)
 
 # Escape-hatch phase builder dispatch
 _PHASE_DISPATCH: dict[type, str] = {
@@ -58,6 +64,7 @@ _PHASE_DISPATCH: dict[type, str] = {
     _cpp.DihedralMultiHarmonic: "add_dihedral_multi_harmonic",
     _cpp.Thermo: "add_thermo",
 }
+
 
 
 class PhaseBuilder:
@@ -84,17 +91,41 @@ class PhaseBuilder:
 
 
 class MD:
-    """Molecular dynamics driver (CPU backend).
+    """Molecular dynamics driver with native backend selection.
 
     Parameters
     ----------
     dt : float, optional
-        Timestep in fs. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
+        Timestep in the run's time unit. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
     device : str, optional
-        Execution backend, PyTorch-style. v1 accepts only ``"cpu"``;
-        any other value raises ``ValueError`` before any compute.
+        Execution backend: ``"cpu"`` or ``"cuda"``. CUDA binds the same
+        pair, FENE, harmonic and cosine angle, Coulomb/PME/PPPM, uniform
+        electric field (``FixEfield``), neighbor list, Langevin,
+        NoseHoover, Berendsen and NoseHooverNPT (orthorhombic cells)
+        parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One
+        angle style per CUDA run (singular slot). Continuation stays on one
+        molpy.Frame.
+    units : str, optional
+        LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
+        ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
+        ``"nano"``). Every parameter, ``dt``, temperature, pressure and the
+        frame are taken in that style and every result is reported in it;
+        nothing is converted. Default: :func:`atomiverse.units_style`
+        (``"lj"`` unless :func:`atomiverse.set_units` chose another).
+    capture_buffer_bytes : int, optional
+        Byte budget [bytes, >= 1] of the driver's ONE shared asynchronous
+        capture buffer. Every asynchronous recorder (on CUDA:
+        ``MrecRecorder``, thermo, the pressure series) reads its steps from
+        it: a step any of them needs is captured once, as an independent
+        copy, and freed when the last of them has consumed it. The budget
+        bounds every frame in flight across all of them, is allocated once
+        when the first run starts, and when it is full the run waits for
+        the consumers — nothing is ever dropped. Default: the build's
+        ``ATV_CAPTURE_BUFFER_BYTES`` (256 MiB). A budget smaller than one
+        captured frame raises ``ValueError`` naming both sizes when the run
+        starts. Accounting: :meth:`capture_stats`.
 
-    Example (mirrors ``examples/07_md_lj.cpp``)::
+    Example (mirrors ``examples/cpp/08_md_lj.cpp``)::
 
         import atomiverse as av
 
@@ -112,23 +143,40 @@ class MD:
     legal — a different configuration means a new ``MD`` object.
     """
 
-    def __init__(self, dt: float | None = None, device: str = "cpu") -> None:
-        if device != "cpu":
-            raise ValueError(
-                f"device={device!r}: CUDA bindings are not yet available; "
-                "only device='cpu' is supported (backend selection is a "
-                "constructor parameter, not a namespace — see the package "
-                "docstring)"
-            )
+    def __init__(
+        self,
+        dt: float | None = None,
+        device: str = "cpu",
+        capture_buffer_bytes: int | None = None,
+        units: str | None = None,
+    ) -> None:
         self.device = device
-        self._cpp = _cpp.MD()
+        self._cpp = backend_type(device, "MD", "_CudaMD")()
+        self._cpp.set_units(_resolve_units(units))
         self._built = False
+        if capture_buffer_bytes is not None:
+            if int(capture_buffer_bytes) < 1:
+                raise ValueError(
+                    "capture_buffer_bytes must be >= 1 byte, got "
+                    f"{capture_buffer_bytes}"
+                )
+            self._cpp.set_capture_buffer_bytes(int(capture_buffer_bytes))
         if dt is not None:
             self.set_integrator(_cpp.VelocityVerlet(dt))
 
     # ------------------------------------------------------------------
     # Categorical setters (LAMMPS-shaped; match cpu::md::MD / Driver)
     # ------------------------------------------------------------------
+
+    def set_units(self, style: str) -> MD:
+        """LAMMPS ``units <style>`` of this run (before the first :meth:`run`)."""
+        self._cpp.set_units(style)
+        return self
+
+    @property
+    def units_style(self) -> str:
+        """LAMMPS ``units`` style of this run."""
+        return self._cpp.units_style
 
     def set_integrator(self, component: object) -> MD:
         """Install the time integrator (``cpu::md::MD::set_integrator``).
@@ -141,29 +189,107 @@ class MD:
         (the same scheme with a full, shearable cell matrix) *replace* the
         plain integrator — they integrate, thermostat and barostat in one
         step, so do not add a separate thermostat or barostat with them.
+        ``NvtSllod`` likewise replaces the plain integrator and already
+        thermostats peculiar velocities. Do not add a thermostat beside it.
+        It runs on CPU and CUDA. The MPI launcher cannot carry it.
+
+        On ``device="cuda"`` the integrators are ``VelocityVerlet``,
+        ``NvtSllod`` and ``NoseHooverNPT`` (the same constructor arguments
+        as on CPU; the cell must be orthorhombic, a triclinic cell is
+        refused when the run is built). ``ParrinelloRahmanNPT`` is CPU only.
+        Both devices refuse a thermostat or barostat beside an NPT
+        integrator, in either call order.
         """
         if type(component) not in (
             _cpp.VelocityVerlet,
             _cpp.NoseHooverNPT,
             _cpp.ParrinelloRahmanNPT,
+            _cpp.NvtSllod,
         ):
             raise TypeError(
-                f"set_integrator expects VelocityVerlet, NoseHooverNPT, or "
-                f"ParrinelloRahmanNPT, got {type(component).__name__}"
+                f"set_integrator expects VelocityVerlet, NoseHooverNPT, "
+                f"ParrinelloRahmanNPT, or NvtSllod, got {type(component).__name__}"
             )
+        if self.device == "cuda" and type(component) is _cpp.ParrinelloRahmanNPT:
+            raise ValueError(
+                "CUDA MD has no ParrinelloRahmanNPT (full-cell MTK). Use "
+                "NoseHooverNPT on an orthorhombic cell with device='cuda', or "
+                "run ParrinelloRahmanNPT with device='cpu'"
+            )
+        if type(component) is _cpp.NvtSllod and getattr(self, "_thermostatted", False):
+            raise ValueError(
+                "NvtSllod already thermostats; do not also set a thermostat"
+            )
+        npt = type(component) in (_cpp.NoseHooverNPT, _cpp.ParrinelloRahmanNPT)
+        if npt and (
+            getattr(self, "_thermostatted", False)
+            or getattr(self, "_barostatted", False)
+        ):
+            raise ValueError(
+                f"{type(component).__name__} integrates, thermostats and "
+                "barostats in one step; do not also set a thermostat or "
+                "barostat. Use VelocityVerlet + set_thermostat + "
+                "set_barostat(BerendsenBarostat) for the split recipe"
+            )
+        # Flags change only once the native slot accepted the integrator.
         self._cpp.set_integrator(component)
+        self._npt = npt
+        self._nvt_sllod = type(component) is _cpp.NvtSllod
         self._built = False
         return self
 
     def set_thermostat(self, component: object) -> MD:
-        """Install a thermostat (``cpu::md::MD::set_thermostat``)."""
+        """Install a thermostat (``cpu::md::MD::set_thermostat``).
+
+        ``NoseHoover`` (single chain, LAMMPS ``fix nvt``) and ``Langevin``
+        run on both devices; ``CSVR`` is CPU only. A thermostat never joins
+        ``NvtSllod`` or an NPT integrator, which already thermostat. On
+        both devices ``NoseHoover`` takes the integrator's timestep in place
+        of its own ``dt``.
+        """
+        if getattr(self, "_nvt_sllod", False):
+            raise ValueError(
+                "NvtSllod already thermostats; do not also set a thermostat"
+            )
+        if getattr(self, "_npt", False):
+            raise ValueError(
+                "the NPT integrator already thermostats; do not also set a "
+                "thermostat (use VelocityVerlet + set_thermostat + "
+                "set_barostat(BerendsenBarostat) for the split recipe)"
+            )
         if type(component) not in (_cpp.NoseHoover, _cpp.Langevin, _cpp.CSVR):
             raise TypeError(
                 f"set_thermostat expects NoseHoover, Langevin, or CSVR, got "
                 f"{type(component).__name__}"
             )
+        if self.device == "cuda" and type(component) is _cpp.CSVR:
+            raise ValueError(
+                "CUDA MD has no CSVR thermostat. Use NoseHoover or Langevin "
+                "with device='cuda', or run CSVR with device='cpu'"
+            )
+        self._thermostatted = True
         self._cpp.set_thermostat(component)
         self._built = False
+        return self
+
+    def set_run_span(self, nfirst: int, nlast: int) -> MD:
+        """Fix the temperature ramp to ``[nfirst, nlast]`` before the first chunk.
+
+        Applies to the ``Langevin`` thermostat and the ``NoseHooverNPT``
+        ``T_stop`` ramp. CUDA continuation keeps the step counter, so one
+        cool is many ``run(chunk)`` calls on one driver and the span is the
+        whole cool. Without it the first ``run(n)`` sets ``[0, n]``. Call
+        this after ``set_thermostat`` / ``set_integrator`` and before
+        ``run``.
+        """
+        if self.device != "cuda":
+            raise ValueError(
+                "set_run_span is the CUDA continuation ramp; CPU MD takes "
+                "the span from each run()"
+            )
+        if int(nlast) <= int(nfirst):
+            raise ValueError(f"run span [{nfirst}, {nlast}] is empty")
+        self._cpp.set_run_span(int(nfirst), int(nlast))
         return self
 
     def set_barostat(self, component: object) -> MD:
@@ -177,14 +303,21 @@ class MD:
         The NPT integrators (``NoseHooverNPT``, ``ParrinelloRahmanNPT``)
         replace the integrator instead and take no separate barostat.
 
-        Pressure targets are in eV/Å³ (positive means compressive);
-        1 bar ≈ 6.2415e-7 eV/Å³.
+        Pressure targets are in the run's LAMMPS pressure unit (metal: bar,
+        real: atm; positive means compressive).
         """
         if type(component) not in (_cpp.BerendsenBarostat,):
             raise TypeError(
                 f"set_barostat expects BerendsenBarostat, got "
                 f"{type(component).__name__}"
             )
+        if getattr(self, "_npt", False):
+            raise ValueError(
+                "the NPT integrator already barostats; do not also set a "
+                "barostat (use VelocityVerlet + set_thermostat + "
+                "set_barostat(BerendsenBarostat) for the split recipe)"
+            )
+        self._barostatted = True
         self._cpp.set_barostat(component)
         self._built = False
         return self
@@ -192,7 +325,8 @@ class MD:
     def set_observer(self, component: object) -> MD:
         """Install an observer (``Driver::set_observer``).
 
-        v1 supports ``InitVelocity`` (Maxwell–Boltzmann seeding).
+        v1 supports ``InitVelocity`` (Maxwell–Boltzmann seeding, net
+        momentum removed) on both devices.
         """
         if type(component) is not _cpp.InitVelocity:
             raise TypeError(
@@ -211,21 +345,26 @@ class MD:
         types are whatever this extension binds; an unsupported one raises
         ``TypeError`` listing them.
 
-        ``AM1Evaluator`` belongs here too: registering it makes the run
+        Gaussian methods (``RHF``, ``UHF``, ``RKS``, ``UKS``) and ``DFTB2``
+        are borrowed as live native nodes/components. This driver keeps their
+        Python owners alive; their diagnostics remain on the original object.
+        These registrations currently require running without the MPI launcher.
+
+        ``AM1`` belongs here too: registering it makes the run
         Born-Oppenheimer molecular dynamics — one semiempirical SCF solve
         per step, forces from it. It needs no ``NeighborList`` (AM1 is
-        molecular, not a pair style) and the driver installs its own
-        gradient-enabled copy, so results land on the frame rather than on
-        the object you passed.
+        molecular, not a pair style). AM1 and RM1 are borrowed and kept alive;
+        their diagnostics remain on the original object. MPI launcher transport
+        for borrowed methods is explicitly unsupported.
 
-        ``PWEvaluator`` is the same story on a plane-wave Hamiltonian:
+        ``PW`` is the same story on a plane-wave Hamiltonian:
         registering it makes the run plane-wave Born-Oppenheimer dynamics,
         with analytic ionic forces from the converged density. It likewise
         takes no ``NeighborList``, and it additionally needs the frame to
         carry a ``box`` — a plane-wave basis is defined by the cell. Each
-        step costs *two* SCF solves (the energy solve, then the force
-        path's own), so size the cell, ``ecut_ry`` and ``max_iter`` for the
-        number of steps you actually want.
+        step costs one SCF solve (forces reuse its density), so size the
+        cell, ``ecut_ry`` and ``max_iter`` for the number of steps you
+        actually want.
 
         Three caveats, because they are the ones this dispatch cannot catch
         for you:
@@ -242,10 +381,13 @@ class MD:
           refuses a second thermostat beside it; the result is simply
           double-thermostatted.
         """
-        method_name = _EVALUATOR_DISPATCH.get(type(component))
-        if method_name is None:
-            raise TypeError(_unsupported_evaluator_message(component))
-        getattr(self._cpp, method_name)(component)
+        method_device = getattr(component, "device", None)
+        if method_device is not None and method_device != self.device:
+            raise ValueError("Evaluator and driver must use the same device")
+        if self.device == "cuda":
+            self._cpp.set_evaluator(component)
+        else:
+            _bind_evaluator(self._cpp, component)
         self._built = False
         return self
 
@@ -259,8 +401,39 @@ class MD:
         self._built = False
         return self
 
+    def set_pressure_series(
+        self, path: str, every: int, epsilon_ev: float, direction: int
+    ) -> MD:
+        """Record −P* during one continuous CUDA run.
+
+        ``NvtSllod`` restarts its strain clock when the driver is built
+        again, and a chunked ``run`` builds again. The series is written
+        from inside the single deform ``run``. ``direction`` is 0..5.
+        Rows follow the LAMMPS ``dump`` step convention: the initial state
+        (step 0, strain 0), then the state after every ``every``-th
+        completed step; the ``step`` column counts completed steps.
+        """
+        if self.device != "cuda":
+            raise ValueError("pressure series is recorded on the CUDA driver")
+        self._cpp.set_pressure_series(str(path), int(every), float(epsilon_ev), int(direction))
+        self._built = False
+        return self
+
     def set_thermo(self, every: int) -> MD:
-        """Set thermo print cadence (``Driver::set_thermo(N)``)."""
+        """Set thermo print cadence (``Driver::set_thermo(N)``).
+
+        Both backends: CPU ``cpu::md::MD::set_thermo``, CUDA
+        ``cuda::md::MD::set_thermo`` (lines printed by a worker thread from
+        the driver's shared capture buffer, never a stepping-thread sync).
+
+        LAMMPS ``thermo`` step convention: the ``step`` column counts
+        completed MD steps and each line is the state after that many
+        steps. A run prints the header and the initial state, then the
+        state after every ``every``-th step and after its last step —
+        ``run(frame, 1000)`` at ``every=100`` prints steps 0, 100, …, 1000.
+        ``every=0`` prints the first and last step of each run only
+        (LAMMPS ``thermo 0``).
+        """
         self._cpp.set_thermo(int(every))
         self._built = False
         return self
@@ -268,20 +441,49 @@ class MD:
     def set_record(self, component: object) -> MD:
         """Install a recorder (``Driver::set_record``, plural).
 
-        Two recorders are bound: ``Thermo(freq)``, which maps to the
-        driver's ``set_thermo(freq)`` print cadence, and ``XYZ(filename,
-        freq)``, the trajectory writer that binds at ``end_of_step`` and
-        owns its own stride gate. An unsupported component raises
-        ``TypeError`` naming both.
+        Recorders bind at ``end_of_step`` and own their stride gate. They
+        follow the LAMMPS ``dump``/``thermo`` step convention: a record's
+        ``step`` is the number of completed MD steps and it holds the state
+        after exactly that many steps (``time = step · dt``). A run of ``n``
+        steps at cadence ``k`` records the initial state and the states
+        after steps ``k, 2k, …`` up to and including ``n`` (``0, k, …, n``
+        when ``k`` divides ``n``); a step is never recorded twice.
+
+        * ``Thermo(freq)`` — maps to the driver's ``set_thermo(freq)``
+          print cadence (CPU; on CUDA use :meth:`set_thermo`).
+        * ``XYZ(filename, freq)`` — extended-XYZ positions (CPU).
+        * ``MrecRecorder(path, every)`` — the molrec (``*.mrec``)
+          trajectory, on **both** devices with the same columns:
+          positions, velocities, forces, charges, int32 images, tags,
+          mass, cell, energies (total and per term), ``step`` and
+          ``time`` [time], plus the identity columns the frame carries
+          (``type_id`` and/or ``atomic_number``). Read it with
+          ``molpy.io.mrec.MrecReader``. After :meth:`run` returns the
+          store holds every frame of that run; on CUDA the frames are
+          written by a worker thread through the driver's shared capture
+          buffer (``MD(capture_buffer_bytes=...)``) — the step loop waits
+          only when that buffer is full, never drops a frame, and a writer
+          failure stops the run with ``RuntimeError`` naming the store. On CPU each ``run()``
+          restarts at step 0, so one recorder records one ``run()``; CUDA
+          ``run()`` calls on the same frame continue its trajectory (the
+          boundary step is written once: ``run(f, 4); run(f, 4)`` at
+          ``every=2`` records steps 0, 2, 4, 6, 8).
+          Carried by the MPI launcher (rank 0 gathers and writes).
+
+        An unsupported component raises ``TypeError`` naming the
+        supported ones for this device.
         """
-        if type(component) in _RECORDER_TYPES:
+        supported_types = (
+            _CUDA_RECORDER_TYPES if self.device == "cuda" else _RECORDER_TYPES
+        )
+        if type(component) in supported_types:
             self._cpp.set_record(component)
             self._built = False
             return self
-        supported = ", ".join(t.__name__ for t in _RECORDER_TYPES)
+        supported = ", ".join(t.__name__ for t in supported_types) or "none"
         raise TypeError(
-            f"set_record does not support {type(component).__name__}. "
-            f"Supported: {supported}"
+            f"set_record on device {self.device!r} does not support "
+            f"{type(component).__name__}. Supported: {supported}"
         )
 
     def on(self, phase: str) -> PhaseBuilder:
@@ -295,6 +497,8 @@ class MD:
         registration entry point, so the refusal lands here rather than at
         ``PhaseBuilder.add``.
         """
+        if self.device == "cuda":
+            raise ValueError("CUDA Python on is not implemented for this molecular slice")
         cpp_phase = _PHASE_MAP.get(phase)
         if cpp_phase is None:
             valid = ", ".join(f'"{p}"' for p in _PHASE_MAP)
@@ -336,12 +540,28 @@ class MD:
             self.build()
         self._cpp.run(frame, n_steps)
 
+    def capture_stats(self) -> dict[str, float]:
+        """Accounting of the driver's shared capture buffer.
+
+        Keys: ``budget_bytes``, ``frame_bytes`` (one captured frame),
+        ``capacity`` (frames the budget holds), ``captures`` (frames
+        captured — one per captured step, however many consumers read it),
+        ``peak_bytes``, ``blocked_episodes`` and ``blocked_seconds`` (how
+        often and how long the run waited for space). All zero before the
+        first run or when no asynchronous consumer is mounted.
+        """
+        return dict(self._cpp.capture_stats())
+
     def enable_timing(self) -> None:
         """Enable per-component timing."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python enable_timing is not implemented for this molecular slice")
         self._cpp.enable_timing()
 
     def summary(self) -> str:
         """Return a timing summary string."""
+        if self.device == "cuda":
+            raise ValueError("CUDA Python summary is not implemented for this molecular slice")
         return self._cpp.summary()
 
     def __repr__(self) -> str:
@@ -354,4 +574,10 @@ class MD:
 # `md.thermostat` and `md.barostat`.
 InitVelocity = _cpp.InitVelocity
 
-__all__ = ["MD", "InitVelocity", "PhaseBuilder"]
+#: Constant uniform electric field (LAMMPS ``fix efield``) —
+#: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in V/Å;
+#: register it with :meth:`MD.set_evaluator`. F = qE [eV/Å]; the energy is
+#: −Σ q E·r^u on unwrapped coordinates and no virial is added.
+FixEfield = _cpp.FixEfield
+
+__all__ = ["MD", "InitVelocity", "FixEfield", "PhaseBuilder"]

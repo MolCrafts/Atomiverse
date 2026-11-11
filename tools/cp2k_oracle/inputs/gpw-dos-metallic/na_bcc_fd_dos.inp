@@ -1,4 +1,4 @@
-! CP2K twin for regressions/gpw/gpw-dos-metallic — multi-k GPW RKS free-
+! CP2K twin for regressions/gpw/bands-dos — multi-k GPW RKS free-
 ! energy SCF with Fermi–Dirac metallic smear + &PRINT &DOS on BCC Na.
 ! Matched algorithm class: Quickstep GPW + MONKHORST-PACK 2×2×2 + SMEAR
 ! FERMI_DIRAC + total DOS print on the SCF multi-k spectrum.

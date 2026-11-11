@@ -1,4 +1,4 @@
-# CP2K twin for regressions/dynamics/xl-bomd-water (offline oracle — never
+# CP2K twin for regressions/dynamics/xl-bomd (offline oracle — never
 # run at ctest/regression time). Same H2O NVE system as h2o_bomd_mt.inp;
 # the guess-propagation setting is what differs: CP2K's density-matrix ASPC
 # extrapolation (EXTRAPOLATION ASPC, its MD default) is the closest

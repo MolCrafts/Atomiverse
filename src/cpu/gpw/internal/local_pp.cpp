@@ -14,6 +14,8 @@ namespace ATV {
 namespace cpu {
 namespace gpw {
 
+using internal::GpwAtom;
+
 namespace {
 
 /// Minimum-image displacement r - R_A, matching the SCF collocation convention.

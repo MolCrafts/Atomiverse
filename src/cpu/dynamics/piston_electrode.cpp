@@ -111,19 +111,21 @@ void PistonElectrode::apply_forces_(cpu::Frame& f) {
     // External force: fluid between walls.
     // Upper: F_ext = -P A (pushes down). Lower: F_ext = +P A (pushes up).
     const double sign = (side_ == Side::Upper) ? -1.0 : +1.0;
-    const double F_ext = sign * P_target * A;
+    const double F_ext = sign * P_target / nktv2p_ * A;
 
     // Optional COM friction: a_damp = -v/tau ⇒
     // F_damp = -M * v_com / (tau * force_to_accel)  [eV/Å].
     double F_damp = 0.0;
     if (tau_damp > 0.0) {
-        F_damp = -M * vz_com / (tau_damp * units::force_to_accel);
+        F_damp = -M * vz_com / (tau_damp * ftm2v_);
     }
 
     last_F_net_ = F_atoms + F_ext + F_damp;
 
     // Instantaneous pressure from atom forces only (external load is the target).
-    last_P_z_ = (side_ == Side::Upper) ? (F_atoms / A) : (-F_atoms / A);
+    // Reported in the run's pressure unit (LAMMPS: × nktv2p).
+    last_P_z_ =
+        ((side_ == Side::Upper) ? (F_atoms / A) : (-F_atoms / A)) * nktv2p_;
 
     for (int i : rows_) {
         const double m = static_cast<double>(mass[i]);
@@ -190,6 +192,8 @@ void PistonElectrode::enforce_rigid_(cpu::Frame& f, bool update_positions) {
 }
 
 void PistonElectrode::build(const cpu::BuildContext& ctx) {
+    ftm2v_ = ctx.runtime.units.ftm2v;
+    nktv2p_ = ctx.runtime.units.nktv2p;
     const int n = owned_count(ctx);
     resolve_rows_(ctx.frame, n);
     if (rows_.empty())

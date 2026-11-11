@@ -44,8 +44,8 @@ TEST(VoronoiVolume, SingleAtomGetsFullBox) {
 
 TEST(VoronoiVolume, UnequalOneDimensionalSplit) {
     // Sites at x = 0, 2, 5 in Lx = 10: periodic 1D widths 3.5 / 2.5 / 4.0.
-    auto f = frame_at({{0.0, 2.0, 2.0}, {2.0, 2.0, 2.0}, {5.0, 2.0, 2.0}},
-                      10.0, 4.0, 4.0);
+    auto f = frame_at({{0.0, 2.0, 2.0}, {2.0, 2.0, 2.0}, {5.0, 2.0, 2.0}}, 10.0,
+                      4.0, 4.0);
     const auto v = cpu::VoronoiVolume{}.volumes(f);
     ASSERT_EQ(v.size(), 3u);
     EXPECT_NEAR(v[0], 3.5 * 16.0, 1e-9);

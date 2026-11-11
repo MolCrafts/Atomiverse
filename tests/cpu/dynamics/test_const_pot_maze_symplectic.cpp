@@ -1,7 +1,7 @@
 /// @file tests/cpu/dynamics/test_const_pot_maze_symplectic.cpp
 /// @brief Unit tests for the true mass-zero constrained ConstPotMaZe path
 ///        (single methods; no e2e MD — that lives in
-///        regressions/md/maze-symplectic-charge-dynamics).
+///        regressions/md/polarizable).
 
 #include <gtest/gtest.h>
 
@@ -184,4 +184,55 @@ TEST(ConstPotMaZeSymplectic, BuildValidatesParameters) {
         maze.max_maze_iters = 0;
         EXPECT_THROW(maze.build({ctx, f}), std::invalid_argument);
     }
+}
+
+TEST(ConstPotMaZeSymplectic,
+     ForceInitializationDoesNotAdvanceContinuityHistory) {
+    auto frame = plate_frame(2, 2);
+    auto maze = make_maze();
+    cpu::Context context;
+    maze.build({context, frame});
+    context.exec.initializing_forces = true;
+    maze.initialize_forces({context, frame, 0, 0});
+    frame.span(kAtom_z)[8] += 0.1;
+    maze.initialize_forces({context, frame, 0, 0});
+    EXPECT_DOUBLE_EQ(maze.max_dQ(), 0.0);
+    context.exec.initializing_forces = false;
+    maze.launch({context, frame, 0, 0});
+    // No previous committed time step exists yet, despite two setup solves.
+    EXPECT_DOUBLE_EQ(maze.max_dQ(), 0.0);
+    frame.span(kAtom_z)[8] += 0.1;
+    maze.launch({context, frame, 0, 1});
+    EXPECT_GT(maze.max_dQ(), 0.0);
+    const double delta = maze.max_dQ();
+    context.exec.initializing_forces = true;
+    frame.span(kAtom_z)[8] += 0.1;
+    maze.initialize_forces({context, frame, 0, 1});
+    EXPECT_DOUBLE_EQ(maze.max_dQ(), delta);
+    maze.destroy({context, frame});
+}
+
+TEST(ConstPotMaZeSymplectic, TrialEvaluationDoesNotAdvanceContinuityHistory) {
+    auto frame = plate_frame(2, 2);
+    auto maze = make_maze();
+    cpu::Context context;
+    maze.build({context, frame});
+    context.exec.trial_evaluation = true;
+    maze.initialize_forces({context, frame, 0, 0});
+    frame.span(kAtom_z)[8] += 0.1;
+    maze.initialize_forces({context, frame, 0, 0});
+    EXPECT_DOUBLE_EQ(maze.max_dQ(), 0.0);
+    context.exec.trial_evaluation = false;
+    maze.launch({context, frame, 0, 0});
+    // No previous committed time step exists yet, despite two setup solves.
+    EXPECT_DOUBLE_EQ(maze.max_dQ(), 0.0);
+    frame.span(kAtom_z)[8] += 0.1;
+    maze.launch({context, frame, 0, 1});
+    EXPECT_GT(maze.max_dQ(), 0.0);
+    const double delta = maze.max_dQ();
+    context.exec.trial_evaluation = true;
+    frame.span(kAtom_z)[8] += 0.1;
+    maze.initialize_forces({context, frame, 0, 1});
+    EXPECT_DOUBLE_EQ(maze.max_dQ(), delta);
+    maze.destroy({context, frame});
 }

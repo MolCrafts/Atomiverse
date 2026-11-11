@@ -20,7 +20,7 @@
 #include "atomiverse/cpu/scf/internal/integrals.h"
 #include "atomiverse/cpu/scf/scf_enums.h"          // MeanFieldType / SpinType
 #include "atomiverse/cpu/scf/slater_determinant.h" // SlaterDeterminant
-#include "atomiverse/cpu/scf/xc_functional.h"      // XCType
+#include "atomiverse/cpu/xc/xc_functional.h"       // xc::XCType
 
 namespace ATV {
 namespace cpu {
@@ -81,7 +81,7 @@ struct IntegralDerivPack {
 /// channel scaled by the exact-exchange fraction `alpha_hf`: `1.0` for pure
 /// HF, `0.0` for a pure (semi-local) functional — in which case the K loop
 /// is skipped entirely — and the global-hybrid admixture
-/// (`hybrid_exchange_fraction(xc_type)`, 0.20 for B3LYP, 0.25 for
+/// (`xc::hybrid_exchange_fraction(xc_type)`, 0.20 for B3LYP, 0.25 for
 /// PBE0) for a KS hybrid. `alpha_hf` multiplies the existing closed-shell
 /// exchange prefactors and density symmetrization as a pure scalar.
 ///
@@ -100,7 +100,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                       const xt::xtensor<double, 2>& P_total,
                                       const SlaterDeterminant& det,
                                       MeanFieldType method, SpinType spin,
-                                      XCType xc_type);
+                                      xc::XCType xc_type);
 
 /// @brief Same contraction from explicit spin densities (no determinant).
 ///
@@ -125,7 +125,7 @@ void accumulate_two_electron_gradient(xt::xtensor<double, 2>& grad,
                                       const xt::xtensor<double, 2>& P_alpha,
                                       const xt::xtensor<double, 2>& P_beta,
                                       MeanFieldType method, SpinType spin,
-                                      XCType xc_type);
+                                      xc::XCType xc_type);
 
 // ── Second derivatives (hf-capability-gaps-13-cphf) ──────────────────
 
@@ -173,7 +173,7 @@ struct IntegralSecondDerivPack {
 ///
 /// The derivative ERIs come from `native::rys_eri_block_deriv` per shell-
 /// block quartet (full ordered enumeration — Hessian-assembly scale, run
-/// once per `RHF::hessian`), never materialized as a 5-index tensor.
+/// once per `Hessian<RHF>::run`), never materialized as a 5-index tensor.
 ///
 /// @param[out] dF     Accumulator [n_atoms, 3, n_basis, n_basis]
 ///                    [Hartree/Bohr]; the caller pre-fills it with the
@@ -181,7 +181,7 @@ struct IntegralSecondDerivPack {
 /// @param integrals   Integral pack for the current geometry.
 /// @param P_total     Total (factor-2 closed-shell) density (dimensionless).
 /// @param alpha_hf    Exact-exchange fraction in [0, 1]: 1 for pure HF,
-///                    0 for pure semi-local KS, hybrid_exchange_fraction(xc)
+///                    0 for pure semi-local KS, xc::hybrid_exchange_fraction(xc)
 ///                    for global hybrids. Scales the −½K channel only.
 void accumulate_two_electron_fock_derivative(
     xt::xtensor<double, 4>& dF, const internal::IntegralView& integrals,
@@ -242,6 +242,21 @@ void accumulate_two_electron_hessian(xt::xtensor<double, 2>& hess,
 void accumulate_two_electron_hessian_uhf(
     xt::xtensor<double, 2>& hess, const internal::IntegralView& integrals,
     const xt::xtensor<double, 2>& Pa, const xt::xtensor<double, 2>& Pb);
+
+/// @brief Nuclear derivative of the spin-free pVp matrix
+///        W_μν = ⟨∇μ|V|∇ν⟩ [Hartree/Bohr²].
+///
+/// Layout matches `IntegralDerivPack::dV`: [n_atoms, 3, n_basis, n_basis]
+/// in the working AO basis. A spherical pack is sandwiched with the stored
+/// `c2s`, the same transform the undifferentiated W received. This is the
+/// symmetrized `w1cc` block of `pyscf.x2c.sfx2c1e_grad._gen_h1_s1`
+/// (`int1e_ippnucp` bra derivative plus the per-nucleus `int1e_ipprinvp`
+/// operator derivative).
+///
+/// @param pack Integral pack (atoms in Bohr + resolved shells). `W` itself
+///             is not read — the derivative is rebuilt from the shells.
+/// @return dW/dR [Hartree/Bohr³].
+xt::xtensor<double, 4> pvp_nuclear_deriv(const internal::IntegralView& pack);
 
 // ── Primitive nuclear-attraction derivatives (internal; unit-testable) ─
 // -Z / -q prefactor is NOT included; caller multiplies.

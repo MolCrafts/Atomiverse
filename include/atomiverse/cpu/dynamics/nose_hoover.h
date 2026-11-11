@@ -2,6 +2,10 @@
 /// @brief CPU Nose-Hoover thermostat -- LAMMPS-equivalent `fix nvt`.
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -73,13 +77,24 @@ namespace md {
 /// behavioural change for existing callers. `set_T_target` is retained
 /// for the segmented-run idiom (retune the setpoint between `run()`
 /// calls); the ramp is the continuous alternative.
-class NoseHoover : public cpu::Thermostat {
+class NoseHoover : public cpu::Thermostat, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "NoseHoover: timestep must be finite and positive");
+        dt_ = timestep;
+    }
+
     /// @param T_start Ramp start / target temperature [K]
     ///                (LAMMPS `Tstart`).
     /// @param tau_T   Thermostat coupling time constant [fs]
     ///                (LAMMPS `Tdamp`).
     /// @param dt      Timestep [fs].
+    /// @throws std::invalid_argument unless all three are finite and > 0.
     NoseHoover(double T_start, double tau_T, double dt);
 
     std::string name() const override { return "nose_hoover"; }
@@ -161,6 +176,7 @@ class NoseHoover : public cpu::Thermostat {
     double xi_ = 0;        ///< Thermostat variable (single chain).
     double Q_ = 0;         ///< Thermostat mass.
     int n_dof_global_ = 0; ///< Cached at build() — used by set_T_target.
+    double boltz_ = 1.0;   ///< The run's boltz, cached at build().
 
     // Temperature-ramp run span (LAMMPS `update->beginstep` / `endstep`).
     std::int64_t nfirst_ = 0; ///< First MD step of the run.

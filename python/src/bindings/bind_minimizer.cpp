@@ -19,7 +19,8 @@
 
 #include "evaluator_setters.h"
 #include "frame_guards.h"
-#include "molrs_frame_bridge.h"
+#include "molpy_frame_bridge.h"
+#include "units_binding.h"
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -33,7 +34,7 @@
 #include <variant>
 #include <vector>
 
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 // LBFGS and CG are constructed here because their fields ARE their
 // constructor arguments; FIRE, the four cell relaxers and the three criteria
 // come from `task/internal/minimize_builders.h`, and the eighteen force
@@ -111,6 +112,28 @@ struct MinimizeHandle {
                   "change the configuration.");
     }
 
+    // Borrow a live component/node; nanobind keeps its Python owner alive.
+    template <typename Evaluator>
+    void set_local_evaluator(Evaluator& evaluator, const char* name) {
+        require_configurable_("set_evaluator");
+        driver.set_evaluator_ref(evaluator);
+        unmirrored_.push_back(name);
+    }
+
+    /// @brief Register a force source the Minimize wire cannot carry.
+    ///
+    /// Same contract as `MdHandle::set_unmirrored_evaluator`. `KSpacePPPM`
+    /// is not a `MinimizeComponentParams` alternative.
+    template <typename Component>
+    void set_unmirrored_evaluator(Component comp, const char* name,
+                                  bool coulomb) {
+        require_configurable_("set_evaluator");
+        if (coulomb)
+            unmirrored_coulomb_ = true;
+        unmirrored_.push_back(name);
+        driver.set_evaluator(std::move(comp));
+    }
+
     template <typename Params, typename Component>
     void set_categorical(const char* setter, const Params& p,
                          Component component) {
@@ -131,6 +154,7 @@ struct MinimizeHandle {
         if constexpr (std::is_same_v<P, cpu::task::PairLJCutParams>
                       || std::is_same_v<P, cpu::task::PairCoulCutParams>
                       || std::is_same_v<P, cpu::task::CoulLongParams>
+                      || std::is_same_v<P, cpu::task::PairLJCutCoulLongParams>
                       || std::is_same_v<P, cpu::task::BondHarmonicParams>
                       || std::is_same_v<P, cpu::task::AngleHarmonicParams>
                       || std::is_same_v<P,
@@ -150,7 +174,10 @@ struct MinimizeHandle {
                       || std::is_same_v<P, cpu::task::PairDpdParams>
                       || std::is_same_v<P, cpu::task::BondFeneParams>
                       || std::is_same_v<P, cpu::task::DihedralCharmmParams>
-                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>)
+                      || std::is_same_v<P, cpu::task::ImproperHarmonicParams>
+                      || std::is_same_v<P, cpu::task::AngleCosineParams>
+                      // MD-only on the wire; locally a force source as well.
+                      || std::is_same_v<P, cpu::task::FixEfieldParams>)
             driver.set_evaluator(std::move(component));
 #ifdef ATV_HAS_KSPACE
         else if constexpr (std::is_same_v<P, cpu::task::KSpacePmeParams>)
@@ -159,11 +186,11 @@ struct MinimizeHandle {
             driver.set_evaluator(std::move(component));
 #endif
 #ifdef ATV_HAS_SEMIEMPIRICAL
-        else if constexpr (std::is_same_v<P, cpu::task::AM1EvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::AM1Params>)
             driver.set_evaluator(std::move(component));
 #endif
 #ifdef ATV_HAS_PW
-        else if constexpr (std::is_same_v<P, cpu::task::PwEvaluatorParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::PWParams>)
             // Move-only for the same reason as KSpacePME.
             driver.set_evaluator(std::move(component));
 #endif
@@ -242,10 +269,10 @@ struct MinimizeHandle {
     /// Same guard, same rationale as `MdHandle::require_charge_column`
     /// (`bind_md.cpp`), because both handles take the same eighteen sources:
     /// `charge` is an *optional* per-atom column at the C++ boundary, and
-    /// `cpu::from_molrs` zero-fills an absent one, so past that point a
+    /// `cpu::from_molpy` zero-fills an absent one, so past that point a
     /// forgotten charge column is indistinguishable from a deliberately
     /// neutral system — the optimization converges instantly on a Hamiltonian
-    /// with no electrostatics in it. The molrs Frame is the last place the
+    /// with no electrostatics in it. The molpy Frame is the last place the
     /// absence is visible, so the refusal happens here, with a how-to.
     ///
     /// Intentional zeros stay expressible: insert an explicit zero `charge`
@@ -258,7 +285,7 @@ struct MinimizeHandle {
     /// would refuse must still trip this guard on the serial path, which is
     /// the path that actually ran it.
     ///
-    /// @param frame Borrowed molrs Frame about to be optimized.
+    /// @param frame Borrowed molpy Frame about to be optimized.
     /// @throws std::runtime_error when a Coulomb evaluator is registered and
     ///         the frame's `atoms` block has no `charge` column.
     void require_charge_column(const molrs::FrameRef& frame) const {
@@ -266,7 +293,7 @@ struct MinimizeHandle {
             unmirrored_coulomb_
             || std::any_of(mirror.begin(), mirror.end(),
                            is_coulomb_entry<MinimizeComponentEntry>);
-        if (!coulomb || has_molrs_column(frame, "atoms", "charge"))
+        if (!coulomb || has_molpy_column(frame, "atoms", "charge"))
             return;
         throw std::runtime_error(
             "this Minimize run registers a Coulomb evaluator but the "
@@ -275,12 +302,12 @@ struct MinimizeHandle {
             "frame[\"atoms\"].insert(\"charge\", q).");
     }
 
-    TaskResult run(nb::object frame_obj, int max_iter) {
+    TaskResult run(nb::object frame_obj, std::int64_t max_iter) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
-            auto frame = borrow_molrs_frame(frame_obj);
+            auto frame = borrow_molpy_frame(frame_obj);
             require_charge_column(*frame);
-            int iterations = 0;
+            std::int64_t iterations = 0;
             {
                 nb::gil_scoped_release release;
                 iterations = driver.run(*frame, max_iter);
@@ -298,20 +325,19 @@ struct MinimizeHandle {
         // TaskSpec always carries a convergence policy (defaults if unset).
         const MinimizeCriterionParams conv =
             user_criterion ? convergence : MinimizeCriterionParams{};
-        const cpu::task::TaskSpec spec{cpu::task::MinimizeTask{
-            mirror, static_cast<std::int64_t>(max_iter), conv}};
-        auto frame = borrow_molrs_frame(frame_obj);
+        const cpu::task::TaskSpec spec{
+            cpu::task::MinimizeTask{mirror, static_cast<std::int64_t>(max_iter),
+                                    conv, driver.units().style}};
+        auto frame = borrow_molpy_frame(frame_obj);
         require_charge_column(*frame);
-        cpu::Frame work = cpu::from_molrs(*frame);
+        cpu::Frame work = cpu::from_molpy(*frame);
         cpu::task::DispatchResult dispatched{cpu::Frame(0), {}};
         {
             nb::gil_scoped_release release;
-            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD,
-                                                 cpu::task::kProtocolVersion,
-                                                 /*do_handshake=*/false);
+            cpu::task::TaskDispatcher dispatcher(MPI_COMM_WORLD);
             dispatched = dispatcher.dispatch(spec, std::move(work));
         }
-        cpu::to_molrs(dispatched.frame, *frame);
+        cpu::to_molpy(dispatched.frame, *frame);
         ran_ = true;
         return std::move(dispatched.control);
 #else
@@ -422,7 +448,7 @@ void bind_minimizer(nb::module_& m) {
         "The defaults are ASE's, which assume O(1) eV/A forces. A soft "
         "system — an Ar Lennard-Jones cluster has a residual of ~1e-2 eV/A — "
         "wants a larger pseudo-time scale, e.g. dt0 = 1.0, dt_max = 20.0 "
-        "(regressions/minimizer/fire_lj_dimer).")
+        "(regressions/minimizer/geometry).")
         .def(
             "__init__",
             [](cpu::task::FIREParams* p, double dt0, double dt_max, int n_min,
@@ -438,8 +464,8 @@ void bind_minimizer(nb::module_& m) {
             "Construct with the FIRE 1.0 knobs, all defaulted to the C++ "
             "(ASE-aligned) values. Note alpha0 here is a mixing FRACTION, not "
             "the step size LBFGS and CG call alpha0:\n"
-            "  dt0       initial pseudo-timestep [fs].\n"
-            "  dt_max    ceiling on the pseudo-timestep [fs].\n"
+            "  dt0       initial pseudo-timestep [time].\n"
+            "  dt_max    ceiling on the pseudo-timestep [time].\n"
             "  n_min     accelerating steps before dt grows [count].\n"
             "  f_inc     dt growth factor while accelerating "
             "(dimensionless, > 1).\n"
@@ -450,13 +476,15 @@ void bind_minimizer(nb::module_& m) {
             "redirected onto the force direction each step.\n"
             "  f_alpha   decay factor applied to alpha while accelerating "
             "(dimensionless, < 1).\n"
-            "  max_step  cap on the per-atom displacement of one step [A].");
+            "  max_step  cap on the per-atom displacement of one step "
+            "[length].");
 
     nb::class_<cpu::task::IsotropicCellRelaxParams>(
         m, "IsotropicCellRelax",
         "Isotropic variable-cell relaxation optimizer.\n\n"
-        "Reads the extensive Voigt virial W [eV] the evaluators wrote to the "
-        "frame, forms the isotropic pressure P = tr(W) / (3V) [eV/A^3] from "
+        "Reads the extensive Voigt virial W [energy] the evaluators wrote to "
+        "the "
+        "frame, forms the isotropic pressure P = tr(W) / (3V) [pressure] from "
         "the cell volume V, and scales the whole cell — the atom coordinates "
         "riding along affinely — towards P_target. It never moves an atom "
         "RELATIVE to the cell, so pair it with a separate geometry relaxation "
@@ -475,15 +503,15 @@ void bind_minimizer(nb::module_& m) {
         "STRESS SOURCE (the honest gate). A relaxer can only follow a virial "
         "something actually wrote. The classical evaluators — PairLJCut, "
         "PairCoulCut, CoulLong/KSpacePME and the bonded styles — write it by "
-        "default. AM1Evaluator writes none at all (it is a molecular method "
-        "with no cell), and set_evaluator_pw installs a gradient-only "
-        "plane-wave copy, so neither drives a cell step from Python: the "
-        "virial stays zero, the scale stays 1, and a PressureConverged at "
+        "default. A mounted PW writes its analytic virial because the cell "
+        "relaxer reads stress. AM1 writes none at all (it is a molecular "
+        "method with no cell), so it cannot drive a cell step: the virial "
+        "stays zero, the scale stays 1, and a PressureConverged at "
         "P_target = 0 reports success on an untouched cell.\n\n"
         "A variable-cell run does not terminate on forces: add "
         "PressureConverged (or StressConverged), not ForceConverged. The "
-        "relaxer publishes its pressure residual [eV/A^3] into the metric "
-        "slot ForceConverged reads as a force [eV/A], so that pairing does "
+        "relaxer publishes its pressure residual [pressure] into the metric "
+        "slot ForceConverged reads as a force [force], so that pairing does "
         "not fail loudly — it silently compares the wrong quantity.")
         .def(
             "__init__",
@@ -494,13 +522,13 @@ void bind_minimizer(nb::module_& m) {
             },
             nb::arg("P_target") = 0.0, nb::arg("alpha0") = 0.05,
             nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = 1.0,
-            "Construct with the target pressure P_target [eV/A^3] (0 is a "
-            "relaxed cell; 1 bar ~ 6.2415e-7 eV/A^3).\n\n"
+            "Construct with the target pressure P_target [pressure] (0 is a "
+            "relaxed cell; metal bar, real atm).\n\n"
             "  alpha0     relative scale-step gain, i.e. how strongly the "
             "pressure residual translates into a requested |s-1|.\n"
             "  max_scale  cap on |s-1| per step — how far one iteration may "
             "breathe the cell.\n"
-            "  bulk_mod   soft bulk modulus [eV/A^3] dividing the step; "
+            "  bulk_mod   soft bulk modulus [pressure] dividing the step; "
             "larger means a gentler cell change per iteration.");
 
     nb::class_<cpu::task::AnisotropicCellRelaxParams>(
@@ -528,10 +556,11 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = 1.0,
             nb::arg("relax_x") = true, nb::arg("relax_y") = true,
             nb::arg("relax_z") = true,
-            "Construct with the target pressure P_target [eV/A^3], the same "
+            "Construct with the target pressure P_target [pressure], the same "
             "on every relaxed axis, plus the per-axis scale gain alpha0, the "
             "per-step cap max_scale on |s-1|, the soft bulk modulus bulk_mod "
-            "[eV/A^3] and the relax_x / relax_y / relax_z mask (False freezes "
+            "[pressure] and the relax_x / relax_y / relax_z mask (False "
+            "freezes "
             "that box edge).");
 
     nb::class_<cpu::task::TriclinicCellRelaxParams>(
@@ -559,7 +588,7 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("alpha0") = 0.02, nb::arg("max_strain") = 0.05,
             nb::arg("bulk_mod") = 1.0,
             "Construct with the strain gain alpha0, the per-step cap "
-            "max_strain on |eps_ab|, and the soft modulus bulk_mod [eV/A^3] "
+            "max_strain on |eps_ab|, and the soft modulus bulk_mod [pressure] "
             "dividing the step.");
 
     nb::class_<cpu::task::JointIsotropicRelaxParams>(
@@ -585,10 +614,11 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("P_target") = 0.0, nb::arg("atom_step") = 0.01,
             nb::arg("alpha0") = 0.05, nb::arg("max_scale") = 0.05,
             nb::arg("bulk_mod") = 1.0,
-            "Construct with the target pressure P_target [eV/A^3], the atom "
-            "displacement atom_step [A] taken along the unit force each "
+            "Construct with the target pressure P_target [pressure], the atom "
+            "displacement atom_step [length] taken along the unit force each "
             "iteration, the relative cell-scale gain alpha0, the per-step cap "
-            "max_scale on |s-1| and the soft bulk modulus bulk_mod [eV/A^3].");
+            "max_scale on |s-1| and the soft bulk modulus bulk_mod "
+            "[pressure].");
 
     // ── Criteria (the plural add_criterion slot) ──
 
@@ -617,11 +647,13 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("etol") = 1e-5,
             "Construct with the five tolerances, defaulted to the C++ "
             "(LAMMPS/ASE-shaped) values:\n"
-            "  ftol      largest per-atom force magnitude [eV/A].\n"
-            "  rms_ftol  root-mean-square force over all atoms [eV/A].\n"
-            "  max_dtol  largest per-atom displacement of the last step [A].\n"
-            "  rms_dtol  root-mean-square displacement of that step [A].\n"
-            "  etol      energy change between the last two iterations [eV].");
+            "  ftol      largest per-atom force magnitude [force].\n"
+            "  rms_ftol  root-mean-square force over all atoms [force].\n"
+            "  max_dtol  largest per-atom displacement of the last step "
+            "[length].\n"
+            "  rms_dtol  root-mean-square displacement of that step [length].\n"
+            "  etol      energy change between the last two iterations "
+            "[energy].");
 
     nb::class_<cpu::task::PressureConvergedParams>(
         m, "PressureConverged",
@@ -630,9 +662,9 @@ void bind_minimizer(nb::module_& m) {
         "alongside the forces; the frame carries it as the 'stress' metadata "
         "entry in Voigt order — the six independent components of a symmetric "
         "3x3 tensor, listed (xx, yy, zz, xy, xz, yz). It is EXTENSIVE: a "
-        "whole-cell energy W [eV], not a stress, for every evaluator that "
+        "whole-cell energy W [energy], not a stress, for every evaluator that "
         "writes it. This criterion therefore forms P = (W_xx + W_yy + W_zz) / "
-        "(3V) [eV/A^3] from the box volume V and declares convergence once "
+        "(3V) [pressure] from the box volume V and declares convergence once "
         "|P - P_target| falls below ptol.\n\n"
         "StressConverged reads the identical entry and divides by the "
         "identical volume; it differs only in judging each diagonal component "
@@ -644,19 +676,20 @@ void bind_minimizer(nb::module_& m) {
                 new (p) cpu::task::PressureConvergedParams{P_target, ptol};
             },
             nb::arg("P_target") = 0.0, nb::arg("ptol") = 1e-5,
-            "Construct with the target pressure P_target [eV/A^3] (0 is a "
+            "Construct with the target pressure P_target [pressure] (0 is a "
             "relaxed cell; negative is a tensile setpoint) and the absolute "
-            "tolerance ptol [eV/A^3], which must be > 0 — a non-positive "
+            "tolerance ptol [pressure], which must be > 0 — a non-positive "
             "tolerance can never be met, and add_criterion raises ValueError "
             "on it.");
 
     nb::class_<cpu::task::StressConvergedParams>(
         m, "StressConverged",
         "Per-axis diagonal-stress stop policy for a variable-cell run.\n\n"
-        "Same input as PressureConverged — the extensive Voigt virial W [eV] "
+        "Same input as PressureConverged — the extensive Voigt virial W "
+        "[energy] "
         "on the frame's 'stress' entry — divided by the same cell volume V, "
         "but judged per axis: it compares the intensive stress "
-        "sigma_dd = W_dd / V [eV/A^3] of every UNMASKED axis d against "
+        "sigma_dd = W_dd / V [pressure] of every UNMASKED axis d against "
         "sigma_target and converges once the largest of those deviations "
         "falls below stol.\n\n"
         "Pair the mask with AnisotropicCellRelax's relax_x / relax_y / "
@@ -678,8 +711,8 @@ void bind_minimizer(nb::module_& m) {
             nb::arg("sigma_target") = 0.0, nb::arg("stol") = 1e-4,
             nb::arg("check_x") = true, nb::arg("check_y") = true,
             nb::arg("check_z") = true,
-            "Construct with the target diagonal stress sigma_target [eV/A^3] "
-            "(0 is a relaxed cell), the absolute tolerance stol [eV/A^3] "
+            "Construct with the target diagonal stress sigma_target [pressure] "
+            "(0 is a relaxed cell), the absolute tolerance stol [pressure] "
             "(must be > 0) and the check_x / check_y / check_z axis mask.");
 
     nb::class_<TaskResult>(m, "MinimizeResult",
@@ -703,6 +736,12 @@ void bind_minimizer(nb::module_& m) {
         "RuntimeError afterwards. A different configuration means a new "
         "Minimize object. Running again with the same configuration stays "
         "legal and re-optimizes from the frame's current state.");
+    ATV::python::bind_units(
+        minimize,
+        [](MinimizeHandle& h) -> cpu::minimizer::Minimize& { return h.driver; },
+        [](const MinimizeHandle& h, const char* s) {
+            h.require_configurable_(s);
+        });
     minimize
         .def(nb::init<>(),
              "Default construct; ForceConverged is auto-installed at build "
@@ -781,28 +820,14 @@ void bind_minimizer(nb::module_& m) {
     // because both facades read one dispatch table.
     bind_evaluator_setters(
         minimize,
-        // set_evaluator_am1 — the geometry-optimization reading of the same
-        // component.
-        "Append the AM1 semiempirical evaluator as the force source of a "
-        "geometry optimization — one self-consistent-field solve per "
-        "iteration, forces from the fixed-density central finite "
-        "difference (step 1e-4 A). The C++ twin is "
-        "regressions/semiempirical/am1_water_minimize. Takes no "
-        "NeighborList (AM1 is molecular, not a pair style) and reads the "
-        "frame's 'atomic_number' column [Z].\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the five "
-        "SCF parameters: the object you pass keeps its own state, so "
-        "last_result() on it is NOT populated by run().",
         // set_evaluator_pw — the geometry-optimization reading of the same
         // component.
         "Append the plane-wave DFT evaluator as the force source of a "
         "geometry optimization: the electrons are re-converged at every "
         "geometry, with analytic ionic forces taken at the converged "
-        "density. Budget it deliberately — an iteration costs TWO "
-        "self-consistent-field solves. Takes no NeighborList and needs a "
-        "box.\n\n"
-        "The driver installs a FRESH gradient-enabled copy of the fifteen "
-        "method parameters: the object you pass keeps its own state.");
+        "density. A force-producing evaluation uses one electronic solve. "
+        "The driver borrows this same method and keeps its Python owner alive. "
+        "This local provider is not serialized to a launcher task.");
 
     minimize
         .def(
@@ -897,7 +922,7 @@ void bind_minimizer(nb::module_& m) {
             [](MinimizePhaseBuilder& self, const cpu::task::PairLJCutParams& p,
                int order) -> MinimizePhaseBuilder& {
                 self.handle->add_on_phase(
-                    p, cpu::PairLJCut{p.epsilon, p.sigma, p.cutoff},
+                    p, cpu::task::internal::make_pair_lj_cut(p),
                     MinimizeBinding{self.phase, order});
                 return self;
             },

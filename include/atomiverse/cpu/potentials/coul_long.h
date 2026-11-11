@@ -3,7 +3,7 @@
 ///
 /// The short-range half of an Ewald/PME split. Evaluates
 ///
-///   E_real = units::coulomb · Σ_{i<j} q_i q_j · erfc(α r_ij) / r_ij
+///   E_real = qqrd2e · Σ_{i<j} q_i q_j · erfc(α r_ij) / r_ij
 ///
 /// over the neighbor list, where α is the Ewald splitting parameter shared
 /// with the reciprocal-space `KSpaceEwald` / `KSpacePME` component.
@@ -23,6 +23,7 @@
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
+#include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
 namespace ATV {
@@ -81,8 +82,7 @@ class CoulLong : public cpu::Potential,
     md::SpecialScaleTable special_;
     unsigned long long special_version_ = 0;
 
-    int n_threads_ = 1;
-    std::vector<std::vector<double>> fx_thr_, fy_thr_, fz_thr_;
+    md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };
 
 } // namespace cpu

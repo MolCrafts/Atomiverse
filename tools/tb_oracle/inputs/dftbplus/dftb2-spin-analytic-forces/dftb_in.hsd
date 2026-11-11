@@ -1,6 +1,6 @@
 # Offline DFTB+ 24.1 twin for ATV slug dftb2-spin-analytic-forces.
 # Cluster O2 triplet, off-eq r=1.30 Å, matching
-# regressions/semiempirical/dftb2-spin-analytic-forces/. Same spin block as
+# regressions/semiempirical/dftb2/. Same spin block as
 # spin-dftb2-o2 (PBE W_pp(O) = -0.028 Ha, ShellResolvedSpin = No).
 Geometry = GenFormat {
   <<< "geo.gen"

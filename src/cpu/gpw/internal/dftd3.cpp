@@ -181,8 +181,7 @@ void accumulate_atm_c9(const std::vector<int>& Z,
     // periodic 6 A water-dimer twin the two molecules' ATM forces came out
     // exactly swapped relative to CP2K. Wrap first; forces stay attributed by
     // atom index.
-    std::vector<std::array<double, 3>> pos_bohr(pos_raw.begin(),
-                                                pos_raw.end());
+    std::vector<std::array<double, 3>> pos_bohr(pos_raw.begin(), pos_raw.end());
     if (periodic)
         for (auto& p : pos_bohr)
             for (int d = 0; d < 3; ++d)
@@ -197,7 +196,7 @@ void accumulate_atm_c9(const std::vector<int>& Z,
     // orientations instead counts every CASE 3 triple class twice (6 anchored
     // representatives x fac0 = 1/3): on the periodic 6 A water-dimer twin
     // that inflated the ATM energy from +7.85e-7 to +6.25e-6 Ha — caught by
-    // the regressions/gpw/gpw-d3-atm-forces CP2K pin.
+    // the regressions/gpw/d3 CP2K pin.
     for (int iatom = 0; iatom < n; ++iatom) {
         const int za = Z[iatom];
         for (int jatom = iatom; jatom < n; ++jatom) {

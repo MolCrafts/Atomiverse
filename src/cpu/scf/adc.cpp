@@ -62,7 +62,7 @@ xt::xtensor<double, 4> mp2_t2_(const xt::xtensor<double, 4>& eri_mo,
                         - eps(static_cast<std::size_t>(nocc + b));
                     if (std::abs(denom) < 1e-12)
                         throw std::runtime_error(
-                            "RHF::adc2: near-zero MP2 doubles denominator "
+                            "ADC::adc2: near-zero MP2 doubles denominator "
                             "(degenerate or non-aufbau reference)");
                     // (ia|bj)
                     const double ia_bj =
@@ -563,7 +563,7 @@ std::vector<double> dgeev_real_sorted_(const xt::xtensor<double, 2>& Hrow,
             A(static_cast<std::size_t>(i), static_cast<std::size_t>(j)) =
                 Hrow(i, j);
     linalg::RealVector wr, wi;
-    linalg::eig_nonsymmetric(A, wr, wi, nullptr, "RHF::adc2");
+    linalg::eig_nonsymmetric(A, wr, wi, nullptr, "ADC::adc2");
     std::vector<double> real_eigs;
     real_eigs.reserve(static_cast<std::size_t>(n));
     for (std::size_t i = 0; i < wr.size(); ++i) {
@@ -584,7 +584,7 @@ std::vector<double> davidson_adc_(const xt::xtensor<double, 2>& Mss,
     const int nd = nocc * nocc * nvir * nvir;
     const int dim = ns + nd;
     constexpr int kDenseCap = 400; // full dgeev only for tiny spaces
-    const char* api = extended ? "RHF::adc2x" : "RHF::adc2";
+    const char* api = extended ? "ADC::adc2x" : "ADC::adc2";
 
     if (dim <= kDenseCap) {
         xt::xtensor<double, 2> H = xt::zeros<double>(
@@ -975,7 +975,7 @@ std::vector<double> davidson_ea_adc_(const xt::xtensor<double, 2>& Mab,
         auto w = dgeev_real_sorted_(H);
         if (static_cast<int>(w.size()) < nroots)
             throw std::runtime_error(
-                "RHF::ea_adc2: fewer real eigenvalues than n_states");
+                "ADC::ea_adc2: fewer real eigenvalues than n_states");
         w.resize(static_cast<std::size_t>(nroots));
         return w;
     }
@@ -1081,7 +1081,7 @@ std::vector<double> davidson_ea_adc_(const xt::xtensor<double, 2>& Mab,
                vl.data(), &ldvl, vr.data(), &ldvr, work.data(), &lwork, &info);
         if (info != 0)
             throw std::runtime_error(
-                "RHF::ea_adc2: Davidson projected dgeev failed");
+                "ADC::ea_adc2: Davidson projected dgeev failed");
 
         // Collect real Ritz values with indices
         std::vector<std::pair<double, int>> real_ritz;
@@ -1095,7 +1095,7 @@ std::vector<double> davidson_ea_adc_(const xt::xtensor<double, 2>& Mab,
             [](const auto& x, const auto& y) { return x.first < y.first; });
         if (static_cast<int>(real_ritz.size()) < nroots)
             throw std::runtime_error(
-                "RHF::ea_adc2: Davidson found too few real Ritz values");
+                "ADC::ea_adc2: Davidson found too few real Ritz values");
 
         bool all_conv = true;
         std::vector<std::vector<double>> residuals;
@@ -1190,7 +1190,7 @@ std::vector<double> davidson_ea_adc_(const xt::xtensor<double, 2>& Mab,
         }
     }
     throw std::runtime_error(
-        "RHF::ea_adc2: Davidson did not converge within max_cycle");
+        "ADC::ea_adc2: Davidson did not converge within max_cycle");
 }
 
 } // namespace
@@ -1200,7 +1200,7 @@ namespace {
 ADC2Result run_adc_ee_member_(const RHF& self, int n_states, bool extended,
                               const internal::IntegralView& pack,
                               const SlaterDeterminant& det) {
-    const char* api = extended ? "RHF::adc2x" : "RHF::adc2";
+    const char* api = extended ? "ADC::adc2x" : "ADC::adc2";
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -1244,20 +1244,27 @@ ADC2Result run_adc_ee_member_(const RHF& self, int n_states, bool extended,
 
 } // namespace
 
-ADC2Result RHF::adc2(int n_states) const {
-    if (!has_result())
+template <typename Method>
+ADC<Method>::ADC(const Method& mf) : mf_(&mf) {}
+
+template <typename Method>
+ADC2Result ADC<Method>::adc2(int n_states) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RHF::adc2: no SCF result — call run(frame) first");
-    return run_adc_ee_member_(*this, n_states, /*extended=*/false,
-                              integral_view_(), determinant());
+            "ADC::adc2: no SCF result — call run(frame) first");
+    return run_adc_ee_member_(mf, n_states, /*extended=*/false,
+                              mf.integral_view_(), mf.determinant());
 }
 
-ADC2Result RHF::adc2x(int n_states) const {
-    if (!has_result())
+template <typename Method>
+ADC2Result ADC<Method>::adc2x(int n_states) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RHF::adc2x: no SCF result — call run(frame) first");
-    return run_adc_ee_member_(*this, n_states, /*extended=*/true,
-                              integral_view_(), determinant());
+            "ADC::adc2x: no SCF result — call run(frame) first");
+    return run_adc_ee_member_(mf, n_states, /*extended=*/true,
+                              mf.integral_view_(), mf.determinant());
 }
 
 inline int idx_ajk_(int a, int j, int k, int nocc) {
@@ -1400,18 +1407,20 @@ std::vector<double> solve_ip_adc_(const xt::xtensor<double, 2>& Mij,
     auto w = dgeev_real_sorted_(H);
     if (static_cast<int>(w.size()) < nroots)
         throw std::runtime_error(
-            "RHF::ip_adc2: fewer real eigenvalues than n_states");
+            "ADC::ip_adc2: fewer real eigenvalues than n_states");
     w.resize(static_cast<std::size_t>(nroots));
     return w;
 }
 
-IPADC2Result RHF::ip_adc2(int n_states) const {
-    if (!has_result())
+template <typename Method>
+IPADC2Result ADC<Method>::ip_adc2(int n_states) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RHF::ip_adc2: no SCF result — call run(frame) first");
+            "ADC::ip_adc2: no SCF result — call run(frame) first");
 
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -1427,11 +1436,11 @@ IPADC2Result RHF::ip_adc2(int n_states) const {
     const int n_vir = n_mo - n_occ;
     if (n_occ == 0 || n_vir == 0)
         throw std::invalid_argument(
-            "RHF::ip_adc2: no virtual orbitals (e.g. He/STO-3G — no "
+            "ADC::ip_adc2: no virtual orbitals (e.g. He/STO-3G — no "
             "fallback)");
     if (n_states < 1 || n_states > n_occ)
         throw std::invalid_argument(
-            "RHF::ip_adc2: n_states must be in [1, n_occ="
+            "ADC::ip_adc2: n_states must be in [1, n_occ="
             + std::to_string(n_occ) + "]");
 
     const xt::xtensor<double, 4> eri_mo = ao2mo_full(eri_ao, C, n_mo);
@@ -1452,13 +1461,15 @@ IPADC2Result RHF::ip_adc2(int n_states) const {
     return out;
 }
 
-EAADC2Result RHF::ea_adc2(int n_states) const {
-    if (!has_result())
+template <typename Method>
+EAADC2Result ADC<Method>::ea_adc2(int n_states) const {
+    const Method& mf = *mf_;
+    if (!mf.has_result())
         throw std::runtime_error(
-            "RHF::ea_adc2: no SCF result — call run(frame) first");
+            "ADC::ea_adc2: no SCF result — call run(frame) first");
 
-    const SlaterDeterminant& det = determinant();
-    const internal::IntegralView pack = integral_view_();
+    const SlaterDeterminant& det = mf.determinant();
+    const internal::IntegralView pack = mf.integral_view_();
     const xt::xtensor<double, 4> eri_ao =
         (pack.ERI.size() > 0) ? pack.ERI : pack.eri_working();
 
@@ -1474,12 +1485,12 @@ EAADC2Result RHF::ea_adc2(int n_states) const {
     const int n_vir = n_mo - n_occ;
     if (n_occ == 0 || n_vir == 0)
         throw std::invalid_argument(
-            "RHF::ea_adc2: no virtual orbitals (e.g. He/STO-3G — no fallback)");
+            "ADC::ea_adc2: no virtual orbitals (e.g. He/STO-3G — no fallback)");
     // Full EA space: 1p singles + 2p–1h doubles
     const int dim = n_vir + n_occ * n_vir * n_vir;
     if (n_states < 1 || n_states > dim)
         throw std::invalid_argument(
-            "RHF::ea_adc2: n_states must be in [1, n_vir+n_occ*n_vir^2="
+            "ADC::ea_adc2: n_states must be in [1, n_vir+n_occ*n_vir^2="
             + std::to_string(dim) + "]");
 
     const xt::xtensor<double, 4> eri_mo = ao2mo_full(eri_ao, C, n_mo);
@@ -1499,6 +1510,8 @@ EAADC2Result RHF::ea_adc2(int n_states) const {
             omega_ha[static_cast<std::size_t>(s)] * units::kHartreeInEv;
     return out;
 }
+
+template class ADC<RHF>;
 
 } // namespace scf
 } // namespace cpu

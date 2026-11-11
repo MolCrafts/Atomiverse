@@ -6,8 +6,12 @@ then paste numbers into REFERENCE.md and hard-coded regression asserts.
 
 Examples:
   python tools/pyscf_oracle/pin_scf.py rhf --geom water --basis sto-3g
+  python tools/pyscf_oracle/pin_scf.py dhf --geom h2-1A --basis sto-3g
+  python tools/pyscf_oracle/pin_scf.py dhf --geom h2-1A --basis cc-pvdz
   # Γ-point PBC RHF (offline only): pyscf.pbc gto+scf on the same geom/cell
-  # as regressions/scf/periodic-rhf-gamma/REFERENCE.md
+  # as regressions/scf/periodic-hf/REFERENCE.md
+  python tools/pyscf_oracle/pin_scf.py krhf --kmesh 2,1,1
+  python tools/pyscf_oracle/pin_scf.py kuhf --kmesh 2,1,1 --spin 2
   python tools/pyscf_oracle/pin_scf.py uhf --geom o2 --basis sto-3g --spin 2
   python tools/pyscf_oracle/pin_scf.py ump2 --geom o2 --basis sto-3g --spin 2
   python tools/pyscf_oracle/pin_scf.py romp2 --geom o2 --basis sto-3g --spin 2
@@ -77,9 +81,17 @@ H  0.000000 -0.757200 -0.469200
 H  0.000000  0.000000  0.000000
 H  0.000000  0.000000  0.740000
 """,
+        "h2-1A": """
+H  0.000000  0.000000  0.000000
+H  0.000000  0.000000  1.000000
+""",
         "o2": """
 O  0.000000  0.000000  0.000000
 O  0.000000  0.000000  1.207500
+""",
+        "oh": """
+O  0.000000  0.000000  0.000000
+H  0.000000  0.000000  0.969660
 """,
         "h2co": """
 C  0.000000  0.000000  0.000000
@@ -97,6 +109,10 @@ H -0.629118  0.629118 -0.629118
         "n2": """
 N  0.000000  0.000000  0.000000
 N  0.000000  0.000000  1.097700
+""",
+        "hcl": """
+Cl  0.000000  0.000000  0.000000
+H   0.000000  0.000000  1.350000
 """,
     }
     if geom not in presets:
@@ -117,16 +133,86 @@ N  0.000000  0.000000  1.097700
     )
 
 
+
+def _kmesh_arg(text: str | None, default: list[int]) -> list[int]:
+    if text is None:
+        return default
+    parts = [int(x) for x in text.split(",")]
+    if len(parts) != 3 or any(n < 1 for n in parts):
+        raise SystemExit(f"--kmesh must be nx,ny,nz with each n>=1, got {text!r}")
+    return parts
+
+
+def _h2_cell(spin: int):
+    """H2 along c, 4 Bohr cube. Smaller than STO-3G pair reach (cell.rcut)."""
+    import numpy as np
+    from pyscf.pbc import gto
+
+    cell = gto.Cell()
+    cell.atom = "H 0 0 0; H 0 0 1.4"
+    cell.a = np.eye(3) * 4.0
+    cell.unit = "Bohr"
+    cell.basis = "sto-3g"
+    cell.verbose = 0
+    cell.precision = 1e-8
+    cell.spin = spin
+    cell.build()
+    return cell
+
+
+def _krhf(kmesh: list[int]) -> int:
+    """H2 / STO-3G KRHF, 4 Bohr cube. Default mesh is 1x1x2."""
+    from pyscf.pbc import scf
+
+    cell = _h2_cell(0)
+    kpts = cell.make_kpts(kmesh)
+    mf = scf.KRHF(cell, kpts)
+    mf.conv_tol = 1e-12
+    e = mf.kernel()
+    print(f"pyscf {__import__('pyscf').__version__} KRHF FFTDF exxdiv={mf.exxdiv}")
+    print(f"kmesh {kmesh} mesh {cell.mesh.tolist()} nk {len(kpts)}")
+    print(f"rcut {float(cell.rcut):.12f} Bohr")
+    print(f"E_tot = {e:.16f} Ha")
+    print(f"enuc = {float(cell.enuc):.16f} Ha")
+    print(f"converged {bool(mf.converged)}")
+    return 0
+
+
+def _kuhf(kmesh: list[int], spin: int) -> int:
+    """H2 / STO-3G KUHF. nelec follows kuhf.py (spin is not scaled by nk)."""
+    from pyscf.pbc import scf
+
+    cell = _h2_cell(spin)
+    kpts = cell.make_kpts(kmesh)
+    mf = scf.KUHF(cell, kpts)
+    mf.conv_tol = 1e-12
+    e = mf.kernel()
+    na, nb = (int(x) for x in mf.nelec)
+    print(f"pyscf {__import__('pyscf').__version__} KUHF FFTDF exxdiv={mf.exxdiv}")
+    print(f"kmesh {kmesh} mesh {cell.mesh.tolist()} nk {len(kpts)}")
+    print(f"rcut {float(cell.rcut):.12f} Bohr")
+    print(f"cell.spin {spin} nelec {na} {nb}")
+    print(f"E_tot = {e:.16f} Ha")
+    print(f"enuc = {float(cell.enuc):.16f} Ha")
+    print(f"converged {bool(mf.converged)}")
+    return 0
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "method",
-        choices=["rhf", "uhf", "rohf", "rks", "uks", "roks", "mp2", "mp2-fc", "mp3", "scs-mp2", "sos-mp2", "ump2", "romp2", "tda", "tdhf", "cisd", "adc2", "rks-tda", "rks-tddft", "uks-tda", "sf-tda", "d3bj", "g0w0", "ccsd", "ccsd-t", "casci", "b2plyp", "delta-scf", "eom-ee-ccsd", "eom-cc2", "eom-ea-ccsd", "adc2x", "ip-adc2", "ea-adc2", "sf-tddft", "mp4", "cc2", "direct-rpa", "bse", "d4", "eom-sf-ccsd", "gf2", "eom-ip-ccsd", "uks-tddft", "casscf", "nevpt2"],
+        choices=["dhf", "rhf", "krhf", "kuhf", "uhf", "rohf", "rks", "uks", "roks", "mp2", "mp2-fc", "mp3", "scs-mp2", "sos-mp2", "ump2", "romp2", "tda", "tdhf", "cisd", "adc2", "rks-tda", "rks-tddft", "uks-tda", "sf-tda", "d3bj", "g0w0", "ccsd", "ccsd-t", "casci", "b2plyp", "delta-scf", "eom-ee-ccsd", "eom-cc2", "eom-ea-ccsd", "adc2x", "ip-adc2", "ea-adc2", "sf-tddft", "mp4", "cc2", "direct-rpa", "bse", "d4", "eom-sf-ccsd", "gf2", "eom-ip-ccsd", "uks-tddft", "casscf", "nevpt2"],
     )
     p.add_argument("--geom", default="water")
     p.add_argument("--basis", default="sto-3g")
     p.add_argument("--charge", type=int, default=0)
     p.add_argument("--spin", type=int, default=0, help="2S (PySCF spin)")
+    p.add_argument(
+        "--kmesh",
+        default=None,
+        help="Monkhorst-Pack nx,ny,nz for krhf/kuhf (default 1,1,2 / 2,1,1)",
+    )
     p.add_argument("--xc", default="b3lyp")
     p.add_argument("--nstates", type=int, default=3)
     p.add_argument(
@@ -163,6 +249,11 @@ def main() -> int:
     p.add_argument("--cart", action=argparse.BooleanOptionalAction, default=None)
     p.add_argument("--grad", action="store_true")
     p.add_argument(
+        "--x2c",
+        action="store_true",
+        help="Spin-free x2c-1e (x2c1e, xuncontract=False) before SCF/gradient",
+    )
+    p.add_argument(
         "--pcm",
         action="store_true",
         help="Attach PySCF solvent.PCM (C-PCM) before SCF / gradient",
@@ -193,6 +284,11 @@ def main() -> int:
     except ImportError as e:
         print(json.dumps({"ok": False, "error": f"pyscf missing: {e}"}))
         return 2
+
+    if args.method == "krhf":
+        return _krhf(_kmesh_arg(args.kmesh, [1, 1, 2]))
+    if args.method == "kuhf":
+        return _kuhf(_kmesh_arg(args.kmesh, [2, 1, 1]), args.spin)
 
     mol = _mol(args.geom, args.basis, args.charge, args.spin, args.cart)
     out: dict = {
@@ -497,7 +593,7 @@ def main() -> int:
 
     if m == "g0w0":
         # Spectral (frequency-exact) G0W0 with dRPA screening — PySCF
-        # gw.gw_exact.GWExact twin of Atomiverse RHF::g0w0(). HF density via
+        # gw.gw_exact.GWExact twin of Atomiverse G0W0<RHF>::run(). HF density via
         # RKS(xc='hf') (gw_exact asserts a DFT mean-field object).
         # Local import keeps `np` bound even though later branches also
         # `import numpy as np` (which makes np function-local in Python).
@@ -550,6 +646,22 @@ def main() -> int:
             out["ac_error"] = str(ac_err)
         print(json.dumps(out, indent=2, sort_keys=True))
         return 0 if out.get("converged", True) else 1
+
+    if m == "dhf":
+        # pyscf.scf.dhf.DHF. Docstring geometry is --geom h2-1A (1.0 Angstrom).
+        mol = _mol(args.geom, args.basis, args.charge, args.spin, False)
+        out["cart"] = False
+        out["geom"] = args.geom
+        out["basis"] = args.basis
+        out["nao_2c"] = int(mol.nao_2c())
+        mf = scf.DHF(mol)
+        mf.conv_tol = args.conv_tol
+        e = float(mf.kernel())
+        out["e_tot_ha"] = e
+        out["converged"] = bool(mf.converged)
+        out["cycles"] = int(mf.cycles)
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return 0 if mf.converged else 1
 
     if m == "rhf":
         mf = scf.RHF(mol)
@@ -699,27 +811,6 @@ def main() -> int:
         out["e_tot_mp4_ha"] = float(e) + e_corr
         out["e_corr_mp2_pyscf_ha"] = float(m2.e_corr)
         out["oracle"] = "rspt4_det_on_pyscf_rhf_ao2mo"
-    elif m == "cc2":
-        # Closed-shell CC2 (Christiansen 1995). Stock PySCF has no cc.CC2;
-        # oracle is rccsd.RCCSD with cc2=True (same as rccsd_slow).
-        import numpy as _np
-        from pyscf.cc import rccsd as _rccsd
-
-        mycc = _rccsd.RCCSD(mf)
-        mycc.conv_tol = min(args.conv_tol, 1e-10)
-        mycc.conv_tol_normt = min(args.conv_tol, 1e-10)
-        mycc.cc2 = True
-        e_corr, t1, t2 = mycc.kernel()
-        out["e_hf_ha"] = float(e)
-        out["e_corr_ha"] = float(e_corr)
-        out["e_tot_cc2_ha"] = float(mycc.e_tot)
-        out["e_tot_ha"] = float(mycc.e_tot)
-        out["cc2_converged"] = bool(mycc.converged)
-        t1a = _np.asarray(t1).ravel()
-        t2a = _np.asarray(t2).ravel()
-        out["t1_norm"] = float(_np.sqrt(t1a.dot(t1a)))
-        out["t2_norm"] = float(_np.sqrt(t2a.dot(t2a)))
-        out["oracle"] = "pyscf_cc_rccsd_cc2"
     elif m == "direct-rpa":
         # Exact dRPA correlation (Furche plasmon) on RHF orbitals + MO ERIs.
         # Stock pyscf.gw.rpa.RPA uses DF + Legendre quadrature (near twin).
@@ -788,7 +879,7 @@ def main() -> int:
         out["nstates"] = int(args.nstates)
         out["sf_channel"] = "eomsf_ccsd"
     else:
-        # tda / tdhf / mp2 / mp3 / ccsd ground state: RHF
+        # tda / tdhf / mp2 / mp3 / ccsd / cc2 ground state: RHF
         mf = scf.RHF(mol)
 
 
@@ -814,6 +905,15 @@ def main() -> int:
             "vdw_scale": args.pcm_scale,
             "lebedev_order": args.pcm_lebedev_order,
         }
+
+    if args.x2c:
+        if m not in ("rhf", "uhf", "rohf", "rks", "uks", "roks"):
+            print(json.dumps({"ok": False, "error": f"--x2c is not supported for method {m!r}"}))
+            return 2
+        mf = mf.x2c1e()
+        mf.with_x2c.xuncontract = False
+        out["x2c"] = "sfx2c1e"
+        out["xuncontract"] = False
 
     mf.conv_tol = args.conv_tol
     e = mf.kernel()
@@ -878,148 +978,21 @@ def main() -> int:
         out["c_os"] = c_os
         out["c_ss"] = c_ss
     elif m == "mp3":
-        # Closed-shell RMP3. PySCF 2.x has no mp.MP3 — rebuild Szabo/Ostlund
-        # (Psi4NumPy MP3.py) spatial diagrams on PySCF RHF MOs + ao2mo ERIs.
-        # E_corr = E^(2) + E^(3); E^(2) must match mp.MP2.
-        from pyscf import ao2mo
-        import numpy as np
+        if __package__:
+            from .mp3 import rmp3_corrections
+        else:
+            from mp3 import rmp3_corrections
 
         m2 = mp.MP2(mf).run()
-        C = np.asarray(mf.mo_coeff)
-        eps = np.asarray(mf.mo_energy)
-        nmo = C.shape[1]
-        ndocc = mol.nelectron // 2
-        eri_chem = ao2mo.restore(1, ao2mo.full(mol, C), nmo)
-        # Physicist <pq|rs> = (pr|qs)
-        MO = np.einsum("prqs->pqrs", eri_chem)
-        o = slice(0, ndocc)
-        v = slice(ndocc, nmo)
-        eocc = eps[:ndocc]
-        evirt = eps[ndocc:]
-        den = (
-            eocc.reshape(-1, 1, 1, 1)
-            + eocc.reshape(-1, 1, 1)
-            - evirt.reshape(-1, 1)
-            - evirt
-        )
-        if np.any(den >= 0.0):
-            print(
-                json.dumps(
-                    {
-                        "ok": False,
-                        "error": "mp3: non-negative orbital-energy denominator",
-                    }
-                )
-            )
+        try:
+            e2, e3 = rmp3_corrections(mf)
+        except ValueError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}))
             return 2
-        eps_inv = 1.0 / den
-        e2 = 2.0 * np.einsum(
-            "abrs,rsab,abrs", MO[o, o, v, v], MO[v, v, o, o], eps_inv
-        )
-        e2 -= np.einsum(
-            "abrs,rsba,abrs", MO[o, o, v, v], MO[v, v, o, o], eps_inv
-        )
-        # 12 third-order diagrams (Psi4NumPy / Szabo Table 6.2).
-        e3 = 2.0 * np.einsum(
-            "abru,ruts,tsab,abru,abts",
-            MO[o, o, v, v],
-            MO[v, v, v, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "adrs,cbad,rscb,adrs,cbrs",
-            MO[o, o, v, v],
-            MO[o, o, o, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "acrt,rbsc,stab,acrt,abst",
-            MO[o, o, v, v],
-            MO[v, o, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "bcrt,rasb,stac,bcrt,acst",
-            MO[o, o, v, v],
-            MO[v, o, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 8.0 * np.einsum(
-            "acrt,btsc,rsab,acrt,abrs",
-            MO[o, o, v, v],
-            MO[o, v, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "cbrt,atsc,rsab,cbrt,abrs",
-            MO[o, o, v, v],
-            MO[o, v, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -1.0 * np.einsum(
-            "acrs,dbac,srdb,acrs,dbrs",
-            MO[o, o, v, v],
-            MO[o, o, o, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -1.0 * np.einsum(
-            "abrt,trus,usab,abtr,abus",
-            MO[o, o, v, v],
-            MO[v, v, v, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "bcrt,arbs,tsac,cbrt,acst",
-            MO[o, o, v, v],
-            MO[o, v, o, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += 2.0 * np.einsum(
-            "cbrt,rasb,stac,cbrt,acst",
-            MO[o, o, v, v],
-            MO[v, o, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "abrs,scat,rtbc,abrs,cbrt",
-            MO[o, o, v, v],
-            MO[v, o, o, v],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e3 += -4.0 * np.einsum(
-            "bcrt,atsc,rsab,bctr,abrs",
-            MO[o, o, v, v],
-            MO[o, v, v, o],
-            MO[v, v, o, o],
-            eps_inv,
-            eps_inv,
-        )
-        e_corr = float(e2 + e3)
+        e_corr = e2 + e3
         out["e_hf_ha"] = float(e)
-        out["e_corr_mp2_ha"] = float(e2)
-        out["e_corr_mp3_ha"] = float(e3)
+        out["e_corr_mp2_ha"] = e2
+        out["e_corr_mp3_ha"] = e3
         out["e_corr_ha"] = e_corr
         out["e_tot_mp3_ha"] = float(e) + e_corr
         out["e_corr_mp2_pyscf_ha"] = float(m2.e_corr)
@@ -1337,6 +1310,28 @@ def main() -> int:
         out["omega_ev"] = (e_eom * _HA_TO_EV).tolist()
         out["omega0_ev"] = float(e_eom[0] * _HA_TO_EV)
         out["nstates"] = int(args.nstates)
+    elif m == "cc2":
+        # Closed-shell CC2 (Christiansen 1995). Stock PySCF has no cc.CC2;
+        # oracle is rccsd.RCCSD with cc2=True (same as rccsd_slow).
+        # Runs after the RHF kernel: the amplitude object needs `mf`.
+        import numpy as _np
+        from pyscf.cc import rccsd as _rccsd
+
+        mycc = _rccsd.RCCSD(mf)
+        mycc.conv_tol = min(args.conv_tol, 1e-10)
+        mycc.conv_tol_normt = min(args.conv_tol, 1e-10)
+        mycc.cc2 = True
+        e_corr, t1, t2 = mycc.kernel()
+        out["e_hf_ha"] = float(e)
+        out["e_corr_ha"] = float(e_corr)
+        out["e_tot_cc2_ha"] = float(mycc.e_tot)
+        out["e_tot_ha"] = float(mycc.e_tot)
+        out["cc2_converged"] = bool(mycc.converged)
+        t1a = _np.asarray(t1).ravel()
+        t2a = _np.asarray(t2).ravel()
+        out["t1_norm"] = float(_np.sqrt(t1a.dot(t1a)))
+        out["t2_norm"] = float(_np.sqrt(t2a.dot(t2a)))
+        out["oracle"] = "pyscf_cc_rccsd_cc2"
     elif m == "eom-cc2":
         # Singlet EOM-CC2: RCCSD(cc2=True) + eomee_ccsd_singlet (full EE
         # Jacobian at CC2 amplitudes — stock PySCF has no top-level EOMCC2).

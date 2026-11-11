@@ -92,7 +92,8 @@ TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
 
     const double cutoff = 3.0;
     cuda::md::MD sim;
-    sim.set_integrator(cuda::md::VelocityVerlet{1e-6}); // tiny dt — preserve velocity bias
+    sim.set_integrator(
+        cuda::md::VelocityVerlet{1e-6}); // tiny dt — preserve velocity bias
     sim.on(ATV::md::Phase::force)
         .add(cuda::NeighborList{cutoff}, -10)
         .add(cuda::PairLJCut{1.0, 1.0, cutoff});
@@ -102,8 +103,8 @@ TEST(ZeroMomentum, ZeroesUniformCOMDriftAfterOneStep) {
 
     double p1[3];
     com_momentum(frame, p1);
-    // Per ac-002: |Σ m v_α| < 1e-5 (FP32) / < 1e-10 (FP64). cuda::work_t
-    // defaults to double in this build; 1e-8 (eV·fs/Å) leaves headroom.
+    // Per ac-002: |Σ m v_α| < 1e-5 (FP32) / < 1e-10 (FP64). Velocities are
+    // cuda::mixed_t (FP64 in the default build); 1e-8 (eV·fs/Å) leaves headroom.
     EXPECT_LT(std::fabs(p1[0]), 1e-8);
     EXPECT_LT(std::fabs(p1[1]), 1e-8);
     EXPECT_LT(std::fabs(p1[2]), 1e-8);

@@ -1,54 +1,8 @@
-# THE quality gate for Atomiverse (GitHub Actions is not on push).
-#
-#   pre-commit  → format / hygiene (fast)
-#   pre-push    → cmake -P cmake/AtvUnitGate.cmake
-#                 (path-scoped: only enable HF/PW/GPW/KSPACE if the diff needs them;
-#                  only build + ctest matching tests)
-#
-# Manual full slice:
-#   cmake -DATV_GATE_ALL=1 -P cmake/AtvUnitGate.cmake
-# Manual module force:
-#   cmake -DATV_GATE_MODULES=hf -P cmake/AtvUnitGate.cmake
-# Manual presets:
-#   cmake --workflow --preset cpu-unit-hf
-#
-# Install both:
-#   pre-commit install
-#   pre-commit install --hook-type pre-push
-# (default_install_hook_types below also installs both on `pre-commit install`)
-#
-# clang-format pin matches local 22.1.x.
 default_install_hook_types: [pre-commit, pre-push]
 
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+  - repo: https://github.com/MolCrafts/molcrafts-ci
+    rev: 54799bfe986f247edd1788e6242673a527400306
     hooks:
-      - id: trailing-whitespace
-        args: [--markdown-linebreak-ext=md]
-        exclude: '^tools/.+_oracle/inputs/'
-      - id: end-of-file-fixer
-        exclude: '^tools/.+_oracle/inputs/'
-      - id: check-yaml
-      - id: check-merge-conflict
-      - id: check-added-large-files
-        args: [--maxkb=1024]
-      - id: mixed-line-ending
-        args: [--fix=lf]
-
-  - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v22.1.5
-    hooks:
-      - id: clang-format
-        types_or: [c, c++, cuda]
-        exclude: 'basis_data/.*tables\.h$'
-
-  - repo: local
-    hooks:
-      - id: atv-cpu-unit
-        name: CPU unit (path-scoped cmake gate)
-        entry: cmake -P cmake/AtvUnitGate.cmake
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-push]
+      - id: molci-commit
+      - id: molci-push

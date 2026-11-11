@@ -15,6 +15,8 @@
 /// @see hf-capability-gaps-18-x2c
 #pragma once
 
+#include <xtensor/containers/xtensor.hpp>
+
 #include "atomiverse/cpu/scf/dense_matrix.h"
 
 namespace ATV {
@@ -66,6 +68,38 @@ class X2cWorkspace {
     RealMatrix hcore_;
     double lowest_positive_dirac_ = 0.0;
 };
+
+/// @brief Nuclear derivative of the spin-free x2c-1e core Hamiltonian.
+///
+/// Transplant of `pyscf.x2c.sfx2c1e_grad.gen_sf_hfw` /
+/// `_gen_first_order_quantities` / `_get_r1` at `approx='1E'` in the
+/// contracted AO basis (`hcore_grad_generator` with `xuncontract=False`,
+/// so the contraction coefficient is absent). The two-electron integrals
+/// and the overlap Pulay term are not part of this matrix — callers
+/// replace only Tr[P · (dT+dV)] by Tr[P · dh^X2C]
+/// (`pyscf.grad.rhf.grad_elec`).
+///
+/// @param S Overlap [dimensionless], n × n.
+/// @param T Kinetic energy [Hartree], n × n.
+/// @param V Nuclear attraction [Hartree], n × n.
+/// @param W Spin-free pVp [Hartree/Bohr²], n × n.
+/// @param dS dS/dR [1/Bohr], [n_atoms, 3, n, n].
+/// @param dT dT/dR [Hartree/Bohr], same layout.
+/// @param dV dV/dR [Hartree/Bohr], same layout (basis + operator).
+/// @param dW dW/dR [Hartree/Bohr³], same layout.
+/// @param c Speed of light [a.u.]; default `kLightSpeedAU`.
+/// @return dh^X2C/dR [Hartree/Bohr], [n_atoms, 3, n, n], symmetric in
+///         the AO pair.
+/// @throws std::invalid_argument on a shape mismatch.
+/// @throws std::runtime_error when the Dirac spectrum does not split into
+///         n negative and n positive states, the overlap is not positive
+///         definite, or the large-component block is singular.
+xt::xtensor<double, 4> x2c_hcore_gradient(
+    const xt::xtensor<double, 2>& S, const xt::xtensor<double, 2>& T,
+    const xt::xtensor<double, 2>& V, const xt::xtensor<double, 2>& W,
+    const xt::xtensor<double, 4>& dS, const xt::xtensor<double, 4>& dT,
+    const xt::xtensor<double, 4>& dV, const xt::xtensor<double, 4>& dW,
+    double c = kLightSpeedAU);
 
 } // namespace internal
 } // namespace scf

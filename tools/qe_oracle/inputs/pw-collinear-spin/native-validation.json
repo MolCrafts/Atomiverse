@@ -1,0 +1,55 @@
+{
+  "kind": "native validation evidence; not oracle pins",
+  "date": "2026-10-25",
+  "source_log": "/tmp/atv-gpw-repair-evidence/pw-spin-qe-final.log",
+  "source_log_sha256": "26fa9af07c1aebc9f688a1f831d79db84c30a55fbace94bca6c33fc57af84597",
+  "case": "pw/collinear-spin",
+  "exact_invocation": "not included in the captured log",
+  "environment": {
+    "OMP_NUM_THREADS": 1,
+    "OPENBLAS_NUM_THREADS": 1
+  },
+  "diagnostics": "debug iteration logging enabled in captured output",
+  "runs": [
+    {
+      "section": "pw-spin-gga",
+      "file": "native-pw-spin-gga.txt",
+      "sha256": "8d47b6e384933ab979e8fa2e3afbe4d55c02846bb05fd2549f6b94472b9fb0fa",
+      "whole_section_seconds": 26.585936,
+      "boundary": "section timer: construction, build, SCF solve(s), assertions",
+      "scf_solves": 2,
+      "pbe_energy_ha": -28.7326751302,
+      "pbe_iterations": 35,
+      "converged": true,
+      "magnetization": 2.0,
+      "lsda_energy_ha": -28.6078529734,
+      "lsda_iterations": 34,
+      "printed_gga_gap_ha": 0.1248222
+    },
+    {
+      "section": "pw-spin-polarized-o2",
+      "file": "native-pw-spin-polarized-o2.txt",
+      "sha256": "04ef14ed0e86726ad4c8801553499b4874cb00c233852580e5f6590a8f232147",
+      "whole_section_seconds": 16.86587,
+      "boundary": "section timer: construction, build, SCF solve(s), assertions",
+      "scf_solves": 1,
+      "pbe_energy_ha": -28.7326751302,
+      "pbe_iterations": 35,
+      "converged": true,
+      "magnetization": 2.0
+    }
+  ],
+  "external_energy_ha": -28.732676825,
+  "absolute_pbe_error_ha": 1.6947999981198336e-06,
+  "timing_observation": {
+    "qe_input": "o2_pbe.in",
+    "qe_boundary": "energy-only subprocess wall",
+    "qe_process_seconds": 1.8828146250452846,
+    "native_boundary": "single-PBE section wall",
+    "native_seconds": 16.86587,
+    "observed_quotient": 8.95779636276957,
+    "status": "observational only; native debug logging enabled and timing boundaries differ; no independent final performance claim",
+    "gga_section": "two SCF solves; not a ratio against the one-solve QE process",
+    "grid72": "forces enabled; not a speed comparison with the grid36 energy-only run"
+  }
+}

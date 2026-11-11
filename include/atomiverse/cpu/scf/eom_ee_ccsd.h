@@ -1,11 +1,12 @@
 /// @file cpu/scf/eom_ee_ccsd.h
 /// @brief EOM-EE-CCSD singlet excitation energies (public API).
 ///
-/// User path: `RHF::eom_ee_ccsd(frame, n_states)` — drives closed-shell RHF,
-/// spin-orbital Gauss–Stanton CCSD, then EOM-EE on the similarity-transformed
-/// Hamiltonian (Wang, Tu & Wang, JCTC **10**, 5567 (2014); Stanton & Bartlett,
-/// J. Chem. Phys. **98**, 7029 (1993)). Matches PySCF
-/// `cc.CCSD(...).eomee_ccsd_singlet()` on the same RHF reference.
+/// User path: `CCSD<RHF>{rhf}.eom_ee_ccsd(frame, n_states)` — drives
+/// closed-shell RHF, spin-orbital Gauss–Stanton CCSD, then EOM-EE on the
+/// similarity-transformed Hamiltonian (Wang, Tu & Wang, JCTC **10**, 5567
+/// (2014); Stanton & Bartlett, J. Chem. Phys. **98**, 7029 (1993)). Matches
+/// PySCF `cc.CCSD(mf).eomee_ccsd_singlet()`, which constructs
+/// `eom_rccsd.EOMEESinglet`. Not a member of `RHF`.
 #pragma once
 
 #include <vector>

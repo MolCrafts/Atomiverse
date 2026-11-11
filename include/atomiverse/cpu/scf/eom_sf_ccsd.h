@@ -1,7 +1,7 @@
 /// @file cpu/scf/eom_sf_ccsd.h
 /// @brief EOM-SF-CCSD spin-flip excitation energies (public API).
 ///
-/// User path: `UHF::eom_sf_ccsd(frame, n_states)` — drives high-spin UHF,
+/// User path: `CCSD<UHF>{uhf}.eom_sf_ccsd(frame, n_states, guess)` — drives high-spin UHF,
 /// unrestricted spin-orbital CCSD (UCCSD), then EOM spin-flip on the
 /// similarity-transformed Hamiltonian (Krylov / Krylov & Sherrill SF-EOM-CC;
 /// PySCF `cc.UCCSD(...).eomsf_ccsd()`). Targets ΔMs = −1 (or +1) from a

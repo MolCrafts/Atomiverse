@@ -83,8 +83,9 @@ TEST(ConstPotBO, SignFollowsDeltaPsi) {
 
 TEST(ConstPotBO, PrimaryCellMatchesAnalytic) {
     // Independent analytic: no images, eta=2, Ψ=(0,1), q_elyt=(0.5,-0.5)
-    // Q from BO + neutrality (see agent pin script).
-    constexpr double kQTop = 0.27175356;
+    // Q from BO + neutrality in lj units (qqrd2e = 1, see agent pin
+    // script). The metal-unit value (k_e = 14.399645) was 0.27175356.
+    constexpr double kQTop = 0.61748665;
     auto f = madelung_primary();
     cpu::md::ConstPotBO conp(2.0);
     conp.add_electrode(1, 0.0);
@@ -144,7 +145,7 @@ TEST(ConstPotBO, ZeroLtfUnchangedPrimaryPin) {
     conp.site_density = 0.0593; // ignored when l_tf == 0
     run_once(conp, f2);
     EXPECT_NEAR(conp.total_charge(1), q_ref, 1e-12);
-    EXPECT_NEAR(conp.total_charge(1), 0.27175356, 1e-6);
+    EXPECT_NEAR(conp.total_charge(1), 0.61748665, 1e-6); // lj units
 }
 
 TEST(ConstPotBO, ThomasFermiReducesCharge) {
@@ -191,7 +192,7 @@ TEST(ConstPotBO, ThomasFermiHardnessAnalyticTwoSite) {
     constexpr double kLtf = 1.0;
     constexpr double kD = 0.1;
     constexpr double kSep = 5.0; // Å along z
-    const double ke = units::coulomb;
+    const double ke = units::UnitSystem::lj().qqrd2e();
     const double a0 = ke * kEta * std::sqrt(2.0 / 3.14159265358979323846);
     const double a01 = ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
     const double h = 4.0 * 3.14159265358979323846 * ke * kLtf * kLtf * kD;
@@ -238,4 +239,64 @@ TEST(ConstPotBO, ThomasFermiHardnessAnalyticTwoSite) {
     run_once(conp, f);
     EXPECT_NEAR(conp.total_charge(1), q1_analytic, 1e-10);
     EXPECT_NEAR(conp.total_charge(0), -q1_analytic, 1e-10);
+}
+
+TEST(ConstPotBO, ForceInitializationDoesNotPredictOrRecordChargeHistory) {
+    auto frame = madelung_primary();
+    cpu::md::ConstPotBO solver(2.0);
+    solver.add_electrode(1, 0.0).add_electrode(2, 1.0);
+    solver.use_cg = true;
+    solver.predictor_order = 1;
+    solver.xy_image_range = 0;
+    cpu::Context context;
+    solver.build({context, frame});
+    context.exec.initializing_forces = true;
+    for (int i = 0; i < 3; ++i) {
+        solver.initialize_forces({context, frame, 0, 0});
+        EXPECT_FALSE(solver.last_used_predictor());
+    }
+    context.exec.initializing_forces = false;
+    solver.launch({context, frame, 0, 0});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 1});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 2});
+    ASSERT_TRUE(solver.last_used_predictor());
+    context.exec.initializing_forces = true;
+    solver.initialize_forces({context, frame, 0, 2});
+    EXPECT_FALSE(solver.last_used_predictor());
+    context.exec.initializing_forces = false;
+    solver.launch({context, frame, 0, 3});
+    EXPECT_TRUE(solver.last_used_predictor());
+    solver.destroy({context, frame});
+}
+
+TEST(ConstPotBO, TrialEvaluationDoesNotPredictOrRecordChargeHistory) {
+    auto frame = madelung_primary();
+    cpu::md::ConstPotBO solver(2.0);
+    solver.add_electrode(1, 0.0).add_electrode(2, 1.0);
+    solver.use_cg = true;
+    solver.predictor_order = 1;
+    solver.xy_image_range = 0;
+    cpu::Context context;
+    solver.build({context, frame});
+    context.exec.trial_evaluation = true;
+    for (int i = 0; i < 3; ++i) {
+        solver.initialize_forces({context, frame, 0, 0});
+        EXPECT_FALSE(solver.last_used_predictor());
+    }
+    context.exec.trial_evaluation = false;
+    solver.launch({context, frame, 0, 0});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 1});
+    EXPECT_FALSE(solver.last_used_predictor());
+    solver.launch({context, frame, 0, 2});
+    ASSERT_TRUE(solver.last_used_predictor());
+    context.exec.trial_evaluation = true;
+    solver.initialize_forces({context, frame, 0, 2});
+    EXPECT_FALSE(solver.last_used_predictor());
+    context.exec.trial_evaluation = false;
+    solver.launch({context, frame, 0, 3});
+    EXPECT_TRUE(solver.last_used_predictor());
+    solver.destroy({context, frame});
 }

@@ -22,33 +22,45 @@ cpu::Frame expand_supercell(const cpu::Frame& unit, int na, int nb, int nc) {
     cpu::Frame sc(n_sc);
 
     const Mat3& cell = unit.box.cell();
-    // Rows of cell are lattice vectors a, b, c [Å].
-    const double ax = cell(0, 0), ay = cell(0, 1), az = cell(0, 2);
-    const double bx = cell(1, 0), by = cell(1, 1), bz = cell(1, 2);
-    const double cx = cell(2, 0), cy = cell(2, 1), cz = cell(2, 2);
+    // Columns of cell are lattice vectors a, b, c [Å].
+    const double ax = cell(0, 0), ay = cell(1, 0), az = cell(2, 0);
+    const double bx = cell(0, 1), by = cell(1, 1), bz = cell(2, 1);
+    const double cx = cell(0, 2), cy = cell(1, 2), cz = cell(2, 2);
 
     Mat3 sc_cell;
     sc_cell(0, 0) = ax * na;
-    sc_cell(0, 1) = ay * na;
-    sc_cell(0, 2) = az * na;
-    sc_cell(1, 0) = bx * nb;
+    sc_cell(1, 0) = ay * na;
+    sc_cell(2, 0) = az * na;
+    sc_cell(0, 1) = bx * nb;
     sc_cell(1, 1) = by * nb;
-    sc_cell(1, 2) = bz * nb;
-    sc_cell(2, 0) = cx * nc;
-    sc_cell(2, 1) = cy * nc;
+    sc_cell(2, 1) = bz * nb;
+    sc_cell(0, 2) = cx * nc;
+    sc_cell(1, 2) = cy * nc;
     sc_cell(2, 2) = cz * nc;
     sc.box.set_cell(sc_cell);
 
     const auto ux = unit.span(kAtom_x);
     const auto uy = unit.span(kAtom_y);
     const auto uz = unit.span(kAtom_z);
-    const auto ut = unit.span(kAtom_type);
+    // Each identity column the unit cell carries is replicated; one it
+    // leaves out stays out of the supercell too.
+    const bool has_type = unit.has("atoms", kAtom_type.key);
+    const bool has_species = unit.has("atoms", kAtom_atomic_number.key);
+    if (!has_type)
+        sc.block("atoms").erase(kAtom_type.key);
+    if (!has_species)
+        sc.block("atoms").erase(kAtom_atomic_number.key);
+    const int* ut = has_type ? unit.span(kAtom_type).data() : nullptr;
+    const int* uz_species =
+        has_species ? unit.span(kAtom_atomic_number).data() : nullptr;
     const auto um = unit.span(kAtom_mass);
 
     auto sx = sc.span(kAtom_x);
     auto sy = sc.span(kAtom_y);
     auto sz = sc.span(kAtom_z);
-    auto st = sc.span(kAtom_type);
+    int* st = has_type ? sc.span(kAtom_type).data() : nullptr;
+    int* sz_species =
+        has_species ? sc.span(kAtom_atomic_number).data() : nullptr;
     auto sm = sc.span(kAtom_mass);
     auto stag = sc.span(kAtom_tag);
 
@@ -66,7 +78,10 @@ cpu::Frame expand_supercell(const cpu::Frame& unit, int na, int nb, int nc) {
                         static_cast<double>(uy[i]) + oy);
                     sz[out] = static_cast<StorageReal>(
                         static_cast<double>(uz[i]) + oz);
-                    st[out] = ut[i];
+                    if (st)
+                        st[out] = ut[i];
+                    if (sz_species)
+                        sz_species[out] = uz_species[i];
                     sm[out] = um[i];
                     stag[out] = static_cast<TagInt>(out + 1);
                     ++out;

@@ -1,12 +1,21 @@
 /// @file src/cpu/potentials/eam.cpp
 /// @brief cpu::EAM + EAMPotential — analytic embedded-atom many-body style.
+///
+/// Density/embedding communication algorithm ported from LAMMPS
+/// `src/MANYBODY/pair_eam.cpp` and `src/OPENMP/pair_eam_omp.cpp`, checkout `a0e2bd6efb3d67a29c0c4e4de3b19556ffdb9d5b`.
+/// Copyright (2003) Sandia Corporation. Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software. Distributed under the GNU General
+/// Public License (GPL-2.0-only).
 
 #include "atomiverse/cpu/potentials/eam.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
 
+#include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/eam_data/eam_tables.h"
@@ -36,8 +45,8 @@ EAMPotential::EAMPotential(molrs::Element element, std::string_view name) {
 
 EAM::EAM(EAMPotential potential, double cutoff)
     : pot_(potential), cutoff_(cutoff) {
-    if (cutoff <= 0.0)
-        throw std::invalid_argument("EAM: cutoff must be positive");
+    if (!std::isfinite(cutoff) || cutoff <= 0.0)
+        throw std::invalid_argument("EAM: cutoff must be finite and positive");
     // Sutton-Chen is a power law with no intrinsic range. Shift the pair term so
     // it reaches zero at the cutoff; without this a neighbour crossing the cutoff
     // steps the energy discontinuously and NVE stops conserving.
@@ -45,125 +54,192 @@ EAM::EAM(EAMPotential potential, double cutoff)
 }
 
 void EAM::build(const cpu::BuildContext& ctx) {
-    // rho_i is a sum over ALL neighbours of i. A half list gives each atom only
-    // the half of them that landed in its own row, so ask for the full list.
-    ctx.runtime.md.full_list_requested = true;
-
     const std::size_t n = static_cast<std::size_t>(ctx.frame.nlocal());
     rho_.assign(n, 0.0);
     dF_.assign(n, 0.0);
+    int threads = 1;
+#ifdef _OPENMP
+    threads = omp_get_max_threads();
+#endif
+    if (md::ChunkForces* arena = ctx.runtime.md.chunk_forces)
+        arena->reserve(threads, ctx.frame.capacity());
+    rho_threads_.assign(threads > 1 ? threads : 0, std::vector<double>(n));
+}
+
+int EAM::pack_forward_comm(int n, const int* list, double* buf,
+                           int /*pbc_flag*/, const int* /*pbc*/) {
+    for (int k = 0; k < n; ++k)
+        buf[k] = dF_[static_cast<std::size_t>(list[k])];
+    return n;
+}
+
+void EAM::unpack_forward_comm(int n, int first, const double* buf) {
+    std::copy_n(buf, n, dF_.begin() + first);
+}
+
+int EAM::pack_reverse_comm(int n, int first, double* buf) {
+    std::copy_n(rho_.begin() + first, n, buf);
+    return n;
+}
+
+void EAM::unpack_reverse_comm(int n, const int* list, const double* buf) {
+    for (int k = 0; k < n; ++k)
+        rho_[static_cast<std::size_t>(list[k])] += buf[k];
 }
 
 void EAM::launch(const cpu::LaunchContext& ctx) {
     cpu::Frame& f = ctx.frame;
     const cpu::md::PairList* pl = ctx.runtime.md.pair_list;
     if (pl == nullptr)
-        throw std::runtime_error("EAM: no neighbor list published");
-
-    // Rows carrying neighbour data: owners AND ghosts. Pass 1 must cover the ghosts
-    // too, because pass 2 reads F'(rho_j) with j on the other end of each pair, and j
-    // may be a ghost. Their rows are complete because the component declares a
-    // ghost-of-ghost halo (halo_cutoff() = 2*cutoff).
-    const int n_rows = pl->n_rows;
-    if (static_cast<int>(rho_.size()) < n_rows) {
-        rho_.assign(static_cast<std::size_t>(n_rows), 0.0);
-        dF_.assign(static_cast<std::size_t>(n_rows), 0.0);
-    }
-
+        throw std::runtime_error("EAM: no half neighbor list published");
+    const bool distributed =
+        cpu::multi_rank_dd(ctx.runtime)
+        || (ctx.runtime.md.dd && ctx.runtime.md.comm && f.nghost() > 0);
+    if (distributed && ctx.runtime.md.comm == nullptr)
+        throw std::runtime_error(
+            "EAM: spatial decomposition requires a communicator");
+    const int n_active = cpu::force_count(ctx);
+    const int n_owned = cpu::owned_count(ctx);
+    rho_.resize(static_cast<std::size_t>(n_active));
+    dF_.resize(static_cast<std::size_t>(n_active));
+    for (auto& density : rho_threads_)
+        density.resize(static_cast<std::size_t>(n_active));
     const double rc2 = cutoff_ * cutoff_;
 
-    // Resolve every schema column ONCE at the launch boundary; both passes
-    // below touch nothing but these raw pointers.
     const StorageReal* __restrict x_ptr = f.span(kAtom_x);
     const StorageReal* __restrict y_ptr = f.span(kAtom_y);
     const StorageReal* __restrict z_ptr = f.span(kAtom_z);
-    AccReal* __restrict fx_ptr = f.span(kAtom_fx);
-    AccReal* __restrict fy_ptr = f.span(kAtom_fy);
-    AccReal* __restrict fz_ptr = f.span(kAtom_fz);
+    // One chunk per thread (static loops): thread t owns force slot t and
+    // sum slot t, summed in slot order — deterministic per thread count.
+    md::ForcePass forces(ctx);
+    const int team = forces.team();
+    forces.open(team);
+#pragma omp parallel num_threads(team) if (team > 1)
+    {
+        int tid = 0, team_size = 1;
+#ifdef _OPENMP
+        tid = omp_get_thread_num();
+        team_size = omp_get_num_threads();
+#endif
+        const md::ForceRows force = forces.rows(tid);
+        double e_total = 0.0;
+        md::Voigt6 vir;
+        double* v = vir.v;
+        double* __restrict density =
+            rho_threads_.empty() ? rho_.data() : rho_threads_[tid].data();
+        std::fill_n(density, n_active, 0.0);
+        double* __restrict fx_ptr = force.fx;
+        double* __restrict fy_ptr = force.fy;
+        double* __restrict fz_ptr = force.fz;
 
-    // ── Pass 1: rho_i = sum_{j != i} f(r_ij), for owners AND ghosts ─────
-    for (int i = 0; i < n_rows; ++i) {
-        double rho = 0.0;
-        const int off = pl->firstneigh[i];
-        const int nn = pl->numneigh[i];
-        for (int jj = 0; jj < nn; ++jj) {
-            const int j = pl->neighbors[off + jj];
-            double dx = x_ptr[i] - x_ptr[j];
-            double dy = y_ptr[i] - y_ptr[j];
-            double dz = z_ptr[i] - z_ptr[j];
-            f.box.min_image(dx, dy, dz);
-            const double r2 = dx * dx + dy * dy + dz * dz;
-            if (r2 >= rc2)
-                continue; // the list is a Verlet list; screen here
-            rho += pot_.f(std::sqrt(r2));
+        // LAMMPS PairEAM::compute, Newton on: each half-list pair contributes
+        // density to both endpoints. Ghost contributions then return to owners.
+#pragma omp for schedule(static)
+        for (int ii = 0; ii < pl->inum; ++ii) {
+            const int i = pl->ilist[ii];
+            const int off = pl->firstneigh[i];
+            const int nn = pl->numneigh[i];
+            double rho_i = density[i];
+            for (int jj = 0; jj < nn; ++jj) {
+                const int j = pl->neighbors[off + jj];
+                double dx = x_ptr[i] - x_ptr[j];
+                double dy = y_ptr[i] - y_ptr[j];
+                double dz = z_ptr[i] - z_ptr[j];
+                const double r2 = dx * dx + dy * dy + dz * dz;
+                if (r2 >= rc2)
+                    continue;
+                const double contribution = pot_.f(std::sqrt(r2));
+                rho_i += contribution;
+                density[j] += contribution;
+            }
+            density[i] = rho_i;
         }
-        rho_[static_cast<std::size_t>(i)] = rho;
-        dF_[static_cast<std::size_t>(i)] = pot_.dF(rho);
-    }
-
-    // ── Pass 2: energy and forces ───────────────────────────────────────
-    // E = sum_i F(rho_i) + 1/2 sum_i sum_{j!=i} phi(r_ij)
-    //
-    // dE/dr_ij collects the pair term once and BOTH embedding derivatives:
-    //   dE/dr = phi'(r) + (F'(rho_i) + F'(rho_j)) * f'(r)
-    // The second term is the many-body part — the force between i and j depends
-    // on how densely embedded BOTH of them are.
-    double e_total = 0.0;
-    double v[6] = {0, 0, 0, 0, 0, 0};
-
-    // Owners only (pl->ilist / inum). A ghost's forces and energy belong to the rank
-    // that owns it; adding them here would double-count both.
-    for (int ii = 0; ii < pl->inum; ++ii) {
-        const int i = pl->ilist[ii];
-        e_total += pot_.F(rho_[static_cast<std::size_t>(i)]);
-
-        const int off = pl->firstneigh[i];
-        const int nn = pl->numneigh[i];
-        for (int jj = 0; jj < nn; ++jj) {
-            const int j = pl->neighbors[off + jj];
-            double dx = x_ptr[i] - x_ptr[j];
-            double dy = y_ptr[i] - y_ptr[j];
-            double dz = z_ptr[i] - z_ptr[j];
-            f.box.min_image(dx, dy, dz);
-            const double r2 = dx * dx + dy * dy + dz * dz;
-            if (r2 >= rc2)
-                continue;
-
-            const double r = std::sqrt(r2);
-            // The full list carries each pair twice (i->j and j->i), so every
-            // per-pair quantity is halved here and the two visits sum to one.
-            e_total += 0.5 * (pot_.phi(r) - phi_shift_);
-
-            const double dE_dr = pot_.dphi(r)
-                                 + (dF_[static_cast<std::size_t>(i)]
-                                    + dF_[static_cast<std::size_t>(j)])
-                                       * pot_.df(r);
-            // fpair = -(1/r) dE/dr, at FULL strength — not halved. The energy and
-            // the virial are halved above/below because the full list visits each
-            // pair twice and both visits accumulate into the same total. The force
-            // is different: each visit writes only atom i's force, so the i-visit
-            // must deposit the whole force that pair (i,j) exerts on i. (Halving
-            // here was the first draft's bug; the FD oracle caught it immediately.)
-            const double fpair = -dE_dr / r;
-
-            fx_ptr[i] += fpair * dx;
-            fy_ptr[i] += fpair * dy;
-            fz_ptr[i] += fpair * dz;
-
-            // Virial: each visit contributes its half of dx (x) f.
-            v[0] += 0.5 * dx * fpair * dx;
-            v[1] += 0.5 * dy * fpair * dy;
-            v[2] += 0.5 * dz * fpair * dz;
-            v[3] += 0.5 * dx * fpair * dy;
-            v[4] += 0.5 * dx * fpair * dz;
-            v[5] += 0.5 * dy * fpair * dz;
+        // LAMMPS OPENMP: finish density reduction before rank communication;
+        // MPI remains on the initiating thread.
+        if (!rho_threads_.empty()) {
+#pragma omp for schedule(static)
+            for (int i = 0; i < n_active; ++i) {
+                double value = 0.0;
+                for (int thread = 0; thread < team_size; ++thread)
+                    value += rho_threads_[thread][i];
+                rho_[i] = value;
+            }
         }
-    }
-
+#pragma omp master
+        {
+            if (distributed)
+                ctx.runtime.md.comm->reverse_comm(
+                    static_cast<ReversePacker&>(*this));
+        }
+#pragma omp barrier
+#pragma omp for schedule(static)
+        for (int i = 0; i < n_owned; ++i) {
+            const double rho = rho_[static_cast<std::size_t>(i)];
+            dF_[static_cast<std::size_t>(i)] = pot_.dF(rho);
+            e_total += pot_.F(rho);
+        }
+#pragma omp master
+        {
+            if (distributed)
+                ctx.runtime.md.comm->forward_comm(
+                    static_cast<ForwardPacker&>(*this));
+        }
+#pragma omp barrier
+#pragma omp for schedule(static)
+        for (int ii = 0; ii < pl->inum; ++ii) {
+            const int i = pl->ilist[ii];
+            const int off = pl->firstneigh[i];
+            const int nn = pl->numneigh[i];
+            for (int jj = 0; jj < nn; ++jj) {
+                const int j = pl->neighbors[off + jj];
+                double dx = x_ptr[i] - x_ptr[j];
+                double dy = y_ptr[i] - y_ptr[j];
+                double dz = z_ptr[i] - z_ptr[j];
+                const double r2 = dx * dx + dy * dy + dz * dz;
+                if (r2 >= rc2)
+                    continue;
+                const double r = std::sqrt(r2);
+                const double phi = pot_.phi(r);
+                e_total += phi - phi_shift_;
+                if (!ctx.forces_requested && !ctx.stress_requested)
+                    continue;
+                const double dE_dr = -(pot_.n() * phi
+                                       + (dF_[static_cast<std::size_t>(i)]
+                                          + dF_[static_cast<std::size_t>(j)])
+                                             * pot_.m() * pot_.f(r))
+                                     / r;
+                const double fpair = -dE_dr / r;
+                if (ctx.forces_requested) {
+                    fx_ptr[i] += fpair * dx;
+                    fy_ptr[i] += fpair * dy;
+                    fz_ptr[i] += fpair * dz;
+                    fx_ptr[j] -= fpair * dx;
+                    fy_ptr[j] -= fpair * dy;
+                    fz_ptr[j] -= fpair * dz;
+                }
+                if (ctx.stress_requested) {
+                    v[0] += dx * fpair * dx;
+                    v[1] += dy * fpair * dy;
+                    v[2] += dz * fpair * dz;
+                    v[3] += dx * fpair * dy;
+                    v[4] += dx * fpair * dz;
+                    v[5] += dy * fpair * dz;
+                }
+            }
+        }
+        forces.store(tid, e_total, vir);
+    } // chunk-owned Newton-on force accumulation
+    const double e_total = forces.energy();
     f.meta.get(kEnergy) += e_total;
     f.meta.get(kEnergyPair) += e_total;
-    for (int k = 0; k < 6; ++k)
-        f.meta.get(kStress)[k] += v[k];
+    if (ctx.stress_requested)
+        forces.virial().flush_to(f.meta.get(kStress));
+}
+
+void EAM::destroy(const cpu::DestroyContext&) {
+    rho_.clear();
+    dF_.clear();
+    rho_threads_.clear();
 }
 
 } // namespace cpu

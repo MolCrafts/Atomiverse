@@ -1,36 +1,42 @@
 /// @file cuda/record/recorder.cuh
-/// @brief Recorder -- header-only XYZ trajectory writer (async D2H bridge).
+/// @brief XyzRecorder -- header-only XYZ trajectory writer (an asynchronous
+///        consumer of the shared capture buffer).
 ///
-/// @see cpu::write_frame_xyz (cpu/io/frame_writer.h — deliberately CUDA-safe)
+/// @see cpu::write_xyz_frame (cpu/io/frame_writer.h — deliberately CUDA-safe)
 #pragma once
 
 #include <array>
 #include <cstddef>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <cuda_runtime.h>
-
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/io/frame_writer.h"
-#include "atomiverse/cuda/asynchronous/async_bridge.cuh"
-#include "atomiverse/cuda/frame/types.cuh"
+#include "atomiverse/cuda/asynchronous/async_consumer.cuh"
 
 namespace ATV {
 namespace cuda {
 
 /// @brief XYZ trajectory recorder.
 ///
-/// Freezes positions into a device-ring slot on the compute stream each sampled
-/// step, so the frame written for step N holds step-N coordinates with no
-/// tearing from the next step's integrator (a cross-stream race the previous
-/// live-pointer D2H was exposed to).
+/// Reads the positions of each captured step from the driver's shared
+/// capture buffer (`cuda::CaptureBuffer`): the frame written for step N is a
+/// copy frozen on the compute stream at the end of step N (FP64, primary +
+/// correction in mixed precision), never a view of device memory the next
+/// step overwrites.
 ///
-/// Frames go through the molrs-backed `cpu::write_frame_xyz` (extended XYZ
-/// with a Lattice comment line): the species column is the element symbol
-/// derived from `atoms.type` interpreted as atomic number Z, so non-Z type
-/// ids map to placeholder symbols (e.g. LJ type 0 -> "X"). This replaces the
-/// former hand-rolled integer-species format with a per-frame `Step` comment.
+/// Frames go through the molpy-backed `cpu::write_xyz_frame` (extended XYZ
+/// with a Lattice comment line): the species column is the element symbol of
+/// each atom's species Z (`atoms.atomic_number`, Z = 0 is the wildcard). A
+/// frame without a species column (a coarse-grained model) is refused at
+/// build — a force-field type is never written as an element.
+///
+/// Step convention (LAMMPS `dump`, @see AsyncConsumer): a frame is the
+/// state after a whole number of completed steps; a fresh `n`-step run at
+/// `every` writes the states after steps 0, every, 2·every, …, up to and
+/// including `n`, and a continued run never repeats the boundary state.
 ///
 /// @code{.cpp}
 /// sim.on(md::Phase::end_of_step).add(XyzRecorder{"traj.xyz", 10});
@@ -38,132 +44,60 @@ namespace cuda {
 class XyzRecorder : public AsyncRecorder {
   public:
     XyzRecorder(std::string filename, int every = 1)
-        : filename_(std::move(filename)), every_(every) {}
+        : filename_(std::move(filename)), every_(every) {
+        if (every_ < 1)
+            throw std::invalid_argument(
+                "cuda::XyzRecorder: every must be >= 1 step, got "
+                + std::to_string(every_));
+    }
 
     ~XyzRecorder() override = default;
     XyzRecorder(XyzRecorder&&) noexcept = default;
     XyzRecorder& operator=(XyzRecorder&&) noexcept = default;
 
     std::string name() const override { return "xyz_recorder"; }
-    /* role via AsyncRecorder / Recorder */
+    std::string capture_name() const override {
+        return "cuda::XyzRecorder: writing '" + filename_ + "'";
+    }
     int frequency() const override { return every_; }
+
+    CaptureColumns capture_columns() const override {
+        CaptureColumns c;
+        c.positions = true;
+        return c;
+    }
 
   protected:
     void on_build(const BuildContext& ctx) override {
-        auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-        auto& frame = ctx.frame;
-        n_atoms_ = frame.n_atoms();
-        auto n = static_cast<size_t>(n_atoms_);
-
-        // frame.atoms.x/y/z are real_t device buffers -- size by real_t.
-        for (int i = 0; i < kRingDepth; ++i) {
-            cudaMalloc(&d_x_[i], n * sizeof(real_t)); // device-ring slot
-            cudaMalloc(&d_y_[i], n * sizeof(real_t));
-            cudaMalloc(&d_z_[i], n * sizeof(real_t));
-            cudaMallocHost(&h_x_[i], n * sizeof(real_t)); // pinned host slot
-            cudaMallocHost(&h_y_[i], n * sizeof(real_t));
-            cudaMallocHost(&h_z_[i], n * sizeof(real_t));
-        }
-
-        dx_.resize(n);
-        dy_.resize(n);
-        dz_.resize(n);
-
-        // Types are immutable for the run -- D2H once at build (sync OK here).
-        htype_.resize(n);
-        cudaMemcpyAsync(htype_.data(), frame.atoms.type, n * sizeof(int),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
-
-        // First sampled frame of each run truncates any pre-existing file.
+        if (!ctx.frame.atoms.atomic_number)
+            throw std::invalid_argument(
+                std::string("cuda::XyzRecorder: device frame has no species "
+                            "column; ")
+                + atom_field_how_to("atomic_number"));
+        // First frame of each build truncates any pre-existing file.
         wrote_any_ = false;
     }
 
-    void freeze_slot(const LaunchContext& ctx, int slot) override {
-        // D2D freeze of step-N positions on the compute stream, before the next
-        // step's integrator overwrites them.
-        auto ms = static_cast<cudaStream_t>(ctx.runtime.stream);
-        auto n = static_cast<size_t>(n_atoms_);
-        cudaMemcpyAsync(d_x_[slot], ctx.frame.atoms.x, n * sizeof(real_t),
-                        cudaMemcpyDeviceToDevice, ms);
-        cudaMemcpyAsync(d_y_[slot], ctx.frame.atoms.y, n * sizeof(real_t),
-                        cudaMemcpyDeviceToDevice, ms);
-        cudaMemcpyAsync(d_z_[slot], ctx.frame.atoms.z, n * sizeof(real_t),
-                        cudaMemcpyDeviceToDevice, ms);
-    }
-
-    void d2h_slot(const LaunchContext& ctx, int slot) override {
-        auto ds = static_cast<cudaStream_t>(ctx.runtime.defer_stream);
-        auto n = static_cast<size_t>(n_atoms_);
-        cudaMemcpyAsync(h_x_[slot], d_x_[slot], n * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, ds);
-        cudaMemcpyAsync(h_y_[slot], d_y_[slot], n * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, ds);
-        cudaMemcpyAsync(h_z_[slot], d_z_[slot], n * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, ds);
-    }
-
-    void on_data_ready(const LaunchContext& ctx, int slot) override {
-        // Widen real_t pinned slot to double for the molrs writer. Callbacks
-        // are serialized on the defer stream, so the dx_/dy_/dz_/box_ scratch
-        // is reused safely (one callback in flight at a time).
-        for (int i = 0; i < n_atoms_; ++i) {
-            dx_[i] = static_cast<double>(h_x_[slot][i]);
-            dy_[i] = static_cast<double>(h_y_[slot][i]);
-            dz_[i] = static_cast<double>(h_z_[slot][i]);
-        }
-        // Host-authoritative cell snapshot (cuda::Context::host_box).
-        for (int i = 0; i < 9; ++i)
-            box_[static_cast<size_t>(i)] =
-                static_cast<double>(ctx.runtime.host_box.cell[i]);
+    void consume(const CaptureView& v) override {
+        const auto n = static_cast<std::size_t>(v.n_atoms);
+        species_.assign(v.atomic_number, v.atomic_number + n);
+        dx_.assign(v.x, v.x + n);
+        dy_.assign(v.y, v.y + n);
+        dz_.assign(v.z, v.z + n);
+        for (std::size_t i = 0; i < 9; ++i)
+            box_[i] = v.cell[i];
         // First write truncates any pre-existing file; later writes append.
-        cpu::write_frame_xyz(filename_, htype_, dx_, dy_, dz_, box_,
+        cpu::write_xyz_frame(filename_, species_, dx_, dy_, dz_, box_,
                              /*append=*/wrote_any_);
         wrote_any_ = true;
-    }
-
-    void on_destroy(const DestroyContext&) override {
-        for (int i = 0; i < kRingDepth; ++i) {
-            if (d_x_[i]) {
-                cudaFree(d_x_[i]);
-                d_x_[i] = nullptr;
-            }
-            if (d_y_[i]) {
-                cudaFree(d_y_[i]);
-                d_y_[i] = nullptr;
-            }
-            if (d_z_[i]) {
-                cudaFree(d_z_[i]);
-                d_z_[i] = nullptr;
-            }
-            if (h_x_[i]) {
-                cudaFreeHost(h_x_[i]);
-                h_x_[i] = nullptr;
-            }
-            if (h_y_[i]) {
-                cudaFreeHost(h_y_[i]);
-                h_y_[i] = nullptr;
-            }
-            if (h_z_[i]) {
-                cudaFreeHost(h_z_[i]);
-                h_z_[i] = nullptr;
-            }
-        }
     }
 
   private:
     std::string filename_;
     int every_;
-    int n_atoms_ = 0;
-    real_t* d_x_[kRingDepth] = {}; ///< device-ring frozen x [Angstrom]
-    real_t* d_y_[kRingDepth] = {};
-    real_t* d_z_[kRingDepth] = {};
-    real_t* h_x_[kRingDepth] = {}; ///< pinned host x [Angstrom]
-    real_t* h_y_[kRingDepth] = {};
-    real_t* h_z_[kRingDepth] = {};
-    std::vector<double> dx_, dy_, dz_; ///< widened-to-double scratch for writer
-    std::vector<int> htype_;           ///< atom types (immutable, D2H once)
-    std::array<double, 9> box_{};      ///< row-major cell scratch [Angstrom]
+    std::vector<double> dx_, dy_, dz_; ///< writer scratch (worker thread)
+    std::vector<int> species_;         ///< species Z per row
+    std::array<double, 9> box_{};      ///< row-major cell [Å]
     bool wrote_any_ = false;           ///< false = next write truncates
 };
 

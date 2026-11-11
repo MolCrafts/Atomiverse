@@ -16,13 +16,14 @@ namespace ATV {
 namespace cpu {
 namespace scf {
 
-MP4Result mp4_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha, int n_frozen) {
+MP4Result mp4_energy(const internal::IntegralView& ints,
+                     const SlaterDeterminant& det, double e_scf_ha,
+                     int n_frozen) {
     using Spin = SlaterDeterminant::Spin;
     if (ints.ERI.size() == 0) {
-        throw std::invalid_argument(
-            "mp4_energy: ERI is not materialized; call internal::IntegralWorkspace{..., "
-            "compute_eri=true}.");
+        throw std::invalid_argument("mp4_energy: ERI is not materialized; call "
+                                    "internal::IntegralWorkspace{..., "
+                                    "compute_eri=true}.");
     }
     if (det.n_electrons(Spin::alpha) != det.n_electrons(Spin::beta)) {
         throw std::invalid_argument(

@@ -4,7 +4,7 @@
 ///
 /// `SteepestDescent` is an `Optimizer`-role component that moves atoms
 /// along the force (negative gradient) direction each iteration:
-/// `x += alpha * f / m * ATV::units::force_to_accel`. It is hot-swappable: it plugs into the
+/// `x += alpha * f / m * ftm2v. It is hot-swappable: it plugs into the
 /// single `cuda::minimizer::Minimize` driver exactly as the CPU
 /// `cpu::minimizer::LBFGS` / `CG` Optimizer components plug into
 /// `cpu::minimizer::Minimize`.
@@ -27,7 +27,7 @@
 /// two displacement criteria out of its test rather than guessing.
 ///
 /// A component that published nothing would be worse than useless here: the handler
-/// would read an all-zero `LoopMetrics` and declare an untouched system converged.
+/// would read an all-zero `ConvergenceMetrics` and declare an untouched system converged.
 ///
 /// @see cuda::minimizer::Minimize for the driver that owns the loop
 /// @see cuda/driver/criterion.cuh for the handler that judges the metrics
@@ -48,7 +48,7 @@ namespace ATV {
 namespace cuda {
 namespace minimizer {
 
-/// @brief Steepest-descent Optimizer component: `x += alpha * f / m * ATV::units::force_to_accel`.
+/// @brief Steepest-descent Optimizer component: `x += alpha * f / m * ftm2v.
 ///
 /// Binds `search_direction` (the step) and `convergence_check` (the metric publish).
 /// The `alpha` parameter controls the step size (a pseudo-timestep in fs) — same unit
@@ -100,14 +100,16 @@ class SteepestDescent : public cuda::Optimizer {
     double max_force() const { return conv_.max_force(); }
 
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
-    double alpha_; ///< Step size (pseudo-timestep) [fs].
-    int step_ = 0; ///< Optimizer step counter.
+    double alpha_;    ///< Step size (pseudo-timestep) [fs].
+    BigInt step_ = 0; ///< Optimizer step counter.
 
     ConvCheck conv_; ///< Metric reduction (publishes; never decides).
-    std::vector<OptRecord> trace_; ///< Per-step diagnostics.
+    std::vector<ATV::minimizer::OptRecord> trace_; ///< Per-step diagnostics.
 };
 
 } // namespace minimizer

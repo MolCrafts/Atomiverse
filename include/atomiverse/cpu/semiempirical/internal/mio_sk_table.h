@@ -150,9 +150,9 @@ class MioSkTable {
             return 0.0;
         double de_drr_ha = 0.0;
         if (rr < data_->x_start_bohr[0]) {
-            de_drr_ha = -data_->exp_coeffs[0]
-                        * std::exp(-data_->exp_coeffs[0] * rr
-                                   + data_->exp_coeffs[1]);
+            de_drr_ha =
+                -data_->exp_coeffs[0]
+                * std::exp(-data_->exp_coeffs[0] * rr + data_->exp_coeffs[1]);
         } else {
             std::size_t lo = 0;
             std::size_t hi = data_->n_spline;
@@ -175,7 +175,8 @@ class MioSkTable {
                             + 5.0 * c[5] * dr * dr * dr * dr;
             }
         }
-        return de_drr_ha * basis_data::kMioSk_HaToEV * basis_data::kMioSk_AToBohr;
+        return de_drr_ha * basis_data::kMioSk_HaToEV
+               * basis_data::kMioSk_AToBohr;
     }
 
   private:
@@ -195,7 +196,8 @@ class MioSkTable {
     double grid_derivative(const double* tab, double r_A) const {
         constexpr double h = 1.0e-5; // Å
         const double rp = (r_A + h) * basis_data::kMioSk_AToBohr;
-        const double rm = std::max(r_A - h, 1.0e-8) * basis_data::kMioSk_AToBohr;
+        const double rm =
+            std::max(r_A - h, 1.0e-8) * basis_data::kMioSk_AToBohr;
         return (grid_value(tab, rp) - grid_value(tab, rm)) / (2.0 * h);
     }
 
@@ -209,8 +211,8 @@ class MioSkTable {
             C[static_cast<std::size_t>(i)] = yp[i - 1];
             D[static_cast<std::size_t>(i)] = yp[i - 1];
         }
-        int iCl = static_cast<int>(
-            std::ceil((xx - X[1]) / std::abs(X[2] - X[1])));
+        int iCl =
+            static_cast<int>(std::ceil((xx - X[1]) / std::abs(X[2] - X[1])));
         if (iCl < 1)
             iCl = 1;
         if (iCl > nn)
@@ -271,8 +273,10 @@ class MioSkTable {
             xa[ii - 1] = static_cast<double>(iLast - nInterNew + ii) * incr;
             ya[ii - 1] = tab[iLast - nInterNew + ii - 1];
         }
-        const double y0 = poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] - deltaR);
-        const double y2 = poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] + deltaR);
+        const double y0 =
+            poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] - deltaR);
+        const double y2 =
+            poly_interp(xa, ya, nInterNew, xa[nInterNew - 1] + deltaR);
         const double y1 = ya[nInterNew - 1];
         const double y1p = (y2 - y0) / (2.0 * deltaR);
         const double y1pp = (y2 + y0 - 2.0 * y1) / (deltaR * deltaR);

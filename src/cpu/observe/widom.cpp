@@ -80,7 +80,8 @@ void Widom::reset() {
     }
 }
 
-void Widom::build(const BuildContext&) {
+void Widom::build(const BuildContext& ctx) {
+    boltz_ = ctx.runtime.units.boltz;
     validate_params_();
     reset();
 }
@@ -135,7 +136,7 @@ void Widom::accumulate_frame_(const Frame& frame) {
     if (!(Lx > 0.0 && Ly > 0.0 && Lz > 0.0))
         throw std::invalid_argument("Widom: box edges must be > 0");
 
-    const double kT = units::kB_ev_per_k * temperature;
+    const double kT = boltz_ * temperature;
     const double beta = 1.0 / kT;
     std::uniform_real_distribution<double> U01(0.0, 1.0);
 
@@ -169,7 +170,7 @@ double Widom::mu_ex() const {
     const double avg = boltzmann_avg();
     if (!(avg > 0.0))
         return std::numeric_limits<double>::quiet_NaN();
-    const double kT = units::kB_ev_per_k * temperature;
+    const double kT = boltz_ * temperature;
     return -kT * std::log(avg);
 }
 

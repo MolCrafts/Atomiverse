@@ -41,7 +41,7 @@
 ///
 /// `add()` and `on(phase).add()` from the underlying `Driver<>`
 /// remain public for user-defined hooks (e.g. a concrete SCF method
-/// registered via `add(cpu::scf::RHF{})`).
+/// registered via `add(cpu::scf::RHF{BasisSet::STO3G})`).
 ///
 /// Inheritance: Evaluate → Driver<evaluate::Phase> →
 /// Driver<evaluate::Phase, cpu::device_tag>. There is no `EvaluateDriver` category in
@@ -50,8 +50,7 @@
 ///
 /// @code{.cpp}
 ///   // SCF energy + forces (default) — bind a concrete method
-///   cpu::scf::RKS rks;
-///   rks.basis = cpu::scf::BasisSet::STO3G;
+///   cpu::scf::RKS rks{cpu::scf::BasisSet::STO3G, cpu::xc::XCType::PBE};
 ///   cpu::Evaluate eval;
 ///   eval.on(evaluate::Phase::evaluate).add(std::move(rks));
 ///   eval.build();
@@ -75,8 +74,8 @@
 #include "atomiverse/cpu/component/zero.h"
 #include "atomiverse/cpu/driver/driver.h"
 #include "atomiverse/cpu/frame/frame.h"
-#ifdef ATV_HAS_MOLRS
-#include "atomiverse/cpu/frame/molrs_exchange.h"
+#ifdef ATV_HAS_MOLPY
+#include "atomiverse/cpu/frame/molpy_exchange.h"
 #endif
 
 namespace ATV {
@@ -115,21 +114,24 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     /// @param step 0-based step index published to components for this pass.
     void run(cpu::Frame& frame, int step) {
         setup_pass(frame);
+        EvaluationTransaction::Scope history(
+            this->backend_->evaluation_transaction());
         step_once(step);
         teardown_pass();
+        history.accept();
     }
 
-    /// @brief User-facing entry — evaluate the system stored in a molrs.Frame.
+    /// @brief User-facing entry — evaluate the system stored in a molpy.Frame.
     ///
-    /// Materializes the molrs.Frame into a transient `cpu::Frame`, runs one evaluation
-    /// pass on it, and writes the results back into the *same* molrs.Frame. The borrow
+    /// Materializes the molpy.Frame into a transient `cpu::Frame`, runs one evaluation
+    /// pass on it, and writes the results back into the *same* molpy.Frame. The borrow
     /// window is strictly this one call.
-    /// @param frame molrs.Frame handle (input geometry + output sink).
-#ifdef ATV_HAS_MOLRS
+    /// @param frame molpy.Frame handle (input geometry + output sink).
+#ifdef ATV_HAS_MOLPY
     void run(molrs::FrameRef& frame) {
-        cpu::Frame work = cpu::from_molrs(frame);
+        cpu::Frame work = cpu::from_molpy(frame);
         run(work);
-        cpu::to_molrs(work, frame);
+        cpu::to_molpy(work, frame);
     }
 #endif
 

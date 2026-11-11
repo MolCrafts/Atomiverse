@@ -1,0 +1,92 @@
+name: release
+'on':
+  push:
+    tags: [v*]
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+defaults:
+  run:
+    shell: bash
+jobs:
+  context:
+    name: release
+    permissions:
+      contents: read
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@54799bfe986f247edd1788e6242673a527400306
+    with:
+      profile: cpp-python
+  guard:
+    name: release / exact commit verification
+    needs: context
+    if: needs.context.outputs.validate == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@54799bfe986f247edd1788e6242673a527400306
+      - run: molci run pins
+      - uses: MolCrafts/molcrafts-ci/actions/release-verify@54799bfe986f247edd1788e6242673a527400306
+        with:
+          profile: cpp-python
+          publish: ${{ needs.context.outputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+  build:
+    name: release / pure Python distributions
+    needs: [context, guard]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@54799bfe986f247edd1788e6242673a527400306
+      - uses: MolCrafts/molcrafts-ci/actions/setup-rust@54799bfe986f247edd1788e6242673a527400306
+      - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@54799bfe986f247edd1788e6242673a527400306
+        with:
+          native: 'false'
+          scope: package
+      - run: molci run package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+  publish:
+    name: release / Publish to PyPI
+    needs: [context, guard, build]
+    if: needs.context.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+  github-release:
+    name: release / GitHub release
+    needs: [context, guard, publish]
+    if: needs.context.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: dist
+          path: dist/
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

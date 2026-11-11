@@ -9,10 +9,10 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/multiscale/internal/qm_mm_vdw.h"
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
-#include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 namespace ATV {
 namespace cpu {
@@ -24,9 +24,10 @@ namespace cpu {
 /// - E_QM–MM^vdW via per-type 12-6 LJ
 ///
 /// MM–MM LJ/Coulomb/bonded belong to the user's ordinary MM styles. QM region
-/// comes from the `kAtomQmZ` mask column (see `qm_mask.h`), not a ctor list.
+/// comes from the `kAtomQm` mask column (see `qm_mask.h`), not a ctor list.
 class QmmmElectrostatic : public Potential {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @param cross_lj QM–MM LJ diagonals/off-diagonals (Lorentz–Berthelot fill).
     /// @param lj_cutoff LJ cutoff [Å].
     /// @param embed_cutoff Embedding site collection cutoff [Å].

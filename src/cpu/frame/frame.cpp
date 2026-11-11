@@ -4,11 +4,13 @@
 #include "atomiverse/cpu/frame/frame.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <limits>
 #include <queue>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -32,8 +34,6 @@ MetaDType meta_dtype(const MetaValue& value) noexcept {
         return MetaDType::U32;
     if (std::holds_alternative<std::uint64_t>(value))
         return MetaDType::U64;
-    if (std::holds_alternative<float>(value))
-        return MetaDType::F32;
     if (std::holds_alternative<double>(value))
         return MetaDType::F64;
     if (std::holds_alternative<std::string>(value))
@@ -48,16 +48,10 @@ MetaDType meta_dtype(const MetaValue& value) noexcept {
         return MetaDType::U32x3;
     if (std::holds_alternative<MetaU64x3>(value))
         return MetaDType::U64x3;
-    if (std::holds_alternative<MetaF32x3>(value))
-        return MetaDType::F32x3;
     if (std::holds_alternative<MetaF64x3>(value))
         return MetaDType::F64x3;
-    if (std::holds_alternative<MetaF32x6>(value))
-        return MetaDType::F32x6;
     if (std::holds_alternative<MetaF64x6>(value))
         return MetaDType::F64x6;
-    if (std::holds_alternative<MetaF32x9>(value))
-        return MetaDType::F32x9;
     if (std::holds_alternative<MetaF64x9>(value))
         return MetaDType::F64x9;
     return MetaDType::TagIndexLocal;
@@ -191,9 +185,9 @@ Column::Column(ColumnSpec spec, int rows) : spec_(spec) {
         storage_.emplace<3>(
             ColumnBuffer<int, ColDType::Int>{xt::zeros<int>({n, c})});
         break;
-    case ColDType::Int8:
-        storage_.emplace<4>(ColumnBuffer<std::int8_t, ColDType::Int8>{
-            xt::zeros<std::int8_t>({n, c})});
+    case ColDType::Image:
+        storage_.emplace<4>(ColumnBuffer<ImageInt, ColDType::Image>{
+            xt::zeros<ImageInt>({n, c})});
         break;
     }
     if ((spec_.flags & kColIdentityTail) && spec_.cols == 1) {
@@ -546,7 +540,16 @@ int Frame::cols_for_(const FieldSpec& spec, const MetaMap& meta) {
     return 0;
 }
 
+namespace {
+std::atomic<std::uint64_t> g_row_revision{0};
+} // namespace
+
+void Frame::touch_rows_() noexcept {
+    row_revision_ = g_row_revision.fetch_add(1, std::memory_order_relaxed) + 1;
+}
+
 Frame::Frame(int n_atoms) {
+    touch_rows_();
     if (n_atoms < 0)
         throw std::invalid_argument("Frame atom count must be non-negative");
 
@@ -588,6 +591,7 @@ Frame::Frame(int n_atoms) {
 
 Frame::Frame(const Frame& other)
     : blocks(other.blocks), meta(other.meta), box(other.box) {
+    touch_rows_();
     bind_resolution_state_();
 }
 
@@ -597,6 +601,7 @@ Frame& Frame::operator=(const Frame& other) {
     blocks = other.blocks;
     meta = other.meta;
     box = other.box;
+    touch_rows_();
     bind_resolution_state_();
     return *this;
 }
@@ -604,6 +609,8 @@ Frame& Frame::operator=(const Frame& other) {
 Frame::Frame(Frame&& other)
     : blocks(std::move(other.blocks)), meta(std::move(other.meta)),
       box(std::move(other.box)) {
+    touch_rows_();
+    other.touch_rows_();
     bind_resolution_state_();
 }
 
@@ -613,8 +620,20 @@ Frame& Frame::operator=(Frame&& other) {
     blocks = std::move(other.blocks);
     meta = std::move(other.meta);
     box = std::move(other.box);
+    touch_rows_();
+    other.touch_rows_();
     bind_resolution_state_();
     return *this;
+}
+
+void Frame::insert_field(AtomFieldId id) {
+    const FieldSpec& field = kAtomFieldSpecs[static_cast<std::size_t>(id)];
+    Block& atoms = atoms_block_();
+    if (atoms.contains(field.key))
+        return;
+    atoms.insert(field.key,
+                 ColumnSpec{field.dtype, cols_for_(field, meta), field.group,
+                            field.epi, field.flags, field.wire_id});
 }
 
 void Frame::bind_resolution_state_() const noexcept {
@@ -682,12 +701,14 @@ void Frame::set_nlocal(int n) {
     if (n < 0 || n + nghost() > capacity())
         throw std::out_of_range("Frame nlocal violates capacity");
     meta.set(kNLocal, static_cast<std::int64_t>(n));
+    touch_rows_();
 }
 
 void Frame::set_nghost(int n) {
     if (n < 0 || nlocal() + n > capacity())
         throw std::out_of_range("Frame nghost violates capacity");
     meta.set(kNGhost, static_cast<std::int64_t>(n));
+    touch_rows_();
 }
 
 void Frame::grow(int target_capacity) {
@@ -708,12 +729,17 @@ void Frame::set_capacity(int new_capacity) {
         return;
     atoms_block_().set_rows(new_capacity);
     meta.set(kNMax, static_cast<std::int64_t>(new_capacity));
+    touch_rows_();
 }
 
-void Frame::copy_row(int dst, int src) { atoms_block_().copy_row(dst, src); }
+void Frame::copy_row(int dst, int src) {
+    atoms_block_().copy_row(dst, src);
+    touch_rows_();
+}
 
 void Frame::copy_row_from(const Frame& source, int dst, int src) {
     atoms_block_().copy_row_from(source.atoms_block_(), dst, src);
+    touch_rows_();
 }
 
 void Frame::ensure_bonded_storage() { meta.set(kHasBonded, std::int64_t{1}); }
@@ -837,7 +863,12 @@ TagInt Frame::acquire_tag() {
     return static_cast<TagInt>(next.get()++);
 }
 
-void Frame::clear_tag_index() { meta.get(kTagIndex).clear(); }
+void Frame::clear_tag_index() {
+    meta.get(kTagIndex).clear();
+    // Republishing the index is how a reorder done through raw columns
+    // announces itself (md::notify_sorted).
+    touch_rows_();
+}
 
 void Frame::release_tag_index() {
     TagIndex fresh;
@@ -847,6 +878,7 @@ void Frame::release_tag_index() {
 void Frame::rebuild_tag_index(int begin, int end) {
     if (begin < 0 || end < begin || end > n_total())
         throw std::out_of_range("Frame tag-index range is invalid");
+    touch_rows_();
     auto& index = meta.get(kTagIndex);
     const TagInt* tags = span(kAtom_tag).data();
     index.reserve(index.size() + static_cast<std::size_t>(end - begin));
@@ -871,6 +903,7 @@ void Frame::add_bond(TagInt ti, TagInt tj, int type_value) {
     partner(row, slot) = partner_tag;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::add_angle(TagInt ti, TagInt tj, TagInt tk, int type_value) {
@@ -889,6 +922,7 @@ void Frame::add_angle(TagInt ti, TagInt tj, TagInt tk, int type_value) {
     partner(row, 2 * slot + 1) = tk;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::add_dihedral(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
@@ -909,6 +943,7 @@ void Frame::add_dihedral(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
     partner(row, 3 * slot + 2) = tl;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::add_improper(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
@@ -929,6 +964,7 @@ void Frame::add_improper(TagInt ti, TagInt tj, TagInt tk, TagInt tl,
     partner(row, 3 * slot + 2) = tl;
     kind(row, slot) = type_value;
     num[static_cast<std::size_t>(row)] = slot + 1;
+    atoms_block_().bump_generation_();
 }
 
 void Frame::build_special_list() {
@@ -1044,6 +1080,71 @@ void Frame::reshuffle_topology_to_tags() {
     }
 }
 
+bool Frame::restore_import_order(const TagInt* original, int n) {
+    if (original == nullptr || n != nlocal() || n <= 1)
+        return false;
+
+    const TagInt* tags = span(kAtom_tag).data();
+    std::unordered_map<TagInt, int> row_of;
+    row_of.reserve(static_cast<std::size_t>(n));
+    for (int row = 0; row < n; ++row) {
+        if (!row_of.emplace(tags[row], row).second)
+            return false;
+    }
+
+    std::vector<int> source(static_cast<std::size_t>(n), -1);
+    std::vector<char> used(static_cast<std::size_t>(n), 0);
+    bool already = true;
+    for (int row = 0; row < n; ++row) {
+        const auto it = row_of.find(original[row]);
+        if (it == row_of.end())
+            return false;
+        const int src = it->second;
+        if (used[static_cast<std::size_t>(src)] != 0)
+            return false;
+        used[static_cast<std::size_t>(src)] = 1;
+        source[static_cast<std::size_t>(row)] = src;
+        if (src != row)
+            already = false;
+    }
+    if (already)
+        return true;
+
+    touch_rows_();
+    auto refs = atoms_block_().resolve_columns(kColMigrate);
+    struct Snapshot {
+        ColumnRef ref;
+        std::vector<std::byte> bytes;
+    };
+    std::vector<Snapshot> snapshots;
+    snapshots.reserve(refs.size());
+    for (const auto& ref : refs) {
+        Snapshot snap{ref, {}};
+        snap.bytes.resize(static_cast<std::size_t>(n) * ref.row_bytes());
+        if (!snap.bytes.empty())
+            std::memcpy(snap.bytes.data(), ref.bytes(), snap.bytes.size());
+        snapshots.push_back(std::move(snap));
+    }
+    for (auto& snap : snapshots) {
+        const std::size_t width = snap.ref.row_bytes();
+        if (width == 0)
+            continue;
+        auto* dst = snap.ref.mutable_bytes();
+        for (int row = 0; row < n; ++row) {
+            const int src = source[static_cast<std::size_t>(row)];
+            if (src == row)
+                continue;
+            std::memcpy(dst + static_cast<std::size_t>(row) * width,
+                        snap.bytes.data()
+                            + static_cast<std::size_t>(src) * width,
+                        width);
+        }
+    }
+    clear_tag_index();
+    rebuild_tag_index(0, n);
+    return true;
+}
+
 std::size_t Frame::memory_bytes() const noexcept {
     std::size_t bytes = 0;
     for (const auto& [key, value] : blocks)
@@ -1081,6 +1182,13 @@ Frame Frame::clone_structure(int rows) const {
         if (column.wire_id() == kDynamicFieldId)
             target_atoms.insert(key, column.spec());
     }
+    // A schema column the source left out (an identity column its boundary
+    // did not provide) stays out of the clone too.
+    // (Read through columns(): a structural clone resolves no column plan.)
+    for (const FieldSpec& field : kAtomFieldSpecs)
+        if (source_atoms.columns().find(field.key)
+            == source_atoms.columns().end())
+            target_atoms.erase(field.key);
     for (const auto& [key, source_block] : blocks) {
         if (key == "atoms")
             continue;
@@ -1100,11 +1208,14 @@ std::vector<SchemaError> validate_ghosts(const GhostContract& required,
     std::vector<SchemaError> errors = required.conflicts();
     for (const GhostField& f : required) {
         if (!frame.has("atoms", f.name)) {
+            const char* how = atom_field_how_to(f.name);
             errors.push_back(SchemaError{
                 f.name, f.required_by,
-                "the Frame has no such column. Add it before the run "
-                "(Block::insert, or load a file that carries it), or unmount "
-                "the component that needs it."});
+                how ? "the Frame has no such column: " + std::string(how)
+                    : std::string(
+                          "the Frame has no such column. Add it before the run "
+                          "(Block::insert, or load a file that carries it), or "
+                          "unmount the component that needs it.")});
             continue;
         }
         const auto& cols = frame.block("atoms").columns();

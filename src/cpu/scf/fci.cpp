@@ -40,9 +40,9 @@ xt::xtensor<double, 2> fci_hamiltonian(const internal::IntegralView& ints,
     // No-fallback guards -- throw, never return a sentinel (mirror
     // mp2_energy). Convergence of the reference is guarded by the caller.
     if (ints.ERI.size() == 0) {
-        throw std::invalid_argument(
-            "fci_energy: ERI is not materialized; call internal::IntegralWorkspace{..., "
-            "compute_eri=true}.");
+        throw std::invalid_argument("fci_energy: ERI is not materialized; call "
+                                    "internal::IntegralWorkspace{..., "
+                                    "compute_eri=true}.");
     }
     if (det.n_electrons(Spin::alpha) != det.n_electrons(Spin::beta)) {
         throw std::invalid_argument(
@@ -106,15 +106,15 @@ xt::xtensor<double, 2> fci_hamiltonian(const internal::IntegralView& ints,
     return hci;
 }
 
-FCIResult fci_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                     double e_scf_ha) {
+FCIResult fci_energy(const internal::IntegralView& ints,
+                     const SlaterDeterminant& det, double e_scf_ha) {
     using Spin = SlaterDeterminant::Spin;
     // No-fallback guards -- throw, never return a sentinel (mirror
     // fci_hamiltonian). Convergence of the reference is guarded by the caller.
     if (ints.ERI.size() == 0) {
-        throw std::invalid_argument(
-            "fci_energy: ERI is not materialized; call internal::IntegralWorkspace{..., "
-            "compute_eri=true}.");
+        throw std::invalid_argument("fci_energy: ERI is not materialized; call "
+                                    "internal::IntegralWorkspace{..., "
+                                    "compute_eri=true}.");
     }
     if (det.n_electrons(Spin::alpha) != det.n_electrons(Spin::beta)) {
         throw std::invalid_argument(
@@ -155,8 +155,9 @@ FCIResult fci_energy(const internal::IntegralView& ints, const SlaterDeterminant
     return {sol.energy, sol.energy - e_scf_ha};
 }
 
-CASCIResult casci_energy(const internal::IntegralView& ints, const SlaterDeterminant& det,
-                         double e_scf_ha, int ncas, int nelecas) {
+CASCIResult casci_energy(const internal::IntegralView& ints,
+                         const SlaterDeterminant& det, double e_scf_ha,
+                         int ncas, int nelecas) {
     using Spin = SlaterDeterminant::Spin;
     if (ints.ERI.size() == 0) {
         throw std::invalid_argument("casci_energy: ERI is not materialized; "

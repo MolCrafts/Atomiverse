@@ -1,25 +1,51 @@
-# Chapter 19. Large Molecules
+# Efficient Electrostatics
 
-The Fock matrix has \(O(N^2)\) elements; four-centre integrals scale as
-\(O(N^4)\). Each section below is one remedy, in the fixed order
-**Theory → Practice → Results**.
+Status tables: [Hartree–Fock roadmap](../roadmap/hartree-fock.md) · [Force Fields](../roadmap/force-fields.md).
 
-See also [Ch. 2](ch02-rhf.md) and the [Appendix](appendix-pyscf-oracle.md).
+Large calculations become useful when their approximations remain controlled.
+Integral screening, density fitting, and long-range algorithms reduce work
+in different ways. Their accuracy must be measured against a defined
+reference rather than inferred from an advertised scaling exponent.
 
-> **Build flags.** The SCF sections need `ATV_BUILD_HF=ON` and the
-> electrostatics sections (19.3 PME, 19.4 FMM) need `ATV_BUILD_KSPACE=ON`.
-> **Both are OFF by default** — with a flag off, that domain's sources,
-> headers, tests and regressions are excluded from the build entirely.
->
-> ```bash
-> cmake -B build -DCMAKE_BUILD_TYPE=Release \
->       -DATV_BUILD_HF=ON -DATV_BUILD_KSPACE=ON -DBLA_VENDOR=OpenBLAS
-> cmake --build build -j$(nproc)
-> ```
+**Learning goals.** Apply an integral bound, distinguish fitting from a
+boundary-condition change, and build an explicit numerical error budget.
 
----
+**Before you begin.** HF integrals and basis overlap from
+[Hartree–Fock Theory](ch02-rhf.md) and [Basis Sets](ch04-basis-sets.md).
 
-## 19.1 Direct SCF and Schwarz screening
+## Bounds and auxiliary representations
+
+With $M$ orbital functions there are formally $O(M^4)$ four-index repulsion
+integrals. Direct SCF trades stored integrals for recomputation. The Coulomb
+inner product and Cauchy–Schwarz inequality give
+
+$$|(\mu\nu|\lambda\sigma)|\le
+\sqrt{(\mu\nu|\mu\nu)}\sqrt{(\lambda\sigma|\lambda\sigma)}.$$
+
+A small bound allows screening, but the accumulated energy error also
+depends on density weights and how many terms were omitted. Locality,
+diffuse functions, geometry, and thresholds determine practical savings.
+
+Density fitting expands orbital products in auxiliary functions and fits
+them in a chosen metric. Fitting Coulomb only and fitting both Coulomb and
+exchange are different approximations; the auxiliary basis must match the
+purpose. Conditioning of the auxiliary metric requires its own numerical checks.
+
+## Long-range boundary problems
+
+Ewald methods split periodic Coulomb interactions into short- and long-range
+parts; PME treats the reciprocal contribution on a mesh. Real-space cutoff,
+mesh resolution, and interpolation order share an accuracy budget. An
+open-boundary fast multipole method instead groups distant sources and
+approximates their fields. These are different boundary-value problems.
+
+Continuous FMM for HF acts on basis-product charge distributions, not merely
+on point nuclei. Accelerating the Coulomb matrix does not eliminate exchange,
+diagonalization, or communication costs. QM/MM belongs to
+[Molecules and Environment](molecular-environment.md), because partitioning
+changes the physical model rather than just accelerating an unchanged one.
+
+## Direct SCF and Schwarz screening
 
 ### Theory
 
@@ -30,8 +56,9 @@ Direct SCF recomputes integrals each iteration. Cauchy–Schwarz screening
   \le \sqrt{(\mu\nu|\mu\nu)}\,\sqrt{(\lambda\sigma|\lambda\sigma)}
 \]
 
-drops exponentially small shell pairs. Practical cost approaches \(O(N^2)\) at
-fixed density; the prefactor of re-evaluation remains.
+screens terms whose bounds fall below a selected threshold. Practical
+scaling depends on locality, basis diffuseness, geometry, and accuracy;
+a quadratic cost is not a general guarantee. Re-evaluation still has a cost.
 
 ### Practice
 
@@ -40,12 +67,40 @@ No extra API: the default HF path uses shell-block Schwarz + Rys quadrature
 
 ### Results
 
-This is the baseline against which RI and CFMM are judged (energy tables in
-§19.2 and §19.5).
+This is the baseline for the density-fitting and continuous-FMM energy
+comparisons in this chapter.
 
 ---
 
-## 19.2 Density Fitting
+## Practice plan
+
+Use small water clusters for which direct HF is affordable. Hold geometry
+and orbital basis fixed while testing screening and density fitting; compare
+energy and supported derivatives at tighter reference settings. Verify force
+availability separately from energy availability.
+
+For periodic electrostatics use a neutral ionic cell with matched conventions;
+for open FMM use an isolated charge distribution with a direct pair reference.
+Increase size at comparable density and record memory and timings over a
+stated range. Two small timing points do not establish asymptotic scaling.
+
+## Setup fragments
+
+These original fragments and build notes are retained for reference.
+They may omit initialization; use the complete model example when running code.
+
+> **Build flags.** The SCF sections need `ATV_BUILD_HF=ON` and the
+> PME and FMM examples need `ATV_BUILD_KSPACE=ON`.
+> **Both are OFF by default** — with a flag off, that domain's sources,
+> headers, tests and regressions are excluded from the build entirely.
+>
+> ``bash
+> cmake -B build -DCMAKE_BUILD_TYPE=Release \
+>       -DATV_BUILD_HF=ON -DATV_BUILD_KSPACE=ON -DBLA_VENDOR=OpenBLAS
+> cmake --build build -j$(nproc)
+> ``
+
+## Density Fitting
 
 ### Theory
 
@@ -64,8 +119,7 @@ universal JKFIT** for both `RI::J` and `RI::JK` (exchange needs JKFIT quality).
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::Def2TZVP;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::Def2TZVP};
 rhf.ri = cpu::scf::RI::JK; // None | J | JK
 rhf.aux_basis = cpu::scf::AuxBasis::Def2JKFIT;
 rhf.tol = 1e-12;
@@ -82,11 +136,11 @@ Unsupported combinations (e.g. analytic forces with RI) throw.
 | H₂O def2-TZVP | \(E_{\mathrm{exact}}\) / Ha | −76.059004760577 | −76.059004760577 |
 | H₂O def2-TZVP | \(E_{\mathrm{RI\text{-}JK}}-E_{\mathrm{exact}}\) | \(+5.4\,\mu\mathrm{Ha}\) | — |
 
-Regression: `regressions/scf/h2o_ri_jk`.
+Regression: `h2o_ri_jk`.
 
 ---
 
-## 19.3 Periodic Coulomb: Ewald and PME
+## Periodic Coulomb: Ewald and PME
 
 ### Theory
 
@@ -112,7 +166,7 @@ sources, and both go through the same categorical setter. They form a
 registered and `alpha` must agree on both sides.
 
 Reciprocal-space solvers and their math live in
-`include/atomiverse/cpu/longrange/`; the Component wrappers are
+`longrange`; the Component wrappers are
 `KSpaceEwald` / `KSpacePME`.
 
 ### Results
@@ -120,11 +174,11 @@ Reciprocal-space solvers and their math live in
 | Check | Value |
 |---|---|
 | Rock-salt Madelung constant (per ion pair) | \(\approx 1.7476\) (literature) |
-| Unit / regression | `tests/cpu/longrange/test_*_coul`, `regressions/md/npt_pme_nacl` |
+| Unit / regression | `tests/cpu/longrange/test_*_coul`, `npt_pme_nacl` |
 
 ---
 
-## 19.4 Open-Boundary FMM
+## Open-Boundary FMM
 
 ### Theory
 
@@ -149,11 +203,11 @@ double e = tree.energy(positions, charges); // dimensionless Coulomb sum
 | Relative energy error vs \(O(N^2)\) direct | \(\lesssim 10^{-10}\) at \(p=16\) |
 | Scaling smoke \(N\to 4N\) | wall-time ratio \(\ll 16\) |
 
-Regression: `regressions/longrange/fmm_point_charges`.
+Regression: `fmm_point_charges`.
 
 ---
 
-## 19.5 CFMM for the HF \(J\) Matrix
+## CFMM for the HF \(J\) Matrix
 
 ### Theory
 
@@ -169,8 +223,7 @@ PySCF has no molecular FMM; CFMM is validated against this engine’s Direct
 ### Practice
 
 ```cpp
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
+cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 rhf.coulomb = cpu::scf::Coulomb::CFMM;
 rhf.cfmm_order = 10;
 rhf.cfmm_threshold = 1e-9;
@@ -185,11 +238,10 @@ Default `Coulomb::Direct` is bit-identical to the historical path.
 | System | Quantity | Tolerance | Status |
 |---|---|---|---|
 | H₂O STO-3G | \(\max\|J_{\mathrm{CFMM}}-J_{\mathrm{Direct}}\|\) | \(\le 10^{-8}\) Ha | unit `test_cfmm_j` |
-| C₁₀H₂₂ STO-3G | \(\|E_{\mathrm{CFMM}}-E_{\mathrm{Direct}}\|\) | \(\le 10^{-7}\) Ha | `reg_c10h22_cfmm_j` |
+| C₁₀H₂₂ STO-3G | \(\|E_{\mathrm{CFMM}}-E_{\mathrm{Direct}}\|\) | \(\le 10^{-7}\) Ha | regression `scf/rhf` section `c10h22_cfmm_j` |
 
 Small molecules at default thresholds may be all near-field (CFMM ≡ Direct
-numerically); timing gains appear only for larger systems
-(`benchmarks/scf/validation/cfmm_scaling/`).
+numerically); timing gains appear only for larger systems.
 
 ---
 
@@ -199,32 +251,6 @@ numerically); timing gains appear only for larger systems
 - Weigend, *Phys. Chem. Chem. Phys.* **8**, 1057 (2006); Essmann et al., *J. Chem. Phys.* **103**, 8577 (1995).
 - Greengard & Rokhlin, *J. Comput. Phys.* **73**, 325 (1987); White et al., *Chem. Phys. Lett.* **230**, 8 (1994).
 
-## QM/MM electrostatic coupling (esmm Wave 2)
+## Questions for reflection
 
-Same shape as AIMD: one outer `MD` (or `Evaluate` / `Minimize`) and plural
-`set_evaluator`. Declare the QM region with **`kAtomQmZ`** (0 = MM, >0 = QM
-with atomic number Z). Hand any embedding-capable engine to
-`QmmmElectrostatic` via **`set_engine`**. Covalent **link cuts** come from
-mask × Frame bond topology (no `set_links`; no bonds ⇒ zero links). MM–MM
-uses ordinary pair styles; the coupling owns QM–MM cross terms and third-law
-site forces.
-
-```cpp
-frame.blocks.at("atoms").insert("qm_z",
-    cpu::ColumnSpec{ColDType::Int, 1, ColGroup::Core, 0, kColNone, kDynamicFieldId});
-auto qm = frame.span(cpu::kAtomQmZ);
-qm[0] = 8; qm[1] = 1; qm[2] = 1; // water QM
-// optional: frame.add_bond(...) across QM–MM for link H
-
-cpu::QmmmElectrostatic qmmm{{{2, 2, 0.0065, 3.15}}, 10.0, 12.0};
-cpu::scf::RHF rhf;
-rhf.basis = cpu::scf::BasisSet::STO3G;
-rhf.predictor(3);
-qmmm.set_engine(std::move(rhf));
-// Optional MC posture: qmmm.reset_history_each_launch() = true;
-
-sim.set_evaluator(cpu::PairLJCut{...}); // MM–MM
-sim.set_evaluator(std::move(qmmm));     // QM + cross (+ auto links)
-```
-
-See `reg_qmmm_es_h2o_pyscf`, `reg_qmmm_link_ch3oh`, `reg_qmmm_md_conservation`.
+Why does bounding each omitted integral not bound the total energy by the same number? What must agree before two electrostatic solvers can be compared fairly?

@@ -1,5 +1,5 @@
 # CP2K twin (offline oracle) — collinear UKS Berry-phase dipole, bulk Si (GPW)
-# Pairs with regressions/gpw/periodic-berry-gpw-uks/REFERENCE.md.
+# Pairs with regressions/gpw/berry-phase/REFERENCE.md.
 # Never executed at ctest/regression time (offline pin only).
 #
 # Matched algorithm twin of ATV cpu::gpw::BerryPolarization on collinear UKS

@@ -5,15 +5,27 @@
 #include <memory>
 #include <optional>
 
+#include "atomiverse/core/plan.h"
+#include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/component/component.h"
+
+#ifdef ATV_HAS_MD
 #include "atomiverse/cpu/dynamics/md.h"
+#endif
+#ifdef ATV_HAS_EVALUATE
 #include "atomiverse/cpu/evaluate/evaluate.h"
+#endif
+#ifdef ATV_HAS_MINIMIZER
 #include "atomiverse/cpu/minimize/minimize.h"
+#endif
 #include "atomiverse/cpu/task/task_spec.h"
 
 namespace ATV::cpu::task {
 
 class TaskMaterializer {
   public:
+    /// @throws std::runtime_error if the task kind's domain (MD, MINIMIZER,
+    ///         SEMIEMPIRICAL) was compiled out.
     explicit TaskMaterializer(const TaskSpec& spec);
 
     /// Execute through one task-kind-agnostic entry. Frame remains the sole
@@ -31,11 +43,17 @@ class TaskMaterializer {
 
   private:
     TaskKind kind_;
+#ifdef ATV_HAS_MD
     std::optional<md::MD> md_;
+#endif
+#ifdef ATV_HAS_EVALUATE
     std::optional<Evaluate> eval_;
+#endif
+#ifdef ATV_HAS_MINIMIZER
     std::optional<minimizer::Minimize> minimize_;
+#endif
     std::unique_ptr<md::mpi::DomainDecomposition> completed_dd_;
-    int budget_ = 1;
+    std::int64_t budget_ = 1;
 };
 
 } // namespace ATV::cpu::task

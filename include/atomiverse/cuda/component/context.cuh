@@ -7,17 +7,20 @@
 /// Components cast to cudaStream_t in their .cu implementations.
 ///
 /// Homomorphic with `cpu::Context`: same-named slices carry the same
-/// semantics. CUDA has no Sampling / Path driver and no analysis
-/// executor (async observation goes through `AsyncBridge`), so only the
-/// `loop` and `md` slices exist on this backend — homomorphism means
-/// "same slice, same meaning", not "same field set".
+/// semantics. CUDA has no Sampling / Path driver, so only the `loop`, `md`
+/// and `capture` slices exist on this backend — homomorphism means "same
+/// slice, same meaning", not "same field set".
 ///
 /// @see cuda::Frame for the device-side data
 #pragma once
 
+#include "atomiverse/core/precision.h"
+#include <functional>
 #include <type_traits>
 
+#include "atomiverse/core/evaluation_history.h"
 #include "atomiverse/core/iteration_status.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cuda/frame/box.cuh"
 
@@ -25,6 +28,8 @@ namespace ATV {
 namespace cuda {
 
 struct PairList;
+class Backend;
+class CaptureBuffer;
 
 /// @brief Classical force-pipeline services (publishers: `NeighborList`,
 ///        `PairLJCut::build`, the multi-GPU comm layer). Mirrors
@@ -33,8 +38,10 @@ struct PairList;
 ///        publish-consume chain as `pair_list`.
 ///
 /// CUDA MD nonbonded path is the **OpenMM cluster/tile engine** only
-/// (see CLAUDE.md + `cuda-openmm-md` specs). There is no style enum.
+/// (see docs/developer/project-contract.md + `cuda-openmm-md` specs). There is no style enum.
 struct DynamicsServices {
+    /// Global thermal DOF, published by the backend before component build.
+    BigInt n_dof_global = 0;
     /// @brief Non-owning handle to the active neighbor pair list.
     ///
     /// Published by `NeighborList::build()` (and re-published on each
@@ -46,27 +53,16 @@ struct DynamicsServices {
     /// @see cuda::PairList
     const PairList* pair_list = nullptr;
 
-    /// @brief Opt-in request for the flat (i,j,dx,dy,dz,r²) atom pair list.
-    ///
-    /// Cluster force kernels read the cluster CSR and do not need the flat
-    /// list; NeighborList skips prune+export by default. Consumers that
-    /// genuinely need the flat list set this true in their build();
-    /// NeighborList::launch() then emits it every step. Set before the
-    /// first launch (all build()s precede any launch()).
-    bool flat_pairs_requested = false;
-
-    /// @brief Special-bonds exclusion CSR (per-atom, LOCAL indices),
-    ///        published by `PairLJCut::build` for force-time exclusion scans
-    ///        (and, while multi-GPU still derives a transitional `vl_*` view,
-    ///        optional bake into that view — removed in cuda-openmm-md-04).
-    ///
-    /// `excl_offsets[i]..excl_offsets[i+1]` index `excl_partners` for atom
-    /// i. `s_excl` is the single special-bonds scale (set_special_bonds
-    /// requires all tiers equal). Null/false on configs without special bonds.
+    /// @brief Sorted exclusion CSR in original/local atom indices.
+    /// Pair evaluators publish their fully excluded ordinary interactions
+    /// here. NeighborList removes these pairs from geometric tile masks at
+    /// rebuild only when s_excl is zero; nonzero LJ scaling stays in the force
+    /// kernel. Fused Ewald evaluators restore scaled special interactions in
+    /// their sparse exception pass.
     const int* excl_offsets = nullptr;
     const int* excl_partners = nullptr;
     double s_excl = 1.0;
-    bool exclusions_baked = false;
+    bool exclusions_baked = false; ///< Current tile masks contain exclusions.
 
     /// @brief Pair-force row restriction (multi-GPU owned/ghost split).
     ///
@@ -92,7 +88,7 @@ struct DynamicsServices {
 
 /// @brief The active loop node's status + metrics (publisher: the running Driver).
 ///
-/// Non-owning: a Driver owns its own `IterationStatus` and `LoopMetrics` and points
+/// Non-owning: a Driver owns its own `IterationStatus` and `ConvergenceMetrics` and points
 /// these here for the duration of its loop. So a nested driver's components write to
 /// the NESTED loop's status, never the parent's. Mirrors `cpu::LoopServices`.
 struct LoopServices {
@@ -102,7 +98,28 @@ struct LoopServices {
 
     /// @brief Where components publish what they measured, for handlers to judge.
     /// `cuda::minimizer::ConvCheck` writes it after its one pinned D2H per iteration.
-    LoopMetrics* metrics = nullptr;
+    ConvergenceMetrics* metrics = nullptr;
+};
+
+/// @brief Requests inherited by a nested loop on the same Backend.
+/// These flags describe evaluation intent, not physical Frame state. A nested
+/// slot narrows output requests and restores this slice even when it throws.
+struct ExecServices {
+    bool forces_requested = true;
+    bool stress_requested = true;
+    bool initializing_forces = false;
+    bool trial_evaluation = false;
+    Backend* backend =
+        nullptr; ///< Borrowed execution owner; never a second runtime.
+    EvaluationTransaction* evaluation_transaction = nullptr;
+    bool energy_requested = true;
+};
+
+struct OptimizationServices {
+    /// Reentrant force-phase service owned by the active minimizer: enqueues
+    /// one force-phase evaluation on the stream (no sync, no fault check —
+    /// the caller judges the trial on the device).
+    std::function<void(bool)> reeval_forces;
 };
 
 /// @brief CUDA execution context passed to components via
@@ -112,6 +129,12 @@ struct LoopServices {
 /// stream.
 struct Context {
     void* stream = nullptr; ///< Main CUDA stream (cast to cudaStream_t in .cu).
+
+    /// @brief The run's LAMMPS `units` style (publisher: the Driver, before
+    ///        any component builds; default lj). Host-side: a component reads
+    ///        the factors it needs here and passes them to its kernels as
+    ///        launch arguments. @see cpu::Context::units
+    units::UnitSystem units = units::UnitSystem::lj();
     void* defer_stream =
         nullptr; ///< Secondary stream for deferrable operations.
 
@@ -130,22 +153,27 @@ struct Context {
     /// @see cuda/driver/criterion.cuh
     LoopServices loop;
 
-    /// @brief Host-resident snapshot of the simulation cell, passed by
-    ///        value into integrator + bonded + pair kernels so they
-    ///        avoid per-thread FP64 division and uncoalesced
-    ///        widely-spaced `frame.box[0]/[4]/[8]` loads.
-    ///
-    /// Populated by `Backend::materialize(cpu::Frame)` at build time
-    /// from the canonical `cpu::Box` in `cpu::Frame`. Mutated by
-    /// integrators that change the cell (`cuda::md::NoseHooverNPT`,
-    /// `cuda::md::Barostat`, `cuda::md::Deform`) after they write the
-    /// new diagonal to device-side `frame.box`. All consumers read
-    /// from this field at launch — no per-step D2H of box[0,4,8]
-    /// (cuda-md-review-cleanup-04-box-by-value-pbc). Core state, not a
-    /// nullable service — stays flat.
+    ExecServices exec; ///< Parent evaluation intent for nested dispatch.
+    OptimizationServices opt;
+
+    /// @brief Cell kernel argument with a backend-owned device cache view.
+    /// Host values select invariant geometry specializations and initialize
+    /// build resources. Kernels resolve Box::current() at entry; physical cell
+    /// changes are published by the backend after changes_box() bindings.
     cuda::Box host_box;
 
+    /// @brief Device copy of the current step index, maintained by the
+    ///        backend each step. Kernels that need the step read it here so
+    ///        a replayed step graph sees the step it runs; null outside a
+    ///        backend (kernels then fall back to the host step).
+    const long long* device_step = nullptr;
+
     DynamicsServices md; ///< Classical force-pipeline slice.
+
+    /// @brief The driver's shared asynchronous capture buffer (owned by the
+    ///        Backend; `cuda::CaptureBuffer`). Every asynchronous consumer
+    ///        (`cuda::AsyncConsumer`) subscribes to it at build.
+    CaptureBuffer* capture = nullptr;
 };
 
 // Slices are plain aggregates and the Context stays non-polymorphic — components
@@ -153,6 +181,7 @@ struct Context {
 // Context could be subclassed into carrying behaviour. Mirrors the CPU asserts.
 static_assert(std::is_trivially_copyable_v<DynamicsServices>);
 static_assert(std::is_trivially_copyable_v<LoopServices>);
+static_assert(std::is_trivially_copyable_v<ExecServices>);
 static_assert(!std::is_polymorphic_v<Context>);
 
 } // namespace cuda

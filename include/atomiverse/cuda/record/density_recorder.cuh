@@ -1,18 +1,19 @@
 /// @file cuda/record/density_recorder.cuh
-/// @brief DensityRecorder -- header-only electron density grid recorder (async D2H bridge).
+/// @brief DensityRecorder -- header-only electron density grid recorder (an
+///        asynchronous consumer of the shared capture buffer).
 ///
 /// @see cpu::eval_density_grid (cpu/observe/density.h)
 #pragma once
 
+#include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <cuda_runtime.h>
-
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/observe/density.h"
-#include "atomiverse/cuda/asynchronous/async_bridge.cuh"
-#include "atomiverse/cuda/frame/types.cuh"
+#include "atomiverse/cuda/asynchronous/async_consumer.cuh"
 
 #ifdef ATV_HAS_HF
 
@@ -58,93 +59,52 @@ class DensityRecorder : public AsyncRecorder {
     DensityRecorder& operator=(DensityRecorder&&) noexcept = default;
 
     std::string name() const override { return "density_recorder"; }
-    /* role via AsyncRecorder / Recorder */
     int frequency() const override { return every_; }
+    /// @brief The density pointer is resolved per launch: never graphed.
+    bool graph_capturable() const override { return false; }
+    /// @brief Positions of the captured step; P is the payload block.
+    CaptureColumns capture_columns() const override {
+        CaptureColumns c;
+        c.positions = true;
+        return c;
+    }
+    std::uint64_t payload_bytes(const BuildContext&) const override {
+        const auto nb = static_cast<std::uint64_t>(evaluator_->workspace().n);
+        return nb * nb * sizeof(double);
+    }
 
   protected:
     void on_build(const BuildContext& ctx) override {
-        auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-        auto& frame = ctx.frame;
-        n_atoms_ = frame.n_atoms();
         n_basis_ = evaluator_->workspace().n;
-
-        const auto na = static_cast<size_t>(n_atoms_);
-
-        htype_.resize(na);
-        hx_.resize(na);
-        hy_.resize(na);
-        hz_.resize(na);
-        cudaMemcpyAsync(htype_.data(), frame.atoms.type, na * sizeof(int),
-                        cudaMemcpyDeviceToHost, stream);
-        // frame.atoms.x/y/z are real_t device buffers -- stage as real_t,
-        // then widen to double for cpu::eval_density_grid.
-        std::vector<real_t> tx(na), ty(na), tz(na);
-        cudaMemcpyAsync(tx.data(), frame.atoms.x, na * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaMemcpyAsync(ty.data(), frame.atoms.y, na * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaMemcpyAsync(tz.data(), frame.atoms.z, na * sizeof(real_t),
-                        cudaMemcpyDeviceToHost, stream);
-        cudaStreamSynchronize(stream);
-        for (size_t i = 0; i < na; ++i) {
-            hx_[i] = static_cast<double>(tx[i]);
-            hy_[i] = static_cast<double>(ty[i]);
-            hz_[i] = static_cast<double>(tz[i]);
-        }
-
-        const auto nb = static_cast<size_t>(n_basis_);
-        for (int i = 0; i < kRingDepth; ++i) {
-            cudaMalloc(&d_P_[i], nb * nb * sizeof(double)); // device-ring slot
-            cudaMallocHost(&h_P_[i],
-                           nb * nb * sizeof(double)); // pinned host slot
-        }
+        if (!ctx.frame.atoms.atomic_number)
+            throw std::invalid_argument(
+                std::string("cuda::DensityRecorder: device frame has no "
+                            "species column; ")
+                + atom_field_how_to("atomic_number"));
     }
 
     bool can_run(const LaunchContext&) const override {
         return evaluator_->workspace().P != nullptr && n_basis_ > 0;
     }
 
-    void freeze_slot(const LaunchContext& ctx, int slot) override {
-        // D2D freeze of the converged density on the compute stream, before a
-        // subsequent (AIMD) SCF solve overwrites the workspace.
-        auto ms = static_cast<cudaStream_t>(ctx.runtime.stream);
-        const size_t nb = static_cast<size_t>(n_basis_);
-        cudaMemcpyAsync(d_P_[slot], evaluator_->workspace().P,
-                        nb * nb * sizeof(double), cudaMemcpyDeviceToDevice, ms);
+    const void* payload_source(const LaunchContext&) const override {
+        return evaluator_->workspace().P;
     }
 
-    void d2h_slot(const LaunchContext& ctx, int slot) override {
-        auto ds = static_cast<cudaStream_t>(ctx.runtime.defer_stream);
-        const size_t nb = static_cast<size_t>(n_basis_);
-        cudaMemcpyAsync(h_P_[slot], d_P_[slot], nb * nb * sizeof(double),
-                        cudaMemcpyDeviceToHost, ds);
-    }
-
-    void on_data_ready(const LaunchContext& ctx, int slot) override {
-        auto grid = cpu::eval_density_grid(htype_, hx_, hy_, hz_, h_P_[slot],
-                                           n_basis_, nx_, ny_, nz_, padding_);
-        if (grid.empty())
-            return;
+    void consume(const CaptureView& v) override {
+        const auto na = static_cast<std::size_t>(v.n_atoms);
+        species_.assign(v.atomic_number, v.atomic_number + na);
+        hx_.assign(v.x, v.x + na);
+        hy_.assign(v.y, v.y + na);
+        hz_.assign(v.z, v.z + na);
+        auto grid = cpu::eval_density_grid(
+            species_, hx_, hy_, hz_, reinterpret_cast<const double*>(v.payload),
+            n_basis_, nx_, ny_, nz_, padding_);
         // NOTE (cuda-resurrect): the zarr density store was removed CPU-side
-        // (cpu/record/zarr.h + cpu::zarr_append_density deleted). The async
-        // density pipeline (grid eval + ring buffering) is preserved; the sink
-        // is disconnected until a cube-writer equivalent is wired in. Reviving
-        // the file sink is a follow-up, not part of the API-mirror scope.
-        (void)ctx;
+        // (cpu/record/zarr.h + cpu::zarr_append_density deleted). The grid is
+        // evaluated per captured step; the file sink stays disconnected until
+        // a cube-writer equivalent is wired in (out of this file's scope).
         (void)grid;
-    }
-
-    void on_destroy(const DestroyContext&) override {
-        for (int i = 0; i < kRingDepth; ++i) {
-            if (d_P_[i]) {
-                cudaFree(d_P_[i]);
-                d_P_[i] = nullptr;
-            }
-            if (h_P_[i]) {
-                cudaFreeHost(h_P_[i]);
-                h_P_[i] = nullptr;
-            }
-        }
     }
 
   private:
@@ -154,12 +114,8 @@ class DensityRecorder : public AsyncRecorder {
     int nx_, ny_, nz_, every_;
     double padding_;
 
-    int n_atoms_ = 0;
     int n_basis_ = 0;
-
-    double* d_P_[kRingDepth] = {}; ///< device-ring frozen density matrix
-    double* h_P_[kRingDepth] = {}; ///< pinned host density matrix
-    std::vector<int> htype_;
+    std::vector<int> species_;
     std::vector<double> hx_, hy_, hz_;
 };
 

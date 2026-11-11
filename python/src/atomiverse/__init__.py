@@ -3,7 +3,7 @@
 Atomiverse binds drivers and components only — it does not bind a Frame
 data type. Simulation state crosses the boundary as a ``molpy.Frame``;
 each driver ``run()`` borrows it and writes results back in place. Global
-results use the exact typed ``molpy.Frame.meta`` v2 contract.
+results use the exact typed ``molpy.Frame.meta`` contract.
 
 Namespaces
 ----------
@@ -16,14 +16,18 @@ as a convenience (identity, not copies:
 Canonical deep path                   Top-level re-export         C++ symbol
 =====================================  ==========================  =========================
 ``md.MD``                             ``MD``                      ``cpu::md::MD``
+``md.set_units``                      ``set_units``               ``Driver::set_units`` default
+``md.units_style``                    ``units_style``             ``Driver::units`` default
 ``md.integrator.VelocityVerlet``      ``VelocityVerlet``          ``cpu::md::VelocityVerlet``
 ``md.integrator.NoseHooverNPT``       ``NoseHooverNPT``           ``cpu::md::NoseHooverNPT``
 ``md.integrator.ParrinelloRahmanNPT`` ``ParrinelloRahmanNPT``     ``cpu::md::ParrinelloRahmanNPT``
+``md.integrator.NvtSllod``            ``NvtSllod``                ``cpu::md::NvtSllod``
 ``md.thermostat.NoseHoover``          ``NoseHoover``              ``cpu::md::NoseHoover``
 ``md.thermostat.Langevin``            ``Langevin``                ``cpu::md::FixLangevin``
 ``md.thermostat.CSVR``                ``CSVR``                    ``cpu::md::FixCSVR``
 ``md.barostat.BerendsenBarostat``     ``BerendsenBarostat``       ``cpu::md::Barostat``
 ``md.InitVelocity``                   ``InitVelocity``            ``cpu::md::InitVelocity``
+``md.FixEfield``                      ``FixEfield``               ``cpu::md::FixEfield``
 ``minimizer.Minimize``                ``Minimize``                ``cpu::minimizer::Minimize``
 ``minimizer.LBFGS``                   ``LBFGS``                   ``cpu::minimizer::LBFGS``
 ``minimizer.CG``                      ``CG``                      ``cpu::minimizer::CG``
@@ -38,6 +42,9 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``minimizer.MinimizeResult``          ``MinimizeResult``          ``cpu::task::TaskResult``
 ``neighbor.NeighborList``             ``NeighborList``            ``cpu::md::NeighborList<>``
 ``potentials.pair.LJCut``             ``PairLJCut``               ``cpu::PairLJCut``
+``potentials.pair.LJCutCoulLong``     ``PairLJCutCoulLong``       ``cpu::PairLJCutCoulLong``
+``potentials.pair.LJTypeCoeff``       ``LJTypeCoeff``             ``ATV::LJTypeCoeff``
+``potentials.pair.R4TypeCoeff``       ``R4TypeCoeff``             ``ATV::R4TypeCoeff``
 ``potentials.pair.CoulCut``           ``PairCoulCut``             ``cpu::PairCoulCut``
 ``potentials.pair.Morse``             ``PairMorse``               ``cpu::PairMorse``
 ``potentials.pair.Buck``              ``PairBuck``                ``cpu::PairBuck``
@@ -47,14 +54,18 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.pair.Dpd``               ``PairDpd``                 ``cpu::PairDpd``
 ``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
 ``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
+``longrange.KSpacePPPM``              ``KSpacePPPM``              ``cpu::KSpacePPPM``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
 ``potentials.bond.Fene``              ``BondFene``                ``cpu::BondFene``
 ``potentials.angle.Harmonic``         ``AngleHarmonic``           ``cpu::AngleHarmonic``
+``potentials.angle.Cosine``           ``AngleCosine``             ``cpu::AngleCosine``
 ``potentials.dihedral.MultiHarmonic`` ``DihedralMultiHarmonic``   ``cpu::DihedralMultiHarmonic``
 ``potentials.dihedral.Charmm``        ``DihedralCharmm``          ``cpu::DihedralCharmm``
 ``potentials.improper.Harmonic``      ``ImproperHarmonic``        ``cpu::ImproperHarmonic``
+``potentials.improper.Cvff``          ``ImproperCvff``            ``cpu::ImproperCvff``
 ``recorder.Thermo``                   ``Thermo``                  ``cpu::Thermo``
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
+``recorder.MrecRecorder``             ``MrecRecorder``            ``cpu::MrecRecorder``
 ``montecarlo.MC``                     ``MC``                      ``cpu::mc::MC``
 ``montecarlo.NptMC``                  ``NptMC``                   ``cpu::mc::NptMc``
 ``montecarlo.GCMC``                   ``GCMC``                    ``cpu::mc::Gcmc``
@@ -64,13 +75,20 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``montecarlo.MoveSelector``           ``MoveSelector``            ``cpu::mc::MoveSelector``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
-``pw.PWEvaluator``                    ``PWEvaluator``             ``cpu::pw::PWEvaluator``
 ``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
 ``scf.UHF``                           ``UHF``                     ``cpu::scf::UHF``
+``scf.ROHF``                          ``ROHF``                    ``cpu::scf::ROHF``
+``scf.GHF``                           ``GHF``                     ``cpu::scf::GHF``
+``scf.MP2``                           ``MP2``                     ``cpu::scf::MP2<RHF>``
+``scf.MP2Result``                     ``MP2Result``               ``cpu::scf::MP2Result``
+``scf.MP3``                           ``MP3``                     ``cpu::scf::MP3<RHF>``
+``scf.MP3Result``                     ``MP3Result``               ``cpu::scf::MP3Result``
+``scf.CudaRHF``                       ``CudaRHF``                 ``cuda::scf::RHF``
+``scf.CudaUHF``                       ``CudaUHF``                 ``cuda::scf::UHF``
 ``scf.RKS``                           ``RKS``                     ``cpu::scf::RKS``
 ``scf.UKS``                           ``UKS``                     ``cpu::scf::UKS``
 ``semiempirical.AM1``                 ``AM1``                     ``cpu::semiempirical::AM1``
-``semiempirical.AM1Evaluator``        ``AM1Evaluator``            ``cpu::semiempirical::AM1Evaluator``
+``semiempirical.AM1BCCCharges``       ``AM1BCCCharges``           ``cpu::semiempirical::AM1BCCCharges``
 ``semiempirical.AM1Result``           ``AM1Result``               ``cpu::semiempirical::AM1Result``
 ``semiempirical.DFTB2``               ``DFTB2``                   ``cpu::semiempirical::DFTB2``
 ``semiempirical.DftbBoundary``        ``DftbBoundary``            ``cpu::semiempirical::DftbBoundary``
@@ -97,9 +115,8 @@ equations of motion, so a sampler takes a *mover* (``TranslateMove``,
 where MD takes an integrator, and never produces forces.
 ``help(atomiverse.montecarlo)`` gives the acceptance rules and the units.
 These four movers and three presets are CPU-only and take no ``device=``.
-``ATV_BUILD_MC`` is ON by default, so they stay in ``__all__``; only a
-staged install that leaves ``mc`` out drops them, and then they raise
-``AttributeError`` naming the flag like the compile-optional rows below.
+An extension built without ``mc`` raises ``AttributeError`` naming the flag
+for them, like the compile-optional rows below.
 
 ``Hessian`` / ``HessianResult`` are the harmonic vibrational analysis: the
 central finite-difference Hessian over any registered force source, plus the
@@ -110,9 +127,8 @@ at all for a lone atom) in cm⁻¹, and the thermochemistry is reported in
 Hartree relative to an electronic energy of zero.
 ``help(atomiverse.vibration)`` gives the frame contract (masses come from
 the ``atomic_number`` column, Z = 1..18), the rotational symmetry number you
-must supply yourself, and the units. Like Monte Carlo it is CPU-only, takes
-no ``device=``, and stays in ``__all__`` because ``ATV_BUILD_VIB`` is ON by
-default.
+must supply yourself, and the units. Like Monte Carlo it is CPU-only and takes
+no ``device=``.
 
 ``LBFGS`` / ``CG`` / ``FIRE`` are the three fixed-cell geometry optimizers
 and ``IsotropicCellRelax`` / ``AnisotropicCellRelax`` /
@@ -125,8 +141,7 @@ which is ``ForceConverged`` for a fixed cell and ``PressureConverged`` /
 ``StressConverged`` for a variable one. A relaxer additionally needs a force
 source that writes the cell virial, which the classical evaluators do and the
 electronic-structure ones bound here do not; ``help(atomiverse.minimizer)``
-gives that gate, the pairing rules and the units. ``ATV_BUILD_MINIMIZER`` is
-ON by default, so all of them stay in ``__all__``.
+gives that gate, the pairing rules and the units.
 
 The real-space force-field catalogue is the ``set_evaluator`` slot's menu,
 and the slot is plural: a full force field is several calls. Pair styles are
@@ -136,26 +151,30 @@ Fumi-Tosi table with a +D/r⁸ core), ``PairYukawa`` (screened, chargeless),
 ``PairWCA`` (purely repulsive, cutoff derived from σ) and ``PairDpd``
 (dissipative particle dynamics — a thermostat as well as a potential, so it
 replaces rather than joins one). Bonded styles are ``BondHarmonic`` /
-``BondFene``, ``AngleHarmonic``, ``DihedralMultiHarmonic`` /
+``BondFene``, ``AngleHarmonic`` / ``AngleCosine``, ``DihedralMultiHarmonic`` /
 ``DihedralCharmm`` and ``ImproperHarmonic``, each reading the matching
 topology block of the frame and indexing its parameters by that block's
 type. Three practical notes. Among the *pair* styles only ``PairLJCut`` and
 the electrostatic ones consume a ``NeighborList``; the other six walk all
 pairs O(N²) and need none, so size the system accordingly (the bonded styles
 walk topology tuples, not pairs, and never take a neighbor list either).
-``PairBorn``'s type keys are ATOMIC NUMBERS, because that is what the frame's
-per-atom type column carries. And ``PairDpd`` thermostats as well as
+``PairBorn``'s type keys are FORCE-FIELD TYPES — the frame's
+``atoms.type_id`` column, not ``atomic_number`` (the species). And
+``PairDpd`` thermostats as well as
 interacts, so it *replaces* ``NoseHoover`` / ``Langevin`` / ``CSVR`` instead
 of joining them. All of them are unconditional — a real-space style has no
 build flag of its own — and ``help(atomiverse.potentials)`` gives the deep
 spellings and the units.
 
-Compile-optional rows — ``PW`` / ``PWResult`` / ``PWEvaluator``
-(``ATV_BUILD_PW``),
-``KSpacePME`` (``ATV_BUILD_KSPACE``) and the Gaussian SCF methods
-``RHF`` / ``UHF`` / ``RKS`` / ``UKS`` (``ATV_BUILD_HF``) — resolve only on
-an extension that was built with that backend and otherwise raise
-``AttributeError`` naming the flag, so they stay out of ``__all__``.
+Every compute name belongs to one product module (``md``, ``minimize``,
+``mc``, ``vib``, ``am1``, ``hf``, ``pw``, ``kspace``, ``potentials``). On an
+extension built without that module, importing the deep module raises
+``MissingDomainError`` (an ``ImportError``) and the top-level name raises
+``AttributeError``, both naming the ``ATV_BUILD_*`` flag to turn on.
+
+``__all__`` is the subset of the public names that the installed extension
+actually carries: a native wheel holds only the modules it was configured
+with, and ``from atomiverse import *`` must work on every such build.
 
 Drivers use the same **categorical setters** as C++ (not phase-only
 ``add`` as the primary path)::
@@ -181,7 +200,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from atomiverse._binding import _cpp, require_cpp
+from atomiverse._binding import (
+    MissingDomainError,
+    extension_available,
+    has_domain,
+    missing_domain_message,
+    require_cpp,
+)
 
 __version__ = "0.1.0"
 
@@ -190,15 +215,19 @@ __version__ = "0.1.0"
 # import time (avoids stale editable maps and circular loads).
 _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "MD": ("atomiverse.md", "MD"),
+    "set_units": ("atomiverse.md", "set_units"),
+    "units_style": ("atomiverse.md", "units_style"),
     "InitVelocity": ("atomiverse.md", "InitVelocity"),
     "VelocityVerlet": ("atomiverse.md.integrator", "VelocityVerlet"),
     "NoseHooverNPT": ("atomiverse.md.integrator", "NoseHooverNPT"),
     "ParrinelloRahmanNPT": ("atomiverse.md.integrator", "ParrinelloRahmanNPT"),
+    "NvtSllod": ("atomiverse.md.integrator", "NvtSllod"),
     "NoseHoover": ("atomiverse.md.thermostat", "NoseHoover"),
     "Langevin": ("atomiverse.md.thermostat", "Langevin"),
     "CSVR": ("atomiverse.md.thermostat", "CSVR"),
     "BerendsenBarostat": ("atomiverse.md.barostat", "BerendsenBarostat"),
     "Minimize": ("atomiverse.minimizer", "Minimize"),
+    "SteepestDescent": ("atomiverse.minimizer", "SteepestDescent"),
     "LBFGS": ("atomiverse.minimizer", "LBFGS"),
     "CG": ("atomiverse.minimizer", "CG"),
     "FIRE": ("atomiverse.minimizer", "FIRE"),
@@ -212,6 +241,9 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "MinimizeResult": ("atomiverse.minimizer", "MinimizeResult"),
     "NeighborList": ("atomiverse.neighbor", "NeighborList"),
     "PairLJCut": ("atomiverse.potentials.pair", "LJCut"),
+    "PairLJCutCoulLong": ("atomiverse.potentials.pair", "LJCutCoulLong"),
+    "LJTypeCoeff": ("atomiverse.potentials.pair", "LJTypeCoeff"),
+    "R4TypeCoeff": ("atomiverse.potentials.pair", "R4TypeCoeff"),
     "PairCoulCut": ("atomiverse.potentials.pair", "CoulCut"),
     "PairMorse": ("atomiverse.potentials.pair", "Morse"),
     "PairBuck": ("atomiverse.potentials.pair", "Buck"),
@@ -221,14 +253,19 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "PairDpd": ("atomiverse.potentials.pair", "Dpd"),
     "CoulLong": ("atomiverse.longrange", "CoulLong"),
     "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
+    "KSpacePPPM": ("atomiverse.longrange", "KSpacePPPM"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
     "BondFene": ("atomiverse.potentials.bond", "Fene"),
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
+    "AngleCosine": ("atomiverse.potentials.angle", "Cosine"),
+    "FixEfield": ("atomiverse.md", "FixEfield"),
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
     "DihedralCharmm": ("atomiverse.potentials.dihedral", "Charmm"),
     "ImproperHarmonic": ("atomiverse.potentials.improper", "Harmonic"),
+    "ImproperCvff": ("atomiverse.potentials.improper", "Cvff"),
     "Thermo": ("atomiverse.recorder", "Thermo"),
     "XYZ": ("atomiverse.recorder", "XYZ"),
+    "MrecRecorder": ("atomiverse.recorder", "MrecRecorder"),
     "MC": ("atomiverse.montecarlo", "MC"),
     "NptMC": ("atomiverse.montecarlo", "NptMC"),
     "GCMC": ("atomiverse.montecarlo", "GCMC"),
@@ -237,8 +274,15 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "InsertDeleteMove": ("atomiverse.montecarlo", "InsertDeleteMove"),
     "MoveSelector": ("atomiverse.montecarlo", "MoveSelector"),
     "AM1": ("atomiverse.semiempirical", "AM1"),
-    "AM1Evaluator": ("atomiverse.semiempirical", "AM1Evaluator"),
+    "RM1": ("atomiverse.semiempirical", "RM1"),
+    "MNDO": ("atomiverse.semiempirical", "MNDO"),
+    "PM3": ("atomiverse.semiempirical", "PM3"),
+    "AM1BCCCharges": ("atomiverse.semiempirical", "AM1BCCCharges"),
     "AM1Result": ("atomiverse.semiempirical", "AM1Result"),
+    "RM1Result": ("atomiverse.semiempirical", "RM1Result"),
+    "MNDOResult": ("atomiverse.semiempirical", "MNDOResult"),
+    "PM3Result": ("atomiverse.semiempirical", "PM3Result"),
+    "DFTB0": ("atomiverse.semiempirical", "DFTB0"),
     "DFTB2": ("atomiverse.semiempirical", "DFTB2"),
     "DftbBoundary": ("atomiverse.semiempirical", "DftbBoundary"),
     "DftbSkSet": ("atomiverse.semiempirical", "DftbSkSet"),
@@ -254,49 +298,51 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "Hessian": ("atomiverse.vibration", "Hessian"),
     "HessianResult": ("atomiverse.vibration", "HessianResult"),
     "single_point": ("atomiverse.driver", "single_point"),
+    "Evaluate": ("atomiverse.driver", "Evaluate"),
     "PW": ("atomiverse.pw", "PW"),
     "PWResult": ("atomiverse.pw", "PWResult"),
-    "PWEvaluator": ("atomiverse.pw", "PWEvaluator"),
+    "NormConservingPotential": ("atomiverse.pw", "NormConservingPotential"),
+    "GthPseudopotential": ("atomiverse.pw", "GthPseudopotential"),
+    "UpfPseudopotential": ("atomiverse.pw", "UpfPseudopotential"),
     "RHF": ("atomiverse.scf", "RHF"),
     "UHF": ("atomiverse.scf", "UHF"),
+    "ROHF": ("atomiverse.scf", "ROHF"),
+    "GHF": ("atomiverse.scf", "GHF"),
+    "MP2": ("atomiverse.scf", "MP2"),
+    "MP2Result": ("atomiverse.scf", "MP2Result"),
+    "MP3": ("atomiverse.scf", "MP3"),
+    "MP3Result": ("atomiverse.scf", "MP3Result"),
+    "CudaRHF": ("atomiverse.scf", "CudaRHF"),
+    "CudaUHF": ("atomiverse.scf", "CudaUHF"),
     "RKS": ("atomiverse.scf", "RKS"),
     "UKS": ("atomiverse.scf", "UKS"),
 }
 
-# Gaussian SCF methods are compile-optional (ATV_BUILD_HF); probed as a
-# group on the one symbol the extension always carries when HF is on.
-_SCF_METHODS: tuple[str, ...] = ("RHF", "UHF", "RKS", "UKS")
+# Names whose product module is not the one their deep module needs: the
+# reciprocal solver lives in `longrange` (a `potentials` module) but is built
+# by `kspace`, which pulls `potentials` in.
+_NAME_DOMAINS: dict[str, str] = {
+    "KSpacePME": "kspace",
+    "KSpacePPPM": "kspace",
+}
 
-# Monte Carlo defaults to ON (ATV_BUILD_MC), so these stay in __all__ — but a
-# staged CLI install picks its modules explicitly and can leave `mc` out.
-# Probed as a group on `MC`, the preset bind_mc.cpp always registers when the
-# domain is built.
-_MC_NAMES: tuple[str, ...] = (
-    "MC",
-    "NptMC",
-    "GCMC",
-    "TranslateMove",
-    "VolumeMove",
-    "InsertDeleteMove",
-    "MoveSelector",
-)
-
-# Vibrational analysis defaults to ON (ATV_BUILD_VIB), so these stay in
-# __all__ — same staged-CLI caveat as the Monte Carlo group. Probed on
-# `Hessian`, the driver bind_vib.cpp always registers when the domain is built.
-_VIB_NAMES: tuple[str, ...] = ("Hessian", "HessianResult")
-
-__all__ = [
+# The public top-level names. `__all__` is the subset the installed extension
+# carries, computed on first access in `__getattr__`.
+_PUBLIC: tuple[str, ...] = (
     "MD",
+    "set_units",
+    "units_style",
     "VelocityVerlet",
     "NoseHooverNPT",
     "ParrinelloRahmanNPT",
+    "NvtSllod",
     "InitVelocity",
     "NoseHoover",
     "Langevin",
     "CSVR",
     "BerendsenBarostat",
     "Minimize",
+    "SteepestDescent",
     "LBFGS",
     "CG",
     "FIRE",
@@ -309,6 +355,9 @@ __all__ = [
     "StressConverged",
     "MinimizeResult",
     "PairLJCut",
+    "PairLJCutCoulLong",
+    "LJTypeCoeff",
+    "R4TypeCoeff",
     "PairCoulCut",
     "PairMorse",
     "PairBuck",
@@ -321,9 +370,12 @@ __all__ = [
     "BondHarmonic",
     "BondFene",
     "AngleHarmonic",
+    "AngleCosine",
+    "FixEfield",
     "DihedralMultiHarmonic",
     "DihedralCharmm",
     "ImproperHarmonic",
+    "ImproperCvff",
     "Thermo",
     "XYZ",
     "MC",
@@ -334,8 +386,15 @@ __all__ = [
     "InsertDeleteMove",
     "MoveSelector",
     "AM1",
-    "AM1Evaluator",
+    "RM1",
+    "MNDO",
+    "PM3",
+    "AM1BCCCharges",
     "AM1Result",
+    "RM1Result",
+    "MNDOResult",
+    "PM3Result",
+    "DFTB0",
     "DFTB2",
     "DftbBoundary",
     "DftbSkSet",
@@ -345,57 +404,57 @@ __all__ = [
     "Hessian",
     "HessianResult",
     "single_point",
-]
+    "Evaluate",
+    "RHF",
+    "UHF",
+    "ROHF",
+    "GHF",
+    "MP2",
+    "MP2Result",
+    "MP3",
+    "MP3Result",
+    "RKS",
+    "UKS",
+    "CudaRHF",
+    "CudaUHF",
+)
+
+
+def _carried(name: str) -> bool:
+    try:
+        __getattr__(name)
+    except (AttributeError, ImportError):
+        return False
+    return True
 
 
 def __getattr__(name: str) -> Any:
+    if name == "__all__":
+        # Without the extension every name raises the install hint, which is
+        # what a star import should surface; with it, keep what resolves.
+        if not extension_available():
+            return list(_PUBLIC)
+        names = [n for n in _PUBLIC if _carried(n)]
+        globals()["__all__"] = names
+        return names
     if name not in _COMPUTE_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     # Extension must be present before any compute symbol resolves.
     require_cpp()
     mod_name, attr = _COMPUTE_EXPORTS[name]
-    # PW types are compile-optional.
-    if name in ("PW", "PWResult", "PWEvaluator") and not hasattr(_cpp, "PW"):
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r} "
-            "(plane-wave backend not built into this extension; "
-            "rebuild with ATV_BUILD_PW=ON)"
-        )
-    # So are the Gaussian SCF methods.
-    if name in _SCF_METHODS and not hasattr(_cpp, "RHF"):
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r} "
-            "(Gaussian SCF not built into this extension; "
-            "rebuild with ATV_BUILD_HF=ON)"
-        )
-    # Monte Carlo is on by default, so a miss here means a staged install that
-    # deselected the domain — say so instead of raising a bare AttributeError.
-    if name in _MC_NAMES and not hasattr(_cpp, "MC"):
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r} "
-            "(Monte Carlo not built into this extension; rebuild with "
-            "ATV_BUILD_MC=ON, or include `mc` in the staged install: "
-            "python -m atomiverse config md mc ...)"
-        )
-    # Vibrational analysis is likewise on by default, so a miss means a staged
-    # install that deselected the domain — name the flag rather than fail bare.
-    if name in _VIB_NAMES and not hasattr(_cpp, "Hessian"):
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r} "
-            "(vibrational analysis not built into this extension; rebuild "
-            "with ATV_BUILD_VIB=ON, or include `vib` in the staged install: "
-            "python -m atomiverse config md vib ...)"
-        )
-    # So is the PME reciprocal solver (needs FFTW3).
-    if name == "KSpacePME" and not hasattr(_cpp, "KSpacePME"):
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r} "
-            "(reciprocal-space electrostatics not built into this "
-            "extension; rebuild with ATV_BUILD_KSPACE=ON)"
-        )
+    domain = _NAME_DOMAINS.get(name)
+    if domain is not None and not has_domain(domain):
+        raise AttributeError(missing_domain_message(f"{__name__}.{name}", domain))
     import importlib
 
-    mod = importlib.import_module(mod_name)
+    try:
+        mod = importlib.import_module(mod_name)
+    except MissingDomainError as exc:
+        # A name this build does not carry is a missing attribute, which is
+        # what `hasattr` and `__all__` rely on; the message names the flag.
+        raise AttributeError(
+            missing_domain_message(f"{__name__}.{name}", exc.module)
+        ) from exc
     value = getattr(mod, attr)
     globals()[name] = value  # cache
     return value

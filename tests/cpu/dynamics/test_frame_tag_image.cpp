@@ -1,10 +1,7 @@
 /// @file tests/cpu/md/test_frame_tag_image.cpp
-/// @brief RED tests for Phase 1 `cpu::Frame::Atoms` additions: `tag` and `image`.
-///
-/// Spec: .claude/specs/parallel-md-engine.md § A.2 (Frame additions).
-/// These tests fail to compile until the production code adds `tag` (xtensor<int64_t,1>)
-/// and `image` (xtensor<int8_t,2>, shape [n,3]) to `cpu::Frame::Atoms`, with the
-/// default-construction invariant `tag[i]=i` and `image=0`.
+/// @brief `cpu::Frame` identity columns: `tag` (`TagInt`) and `image`
+///        (`ImageInt` = int32 per component, shape [n, 3]), with the
+///        default-construction invariant `tag[i] = i` and `image = 0`.
 
 #include <gtest/gtest.h>
 
@@ -34,7 +31,7 @@ TEST(FrameTagImage, DefaultConstructZerosImage) {
     for (int i = 0; i < n; ++i) {
         for (int d = 0; d < 3; ++d) {
             EXPECT_EQ(frame.span(ATV::kAtom_image)(i, d),
-                      static_cast<std::int8_t>(0))
+                      static_cast<ATV::ImageInt>(0))
                 << "image(" << i << "," << d << ") should default to 0";
         }
     }
@@ -51,6 +48,20 @@ TEST(FrameTagImage, TagDtypeIsTagInt) {
     static_assert(std::is_same_v<tag_t, ATV::TagInt>,
                   "Frame::Atoms::tag must be xtensor<TagInt, 1>");
     SUCCEED();
+}
+
+// ── image dtype is the int32 ImageInt tier ───────────────────────────
+
+TEST(FrameTagImage, ImageDtypeIsInt32ImageInt) {
+    cpu::Frame frame(4);
+    using image_t = typename std::decay_t<decltype(frame.span(
+        ATV::kAtom_image))>::element_type;
+    // One signed 32-bit counter per component in every ID build: an int8
+    // counter overflowed after ±127 box crossings (core/precision.h).
+    static_assert(std::is_same_v<image_t, ATV::ImageInt>);
+    static_assert(std::is_same_v<ATV::ImageInt, std::int32_t>);
+    frame.span(ATV::kAtom_image)(0, 0) = 1'000'000;
+    EXPECT_EQ(frame.span(ATV::kAtom_image)(0, 0), 1'000'000);
 }
 
 // ── image shape [n, 3] ───────────────────────────────────────────────

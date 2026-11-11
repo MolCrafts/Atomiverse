@@ -25,14 +25,26 @@ namespace md {
 ///
 /// with \(\mathbf{E}\) in V/Å, \(q\) in elementary charge, \(\mathbf{F}\) in
 /// eV/Å, \(U\) in eV. Metal-unit `qe2f = 1` (no extra scale). Unwrapped
-/// coordinates use the orthorhombic image flags on Frame
-/// (\(\mathbf{r}^{\mathrm{u}} = \mathbf{r} + \mathrm{image}\cdot\mathbf{L}\));
-/// triclinic unwrap is not supported in this foothold (throws if non-ortho).
+/// coordinates use the image flags on Frame,
+/// \(\mathbf{r}^{\mathrm{u}} = \mathbf{r} + H\mathbf{n}\) with the lattice
+/// vectors in the columns of \(H\) (LAMMPS `Domain::unmap`), so orthorhombic
+/// and triclinic cells are both supported.
 ///
-/// Bound by default at `md::Phase::post_force` (LAMMPS POST_FORCE mask) so
-/// pair / bonded / kspace forces accumulate first. For single-point
-/// Evaluate, register explicitly:
+/// Under PBC the energy is the LAMMPS `fsum[0]` bookkeeping, not a bounded
+/// potential: it is continuous only while the image flags track every
+/// boundary crossing, and it drifts linearly as ions migrate along the field
+/// (that drift is the work the field does). It enters `kEnergy` like a
+/// `fix_modify energy yes` fix. **No virial** is tallied — LAMMPS adds
+/// \(F\otimes\mathbf r^{\mathrm u}\) only under `fix_modify virial yes`,
+/// which is off by default, so pressure / stress exclude the field.
+///
+/// `default_bindings()` is `md::Phase::post_force` (LAMMPS POST_FORCE mask)
+/// for `bind_defaults`; the categorical `set_evaluator` places it in the force
+/// phase, which gives the same total force. For single-point Evaluate,
+/// register explicitly:
 /// `eval.on(evaluate::Phase::evaluate).add(FixEfield{Ex,Ey,Ez})`.
+///
+/// CUDA twin: `cuda::md::FixEfield` (same law, same energy convention).
 ///
 /// ── Not in scope (see spec `external-efield-md`) ──────────────────────
 /// variable (`v_`) fields, region keyword, dipole torque, energy keyword
@@ -57,6 +69,7 @@ class FixEfield : public cpu::Bias {
         return {ATV::make_binding(ATV::md::Phase::post_force, +100)};
     }
 
+    void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
     /// @return Last field energy contribution written this launch [eV].

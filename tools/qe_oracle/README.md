@@ -3,7 +3,7 @@
 Mirrors `tools/cp2k_oracle/`: produce **hard-coded pins** for
 `regressions/pw/` cases. **ctest never launches QE.** Binding law:
 [`.claude/notes/oracle-pin-provenance.md`](../../.claude/notes/oracle-pin-provenance.md)
-and CLAUDE.md § Oracle capability loops.
+and docs/developer/project-contract.md § Oracle capability loops.
 
 ## Contract (strict)
 

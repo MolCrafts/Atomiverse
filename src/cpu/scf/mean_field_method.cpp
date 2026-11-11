@@ -15,6 +15,12 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include "atomiverse/core/log.h"
+
 #include <xtensor-blas/xlinalg.hpp>
 #include <xtensor/core/xmath.hpp>
 #include <xtensor/reducers/xnorm.hpp>
@@ -28,13 +34,8 @@
 #include "atomiverse/cpu/linalg/eigensolve.h" // CanonicalOrth, build_orthogonalization_matrix
 #include "atomiverse/cpu/observe/mulliken.h"
 #include "atomiverse/cpu/scf/ecp_potential.h"
-#include "atomiverse/cpu/scf/internal/casci_pack.h"
-#include "atomiverse/cpu/scf/internal/casscf_pack.h"
-#include "atomiverse/cpu/scf/internal/ccsd_gradient.h"
-#include "atomiverse/cpu/scf/internal/ccsd_pack.h"
 #include "atomiverse/cpu/scf/internal/dispersion.h"
 #include "atomiverse/cpu/scf/internal/external_field.h"
-#include "atomiverse/cpu/scf/internal/fci_pack.h"
 #include "atomiverse/cpu/scf/internal/gradient.h"
 #include "atomiverse/cpu/scf/internal/hamiltonian_builder.h"
 #include "atomiverse/cpu/scf/internal/hueckel_guess.h"
@@ -42,11 +43,7 @@
 #include "atomiverse/cpu/scf/internal/level_shift.h" // kLevelShiftSkipThreshold
 #include "atomiverse/cpu/scf/internal/mean_field_energy.h"
 #include "atomiverse/cpu/scf/internal/minao.h"
-#include "atomiverse/cpu/scf/internal/mp2_gradient.h"
-#include "atomiverse/cpu/scf/internal/mp2_pack.h"
-#include "atomiverse/cpu/scf/internal/mp3_pack.h"
-#include "atomiverse/cpu/scf/internal/mp4_pack.h"
-#include "atomiverse/cpu/scf/internal/nevpt2_pack.h"
+#include "atomiverse/cpu/scf/internal/orbital_canonicalization.h"
 #include "atomiverse/cpu/scf/internal/pcm.h"
 #include "atomiverse/cpu/scf/internal/periodic_hf.h"
 #include "atomiverse/cpu/scf/internal/point_charges.h"
@@ -109,6 +106,18 @@ void refuse_standalone_cpmd(bool cpmd, const char* entry) {
 // ── PositionGuard: unwrap for the integral build, restore on exit ─────────────
 
 template <typename D>
+void MeanFieldMethod<D>::set_threads(int n) {
+    if (n < 1)
+        return;
+    requested_threads_ = n;
+    cpu::Driver<ATV::scf::Phase>::set_threads(n);
+#ifdef _OPENMP
+    if (n > 0)
+        omp_set_num_threads(n);
+#endif
+}
+
+template <typename D>
 MeanFieldMethod<D>::PositionGuard::PositionGuard(Frame& frame, bool active)
     : frame_(frame), active_(active) {
     if (!active_)
@@ -156,14 +165,33 @@ MeanFieldMethod<D>::PositionGuard::~PositionGuard() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 template <typename D>
-MeanFieldMethod<D>::MeanFieldMethod() = default;
+xc::XCType MeanFieldMethod<D>::select_functional_(
+    std::shared_ptr<const ATV::electronic::XcFunctional> functional,
+    ATV::electronic::XcSpin spin) {
+    using namespace ATV::electronic;
+    if (!functional)
+        throw std::invalid_argument("KS: XC provider must not be null");
+    const auto mask = static_cast<unsigned>(functional->ingredients());
+    if ((mask & 1u) == 0 || (mask & ~3u) != 0)
+        throw std::invalid_argument("KS: molecular grids implement rho/sigma "
+                                    "only; tau/Laplacian unavailable");
+    if (!functional->supports(spin, XcOrder::Energy)
+        || !functional->supports(spin, XcOrder::First))
+        throw std::invalid_argument("KS: XC provider requires energy and first "
+                                    "derivatives for this spin");
+    const auto* builtin = dynamic_cast<const xc::BuiltinXc*>(functional.get());
+    xc_type_ = builtin ? builtin->type() : xc::XCType::Custom;
+    xc_functional_ = std::move(functional);
+    return xc_type_;
+}
+
+template <typename D>
+MeanFieldMethod<D>::MeanFieldMethod(BasisSet basis_in, int charge_in)
+    : basis(basis_in), charge(charge_in) {}
 template <typename D>
 MeanFieldMethod<D>::~MeanFieldMethod() = default;
 template <typename D>
-MeanFieldMethod<D>::MeanFieldMethod(MeanFieldMethod&&) noexcept = default;
-template <typename D>
-MeanFieldMethod<D>&
-MeanFieldMethod<D>::operator=(MeanFieldMethod&&) noexcept = default;
+MeanFieldMethod<D>::MeanFieldMethod(MeanFieldMethod&&) = default;
 
 template <typename D>
 void MeanFieldMethod<D>::set_predictor_(int order, int corrector_steps,
@@ -179,11 +207,20 @@ void MeanFieldMethod<D>::set_predictor_(int order, int corrector_steps,
 // ── Stage wiring + Plan compile (lazy, once) ──────────────────────────────────
 
 template <typename D>
+void MeanFieldMethod<D>::release_host_plan_() {
+    if (host_registered_ && host_runtime_)
+        host_runtime_->destroy_plan(this->plan());
+    host_registered_ = false;
+}
+
+template <typename D>
 void MeanFieldMethod<D>::reset_built_driver_() {
     // Drop the wired stages and every trace of their Plan / criterion
     // registration, so ensure_driver_built_ can rebind cleanly against the
     // current object. Reaches the loop-node internals directly (they are
-    // protected precisely so a subclass can drive its own loop).
+    // protected precisely so a subclass can drive its own loop). A parent
+    // Runtime that holds the old stages releases them first.
+    release_host_plan_();
     fock_stage_.reset();
     rohf_couple_stage_.reset();
     mix_stage_.reset();
@@ -231,8 +268,8 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
     const bool generalized = (spin_ == SpinType::Generalized);
     // RI (density fitting) is wired for the RHF/UHF and RKS/UKS Fock
     // builds only. ROHF routes through the unrestricted Fock build but is
-    // deliberately refused until its RI path is validated; GHF contracts
-    // the stored dense ERI directly; the SOSCF stepper builds its own
+    // deliberately refused until its RI path is validated; GHF uses
+    // the exact spin-block J/K engine; the SOSCF stepper builds its own
     // exact-ERI Fock internally and would silently desynchronize from a
     // fitted loop. No silent fallback — throw with the reason.
     if (ri != RI::None) {
@@ -243,7 +280,7 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         if (generalized)
             throw std::runtime_error(
                 "MeanFieldMethod: RI (density fitting) is not wired for "
-                "GHF (generalized spinor Fock uses the dense ERI) — use "
+                "GHF (generalized spinor Fock uses exact J/K) — use "
                 "ri = RI::None with GHF.");
         if (soscf)
             throw std::runtime_error(
@@ -265,7 +302,8 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         hybrid_alpha_override, fixed_grid, integral_view_(), P_alpha_, P_beta_,
         F_alpha_, F_beta_, J_, e_xc_grid_, e_exact_exchange_, int_n_alpha_,
         int_n_beta_, ri, aux_basis, generalized, pcm_.get(), e_solvent_,
-        e_pcm_fock_half_, coulomb, cfmm_order, cfmm_threshold);
+        e_pcm_fock_half_, coulomb, cfmm_order, cfmm_threshold,
+        xc_functional_.get(), max_memory_mb, mpi);
     if (rohf) {
         rohf_couple_stage_ = std::make_unique<RohfCoupleStage>(
             S_, P_alpha_, P_beta_, F_alpha_, F_beta_, F_alpha_uncoupled_,
@@ -288,11 +326,14 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
         soscf_stepper_.get(), soscf_active_);
     density_stage_ = std::make_unique<DensityStage>(
         restricted_, is_hf_, damping_factor, C_alpha_, C_beta_,
-        rohf ? F_alpha_uncoupled_ : F_alpha_,
-        rohf ? F_beta_uncoupled_ : F_beta_, Hcore_, J_, n_alpha_, n_beta_,
-        n_basis_, diis_active_, e_xc_grid_, e_exact_exchange_, v_nuc_, P_alpha_,
-        P_beta_, e_total_, e_one_, e_coulomb_, generalized, e_solvent_,
-        e_pcm_fock_half_, S_, mom, mom_ref_C_alpha_, mom_ref_C_beta_);
+        rohf ? F_alpha_uncoupled_
+             : (is_hf_ ? fock_stage_->physical_alpha_ : F_alpha_),
+        rohf ? F_beta_uncoupled_
+             : (is_hf_ ? fock_stage_->physical_beta_ : F_beta_),
+        Hcore_, J_, n_alpha_, n_beta_, n_basis_, diis_active_, e_xc_grid_,
+        e_exact_exchange_, v_nuc_, P_alpha_, P_beta_, e_total_, e_one_,
+        e_coulomb_, generalized, e_solvent_, e_pcm_fock_half_, S_, mom,
+        mom_ref_C_alpha_, mom_ref_C_beta_);
     converged_stage_ = std::make_unique<ScfConverged>(
         tol, (conv_tol_grad > 0) ? conv_tol_grad : std::sqrt(tol),
         restricted_ || rohf || generalized, e_total_, err_alpha_, err_beta_);
@@ -318,9 +359,13 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
 
 template <typename D>
 void MeanFieldMethod<D>::build_on(cpu::Runtime& rt) {
-    // Stage wiring needs geometry (internal::IntegralWorkspace dimensions); deferred to the
-    // first drive_scf_. Parent Runtime does not own this method's Plan.
-    (void)rt;
+    // Stage wiring needs geometry (internal::IntegralWorkspace dimensions), so
+    // each nested solve registers the stage plan on this Runtime itself
+    // (drive_scf_core_) and runs every iteration on it — no private backend.
+    if (host_runtime_ && host_runtime_ != &rt)
+        throw std::logic_error("MeanFieldMethod: already nested on another "
+                               "Runtime");
+    host_runtime_ = &rt;
     // The one thing a nested build CAN check: Car-Parrinello shares the
     // nuclear clock, and only a `TimestepProvider` in the same loop can
     // publish it. `cpu::md::MD::build()` refuses the missing provider itself;
@@ -338,8 +383,10 @@ void MeanFieldMethod<D>::build_on(cpu::Runtime& rt) {
 
 template <typename D>
 void MeanFieldMethod<D>::destroy_on(cpu::Runtime& rt) {
-    (void)rt;
+    if (host_runtime_ != &rt)
+        return;
     reset_built_driver_();
+    host_runtime_ = nullptr;
 }
 
 template <typename D>
@@ -366,12 +413,16 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
     // the nuclear clock, so the nested entry is both the only place it may
     // propagate and the natural place to refuse a second guess owner (and a
     // dissipation order Table I does not have) before any SCF is spent.
+    if (cpmd && ctx.exec.trial_evaluation)
+        throw std::runtime_error("MeanFieldMethod: Car-Parrinello propagation "
+                                 "cannot score reversible trials");
     engage_xl_bomd_();
     if (cpmd) {
         // Production Car-Parrinello step: no SCF at all — a fixed-density
         // evaluation plus one electronic velocity-Verlet advance.
         if (cpmd_alpha_ && cpmd_alpha_->ready()) {
-            cpmd_step_(f);
+            cpmd_step_(f, !(ctx.exec.initializing_forces
+                            || ctx.exec.trial_evaluation));
             return 0;
         }
         // Cold seed. Validate BEFORE any SCF work so a refused configuration
@@ -381,6 +432,9 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
         DriveOpts opts;
         opts.unwrap = true;
         opts.nested = true;
+        opts.apply_aspc =
+            !(ctx.exec.initializing_forces || ctx.exec.trial_evaluation);
+        opts.warm_start = opts.apply_aspc;
         opts.forces = true; // CP nuclei need Born-Oppenheimer forces at t = 0
         opts.write_energy = true;
         opts.accumulate =
@@ -407,6 +461,14 @@ int MeanFieldMethod<D>::run_nested_erased(cpu::Context& ctx, cpu::Frame& f,
     DriveOpts opts;
     opts.unwrap = true;
     opts.nested = true;
+    // Force preparation is an evaluation, not a tick of the nuclear clock.
+    // Bypass both history-based guesses and all predictor/XL history writes.
+    opts.apply_aspc =
+        !(ctx.exec.initializing_forces || ctx.exec.trial_evaluation);
+    // A minimizer's line-search trial still warm-starts from (and leaves) the
+    // plain last density: it may become the committed evaluation
+    // (`trial_invariant`). MC trials and force preparation stay cold.
+    opts.warm_start = opts.apply_aspc || ctx.opt.line_search_trial;
     // The outer loop's per-phase force policy, ANDed down the Context by the
     // Runtime: an energy-only phase (MC's trial `energy`) skips the whole
     // gradient — for a QM method the dominant cost of the sweep.
@@ -472,6 +534,9 @@ void MeanFieldMethod<D>::engage_xl_bomd_() {
 template <typename D>
 void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
                                     const DriveOpts& opts) {
+    if (xc_type_ == xc::XCType::Custom && hybrid_alpha_override > 0)
+        throw std::invalid_argument(
+            "Custom XC: exact-exchange overrides are unsupported");
     // ECP ↔ x2c double-counting gate (per-element): relativistic ECPs bake
     // scalar relativity into their parameterization, so an atom that hits
     // the ECP table must not additionally be treated with x2c. All-electron
@@ -479,7 +544,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
     if (x2c && !ecp.empty()) {
         const auto& table = EcpPotential::family_table(ecp);
         const int natm = static_cast<int>(frame.nlocal());
-        const int* __restrict sp_type = frame.span(kAtom_type);
+        const int* __restrict sp_type = frame.span(kAtom_atomic_number);
         for (int i = 0; i < natm; ++i) {
             const int Z = sp_type[i];
             if (Z >= 1 && Z < static_cast<int>(table.size())
@@ -515,13 +580,14 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
     const SCFInitialGuess* effective_guess = guess;
     bool predicted = false;
 
-    // Rung 1. `apply_aspc == false` is the corrector/fallback recursion, which
-    // already carries the guess this ladder resolved for it.
-    bool resolved = (guess != nullptr) || !opts.apply_aspc;
+    // Rung 1. An explicit guess wins. The history-based rungs 2-3 belong to
+    // the nuclear clock (`apply_aspc`); rung 4 is the plain warm start
+    // (`warm_start`), which line-search trials share with committed solves.
+    bool resolved = guess != nullptr;
 
     // Rung 2. Restricted / GHF carry one channel (the factor-2 total, resp.
     // spinor, density); UHF/UKS/ROHF/ROKS carry α and β.
-    if (!resolved && xl_alpha_ && xl_alpha_->ready()) {
+    if (!resolved && opts.apply_aspc && xl_alpha_ && xl_alpha_->ready()) {
         density_guess.P_alpha = xl_alpha_->aux();
         density_guess.P_beta = (xl_beta_ && xl_beta_->ready())
                                    ? xl_beta_->aux()
@@ -534,7 +600,8 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
 
     // Rung 3. Both channels are polled (predict has no side effect and the
     // pair is used or dropped together).
-    if (!resolved && use_predictor_ && aspc_alpha_ && aspc_beta_) {
+    if (!resolved && opts.apply_aspc && use_predictor_ && aspc_alpha_
+        && aspc_beta_) {
         xt::xtensor<double, 2> Pa_guess, Pb_guess;
         const bool have_alpha = aspc_alpha_->predict(Pa_guess);
         const bool have_beta = aspc_beta_->predict(Pb_guess);
@@ -550,7 +617,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
     }
 
     // Rung 4. The previous outer-step density (available with or without ASPC).
-    if (!resolved && has_last_density_) {
+    if (!resolved && opts.warm_start && has_last_density_) {
         density_guess.P_alpha = last_P_alpha_;
         density_guess.P_beta = last_P_beta_;
         density_guess.has_alpha = true;
@@ -582,7 +649,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
         if (guard_accumulators) {
             // Park the resolution window: this guard's lookups are bookkeeping
             // and must not spend the hosting component's per-launch budget
-            // (same pattern as the SCF loop below and PWEvaluator).
+            // (same pattern as the SCF loop below).
             const auto saved_window = frame.resolution_window();
             natm = static_cast<int>(frame.nlocal());
             e_before = frame.meta.get(kEnergy);
@@ -651,7 +718,8 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
         }
     }
 
-    if (opts.apply_aspc && use_predictor_ && aspc_alpha_ && aspc_beta_) {
+    if (opts.apply_aspc && this->converged() && use_predictor_ && aspc_alpha_
+        && aspc_beta_) {
         if (predicted) {
             xt::xtensor<double, 2> Pa_corr, Pb_corr;
             aspc_alpha_->correct(P_alpha, density_guess.P_alpha, Pa_corr);
@@ -663,7 +731,7 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
             aspc_beta_->record(P_beta);
         }
     }
-    if (opts.apply_aspc) {
+    if (opts.warm_start && this->converged()) {
         has_last_density_ = true;
         last_P_alpha_ = P_alpha;
         last_P_beta_ = P_beta;
@@ -674,11 +742,30 @@ void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
 // occupation — see the header for why PositionGuard and ghost/x2c guards stay
 // with the caller. Fill still uses a transitional temporary storage type.
 template <typename D>
+void MeanFieldMethod<D>::materialize_eri_() {
+    if (ints_ERI_.size() == 0)
+        ints_ERI_ = integral_view_().eri_working();
+}
+
+template <typename D>
+const internal::ExactJK* MeanFieldMethod<D>::post_hf_coulomb_cache_() const {
+    if constexpr (std::is_same_v<D, RHF>) {
+        if (ri == RI::None && coulomb == Coulomb::Direct && fock_stage_
+            && ints_ERI_.size() == 0) {
+            const auto& engine = fock_stage_->hamiltonian_.coulomb_engine();
+            if (engine.cached())
+                return &engine;
+        }
+    }
+    return nullptr;
+}
+
+template <typename D>
 internal::IntegralView
 MeanFieldMethod<D>::rebuild_integrals_(const Frame& frame, bool compute_pvp) {
     // Fill into a temporary, then move into method-owned **fields** (no bag kept).
-    internal::IntegralWorkspace fill{
-        frame, basis, charge, compute_eri, ecp, ghost_atoms, compute_pvp};
+    internal::IntegralWorkspace fill{frame, basis,       charge,     false,
+                                     ecp,   ghost_atoms, compute_pvp};
     if constexpr (requires { static_cast<const D*>(this)->periodic; }) {
         if (static_cast<const D*>(this)->periodic) {
             if (method_ != MeanFieldType::HF || spin_ != SpinType::Restricted)
@@ -749,11 +836,19 @@ template <typename D>
 void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
                                          const SCFInitialGuess* guess,
                                          const DriveOpts& opts) {
+#ifdef _OPENMP
+    if (requested_threads_ > 0)
+        omp_set_num_threads(requested_threads_);
+#endif
     // ── Prologue: per-run assembly ────────────────────────────────────────────
     PositionGuard guard(frame, opts.unwrap);
 
     restricted_ = (spin_ == SpinType::Restricted);
     is_hf_ = (method_ == MeanFieldType::HF);
+    if (mpi
+        && (!is_hf_ || ri != RI::None || coulomb != Coulomb::Direct || soscf))
+        throw std::invalid_argument(
+            "mpi=true currently requires exact HF without SOSCF or RI/CFMM");
     const bool restricted = restricted_;
     const bool is_hf = is_hf_;
 
@@ -824,23 +919,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
                 "the MINAO/Hueckel/SAP guesses are spin-balanced, which "
                 "makes the collinearity-breaking spin rotation a no-op "
                 "(silent UHF-saddle trap). Keep the GHF default.");
-        if (!compute_eri)
-            throw std::invalid_argument(
-                "MeanFieldMethod::run: GHF requires compute_eri = true — "
-                "the spinor exchange K[P^ab] of the non-symmetric "
-                "spin-off-diagonal block needs the stored dense ERI tensor "
-                "(no direct-SCF spinor path in this link).");
     }
-
-    // x2c-1e analytic forces are not derived (picture-change of the
-    // nuclear-gradient operator + dX/dR of the decoupling matrix). Refuse
-    // rather than return a non-relativistic force under an x2c energy.
-    if (opts.forces && x2c)
-        throw std::runtime_error(
-            "MeanFieldMethod::forces: analytic forces are not implemented "
-            "for x2c=true — the h^X2C nuclear gradient (picture-change + "
-            "decoupling-matrix response) is a follow-up chain link. Disable "
-            "x2c or use finite differences.");
 
     // ROHF-unsupported knobs — explicit refusal instead of a silently wrong
     // Restricted/Unrestricted branch (no fallback).
@@ -905,7 +984,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
     const bool field_active = std::abs(external_field[0]) > 0.0
                               || std::abs(external_field[1]) > 0.0
                               || std::abs(external_field[2]) > 0.0;
-    const bool solvent_active = solvent_eps > 0.0;
+    const bool solvent_active = solvent_eps_ > 0.0;
 
     // Apply environment to the n-dimensional Hcore / classical energy
     // *before* any GHF spinor embed so both spin blocks share the same
@@ -950,7 +1029,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
     ints_V_nuc_ = v_nuc;
 
     // C-PCM: private reaction-field workspace. Rebuilt every run (geometry
-    // may have moved). solvent_eps == 0 keeps pcm_ null so FockStage is a
+    // may have moved). solvent_eps_ == 0 keeps pcm_ null so FockStage is a
     // pure vacuum path. FockStage captures pcm_.get() at wire time, so any
     // rebuild of pcm_ (or a toggle on/off) must re-wire the stages.
     e_solvent_ = 0;
@@ -959,27 +1038,28 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
     if (solvent_active) {
         if (generalized)
             throw std::invalid_argument(
-                "MeanFieldMethod::run: solvent_eps > 0 is not supported for "
-                "GHF in this link — clear solvent_eps or use RHF/UHF/RKS/UKS.");
+                "MeanFieldMethod::run: solvent_eps_ > 0 is not supported for "
+                "GHF in this link — clear solvent_eps_ or use "
+                "RHF/UHF/RKS/UKS.");
         pcm_ = std::make_unique<internal::Pcm>(
-            ints.atoms, solvent_eps, solvent_radii_scale, solvent_x,
-            /*lebedev_n=*/302, solvent_model);
+            ints.atoms, solvent_eps_, solvent_radii_scale_, solvent_x_,
+            /*lebedev_n=*/302, solvent_model_);
         if (ints.spherical())
             pcm_->prepare(ints.shells, ints.c2s);
         else
             pcm_->prepare(ints.shells);
         // Retain solvent parameters so ScfGradient can rebuild the cavity at
         // displaced geometries for ∂ΔG_el/∂R at fixed density.
-        ints_solvent_eps_ = solvent_eps;
-        ints_solvent_radii_scale_ = solvent_radii_scale;
-        ints_solvent_x_ = solvent_x;
-        ints_solvent_model_ = solvent_model;
+        ints_solvent_eps_ = solvent_eps_;
+        ints_solvent_radii_scale_ = solvent_radii_scale_;
+        ints_solvent_x_ = solvent_x_;
+        ints_solvent_model_ = solvent_model_;
     } else {
         pcm_.reset();
         ints_solvent_eps_ = 0.0;
-        ints_solvent_radii_scale_ = solvent_radii_scale;
-        ints_solvent_x_ = solvent_x;
-        ints_solvent_model_ = solvent_model;
+        ints_solvent_radii_scale_ = solvent_radii_scale_;
+        ints_solvent_x_ = solvent_x_;
+        ints_solvent_model_ = solvent_model_;
     }
     // Rebind whenever the solvent workspace is present (pointer always new)
     // or when it was dropped after a previous solvent run.
@@ -989,6 +1069,12 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
     // Wire stages after pcm_ is ready so FockStage's non-owning pointer is
     // live for the whole SCF loop.
     ensure_driver_built_();
+
+    if (requested_threads_ > 0)
+        cpu::Driver<ATV::scf::Phase>::set_threads(requested_threads_);
+
+    fock_stage_->max_memory_mb_ = max_memory_mb;
+    fock_stage_->mpi_ = mpi;
 
     // n-dimensional Hcore (with environment) kept for the GHF n-dim aufbau
     // seed below; the loop members may then be spinor-embedded.
@@ -1151,20 +1237,11 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
             P_alpha = P_minao;
             P_beta = P_alpha;
         } else if (want_minao) {
+            // pyscf.scf.uhf.UHF.init_guess_by_minao: dma = dmb = ½ P_MINAO.
+            // _break_dm_spin_symm acts only when mol.spin == 0, so an open
+            // shell keeps the spin-averaged projection.
             P_alpha = 0.5 * P_minao;
             P_beta = 0.5 * P_minao;
-            const bool is_ks = (method_ == MeanFieldType::KS);
-            // ROHF never wants the UHF symmetry-breaking guess perturbation: the
-            // coupled F_eff restores one MO set anyway, so start from the plain
-            // Aufbau split (PySCF-matching).
-            const bool skip_mixing = (is_ks && (n_alpha == n_beta)) || rohf;
-            if (method_ == MeanFieldType::HF && n_alpha > 0 && n_beta > 0
-                && !skip_mixing && n_alpha != n_beta) {
-                RealMatrix C_alpha_init = C0;
-                apply_homo_lumo_mixing(C_alpha_init, n_alpha, n);
-                P_alpha = density.step(C_alpha_init, n_alpha, n);
-                P_beta = density.step(C0, n_beta, n);
-            }
         } else if (restricted) {
             P_alpha = density.step(C0, n_alpha, n, double(2));
             P_beta = P_alpha;
@@ -1172,7 +1249,12 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
             RealMatrix C_alpha_init = C0;
             const bool is_ks = (method_ == MeanFieldType::KS);
             // See the MINAO branch: ROHF skips the UHF symmetry-breaking guess.
-            const bool skip_mixing = (is_ks && (n_alpha == n_beta)) || rohf;
+            // Different spin occupations already give a polarized Hcore
+            // density, so preserve its Aufbau orbitals.
+            const bool polarized_hcore =
+                is_hf && n_alpha != n_beta && init_guess == InitGuess::Hcore;
+            const bool skip_mixing =
+                (is_ks && (n_alpha == n_beta)) || rohf || polarized_hcore;
             if (n_alpha > 0 && n_beta > 0 && !skip_mixing)
                 apply_homo_lumo_mixing(C_alpha_init, n_alpha, n);
             P_alpha = density.step(C_alpha_init, n_alpha, n);
@@ -1206,8 +1288,40 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         std::abs(level_shift) > internal::kLevelShiftSkipThreshold;
 
     const auto saved_window = frame.resolution_window();
-    setup_pass(frame);
+    // Nested: the stage plan runs on the parent Runtime (an electronic,
+    // non-physical plan borrows its services without touching geometry).
+    // Standalone: this method is the root loop and owns its backend.
+    cpu::Runtime* const host = opts.nested ? host_runtime_ : nullptr;
+    cpu::Context* host_ctx = nullptr;
+    LoopServices parent_loop{};
+    if (host) {
+        // Stages cache geometry-dependent state in build(), so the plan is
+        // built for this solve and released after it — the same per-solve
+        // lifecycle a standalone run gets from setup_pass/teardown_pass.
+        host->build_plan(this->plan());
+        host_registered_ = true;
+        host_ctx = &host->context();
+        parent_loop = host_ctx->loop;
+        host_ctx->loop.status = &this->mutable_outer_status();
+        host_ctx->loop.metrics = &this->metrics_;
+        this->metrics_ = ConvergenceMetrics{};
+    } else {
+        setup_pass(frame);
+    }
+    struct RestoreLoop {
+        cpu::Context* ctx;
+        LoopServices saved;
+        ~RestoreLoop() {
+            if (ctx)
+                ctx->loop = saved;
+        }
+    } restore_loop{host_ctx, parent_loop};
+    struct ReleaseHostPlan {
+        MeanFieldMethod& method;
+        ~ReleaseHostPlan() { method.release_host_plan_(); }
+    } release_host_plan{*this};
 
+    const auto loop_start = LogClock::now();
     int executed = 0;
     for (iter_ = 0; iter_ < budget; ++iter_) {
         // diis_active is (diis_->size() >= 2) AFTER the MixStage's step this
@@ -1221,34 +1335,56 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
         }
 
         mutable_outer_status().reset();
-        step_once(iter_);
         ++executed;
-        if (poll_criteria_(iter_) != ATV::Verdict::Continue)
-            break;
+        if (host) {
+            host->step_plan(this->plan(), iter_);
+            if (this->poll_criteria_(iter_, frame, *host_ctx)
+                != ATV::Verdict::Continue)
+                break;
+        } else {
+            step_once(iter_);
+            if (poll_criteria_(iter_) != ATV::Verdict::Continue)
+                break;
+        }
     }
 
-    teardown_pass();
+    ATV_INFO("[scf] iterations={} loop_ms={:.3f}", executed,
+             elapsed_ms(loop_start));
+    if (!host)
+        teardown_pass();
+    else
+        release_host_plan_();
     frame.restore_resolution_window(saved_window);
 
     const bool did_converge = this->converged();
 
-    // ── Epilogue: de-shift, wavefunction publish, energy / forces ────────────────
-    // De-shifted orbital energies: rebuild one UNSHIFTED Fock from the
-    // converged density and diagonalize it. The SOSCF finish shares this
-    // block: after CIAH rotations the orbitals are only semicanonical, so a
-    // final diagonalization of the Fock of the converged density restores
-    // the canonical ε (and canonical C) the published determinant carries.
-    if (did_converge && (shift_active || soscf_active_)) {
+    // ── Epilogue: physical orbitals, wavefunction publish, energy / forces ──
+    // KS retains the unmodified physical Fock from this loop. HF level shifts
+    // and the SOSCF finish use the existing unshifted canonicalization below.
+    if (did_converge && !is_hf && !rohf && mom == MomStyle::Off) {
+        // KS energy convergence does not constrain the eigenvalues of a DIIS
+        // extrapolate. Publish the physical operator already built by this
+        // solve, retaining the accepted occupied projector for Pulay forces.
+        internal::semicanonicalize(fock_stage_->physical_alpha_, C_alpha_,
+                                   eig_alpha_, n_alpha);
+        if (restricted) {
+            C_beta_ = C_alpha_;
+            eig_beta_ = eig_alpha_;
+        } else {
+            internal::semicanonicalize(fock_stage_->physical_beta_, C_beta_,
+                                       eig_beta_, n_beta);
+        }
+    } else if (did_converge && (shift_active || soscf_active_)) {
         internal::HamiltonianBuilder deshift;
         // Same ri/aux as the loop's Fock build: the de-shifted orbital
         // energies must diagonalize the SAME (possibly fitted) Fock the
         // SCF converged, or ε would carry the fit error as an artifact.
         deshift.prepare(ints, is_hf, grid_level, n_radial, n_angular,
                         fixed_grid, ri, aux_basis, coulomb, cfmm_order,
-                        cfmm_threshold);
-        internal::FockResult fock =
-            deshift.step(ints, restricted, is_hf, xc_type_,
-                         hybrid_alpha_override, P_alpha_, P_beta_);
+                        cfmm_threshold, max_memory_mb, mpi);
+        internal::FockResult fock = deshift.step(
+            ints, restricted, is_hf, xc_type_, hybrid_alpha_override, P_alpha_,
+            P_beta_, xc_functional_.get());
         std::tie(eig_alpha_, C_alpha_) = diagonalize(fock.F_alpha);
         if (restricted) {
             eig_beta_ = eig_alpha_;
@@ -1288,7 +1424,7 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
     // Geometry-only DFT-D3(BJ) / DFT-D4 additive correction (after SCF; not in
     // Fock). Every gradient this class publishes carries the matching
     // −∂E_disp/∂R for the SAME flag pair — `ScfGradient` below for the mean
-    // field, `add_dispersion_forces` in mp2_forces/ccsd_forces — all four
+    // field, `add_dispersion_forces` in post-HF forces — all four
     // routed through `internal/dispersion.h` so the choice is made once.
     e_disp_ = internal::dispersion_energy(frame, d3bj, d4);
     e_total_ += e_disp_;
@@ -1310,7 +1446,8 @@ void MeanFieldMethod<D>::drive_scf_core_(Frame& frame,
                                        n_angular,
                                        xc_grad_project_translation,
                                        d3bj,
-                                       d4};
+                                       d4,
+                                       xc_functional_.get()};
         // Fresh view after env (embed/field/solvent) was written onto storage —
         // IntegralView scalars (V_nuc, embed_self_energy, …) are by value and
         // the prologue view is stale for those; refs alone are not enough.
@@ -1421,14 +1558,14 @@ void MeanFieldMethod<D>::validate_cpmd_config_() const {
     if (x2c)
         throw std::invalid_argument(
             "MeanFieldMethod: cpmd is not supported with x2c = true — the "
-            "h^X2C nuclear gradient (picture change + decoupling-matrix "
-            "response) is not derived, so the CP nuclei would feel a "
-            "non-relativistic force under a relativistic energy.");
-    if (solvent_eps > 0.0)
+            "production step rebuilds the non-relativistic core "
+            "(compute_pvp = false) and never forms h^X2C. Analytic x2c "
+            "forces are wired through forces(), not this propagator.");
+    if (solvent_eps_ > 0.0)
         throw std::invalid_argument(
             "MeanFieldMethod: cpmd is not supported with a continuum solvent "
             "— the reaction field is a fixed-point of the SCF density, which "
-            "a propagated density never solves. Set solvent_eps = 0.");
+            "a propagated density never solves. Set solvent_eps_ = 0.");
     if (mom != MomStyle::Off)
         throw std::invalid_argument(
             "MeanFieldMethod: cpmd and mom != Off are mutually exclusive — "
@@ -1549,7 +1686,10 @@ void MeanFieldMethod<D>::cpmd_seed_() {
 }
 
 template <typename D>
-void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
+void MeanFieldMethod<D>::cpmd_step_(Frame& frame, bool advance_electrons) {
+    if (xc_type_ == xc::XCType::Custom && hybrid_alpha_override > 0)
+        throw std::invalid_argument(
+            "Custom XC: exact-exchange overrides are unsupported");
     // A production Car-Parrinello step is NOT the stage Plan: DIIS,
     // diagonalization and the density rebuild are exactly what CP skips, and
     // `DriveOpts.max_iter = 0` cannot express "build one Fock at a given
@@ -1557,6 +1697,15 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     // Drive `internal::HamiltonianBuilder` directly — the precedent is the
     // de-shift epilogue in drive_scf_core_.
     PositionGuard guard(frame, /*active=*/true);
+
+    // Preparing forces must not change the electronic trajectory, even when
+    // geometry transport changes C or the tangent velocity. Work on copies
+    // only for that infrequent evaluation; production steps retain the state.
+    auto setup_alpha =
+        advance_electrons ? decltype(cpmd_alpha_){} : cpmd_alpha_;
+    auto setup_beta = advance_electrons ? decltype(cpmd_beta_){} : cpmd_beta_;
+    auto& alpha = advance_electrons ? cpmd_alpha_ : setup_alpha;
+    auto& beta = advance_electrons ? cpmd_beta_ : setup_beta;
 
     restricted_ = (spin_ == SpinType::Restricted);
     is_hf_ = (method_ == MeanFieldType::HF);
@@ -1576,15 +1725,15 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     // 2. Löwdin-transport the coefficients under the NEW metric (a geometry
     //    change is not a dynamics step) and project the electronic velocity
     //    back onto the constraint manifold.
-    cpmd_alpha_->align_to_overlap(S_);
-    const bool has_beta = (cpmd_beta_ && cpmd_beta_->ready());
+    alpha->align_to_overlap(S_);
+    const bool has_beta = (beta && beta->ready());
     if (has_beta)
-        cpmd_beta_->align_to_overlap(S_);
+        beta->align_to_overlap(S_);
 
     // 3. Density from the propagated coefficients. Restricted folds occ = 2
     //    into the alpha channel (the loop's convention: P_alpha carries the
     //    factor-2 closed-shell density and P_beta aliases it).
-    const RealMatrix& C_a = cpmd_alpha_->C();
+    const RealMatrix& C_a = alpha->C();
     const int n_occ_a = static_cast<int>(C_a.shape()[1]);
     RealMatrix P_a =
         linalg::build_density_matrix(C_a, n_occ_a, n, restricted ? 2.0 : 1.0);
@@ -1592,7 +1741,7 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     if (restricted) {
         P_b = P_a;
     } else if (has_beta) {
-        const RealMatrix& C_b = cpmd_beta_->C();
+        const RealMatrix& C_b = beta->C();
         P_b = linalg::build_density_matrix(
             C_b, static_cast<int>(C_b.shape()[1]), n, 1.0);
     } else {
@@ -1602,9 +1751,11 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     // 4. One Fock/KS build at that fixed density.
     internal::HamiltonianBuilder hb;
     hb.prepare(ints, is_hf, grid_level, n_radial, n_angular, fixed_grid, ri,
-               aux_basis, coulomb, cfmm_order, cfmm_threshold);
-    const internal::FockResult fock = hb.step(ints, restricted, is_hf, xc_type_,
-                                              hybrid_alpha_override, P_a, P_b);
+               aux_basis, coulomb, cfmm_order, cfmm_threshold, max_memory_mb,
+               mpi);
+    const internal::FockResult fock =
+        hb.step(ints, restricted, is_hf, xc_type_, hybrid_alpha_override, P_a,
+                P_b, xc_functional_.get());
     F_alpha_ = fock.F_alpha;
     F_beta_ = fock.F_beta;
     J_ = fock.J;
@@ -1647,11 +1798,11 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
                                    n_angular,
                                    xc_grad_project_translation,
                                    /*d3bj=*/false,
-                                   /*d4=*/false};
+                                   /*d4=*/false,
+                                   xc_functional_.get()};
     const RealMatrix empty;
     last_grad_ = gradient.compute_at_density(
-        frame, ints, C_a, F_alpha_,
-        restricted || !has_beta ? empty : cpmd_beta_->C(),
+        frame, ints, C_a, F_alpha_, restricted || !has_beta ? empty : beta->C(),
         restricted ? empty : F_beta_, e_total_);
     const int natm = static_cast<int>(frame.nlocal());
     AccReal* __restrict fx = frame.span(kAtom_fx);
@@ -1671,13 +1822,15 @@ void MeanFieldMethod<D>::cpmd_step_(Frame& frame) {
     //    nuclear clock, then publish the adiabaticity signal. Closed shell is
     //    one channel at occ = 2; UHF/UKS are two channels at occ = 1 each and
     //    T_e is their sum.
-    cpmd_alpha_->advance(F_alpha_, S_, cpmd_dt_fs_, restricted ? 2.0 : 1.0);
-    double te_ha = cpmd_alpha_->kinetic_ha();
-    double etherm_ha = cpmd_alpha_->thermostat_energy_ha();
+    if (advance_electrons)
+        alpha->advance(F_alpha_, S_, cpmd_dt_fs_, restricted ? 2.0 : 1.0);
+    double te_ha = alpha->kinetic_ha();
+    double etherm_ha = alpha->thermostat_energy_ha();
     if (has_beta) {
-        cpmd_beta_->advance(F_beta_, S_, cpmd_dt_fs_, /*occ=*/1.0);
-        te_ha += cpmd_beta_->kinetic_ha();
-        etherm_ha += cpmd_beta_->thermostat_energy_ha();
+        if (advance_electrons)
+            beta->advance(F_beta_, S_, cpmd_dt_fs_, /*occ=*/1.0);
+        te_ha += beta->kinetic_ha();
+        etherm_ha += beta->thermostat_energy_ha();
     }
     last_te_ev_ = te_ha * units::kHartreeInEv;
     last_etherm_ev_ = etherm_ha * units::kHartreeInEv;
@@ -1693,7 +1846,10 @@ template <typename D>
 void MeanFieldMethod<D>::run(Frame& frame, const SCFInitialGuess* guess) {
     refuse_standalone_cpmd(cpmd, "MeanFieldMethod::run");
     DriveOpts opts;
-    opts.unwrap = true;
+    // A molecular single point evaluates the supplied geometry, matching
+    // the const and force entries. A box alone does not identify bonded
+    // images: anchor minimum-image changes a cluster wider than half a cell.
+    opts.unwrap = false;
     opts.write_energy = true; // Frame-out: the mutating entry always writes.
     opts.forces = false;
     drive_scf_(frame, guess, opts);
@@ -1724,376 +1880,6 @@ GradientResult MeanFieldMethod<D>::forces(Frame& frame,
     opts.forces = true;
     drive_scf_(frame, guess, opts);
     return last_grad_;
-}
-
-template <typename D>
-MP2Result MeanFieldMethod<D>::mp2(Frame& frame, const SCFInitialGuess* guess) {
-    if (spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2: a GHF (spinor) reference is not supported "
-            "— the MP2 pack has no spinor transformation. Use RHF or UHF.");
-    const bool prev = compute_eri;
-    // Canonical MP2 needs a dense ERI; RI-MP2 builds 3-center integrals only.
-    if (ri == RI::None)
-        compute_eri = true;
-    run(frame, guess);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    if ((spin_ == SpinType::Unrestricted || spin_ == SpinType::RestrictedOpen)
-        && frozen != 0) {
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2: frozen-core UMP2/ROMP2 is not supported — "
-            "set frozen=0, or use closed-shell RHF.");
-    }
-    if (ri != RI::None) {
-        if (spin_ != SpinType::Restricted)
-            throw std::invalid_argument(
-                "MeanFieldMethod::mp2: RI-MP2 is closed-shell only — set "
-                "ri=RI::None for UMP2/ROMP2, or use RHF.");
-        return ri_mp2_energy(integral_view_(), *det_sp_, e_total_, aux_basis,
-                             frozen, mp2_os_scale, mp2_ss_scale);
-    }
-    if (spin_ == SpinType::RestrictedOpen) {
-        // PySCF ROMP2: UMP2 on ROHF orbitals with semi-canonical spin-Fock
-        // diagonal denominators (F_alpha_uncoupled_ / F_beta_uncoupled_).
-        return romp2_energy(integral_view_(), *det_sp_, F_alpha_uncoupled_,
-                            F_beta_uncoupled_, e_total_, mp2_os_scale,
-                            mp2_ss_scale);
-    }
-    if (spin_ == SpinType::Unrestricted)
-        return ump2_energy(integral_view_(), *det_sp_, e_total_, mp2_os_scale,
-                           mp2_ss_scale);
-    return mp2_energy(integral_view_(), *det_sp_, e_total_, frozen,
-                      mp2_os_scale, mp2_ss_scale);
-}
-
-template <typename D>
-GradientResult MeanFieldMethod<D>::mp2_forces(Frame& frame,
-                                              const SCFInitialGuess* guess) {
-    if (spin_ != SpinType::Restricted && spin_ != SpinType::Unrestricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2_forces: RMP2 (RHF) or UMP2 (UHF) analytic "
-            "gradient only — ROHF/ROMP2 gradients are a follow-up");
-    if (ri != RI::None)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2_forces: RI-MP2 gradients are not "
-            "implemented — set ri=RI::None");
-    if (frozen != 0)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2_forces: frozen-core MP2 gradients are not "
-            "implemented — set frozen=0");
-    if (std::fabs(mp2_os_scale - 1.0) > 0.0
-        || std::fabs(mp2_ss_scale - 1.0) > 0.0)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2_forces: spin-component-scaled MP2 gradients "
-            "are not implemented — keep mp2_os_scale=mp2_ss_scale=1");
-
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame, guess);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp2_forces: SCF reference did not converge — "
-            "refusing gradient on a non-stationary determinant (no fallback)");
-
-    GradientResult gr;
-    if (spin_ == SpinType::Unrestricted) {
-        const MP2Result corr =
-            ump2_energy(integral_view_(), *det_sp_, e_total_, /*os_scale=*/1.0,
-                        /*ss_scale=*/1.0);
-        gr = internal::ump2_analytic_forces(frame, integral_view_(), *det_sp_,
-                                            e_total_, corr.e_corr);
-    } else {
-        const MP2Result corr =
-            mp2_energy(integral_view_(), *det_sp_, e_total_, /*n_frozen=*/0,
-                       /*os_scale=*/1.0, /*ss_scale=*/1.0);
-        gr = internal::mp2_analytic_forces(frame, integral_view_(), *det_sp_,
-                                           e_total_, corr.e_corr);
-    }
-    // `e_total_` (and therefore `gr.energy`) already carries E_disp; the MP2
-    // gradient routines know nothing about dispersion, so the leg is added
-    // here. Same switch as the energy — see internal/dispersion.h.
-    internal::add_dispersion_forces(frame, d3bj, d4, gr);
-    last_grad_ = gr;
-
-    // Publish force / energy on Frame (same contract as forces()).
-    AccReal* __restrict fx = frame.span(kAtom_fx);
-    AccReal* __restrict fy = frame.span(kAtom_fy);
-    AccReal* __restrict fz = frame.span(kAtom_fz);
-    const int natm = static_cast<int>(frame.nlocal());
-    for (int A = 0; A < natm; ++A) {
-        fx[A] = gr.forces(A, 0);
-        fy[A] = gr.forces(A, 1);
-        fz[A] = gr.forces(A, 2);
-    }
-    frame.meta.get(kEnergy) = gr.energy;
-    return gr;
-}
-
-template <typename D>
-MP3Result MeanFieldMethod<D>::mp3(Frame& frame, const SCFInitialGuess* guess) {
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp3: closed-shell RMP3 only — use RHF "
-            "(open-shell MP3 is a follow-up).");
-    if (ri != RI::None)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp3: RI-MP3 is not implemented — set "
-            "ri=RI::None");
-    if (std::fabs(mp2_os_scale - 1.0) > 0.0
-        || std::fabs(mp2_ss_scale - 1.0) > 0.0)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp3: spin-component-scaled MP3 is not "
-            "implemented — keep mp2_os_scale=mp2_ss_scale=1");
-
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame, guess);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp3: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return mp3_energy(integral_view_(), *det_sp_, e_total_, frozen);
-}
-
-template <typename D>
-MP4Result MeanFieldMethod<D>::mp4(Frame& frame, const SCFInitialGuess* guess) {
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp4: closed-shell RMP4 only — use RHF "
-            "(open-shell MP4 is a follow-up).");
-    if (ri != RI::None)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp4: RI-MP4 is not implemented — set "
-            "ri=RI::None");
-    if (std::fabs(mp2_os_scale - 1.0) > 0.0
-        || std::fabs(mp2_ss_scale - 1.0) > 0.0)
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp4: spin-component-scaled MP4 is not "
-            "implemented — keep mp2_os_scale=mp2_ss_scale=1");
-
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame, guess);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::mp4: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return mp4_energy(integral_view_(), *det_sp_, e_total_, frozen);
-}
-
-template <typename D>
-FCIResult MeanFieldMethod<D>::fci(Frame& frame) {
-    if (spin_ == SpinType::RestrictedOpen)
-        throw std::invalid_argument(
-            "MeanFieldMethod::fci: an ROHF reference is not supported — the "
-            "FCI pack requires a closed-shell reference. Use RHF.");
-    if (spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "MeanFieldMethod::fci: a GHF (spinor) reference is not supported "
-            "— the FCI pack requires a closed-shell reference. Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::fci: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return fci_energy(integral_view_(), *det_sp_, e_total_);
-}
-
-template <typename D>
-CASCIResult MeanFieldMethod<D>::casci(Frame& frame, int ncas, int nelecas) {
-    if (spin_ == SpinType::RestrictedOpen)
-        throw std::invalid_argument(
-            "MeanFieldMethod::casci: an ROHF reference is not supported — "
-            "closed-shell CASCI requires RHF.");
-    if (spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "MeanFieldMethod::casci: a GHF (spinor) reference is not "
-            "supported — closed-shell CASCI requires RHF.");
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::casci: closed-shell RHF reference only — UHF "
-            "CASCI is not implemented (no fallback). Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::casci: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return casci_energy(integral_view_(), *det_sp_, e_total_, ncas, nelecas);
-}
-
-template <typename D>
-CASSCFResult MeanFieldMethod<D>::casscf(Frame& frame, int ncas, int nelecas) {
-    if (spin_ == SpinType::RestrictedOpen)
-        throw std::invalid_argument(
-            "MeanFieldMethod::casscf: an ROHF reference is not supported — "
-            "closed-shell CASSCF requires RHF.");
-    if (spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "MeanFieldMethod::casscf: a GHF (spinor) reference is not "
-            "supported — closed-shell CASSCF requires RHF.");
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::casscf: closed-shell RHF reference only — UHF "
-            "CASSCF is not implemented (no fallback). Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument("MeanFieldMethod::casscf: SCF reference "
-                                    "did not converge — refusing "
-                                    "to optimize orbitals on a non-stationary "
-                                    "determinant (no fallback)");
-    // Orbital gradient tol tracks the SCF energy tolerance (Ha).
-    return casscf_energy(integral_view_(), *det_sp_, e_total_, ncas, nelecas,
-                         /*orb_tol=*/std::max(tol, 1e-8), /*max_macro=*/50);
-}
-
-template <typename D>
-NEVPT2Result MeanFieldMethod<D>::nevpt2(Frame& frame, int ncas, int nelecas) {
-    if (spin_ == SpinType::RestrictedOpen)
-        throw std::invalid_argument(
-            "MeanFieldMethod::nevpt2: an ROHF reference is not supported — "
-            "closed-shell SC-NEVPT2 requires RHF.");
-    if (spin_ == SpinType::Generalized)
-        throw std::invalid_argument(
-            "MeanFieldMethod::nevpt2: a GHF (spinor) reference is not "
-            "supported — closed-shell SC-NEVPT2 requires RHF.");
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::nevpt2: closed-shell RHF reference only — UHF "
-            "NEVPT2 is not implemented (no fallback). Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument("MeanFieldMethod::nevpt2: SCF reference "
-                                    "did not converge — refusing "
-                                    "to run CASSCF/NEVPT2 on a non-stationary "
-                                    "determinant (no fallback)");
-    return nevpt2_energy(integral_view_(), *det_sp_, e_total_, ncas, nelecas,
-                         /*orb_tol=*/std::max(tol, 1e-8), /*max_macro=*/50);
-}
-
-template <typename D>
-CCSDResult MeanFieldMethod<D>::ccsd(Frame& frame) {
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd: closed-shell RHF reference only — UHF / "
-            "ROHF / GHF CCSD is not implemented (no fallback). Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return ccsd_energy(integral_view_(), *det_sp_, e_total_, /*tol=*/1e-10,
-                       /*max_iter=*/100, /*use_diis=*/cc_diis);
-}
-
-template <typename D>
-GradientResult MeanFieldMethod<D>::ccsd_forces(Frame& frame,
-                                               const SCFInitialGuess* guess) {
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd_forces: closed-shell RHF reference only — "
-            "UCCSD gradients are not implemented (no fallback). Use RHF.");
-    if (ri != RI::None)
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd_forces: RI-CCSD gradients are not "
-            "implemented — set ri=RI::None");
-    if (frozen != 0)
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd_forces: frozen-core CCSD gradients are not "
-            "implemented — set frozen=0");
-
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame, guess);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd_forces: SCF reference did not converge — "
-            "refusing gradient on a non-stationary determinant (no fallback)");
-
-    const CCSDResult corr = ccsd_energy(integral_view_(), *det_sp_, e_total_);
-    GradientResult gr = internal::ccsd_analytic_forces(
-        frame, integral_view_(), *det_sp_, e_total_, corr.e_corr);
-    // Same reason as mp2_forces: the reference energy folded in E_disp, so the
-    // published force must fold in −∂E_disp/∂R (internal/dispersion.h).
-    internal::add_dispersion_forces(frame, d3bj, d4, gr);
-    last_grad_ = gr;
-
-    AccReal* __restrict fx = frame.span(kAtom_fx);
-    AccReal* __restrict fy = frame.span(kAtom_fy);
-    AccReal* __restrict fz = frame.span(kAtom_fz);
-    const int natm = static_cast<int>(frame.nlocal());
-    for (int A = 0; A < natm; ++A) {
-        fx[A] = gr.forces(A, 0);
-        fy[A] = gr.forces(A, 1);
-        fz[A] = gr.forces(A, 2);
-    }
-    frame.meta.get(kEnergy) = gr.energy;
-    return gr;
-}
-
-template <typename D>
-CC2Result MeanFieldMethod<D>::cc2(Frame& frame) {
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::cc2: closed-shell RHF reference only — UHF / "
-            "ROHF / GHF CC2 is not implemented (no fallback). Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::cc2: SCF reference did not converge — refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return cc2_energy(integral_view_(), *det_sp_, e_total_);
-}
-
-template <typename D>
-CCSDTResult MeanFieldMethod<D>::ccsd_t(Frame& frame) {
-    if (spin_ != SpinType::Restricted)
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd_t: closed-shell RHF reference only — UHF / "
-            "ROHF / GHF CCSD(T) is not implemented (no fallback). Use RHF.");
-    const bool prev = compute_eri;
-    compute_eri = true;
-    run(frame);
-    compute_eri = prev;
-    if (!this->converged())
-        throw std::invalid_argument(
-            "MeanFieldMethod::ccsd_t: SCF reference did not converge — "
-            "refusing "
-            "to compute a correlation correction on a non-stationary "
-            "determinant (no fallback)");
-    return ccsd_t_energy(integral_view_(), *det_sp_, e_total_);
 }
 
 // ── MOM/IMOM reference install ────────────────────────────────────────────────
@@ -2142,115 +1928,6 @@ void MeanFieldMethod<D>::set_mom_reference(const SlaterDeterminant& det) {
         mom_ref_C_beta_ = gather_occupied_columns(det, Spin::beta);
 }
 
-template <typename D>
-vib::HessianResult MeanFieldMethod<D>::central_difference_nuclear_hessian(
-    Frame& frame, const std::function<GradientResult(Frame&)>& forces_at) {
-    const int natm = static_cast<int>(frame.nlocal());
-    const int n3 = 3 * natm;
-    // Central FD of the caller's analytic forces. Match the offline PySCF pin
-    // step (h = 1e-4 Bohr); convert forces eV/Å → Ha/Bohr for the FD, then
-    // scale the Hessian to eV/Å². A fresh solver per ±h displacement (owned by
-    // forces_at) avoids DIIS/MO state bleed.
-    //   g = −F;  H_ha = ∂g/∂R [Ha/Bohr²];  H_ev = H_ha * scale.
-    const double h_bohr = 1e-4;
-    const double h_ang = h_bohr * units::kBohrInAngstrom;
-    const double f_to_ha_bohr = units::kBohrInAngstrom / units::kHartreeInEv;
-    const double hess_to_ev_ang2 =
-        units::kHartreeInEv / (units::kBohrInAngstrom * units::kBohrInAngstrom);
-
-    auto x = frame.span(kAtom_x);
-    auto y = frame.span(kAtom_y);
-    auto z = frame.span(kAtom_z);
-    auto coord = [&](int A, int d) -> StorageReal& {
-        if (d == 0)
-            return x[A];
-        if (d == 1)
-            return y[A];
-        return z[A];
-    };
-
-    std::vector<double> r0(static_cast<std::size_t>(n3));
-    for (int A = 0; A < natm; ++A)
-        for (int d = 0; d < 3; ++d)
-            r0[static_cast<std::size_t>(3 * A + d)] =
-                static_cast<double>(coord(A, d));
-
-    xt::xtensor<double, 2> H = xt::zeros<double>({n3, n3});
-
-    for (int A = 0; A < natm; ++A) {
-        for (int d = 0; d < 3; ++d) {
-            const int col = 3 * A + d;
-            for (int B = 0; B < natm; ++B)
-                for (int e = 0; e < 3; ++e)
-                    coord(B, e) = static_cast<StorageReal>(
-                        r0[static_cast<std::size_t>(3 * B + e)]);
-            coord(A, d) = static_cast<StorageReal>(
-                r0[static_cast<std::size_t>(col)] + h_ang);
-            const GradientResult gp = forces_at(frame);
-
-            coord(A, d) = static_cast<StorageReal>(
-                r0[static_cast<std::size_t>(col)] - h_ang);
-            const GradientResult gm = forces_at(frame);
-
-            // g = −F; H = ∂g/∂R = −∂F/∂R.
-            for (int B = 0; B < natm; ++B)
-                for (int e = 0; e < 3; ++e) {
-                    const int row = 3 * B + e;
-                    const double Fp =
-                        static_cast<double>(gp.forces(B, e)) * f_to_ha_bohr;
-                    const double Fm =
-                        static_cast<double>(gm.forces(B, e)) * f_to_ha_bohr;
-                    const double dF_dR = (Fp - Fm) / (2.0 * h_bohr);
-                    H(row, col) = (-dF_dR) * hess_to_ev_ang2;
-                }
-        }
-    }
-
-    // Restore geometry to the reference r0.
-    for (int A = 0; A < natm; ++A)
-        for (int d = 0; d < 3; ++d)
-            coord(A, d) = static_cast<StorageReal>(
-                r0[static_cast<std::size_t>(3 * A + d)]);
-
-    // Symmetrize (FD noise).
-    for (int i = 0; i < n3; ++i)
-        for (int j = 0; j < i; ++j) {
-            const double s = 0.5 * (H(i, j) + H(j, i));
-            H(i, j) = s;
-            H(j, i) = s;
-        }
-
-    vib::HessianResult out;
-    out.n_atoms = natm;
-    out.hessian = std::move(H);
-    return out;
-}
-
-template <typename D>
-void MeanFieldMethod<D>::check_hessian_preconditions(
-    std::string_view method_name, const internal::IntegralView& pack) const {
-    if (!converged())
-        throw std::runtime_error(std::string(method_name)
-                                 + ": SCF did not converge — no reference "
-                                   "wavefunction to differentiate ("
-                                 + stop_reason() + ")");
-    if (pack.spherical())
-        throw std::runtime_error(
-            std::string(method_name)
-            + ": analytic second derivatives are not implemented "
-              "for spherical-harmonic basis sets (def2 family) yet — the "
-              "derivative c2s transform is a follow-up chain link. Use a "
-              "Cartesian-convention basis or the finite-difference "
-              "vib::Hessian driver.");
-    if (pack.has_ecp)
-        throw std::runtime_error(
-            std::string(method_name)
-            + ": analytic second derivatives are not implemented "
-              "for ECP packs — d²U/dR² of the semi-local potential is a "
-              "follow-up chain link. Use the finite-difference vib::Hessian "
-              "driver.");
-}
-
 // ── QmEngine / EmbeddingEngine (esmm-qmmm-02) ─────────────────────────
 
 template <typename D>
@@ -2265,14 +1942,42 @@ void MeanFieldMethod<D>::prepare(const cpu::BuildContext&) {
 
 template <typename D>
 void MeanFieldMethod<D>::evaluate(const cpu::LaunchContext& qm_ctx) {
+    if (cpmd || xl_bomd)
+        throw std::runtime_error(
+            "MeanFieldMethod::evaluate: QM/MM does not support CPMD or "
+            "XL-BOMD; "
+            "use a directly mounted method for electronic propagation");
+    if (use_predictor_ && qm_ctx.runtime.mc.proposal)
+        throw std::runtime_error(
+            "MeanFieldMethod::evaluate: the ASPC predictor is MD-only; "
+            "disable predictor() for sampling");
+    cpu::Runtime* const host = qm_ctx.runtime.exec.runtime;
+    if (host_runtime_ && host_runtime_ != host)
+        throw std::logic_error(
+            "MeanFieldMethod: already nested on another Runtime");
+    struct RestoreHost {
+        cpu::Runtime*& target;
+        cpu::Runtime* saved;
+        ~RestoreHost() { target = saved; }
+    } restore_host{host_runtime_, host_runtime_};
+    host_runtime_ = host;
     DriveOpts opts;
     opts.write_energy = true;
-    opts.forces = qm_ctx.forces_requested;
+    opts.forces =
+        qm_ctx.forces_requested && qm_ctx.runtime.exec.forces_requested;
+    opts.nested = host != nullptr;
+    opts.apply_aspc = !(qm_ctx.runtime.exec.initializing_forces
+                        || qm_ctx.runtime.exec.trial_evaluation);
+    opts.warm_start = opts.apply_aspc || qm_ctx.runtime.opt.line_search_trial;
     opts.unwrap = true;
     // Standalone-style overwrite of energy/forces on the private QM frame
     // (couplings pre-zero the channels).
     opts.accumulate = false;
     drive_scf_(qm_ctx.frame, /*guess=*/nullptr, opts);
+    if (!this->converged())
+        throw std::runtime_error(
+            "MeanFieldMethod::evaluate: QM SCF did not converge ("
+            + this->stop_reason() + ")");
 
     // Mulliken charges [e] onto the private QM frame when a density exists.
     if (det_sp_ && ints_n_basis_ > 0) {

@@ -1,5 +1,5 @@
 /// @file cpu/gpw/internal/gpw_stress.h
-/// @brief GPW cell stress: analytic fixed-P (product) + multi-SCF strain-FD oracle.
+/// @brief GPW cell stress: fixed-P strain FD and reconverged strain check.
 #pragma once
 
 #include <array>
@@ -12,53 +12,35 @@ namespace cpu {
 namespace gpw {
 namespace internal {
 
-/// @brief Analytic (Hellmann–Feynman fixed-\(P\)) Voigt stress [Hartree/Bohr³].
-///
-/// One SCF → central FD of the non-self-consistent total energy \(E[P;\varepsilon]\)
-/// under orthorhombic diagonal strain at fixed fractional coordinates (GPW
-/// analogue of plane-wave Nielsen–Martin in this tree). Supports Gamma RKS,
-/// Gamma UKS (spin densities \(P_\alpha,P_\beta\) + \(W_\alpha,W_\beta\)),
-/// multi-k closed-shell RKS (k-summed fixed-\(P_k\) Lagrangian), multi-k
-/// collinear UKS (fixed \(\{P_k^\sigma,W_k^\sigma\}\), spin XC), multi-k
-/// RKS/UKS **metallic free-energy** stress under FD/MP smear (fractional
-/// \(P_k/W_k\) from `C_k`+`f_k` at fixed occupations), Dudarev DFT+U on Γ and
-/// multi-k (BZ-averaged Mulliken \(E_U\) at strained \(S\)/\(S_k\)), and
-/// geometry-only dispersion (D3 / D3(BJ) / DFT-D4 / TS / XDM / MBD as
-/// configured). Off-diagonal = 0.
-///
-/// @param atoms Geometry [Bohr] + basis/PP (same as `GpwDft::run`).
-/// @param method SCF configuration (`cell` must match atoms' box).
-/// @param h Dimensionless strain step for the fixed-\(P\) energy FD (default 2e-3).
-/// @param axes Per-axis mask (x,y,z); a masked axis skips samples and reports 0.
-/// @param guess_C Optional warm-start MO coefficients for the reference SCF.
-/// @return Voigt stress σ [Hartree/Bohr³], order xx,yy,zz,xy,xz,yz.
-std::array<double, 6>
-gpw_stress_analytic_impl(const std::vector<GpwAtom>& atoms,
-                         const GpwDft& method, double h = 2e-3,
-                         const std::array<bool, 3>& axes = {true, true, true},
-                         const linalg::RealMatrix* guess_C = nullptr);
+/// @brief Validate the mathematical strain probe before any SCF or Frame work.
+/// @param h Dimensionless central strain step, strictly between 0 and 0.1.
+/// @param axes Per-axis mask; at least one axis must be enabled.
+/// @param tag Calling operation's name for the error message.
+/// @throws std::invalid_argument for invalid h (including NaN/Inf) or no axes.
+void validate_stress_probe(double h, const std::array<bool, 3>& axes,
+                           const char* tag);
 
-/// @brief Analytic fixed-\(P\) Voigt stress at a **supplied** state
+/// @brief Fixed-\(P\) strain-FD stress at a **supplied** state
 ///        [Hartree/Bohr³] — no reference SCF.
 ///
-/// The payload-extraction + fixed-\(P\) FD tail of
-/// `gpw_stress_analytic_impl`: builds \(P/W\) (Γ) or \(\{P_k, W_k\}\)
+/// Builds \(P/W\) (Γ) or \(\{P_k, W_k\}\)
 /// (multi-k, dual per spin for UKS) from `scf` and central-FDs the
 /// non-self-consistent Lagrangian under orthorhombic diagonal strain.
 /// Used by the zero-SCF linearized XL-BOMD warm step (shadow-density
 /// stress at \(P = D = q[n]\), \(W\) from the \(H[n]\) eigenpairs).
 ///
-/// @param atoms Geometry [Bohr] + basis/PP (same as `GpwDft::run`).
+/// @param geometry Reference geometry and operators from the same solve.
 /// @param method SCF configuration (`cell` must match atoms' box).
 /// @param scf Stationary payload (`converged` must be true): Γ needs
 ///        `P`/`C`/`eps` (+ β for UKS); multi-k needs `C_occ_k`/`eps_k`
 ///        (+ β for UKS).
+/// @param workspace Accepted Bloch densities when applicable.
 /// @param h Dimensionless strain step (default 2e-3).
 /// @param axes Per-axis mask (x,y,z); a masked axis reports exactly 0.
 /// @return Voigt stress σ [Hartree/Bohr³], order xx,yy,zz,xy,xz,yz.
 std::array<double, 6>
-gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
-                         const GpwDft& method, const GpwResult& scf,
+gpw_stress_at_state_impl(const GpwGeometry& geometry, const GpwDft& method,
+                         const GpwResult& scf, const GpwWorkspace& workspace,
                          double h = 2e-3,
                          const std::array<bool, 3>& axes = {true, true, true});
 
@@ -66,7 +48,16 @@ gpw_stress_at_state_impl(const std::vector<GpwAtom>& atoms,
 ///
 /// Orthorhombic only: diagonal components from central FD of fully re-converged
 /// SCF energy under axis-aligned strain at fixed fractional coordinates;
-/// off-diagonal are 0.
+/// off-diagonal are 0. One unstrained SCF supplies the common initial density
+/// for every independent +/- strain sample (both spins for UKS). It changes
+/// only initialization; every sample still meets the method's SCF thresholds.
+/// @param atoms Reference atoms [Bohr] and basis/PP data.
+/// @param method SCF parameters; cell must match the reference atoms.
+/// @param h Dimensionless central strain step.
+/// @param axes Diagonal components to evaluate; masked components are zero.
+/// @param guess_C Optional initial reference orbitals; strain samples use the
+///        converged reference density, preserving both UKS spin channels.
+/// @return Voigt stress [Ha/Bohr³], xx, yy, zz, xy, xz, yz.
 std::array<double, 6>
 gpw_stress_fd_impl(const std::vector<GpwAtom>& atoms, const GpwDft& method,
                    double h = 2e-3,

@@ -18,8 +18,8 @@
 #include <xsimd/xsimd.hpp>
 #endif
 
+#include "atomiverse/core/pair_kernel.h"
 #include "atomiverse/core/units.h"
-#include "atomiverse/cuda/potentials/pair_kernel.h"
 
 using namespace ATV;
 using potentials::CoulKernel;
@@ -55,12 +55,12 @@ TEST(PairKernel, LJMatchesClosedForm) {
 
 TEST(PairKernel, CoulMatchesClosedForm) {
     const double alpha = 0.30, cutoff = 10.0, qi = 1.0, qj = -1.0;
-    CoulKernel coul{units::coulomb, alpha, cutoff * cutoff};
+    CoulKernel coul{units::UnitSystem::lj().qqrd2e(), alpha, cutoff * cutoff};
     const double r = 4.2, r2 = r * r;
 
     auto c = coul.operator()<double>(r2, qi, qj);
 
-    const double pref = units::coulomb * qi * qj / r;
+    const double pref = units::UnitSystem::lj().qqrd2e() * qi * qj / r;
     const double e_ref = pref * std::erfc(alpha * r);
     const double f_ref =
         pref
@@ -75,7 +75,7 @@ TEST(PairKernel, CoulMatchesClosedForm) {
 TEST(PairKernel, BatchLanesAgreeWithScalar) {
     using batch = xsimd::batch<double>;
     auto lj = make_lj(0.0104, 3.4, 10.0);
-    CoulKernel coul{units::coulomb, 0.30, 100.0};
+    CoulKernel coul{units::UnitSystem::lj().qqrd2e(), 0.30, 100.0};
 
     // Distinct r per lane, all inside cutoff.
     alignas(batch::arch_type::alignment()) double r2v[batch::size];
@@ -108,7 +108,7 @@ TEST(PairKernel, BatchLanesAgreeWithScalar) {
 
 TEST(PairKernel, SumComposesLJAndCoul) {
     auto lj = make_lj(0.0104, 3.4, 10.0);
-    CoulKernel coul{units::coulomb, 0.30, 100.0};
+    CoulKernel coul{units::UnitSystem::lj().qqrd2e(), 0.30, 100.0};
     SumKernel<LJKernel, CoulKernel> both{lj, coul};
     const double r2 = 4.0 * 4.0;
 
@@ -120,9 +120,10 @@ TEST(PairKernel, SumComposesLJAndCoul) {
 }
 
 TEST(PairKernel, CutoffMaskedPerTerm) {
-    auto lj = make_lj(0.0104, 3.4, 5.0);         // LJ cutoff 5
-    CoulKernel coul{units::coulomb, 0.30, 49.0}; // Coulomb cutoff 7
-    const double r2 = 6.0 * 6.0;                 // inside Coulomb, outside LJ
+    auto lj = make_lj(0.0104, 3.4, 5.0); // LJ cutoff 5
+    CoulKernel coul{units::UnitSystem::lj().qqrd2e(), 0.30,
+                    49.0};       // Coulomb cutoff 7
+    const double r2 = 6.0 * 6.0; // inside Coulomb, outside LJ
 
     auto cl = lj.operator()<double>(r2, 1.0, -1.0);
     auto cc = coul.operator()<double>(r2, 1.0, -1.0);

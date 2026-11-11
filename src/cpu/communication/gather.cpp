@@ -84,9 +84,8 @@ void copy_owners_into(GatheredFrame& out, const Frame& frame, int n_local) {
     const AccReal* fz = frame.span(kAtom_fz).data();
     const StorageReal* mass = frame.span(kAtom_mass).data();
     const StorageReal* charge = frame.span(kAtom_charge).data();
-    const int* type = frame.span(kAtom_type).data();
     const TagInt* tag = frame.span(kAtom_tag).data();
-    const std::int8_t* image = frame.span(kAtom_image).data();
+    const ImageInt* image = frame.span(kAtom_image).data();
     auto copy = [](auto& destination, const auto* source, std::size_t count) {
         destination.resize(count);
         if (count != 0)
@@ -104,13 +103,21 @@ void copy_owners_into(GatheredFrame& out, const Frame& frame, int n_local) {
     copy(out.fz, fz, rows);
     copy(out.mass, mass, rows);
     copy(out.charge, charge, rows);
-    copy(out.type, type, rows);
+    // The identity columns travel only when the Frame carries them.
+    if (frame.has("atoms", kAtom_type.key))
+        copy(out.type.emplace(), frame.span(kAtom_type).data(), rows);
+    if (frame.has("atoms", kAtom_atomic_number.key))
+        copy(out.atomic_number.emplace(),
+             frame.span(kAtom_atomic_number).data(), rows);
     copy(out.tag, tag, rows);
     copy(out.image, image,
          checked_product(rows, std::size_t{3}, "gather/image"));
     copy_runtime_columns(out, frame, n_local, migrated_columns(frame));
 }
 
+// Owners are returned in tag order at every rank count: spatial sorting
+// reorders rows even on one rank, and the gathered frame is the API's
+// deterministic view of the system, not a snapshot of the row layout.
 void sort_by_tag(GatheredFrame& gathered) {
     const int n = gathered.n_total;
     if (n <= 1)
@@ -141,15 +148,17 @@ void sort_by_tag(GatheredFrame& gathered) {
     permute(gathered.fz);
     permute(gathered.mass);
     permute(gathered.charge);
-    permute(gathered.type);
+    if (gathered.type)
+        permute(*gathered.type);
+    if (gathered.atomic_number)
+        permute(*gathered.atomic_number);
     permute(gathered.tag);
 
-    std::vector<std::int8_t> reordered_image(gathered.image.size());
+    std::vector<ImageInt> reordered_image(gathered.image.size());
     for (int i = 0; i < n; ++i) {
         const int source = permutation[i];
         std::memcpy(reordered_image.data() + 3 * i,
-                    gathered.image.data() + 3 * source,
-                    3 * sizeof(std::int8_t));
+                    gathered.image.data() + 3 * source, 3 * sizeof(ImageInt));
     }
     gathered.image.swap(reordered_image);
 
@@ -182,7 +191,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
     out.box = frame.box.cell();
 
     if (dd.cart_comm == MPI_COMM_NULL) {
-        copy_owners_into(out, frame, dd.n_local);
+        copy_owners_into(out, frame, frame.nlocal());
+        sort_by_tag(out);
         return out;
     }
 
@@ -198,17 +208,18 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         throw std::invalid_argument(
             "gather_to_root: root rank is invalid or differs across ranks");
     if (world_size <= 1) {
-        copy_owners_into(out, frame, dd.n_local);
+        copy_owners_into(out, frame, frame.nlocal());
+        sort_by_tag(out);
         return out;
     }
 
     const std::vector<ColumnRef> fields = migrated_columns(frame);
     comm::require_collective_fingerprint(
-        comm::kAtomWireVersion, comm::column_schema_fingerprint(fields),
-        dd.cart_comm, "gather_to_root");
+        comm::column_schema_fingerprint(fields), dd.cart_comm,
+        "gather_to_root");
 
     const int local_range_valid =
-        dd.n_local >= 0 && dd.n_local <= frame.capacity();
+        frame.nlocal() >= 0 && frame.nlocal() <= frame.capacity();
     int all_ranges_valid = 0;
     MPI_Allreduce(&local_range_valid, &all_ranges_valid, 1, MPI_INT, MPI_MIN,
                   dd.cart_comm);
@@ -216,7 +227,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         throw std::out_of_range(
             "gather_to_root: owner range is outside Frame capacity");
 
-    const std::int64_t local_count = dd.n_local;
+    const std::int64_t local_count = frame.nlocal();
     std::int64_t global_count = 0;
     MPI_Allreduce(&local_count, &global_count, 1, MPI_INT64_T, MPI_SUM,
                   dd.cart_comm);
@@ -228,7 +239,7 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
     std::vector<int> counts;
     if (rank == root)
         counts.resize(static_cast<std::size_t>(world_size));
-    const int n_local = dd.n_local;
+    const int n_local = frame.nlocal();
     MPI_Gather(&n_local, 1, MPI_INT, rank == root ? counts.data() : nullptr, 1,
                MPI_INT, root, dd.cart_comm);
 
@@ -254,7 +265,6 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
         out.fz.resize(n_total);
         out.mass.resize(n_total);
         out.charge.resize(n_total);
-        out.type.resize(n_total);
         out.tag.resize(n_total);
         out.image.resize(static_cast<std::size_t>(n_total) * 3);
     }
@@ -285,7 +295,17 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
     gather_native(frame.span(kAtom_fz).data(), out.fz, MPI_DOUBLE);
     gather_native(frame.span(kAtom_mass).data(), out.mass, storage_mpi);
     gather_native(frame.span(kAtom_charge).data(), out.charge, storage_mpi);
-    gather_native(frame.span(kAtom_type).data(), out.type, MPI_INT);
+    // Identity columns: present on every rank or on none (the migration
+    // and broadcast schema fingerprints already agree across ranks).
+    if (frame.has("atoms", kAtom_type.key)) {
+        out.type.emplace(rank == root ? n_total : 0);
+        gather_native(frame.span(kAtom_type).data(), *out.type, MPI_INT);
+    }
+    if (frame.has("atoms", kAtom_atomic_number.key)) {
+        out.atomic_number.emplace(rank == root ? n_total : 0);
+        gather_native(frame.span(kAtom_atomic_number).data(),
+                      *out.atomic_number, MPI_INT);
+    }
     gather_native(frame.span(kAtom_tag).data(), out.tag, tag_mpi);
 
     std::vector<int> image_counts;
@@ -300,17 +320,18 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
                 3 * displacements[static_cast<std::size_t>(r)];
         }
     }
-    MPI_Gatherv(frame.span(kAtom_image).data(), 3 * n_local, MPI_INT8_T,
+    static_assert(std::is_same_v<ImageInt, std::int32_t>,
+                  "gather_to_root ships images as MPI_INT32_T");
+    MPI_Gatherv(frame.span(kAtom_image).data(), 3 * n_local, MPI_INT32_T,
                 rank == root ? out.image.data() : nullptr,
                 rank == root ? image_counts.data() : nullptr,
-                rank == root ? image_displacements.data() : nullptr, MPI_INT8_T,
-                root, dd.cart_comm);
+                rank == root ? image_displacements.data() : nullptr,
+                MPI_INT32_T, root, dd.cart_comm);
 
     for (const ColumnRef& field : fields) {
         if (field.wire_id != kDynamicFieldId)
             continue;
         comm::require_collective_fingerprint(
-            comm::kAtomWireVersion,
             static_cast<std::uint64_t>(field.row_bytes()), dd.cart_comm,
             "gather_to_root/runtime-width");
         const std::size_t row_bytes = field.row_bytes();
@@ -369,7 +390,8 @@ GatheredFrame gather_to_root(const cpu::Frame& frame,
                              const DomainDecomposition& dd, int root) {
     GatheredFrame out;
     out.root_rank = root;
-    copy_owners_into(out, frame, dd.n_local);
+    copy_owners_into(out, frame, frame.nlocal());
+    sort_by_tag(out);
     return out;
 }
 
@@ -395,13 +417,20 @@ cpu::Frame to_frame(const GatheredFrame& gathered) {
     require_rows(gathered.fz.size(), "fz");
     require_rows(gathered.mass.size(), "mass");
     require_rows(gathered.charge.size(), "charge");
-    require_rows(gathered.type.size(), "type");
+    if (gathered.type)
+        require_rows(gathered.type->size(), "type");
+    if (gathered.atomic_number)
+        require_rows(gathered.atomic_number->size(), "atomic_number");
     require_rows(gathered.tag.size(), "tag");
     if (gathered.image.size() != static_cast<std::size_t>(n) * 3)
         throw std::invalid_argument("to_frame: image has inconsistent rows");
 
     cpu::Frame frame(n);
     frame.box.set_cell(gathered.box);
+    if (!gathered.type)
+        frame.block("atoms").erase(kAtom_type.key);
+    if (!gathered.atomic_number)
+        frame.block("atoms").erase(kAtom_atomic_number.key);
     for (const GatheredColumn& column : gathered.runtime_columns) {
         frame.block("atoms").insert(
             column.key,
@@ -428,8 +457,13 @@ cpu::Frame to_frame(const GatheredFrame& gathered) {
               frame.span(kAtom_mass).data());
     std::copy(gathered.charge.begin(), gathered.charge.end(),
               frame.span(kAtom_charge).data());
-    std::copy(gathered.type.begin(), gathered.type.end(),
-              frame.span(kAtom_type).data());
+    if (gathered.type)
+        std::copy(gathered.type->begin(), gathered.type->end(),
+                  frame.span(kAtom_type).data());
+    if (gathered.atomic_number)
+        std::copy(gathered.atomic_number->begin(),
+                  gathered.atomic_number->end(),
+                  frame.span(kAtom_atomic_number).data());
     std::copy(gathered.tag.begin(), gathered.tag.end(),
               frame.span(kAtom_tag).data());
     std::copy(gathered.image.begin(), gathered.image.end(),

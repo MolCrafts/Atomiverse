@@ -2,12 +2,16 @@
 /// @brief CPU affine box-deformation driver (single-axis uniaxial strain).
 #pragma once
 
+#include "atomiverse/cpu/component/timestep_protocol.h"
+#include <cmath>
+#include <stdexcept>
+
 #include <string>
 #include <vector>
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/component/integrator.h"
+#include "atomiverse/cpu/component/component.h"
 
 namespace ATV {
 namespace cpu {
@@ -51,7 +55,7 @@ namespace md {
 /// | Sign convention     | `+R` = stretch, `-R` = compress                  | `+rate` = stretch, `-rate` = compress     | aligned  |
 /// | Axis selection      | per-axis `x`/`y`/`z` keywords                    | `int axis` (0 = x, 1 = y, 2 = z)          | aligned  |
 /// | Remap               | `remap x` (default) -- affine atom remap         | always affine remap (= `remap x`)         | aligned  |
-/// | `remap none` / `v`  | optional non-affine remap modes                  | not supported (deferred, out of scope)    | gap      |
+/// | `remap none` / `v`  | optional non-affine remap modes                  | not here; `NvtSllod` owns `remap v`       | gap      |
 /// | `vel`/`final`/`delta` modes | absolute-velocity / target-length modes  | not supported (deferred, out of scope)    | gap      |
 ///
 /// `erate` and `trate` coincide only to first order in `R*t`; `trate`
@@ -59,8 +63,18 @@ namespace md {
 ///
 /// Bound at `initial_integrate @ +200`, after VelocityVerlet (+0) and
 /// NoseHoover (+100).
-class Deform : public cpu::Integrator {
+class Deform : public cpu::Component, public cpu::TimestepConsumer {
   public:
+    /// @brief Consume the enclosing integrator's timestep [fs].
+    cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
+    bool timestep_required() const override { return false; }
+    void set_timestep(double timestep) override {
+        if (!std::isfinite(timestep) || timestep <= 0.0)
+            throw std::invalid_argument(
+                "Deform: timestep must be finite and positive");
+        dt_ = timestep;
+    }
+
     /// @brief Per-axis strain mode -- mirrors LAMMPS `fix deform` keywords.
     enum class Mode {
         /// Engineering strain: target edge `L = L0*(1 + R*t_elapsed)`,
@@ -117,7 +131,7 @@ class Deform : public cpu::Integrator {
     double dt_;      ///< MD step size [fs]
     int axis_;       ///< deformed axis: 0=x, 1=y, 2=z
     double L0_{0.0}; ///< deformed-axis edge at activation [Angstrom]
-    int origin_step_{
+    BigInt origin_step_{
         -1}; ///< step index at activation; -1 = not yet snapshotted
 };
 

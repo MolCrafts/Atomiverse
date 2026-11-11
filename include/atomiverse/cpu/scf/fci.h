@@ -1,5 +1,5 @@
 /// @file cpu/scf/fci.h
-/// @brief Tiny full CI (public API) — use `RHF::fci(frame)`.
+/// @brief Tiny full CI (public API) — use `FCI<RHF>{rhf}.run(frame)`.
 #pragma once
 
 namespace ATV {
@@ -12,7 +12,7 @@ struct FCIResult {
     double e_corr; ///< Correlation energy e_fci - scf.energy [Hartree] (<= 0).
 };
 
-// Pack-based entry is private — see internal/fci_pack.h. Public: RHF::fci.
+// Pack-based entry is private — see internal/fci_pack.h. Public: FCI<RHF> (post_hf.h).
 
 } // namespace scf
 } // namespace cpu

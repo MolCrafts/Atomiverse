@@ -3,7 +3,7 @@
 ///
 /// The optimizer algorithms (LBFGS, CG) and the OptLog recorder compute
 /// inner products and force/displacement metrics over the owned rows
-/// `[0, dd->n_local)`; under multi-rank these per-rank partials must be
+/// `[0, frame.nlocal())`; under multi-rank these per-rank partials must be
 /// combined before any decision (step size, Armijo accept/reject,
 /// convergence verdict) so every rank acts identically. These helpers
 /// wrap the `MPI_Allreduce` with the standard single-rank /
@@ -13,9 +13,14 @@
 /// never behind a rank-dependent branch.
 #pragma once
 
+#include "atomiverse/cpu/component/owned_range.h"
+#include <cmath>
+#include <stdexcept>
+
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/minimize/vector_loop.h"
 
 #ifdef ATV_HAS_MPI
 #include <mpi.h>
@@ -72,6 +77,34 @@ inline void global_max(const cpu::LaunchContext& ctx, double* vals, int n) {
 inline double global_max(const cpu::LaunchContext& ctx, double v) {
     global_max(ctx, &v, 1);
     return v;
+}
+
+/// @brief Reject nonfinite owned forces on every spatial rank before updates.
+/// Ghost and unused capacity rows do not participate in optimizer state.
+/// @param fx,fy,fz Force columns the caller resolved once per launch; a
+///        line-search trial loop must not re-resolve them per sample.
+inline void require_finite_forces(const cpu::LaunchContext& ctx,
+                                  const AccReal* fx, const AccReal* fy,
+                                  const AccReal* fz) {
+    // Branch-free so the scan vectorises: it runs at every optimizer phase
+    // and after every line-search trial.
+    int invalid = 0;
+    const int n = owned_count(ctx);
+#pragma omp parallel for simd schedule(static)                                 \
+    reduction(| : invalid) if (parallel : n >= kParallelMinElements)
+    for (int i = 0; i < n; ++i)
+        invalid |= !std::isfinite(fx[i]) | !std::isfinite(fy[i])
+                   | !std::isfinite(fz[i]);
+    if (global_max(ctx, invalid != 0 ? 1.0 : 0.0) != 0)
+        throw std::runtime_error("Optimizer: nonfinite force on an owned atom");
+}
+
+/// @brief Same check, resolving the force columns here (once per launch).
+inline void require_finite_forces(const cpu::LaunchContext& ctx) {
+    const AccReal* fx = ctx.frame.span(kAtom_fx);
+    const AccReal* fy = ctx.frame.span(kAtom_fy);
+    const AccReal* fz = ctx.frame.span(kAtom_fz);
+    require_finite_forces(ctx, fx, fy, fz);
 }
 
 } // namespace minimizer

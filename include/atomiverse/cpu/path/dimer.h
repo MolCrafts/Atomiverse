@@ -23,7 +23,8 @@ class Dimer {
     double dR = 0.05;
     /// @brief Rotation iterations per translation step.
     int max_rotations = 8;
-    /// @brief Stop rotating when |F_perp| < rot_tol [eV/Å].
+    /// @brief Stop rotating when the rotational force |(F1 − F2)_⊥| <
+    ///        rot_tol [eV/Å].
     double rot_tol = 1e-3;
     /// @brief Converge when |F_mod| < f_tol [eV/Å].
     double f_tol = 0.05;
@@ -51,6 +52,10 @@ class Dimer {
     void eval_force_(cpu::Frame& f);
     void normalize3_(double& x, double& y, double& z) const;
     void random_mode_(std::uint64_t seed);
+    /// @brief F(mid + δN) − F(mid − δN) on atom 0 [eV/Å].
+    void end_force_difference_(const cpu::Frame& mid, cpu::Frame& f1,
+                               cpu::Frame& f2, double nx, double ny, double nz,
+                               double& dfx, double& dfy, double& dfz);
 
     ForceFn force_fn_;
     bool use_test_pot_ = false;

@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/qmmm_mechanical.cpp
 #include "atomiverse/cpu/multiscale/qmmm_mechanical.h"
+#include "atomiverse/cpu/component/owned_range.h"
 
 #include <cmath>
 #include <unordered_set>
@@ -15,7 +16,8 @@ namespace {
 /// Classical QM–MM Coulomb pair sum (min-image, cutoff), both sides from
 /// kAtom_charge. Returns energy [eV]; optionally accumulates forces [eV/Å].
 double classical_qmmm_coulomb(Frame& frame, const std::vector<int>& qm_rows,
-                              double cutoff, bool forces_requested) {
+                              double cutoff, bool forces_requested,
+                              double qqrd2e) {
     if (qm_rows.empty() || !(cutoff > 0.0))
         return 0.0;
     const int n = static_cast<int>(frame.nlocal());
@@ -33,7 +35,7 @@ double classical_qmmm_coulomb(Frame& frame, const std::vector<int>& qm_rows,
     }
     std::unordered_set<int> qm_set(qm_rows.begin(), qm_rows.end());
     const double rc2 = cutoff * cutoff;
-    const double ke = units::coulomb; // eV·Å/e²
+    const double ke = qqrd2e;
     double e = 0.0;
     for (int iq : qm_rows) {
         const double qi = static_cast<double>(charge[iq]);
@@ -76,14 +78,16 @@ QmmmMechanical::QmmmMechanical(std::vector<LJTypeCoeff> cross_lj,
 
 void QmmmMechanical::build(const BuildContext& ctx) {
     // Any QmEngine; embedding never required.
-    sub_.build(ctx.frame, ctx.runtime.mpi_size, /*require_embedding=*/false);
+    sub_.build(ctx, cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.mpi_size : 1,
+               /*require_embedding=*/false);
 }
 
 void QmmmMechanical::launch(const LaunchContext& ctx) {
-    sub_.launch(ctx.frame, ctx.forces_requested, e_qm_);
+    sub_.launch(ctx, e_qm_);
     e_vdw_ = vdw_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested);
     e_coul_ = classical_qmmm_coulomb(ctx.frame, sub_.qm_rows(), coul_cutoff_,
-                                     ctx.forces_requested);
+                                     ctx.forces_requested,
+                                     ctx.runtime.units.qqrd2e());
     ctx.frame.meta.get(kEnergy) += e_vdw_ + e_coul_;
     // Classical terms are not electronic.
 }

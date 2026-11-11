@@ -95,7 +95,8 @@ TEST(PppmBrickParity, StaticMadelungForceOn1And2Ranks) {
     sim.build();
     sim.run(frame, 1);
 
-    const double e_ref = -0.5 * kN * kMadelung * units::coulomb / kD;
+    const double e_ref =
+        -0.5 * kN * kMadelung * units::UnitSystem::lj().qqrd2e() / kD;
     const double E = frame.meta.get(ATV::kEnergy);
     const double rel = std::fabs(E / e_ref - 1.0);
     EXPECT_LT(rel, kStaticEnergyRel)
@@ -160,7 +161,8 @@ TEST(PppmBrickParity, OneRankAgreesWithTwoRankEnergy) {
     sim.build();
     sim.run(frame, 1);
     const double E = frame.meta.get(ATV::kEnergy);
-    const double e_ref = -0.5 * kN * kMadelung * units::coulomb / kD;
+    const double e_ref =
+        -0.5 * kN * kMadelung * units::UnitSystem::lj().qqrd2e() / kD;
 
     // Publish E to rank 0 for logging; both sizes independently hit Madelung.
     double E_root = E;
@@ -169,13 +171,4 @@ TEST(PppmBrickParity, OneRankAgreesWithTwoRankEnergy) {
         EXPECT_NEAR(E_root / e_ref, 1.0, kStaticEnergyRel)
             << "world=" << world_size << " E=" << E_root;
     }
-}
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
 }

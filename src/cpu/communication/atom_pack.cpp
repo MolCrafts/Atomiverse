@@ -1,5 +1,12 @@
 /// @file src/cpu/communication/atom_pack.cpp
 /// @brief Native-dtype schema-compiled Frame row packing.
+///
+/// The forward and border gather/scatter follow LAMMPS AtomVec
+/// (src/atom_vec.cpp, e8c4c278a8), adapted to Atomiverse's column storage.
+/// Copyright (2003) Sandia Corporation. Under the terms of Contract
+/// DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+/// certain rights in this software. Distributed under the GNU General
+/// Public License (GPL-2.0-only).
 
 #include "atomiverse/cpu/communication/atom_pack.h"
 
@@ -114,7 +121,6 @@ void hash_fields(std::uint64_t& hash, const std::vector<ColumnRef>& fields) {
 
 std::uint64_t fingerprint(PackKind kind, const std::vector<ColumnRef>& fields) {
     std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, kAtomWireVersion);
     hash_value(hash, kind);
     hash_fields(hash, fields);
     return hash;
@@ -259,7 +265,6 @@ void append_field(Writer& writer, const ColumnRef& col, int row,
 
 bool PackPlan::valid_for(const Frame& frame) const noexcept {
     return frame_owner == &frame && owner != nullptr
-           && version == kAtomWireVersion
            && frame.meta.generation() == frame_generation
            && owner->generation() == block_generation;
 }
@@ -267,8 +272,7 @@ bool PackPlan::valid_for(const Frame& frame) const noexcept {
 void PackPlan::validate(const Frame& frame) const {
     if (frame_owner != &frame || owner == nullptr)
         throw stale_handle_error("PackPlan belongs to a different Frame");
-    if (version != kAtomWireVersion
-        || frame.meta.generation() != frame_generation
+    if (frame.meta.generation() != frame_generation
         || owner->generation() != block_generation)
         throw stale_handle_error(
             "PackPlan is stale after a Frame schema/capacity mutation");
@@ -288,7 +292,6 @@ PackPlan make_wire_plan(const Frame& frame, PackKind kind,
 
 std::uint64_t column_schema_fingerprint(const std::vector<ColumnRef>& fields) {
     std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, kAtomWireVersion);
     hash_fields(hash, fields);
     return hash;
 }
@@ -300,15 +303,12 @@ PackPlan make_exchange_plan(Frame& frame) {
     return make_plan(frame, PackKind::Exchange);
 }
 void require_schema_fingerprint(const PackPlan& local,
-                                std::uint64_t remote_fingerprint,
-                                std::uint32_t remote_version) {
-    if (remote_version == local.version
-        && remote_fingerprint == local.fingerprint)
+                                std::uint64_t remote_fingerprint) {
+    if (remote_fingerprint == local.fingerprint)
         return;
     std::ostringstream message;
-    message << "Frame wire schema mismatch: local v" << local.version << "/0x"
-            << std::hex << local.fingerprint << ", remote v" << std::dec
-            << remote_version << "/0x" << std::hex << remote_fingerprint;
+    message << "Frame wire schema mismatch: local 0x" << std::hex
+            << local.fingerprint << ", remote 0x" << remote_fingerprint;
     throw std::runtime_error(message.str());
 }
 
@@ -325,25 +325,6 @@ std::size_t packer_bytes(int n_atoms, int nsize) {
                                    static_cast<std::size_t>(nsize),
                                    "packer wire"),
                        sizeof(double), "packer wire");
-}
-
-static std::size_t comm_bytes(const PackPlan& plan, int n) {
-    if (plan.kind != PackKind::Comm || n < 0)
-        throw std::invalid_argument("comm_bytes received the wrong plan/count");
-    std::size_t per_row = 0;
-    for (const ColumnRef& col : plan.fields)
-        per_row = checked_add(per_row, col.row_bytes());
-    return checked_mul(static_cast<std::size_t>(n), per_row);
-}
-
-static std::size_t border_bytes(const PackPlan& plan, int n) {
-    if (plan.kind != PackKind::Border || n < 0)
-        throw std::invalid_argument(
-            "border_bytes received the wrong plan/count");
-    std::size_t per_row = 0;
-    for (const ColumnRef& col : plan.fields)
-        per_row = checked_add(per_row, col.row_bytes());
-    return checked_mul(static_cast<std::size_t>(n), per_row);
 }
 
 static std::size_t max_exchange_bytes(const Frame& frame,
@@ -367,23 +348,9 @@ namespace {
 
 /// @brief True when every column on the wire is a scalar (`cols == 1`).
 ///
-/// An all-scalar wire travels FIELD-major: each column is one sequential
-/// read stream feeding one contiguous write, and the matching unpack is one
-/// block copy per column into the (contiguous) ghost slots. Production is
-/// this shape on every wire — refresh x/y/z, plus vx/vy/vz when a style
-/// reads a neighbour's velocity; creation x/y/z/tag/type; reverse fx/fy/fz —
-/// so declaring one more scalar field does not drop the wire off a cliff.
-///
-/// A multi-component column (`image`, a 3-wide plugin column) puts the whole
-/// wire back on the row-major arm: a field-major stream for `cols > 1` would
-/// need a per-column stride the reader does not carry.
-///
-/// **Pack and unpack must test this identical predicate.** They once did
-/// not: unpack additionally required `plan.writable` inside the fast-path
-/// condition while pack had no such term, so a conforming-but-non-writable
-/// plan packed field-major and unpacked row-major — same byte count, so the
-/// length check passed, and the ghosts silently took the wrong values.
-/// Writability is now checked before either layout is chosen.
+/// Forward and border pack/unpack use the same layout rule. Scalar fields
+/// travel field-major so each field unpacks into one contiguous ghost run.
+/// A multi-component field puts the whole wire in row-major order.
 inline bool plan_is_all_scalar(const PackPlan& plan) {
     if (plan.fields.empty())
         return false;
@@ -393,71 +360,70 @@ inline bool plan_is_all_scalar(const PackPlan& plan) {
     return true;
 }
 
-/// @brief Field-major gather for an all-scalar wire, shared by the refresh
-///        and border passes.
-///
-/// The PBC image shift is applied exactly where `append_field` applies it —
-/// a column flagged `kColPbcShift`, on the axis its `wire_id` names — so the
-/// two layouts cannot disagree about which columns move.
-///
-/// @param frame Frame being read.
-/// @param plan Compiled all-scalar wire.
-/// @param sendlist Rows to gather.
-/// @param n Row count.
-/// @param shift Per-axis image shift [Å].
-/// @param out Wire buffer.
-/// @param capacity Bytes available at `out`.
-/// @param bytes Exact payload size for `n` rows.
-/// @return Bytes written.
-std::size_t pack_scalar_field_major(const Frame& frame, const PackPlan& plan,
-                                    const int* sendlist, int n,
-                                    const double shift[3], std::byte* out,
-                                    std::size_t capacity, std::size_t bytes) {
-    if (bytes > capacity)
-        throw std::length_error("field-major wire buffer too small");
-    for (const ColumnRef& col : plan.fields)
-        col.validate();
-    // A band-scan send list is often the identity range; that case is one
-    // block copy (or one shifted stream) per column.
-    const bool contiguous = n > 0 && sendlist[n - 1] - sendlist[0] == n - 1;
-    std::byte* cursor = out;
+template <std::size_t Width>
+void gather_scalar(const std::byte* src, const int* rows, int n,
+                   std::byte* dst) {
+    for (int k = 0; k < n; ++k)
+        std::memcpy(dst + static_cast<std::size_t>(k) * Width,
+                    src + static_cast<std::size_t>(rows[k]) * Width, Width);
+}
+
+/// Field-major gather for the scalar forward and border wires.
+void pack_scalar_field_major(const Frame& frame, const PackPlan& plan,
+                             const int* rows, int n, const double shift[3],
+                             std::byte* out) {
+    const int first = rows[0];
+    const int capacity = frame.capacity();
+    bool valid = true;
+    bool contiguous = true;
+    // Check the indices once for all fields. Matching endpoints alone does
+    // not prove that the indices between them are ordered or even in range.
+    for (int k = 0; k < n; ++k) {
+        const int row = rows[k];
+        valid &= row >= 0 && row < capacity;
+        contiguous &= static_cast<std::int64_t>(row) - first == k;
+    }
+    if (!valid)
+        throw std::out_of_range("Frame pack row is outside capacity");
+
     for (const ColumnRef& col : plan.fields) {
         const std::size_t elem = col.row_bytes();
+        // PackPlan::pack validated every descriptor before selecting the layout.
+        const auto* src = static_cast<const std::byte*>(col.read_data);
+        const auto run_bytes = static_cast<std::size_t>(n) * elem;
         if ((col.flags & kColPbcShift) != 0) {
             if (col.dtype != ColDType::Storage || col.wire_id > 2)
                 throw column_error("position halo column has invalid schema");
-            auto* __restrict dst = reinterpret_cast<StorageReal*>(cursor);
-            const auto* __restrict src =
+            const auto* positions =
                 static_cast<const StorageReal*>(col.read_data);
-            const StorageReal off =
-                static_cast<StorageReal>(shift[col.wire_id]);
-            if (contiguous) {
-                const StorageReal* __restrict run = src + sendlist[0];
-                if (off == StorageReal(0))
-                    std::memcpy(dst, run,
-                                static_cast<std::size_t>(n)
-                                    * sizeof(StorageReal));
-                else
-                    for (int k = 0; k < n; ++k)
-                        dst[k] = run[k] + off;
+            const auto offset = static_cast<StorageReal>(shift[col.wire_id]);
+            if (contiguous && offset == StorageReal{0}) {
+                std::memcpy(out, positions + first, run_bytes);
             } else {
-                for (int k = 0; k < n; ++k)
-                    dst[k] = src[sendlist[k]] + off;
+                for (int k = 0; k < n; ++k) {
+                    const StorageReal value =
+                        positions[contiguous ? first + k : rows[k]] + offset;
+                    // Earlier fields can leave a native value unaligned.
+                    std::memcpy(
+                        out + static_cast<std::size_t>(k) * sizeof(value),
+                        &value, sizeof(value));
+                }
             }
-        } else if (contiguous && elem > 0) {
-            std::memcpy(cursor, row_ptr(col, sendlist[0]),
-                        static_cast<std::size_t>(n) * elem);
+        } else if (contiguous) {
+            std::memcpy(out, src + static_cast<std::size_t>(first) * elem,
+                        run_bytes);
+        } else if (elem == sizeof(std::uint32_t)) {
+            gather_scalar<sizeof(std::uint32_t)>(src, rows, n, out);
+        } else if (elem == sizeof(std::uint64_t)) {
+            gather_scalar<sizeof(std::uint64_t)>(src, rows, n, out);
         } else {
-            for (int k = 0; k < n; ++k) {
-                validate_row(frame, sendlist[k]);
-                if (elem != 0)
-                    std::memcpy(cursor + static_cast<std::size_t>(k) * elem,
-                                row_ptr(col, sendlist[k]), elem);
-            }
+            for (int k = 0; k < n; ++k)
+                std::memcpy(out + static_cast<std::size_t>(k) * elem,
+                            src + static_cast<std::size_t>(rows[k]) * elem,
+                            elem);
         }
-        cursor += static_cast<std::size_t>(n) * elem;
+        out += run_bytes;
     }
-    return bytes;
 }
 
 /// @brief Scatter the field-major wire into contiguous ghost slots.
@@ -467,8 +433,6 @@ std::size_t pack_scalar_field_major(const Frame& frame, const PackPlan& plan,
 /// @param data Wire buffer.
 void unpack_scalar_field_major(const PackPlan& plan, int n, int first,
                                const std::byte* data) {
-    for (const ColumnRef& col : plan.fields)
-        col.validate();
     const std::byte* cursor = data;
     for (const ColumnRef& col : plan.fields) {
         const std::size_t run = static_cast<std::size_t>(n) * col.row_bytes();
@@ -479,117 +443,6 @@ void unpack_scalar_field_major(const PackPlan& plan, int n, int first,
 }
 
 } // namespace
-
-std::size_t pack_comm_wire(const Frame& frame, const PackPlan& plan,
-                           const int* sendlist, int n, double sx, double sy,
-                           double sz, std::byte* out, std::size_t capacity) {
-    plan.validate(frame);
-    if (plan.kind != PackKind::Comm || n < 0)
-        throw std::invalid_argument("pack_comm received wrong plan/count");
-    const std::array<double, 3> shift{sx, sy, sz};
-    // LAMMPS `AtomVec::pack_comm` shape adapted to SoA columns. The refresh
-    // wire is x/y/z, plus whatever a `step`-freshness read added — all
-    // scalar, so it stays field-major however many columns it has.
-    if (plan_is_all_scalar(plan))
-        return pack_scalar_field_major(frame, plan, sendlist, n, shift.data(),
-                                       out, capacity, comm_bytes(plan, n));
-    // General wire: ROW-major, columns in plan order. This is what a
-    // multi-component plugin column rides (`Block::insert`), exercised by
-    // tests/cpu/communication/test_atom_pack_generic_wire.cpp.
-    Writer writer(out, capacity);
-    for (int k = 0; k < n; ++k) {
-        const int row = sendlist[k];
-        validate_row(frame, row);
-        for (const ColumnRef& col : plan.fields)
-            append_field(writer, col, row, shift.data());
-    }
-    return writer.size();
-}
-
-void unpack_comm_wire(Frame& frame, const PackPlan& plan, int n, int first,
-                      const std::byte* data, std::size_t size) {
-    plan.validate(frame);
-    if (plan.kind != PackKind::Comm || n < 0 || first < 0
-        || first + n > frame.capacity())
-        throw std::invalid_argument("unpack_comm received invalid range/plan");
-    if (size != comm_bytes(plan, n))
-        throw std::length_error("unpack_comm payload size mismatch");
-    // Writability is a precondition of BOTH layouts, checked before either
-    // is chosen — see `plan_is_all_scalar`.
-    if (!plan.writable)
-        throw column_error(
-            "unpack_comm needs a writable plan; this one was compiled "
-            "from a const Frame. Rebuild it with make_wire_plan(Frame&, "
-            "kind, schema).");
-    if (plan_is_all_scalar(plan)) {
-        unpack_scalar_field_major(plan, n, first, data);
-        return;
-    }
-    Reader reader(data, size);
-    for (int k = 0; k < n; ++k) {
-        for (const ColumnRef& col : plan.fields) {
-            const std::size_t bytes = col.row_bytes();
-            std::byte* dst = mutable_row_ptr(col, first + k);
-            const std::byte* src = reader.take(bytes);
-            if (bytes != 0)
-                std::memcpy(dst, src, bytes);
-        }
-    }
-}
-
-std::size_t pack_border_wire(const Frame& frame, const PackPlan& plan,
-                             const int* sendlist, int n, double sx, double sy,
-                             double sz, std::byte* out, std::size_t capacity) {
-    plan.validate(frame);
-    if (plan.kind != PackKind::Border || n < 0)
-        throw std::invalid_argument("pack_border received wrong plan/count");
-    const std::array<double, 3> shift{sx, sy, sz};
-    // Same layout rule as the refresh wire, same code: all-scalar is
-    // field-major, a multi-component column (`image` on a plugin wire)
-    // drops to row-major.
-    if (plan_is_all_scalar(plan))
-        return pack_scalar_field_major(frame, plan, sendlist, n, shift.data(),
-                                       out, capacity, border_bytes(plan, n));
-    Writer writer(out, capacity);
-    for (int k = 0; k < n; ++k) {
-        const int row = sendlist[k];
-        validate_row(frame, row);
-        for (const ColumnRef& col : plan.fields)
-            append_field(writer, col, row, shift.data());
-    }
-    return writer.size();
-}
-
-void unpack_border_wire(Frame& frame, const PackPlan& plan, int n, int first,
-                        const std::byte* data, std::size_t size) {
-    plan.validate(frame);
-    if (plan.kind != PackKind::Border || n < 0 || first < 0
-        || first + n > frame.capacity())
-        throw std::invalid_argument(
-            "unpack_border received invalid range/plan");
-    if (size != border_bytes(plan, n))
-        throw std::length_error("unpack_border payload size mismatch");
-    if (!plan.writable)
-        throw column_error(
-            "unpack_border needs a writable plan; this one was compiled from "
-            "a const Frame. Rebuild it with make_wire_plan(Frame&, kind, "
-            "schema).");
-    if (plan_is_all_scalar(plan)) {
-        unpack_scalar_field_major(plan, n, first, data);
-        return;
-    }
-    Reader reader(data, size);
-    for (int k = 0; k < n; ++k) {
-        const int row = first + k;
-        for (const ColumnRef& col : plan.fields) {
-            const std::size_t bytes = col.row_bytes();
-            std::byte* dst = mutable_row_ptr(col, row);
-            const std::byte* src = reader.take(bytes);
-            if (bytes != 0)
-                std::memcpy(dst, src, bytes);
-        }
-    }
-}
 
 std::size_t pack_exchange_wire(const Frame& frame, const PackPlan& plan,
                                int row, std::byte* out, std::size_t capacity) {
@@ -835,9 +688,9 @@ void accumulate_reverse_wire(const PackPlan& plan, const std::vector<int>& rows,
             case ColDType::Int:
                 accumulate_column<int>(field, rows, buffer.data() + offset);
                 break;
-            case ColDType::Int8:
-                accumulate_column<std::int8_t>(field, rows,
-                                               buffer.data() + offset);
+            case ColDType::Image:
+                accumulate_column<ImageInt>(field, rows,
+                                            buffer.data() + offset);
                 break;
             }
             offset += bytes;
@@ -875,20 +728,13 @@ std::size_t PackPlan::row_bytes() const {
 }
 
 std::size_t PackPlan::bytes(int n) const {
-    switch (kind) {
-    case PackKind::Comm:
-        return comm_bytes(*this, n);
-    case PackKind::Border:
-        return border_bytes(*this, n);
-    case PackKind::Reverse:
-        return checked_mul(static_cast<std::size_t>(n), row_bytes(),
-                           "reverse payload");
-    case PackKind::Exchange:
-        break;
-    }
-    throw std::invalid_argument(
-        "PackPlan::bytes: an exchange row is variable length; size it with "
-        "max_row_bytes() and pack one row at a time.");
+    if (kind == PackKind::Exchange)
+        throw std::invalid_argument(
+            "PackPlan::bytes: an exchange row is variable length; size it with "
+            "max_row_bytes() and pack one row at a time.");
+    if (n < 0)
+        throw std::invalid_argument("PackPlan::bytes: negative row count");
+    return checked_mul(static_cast<std::size_t>(n), row_bytes());
 }
 
 std::size_t PackPlan::max_row_bytes() const {
@@ -901,7 +747,6 @@ std::size_t PackPlan::max_row_bytes() const {
 
 std::uint64_t PackPlan::wire_fingerprint(std::uint64_t discriminator) const {
     std::uint64_t hash = 1469598103934665603ull;
-    hash_value(hash, version);
     hash_value(hash, fingerprint);
     hash_value(hash, discriminator);
     return hash;
@@ -910,36 +755,65 @@ std::uint64_t PackPlan::wire_fingerprint(std::uint64_t discriminator) const {
 std::size_t PackPlan::pack(const Frame& frame, const int* rows, int n,
                            const double shift[3], std::byte* out,
                            std::size_t capacity) const {
-    switch (kind) {
-    case PackKind::Comm:
-        return pack_comm_wire(frame, *this, rows, n, shift[0], shift[1],
-                              shift[2], out, capacity);
-    case PackKind::Border:
-        return pack_border_wire(frame, *this, rows, n, shift[0], shift[1],
-                                shift[2], out, capacity);
-    default:
-        break;
+    if (kind != PackKind::Comm && kind != PackKind::Border)
+        throw std::invalid_argument(
+            "PackPlan::pack drives the fixed-stride comm and border wires; a "
+            "reverse plan uses pack_rows and an exchange plan uses pack_row.");
+    validate(frame);
+    const auto size = bytes(n);
+    if (size > capacity)
+        throw std::length_error("Frame pack output buffer is too small");
+    if (n == 0)
+        return 0;
+    if (plan_is_all_scalar(*this)) {
+        pack_scalar_field_major(frame, *this, rows, n, shift, out);
+        return size;
     }
-    throw std::invalid_argument(
-        "PackPlan::pack drives the fixed-stride comm and border wires; a "
-        "reverse plan uses pack_rows and an exchange plan uses pack_row.");
+
+    Writer writer(out, capacity);
+    for (int k = 0; k < n; ++k) {
+        const int row = rows[k];
+        validate_row(frame, row);
+        for (const ColumnRef& col : fields)
+            append_field(writer, col, row, shift);
+    }
+    return writer.size();
 }
 
 void PackPlan::unpack(Frame& frame, int n, int first, const std::byte* data,
                       std::size_t size) const {
-    switch (kind) {
-    case PackKind::Comm:
-        unpack_comm_wire(frame, *this, n, first, data, size);
+    if (kind != PackKind::Comm && kind != PackKind::Border)
+        throw std::invalid_argument(
+            "PackPlan::unpack drives the fixed-stride comm and border wires; a "
+            "reverse plan uses accumulate and an exchange plan uses "
+            "unpack_row.");
+    validate(frame);
+    if (n < 0 || first < 0 || first > frame.capacity() - n)
+        throw std::invalid_argument(
+            "PackPlan::unpack: invalid destination range");
+    if (size != bytes(n))
+        throw std::length_error("PackPlan::unpack: payload size mismatch");
+    if (!writable)
+        throw column_error(
+            "PackPlan::unpack needs a writable plan. Rebuild it with "
+            "make_wire_plan(Frame&, kind, contract).");
+    if (n == 0)
         return;
-    case PackKind::Border:
-        unpack_border_wire(frame, *this, n, first, data, size);
+    if (plan_is_all_scalar(*this)) {
+        unpack_scalar_field_major(*this, n, first, data);
         return;
-    default:
-        break;
     }
-    throw std::invalid_argument(
-        "PackPlan::unpack drives the fixed-stride comm and border wires; a "
-        "reverse plan uses accumulate and an exchange plan uses unpack_row.");
+
+    Reader reader(data, size);
+    for (int k = 0; k < n; ++k) {
+        for (const ColumnRef& col : fields) {
+            const std::size_t width = col.row_bytes();
+            std::byte* dst = mutable_row_ptr(col, first + k);
+            const std::byte* src = reader.take(width);
+            if (width != 0)
+                std::memcpy(dst, src, width);
+        }
+    }
 }
 
 void PackPlan::pack_rows(int first, int count,

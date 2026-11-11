@@ -18,7 +18,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
-#include "atomiverse/cpu/frame/pbc.h"
 
 #include <cmath>
 
@@ -33,7 +32,7 @@ void NVELimit::launch(const cpu::LaunchContext& ctx) {
     const int n = owned_count(ctx);
     const double vmax = xmax_ / dt_;
     const double vmax_sq = vmax * vmax;
-    const double dtf = 0.5 * dt_ * units::force_to_accel;
+    const double dtf = 0.5 * dt_ * ctx.runtime.units.ftm2v;
 
     // Hoisted once for both branches -- the launch-boundary rule.
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
@@ -67,7 +66,6 @@ void NVELimit::launch(const cpu::LaunchContext& ctx) {
             sp_y[i] += dt_ * sp_vy[i];
             sp_z[i] += dt_ * sp_vz[i];
         }
-        wrap_orthorhombic(f, n);
 
     } else if (ctx.at(ATV::md::Phase::final_integrate)) {
 #pragma omp parallel for schedule(static)

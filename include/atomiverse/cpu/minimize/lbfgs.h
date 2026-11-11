@@ -7,7 +7,7 @@
 /// component plugged into it.
 ///
 /// **MPI / domain decomposition.** Under multi-rank the component
-/// operates on the owned rows `[0, dd->n_local)` only; every inner
+/// operates on the owned rows `[0, frame.nlocal())` only; every inner
 /// product of the two-loop recursion, the step-size cap, the Armijo
 /// directional derivative, and the convergence metrics are reduced
 /// across ranks (`minimizer/global_reduce.h`), so all ranks take the
@@ -33,6 +33,7 @@
 ///   Nocedal, Math. Comp. 35, 773 (1980) -- L-BFGS algorithm
 ///   Nocedal & Wright, Numerical Optimization, Ch. 7
 #pragma once
+#include "atomiverse/core/optimization_record.h"
 
 #include <cstdint>
 #include <memory>
@@ -41,7 +42,6 @@
 
 #include "atomiverse/core/device.h"
 #include "atomiverse/core/stage.h"
-#include "atomiverse/cpu/asynchronous/snapshot_publisher.h"
 #include "atomiverse/cpu/component/optimizer.h"
 #include "atomiverse/cpu/driver/backend_traits.h"
 #include "atomiverse/cpu/minimize/lbfgs_history.h"
@@ -51,19 +51,6 @@
 namespace ATV {
 namespace cpu {
 namespace minimizer {
-
-/// @brief Per-step optimization record for diagnostics.
-struct OptRecord {
-    int step = 0;         ///< Optimization step number.
-    double energy = 0;    ///< Total energy [eV].
-    double max_force = 0; ///< Maximum atomic force magnitude [eV/Angstrom].
-    double rms_force = 0; ///< RMS of atomic force magnitudes [eV/Angstrom].
-    double max_displacement =
-        0; ///< Maximum displacement from previous step [Angstrom].
-    double rms_displacement =
-        0; ///< RMS displacement from previous step [Angstrom].
-    double energy_change = 0; ///< Energy change from previous step [eV].
-};
 
 /// @brief L-BFGS Optimizer component.
 ///
@@ -81,6 +68,12 @@ struct OptRecord {
 /// @endcode
 ///
 /// At step 0: steepest descent (no history). From step 1: L-BFGS direction.
+///
+/// A line search that finds no acceptable step along the L-BFGS direction
+/// resets the curvature history and retries along steepest descent from the
+/// same origin. If that fails too, the origin is kept and the loop is asked
+/// to stop (`stop_reason() == "lbfgs_line_search_failed"`, not converged);
+/// only an evaluator failure during a trial is an exception.
 class LBFGS : public cpu::Optimizer {
   public:
     /// @brief Construct L-BFGS step.
@@ -127,8 +120,14 @@ class LBFGS : public cpu::Optimizer {
     /// @brief Current max force magnitude.
     double max_force() const { return max_force_; }
 
+    /// @brief Line searches rescued by resetting the curvature history and
+    ///        retrying along steepest descent (since `build()`).
+    int line_search_recoveries() const { return ls_recoveries_; }
+
     /// @brief Per-step optimization trace.
-    const std::vector<OptRecord>& trace() const { return trace_; }
+    const std::vector<ATV::minimizer::OptRecord>& trace() const {
+        return trace_;
+    }
 
   private:
     int memory_;
@@ -159,12 +158,16 @@ class LBFGS : public cpu::Optimizer {
     /// @brief The all-reduce handed to `LbfgsHistory` — MPI under DD, identity serial.
     double reduce_(double v) const;
 
+    /// @brief `direction_ = -g_ws_` over `[0, dim)`, returning the local
+    /// partials `gᵀg` and `max|direction_|` from the same pass (unreduced).
+    void steepest_descent_(int dim, double& gg, double& dir_max);
+
     /// @brief Last observed `dd->neighbor_generation`; a bump means atom
     /// migration reshuffled local rows → history must be discarded.
     std::uint64_t last_generation_ = ~std::uint64_t{0};
     double max_force_ = 0;
     double energy_prev_ = 0;
-    int step_ = 0;
+    BigInt step_ = 0;
 
     // Line search. Default StrongWolfe; `line_search()` overrides.
     LineSearchMode ls_mode_ = LineSearchMode::StrongWolfe;
@@ -179,8 +182,14 @@ class LBFGS : public cpu::Optimizer {
     double ls_gd0_ = 0;     // phi'(0) = g . direction (< 0 on descent).
     double ls_dir_max_ = 0; // global max|direction| component, for the cap.
 
+    /// True when this step's direction is steepest descent (no curvature
+    /// pair, or the quasi-Newton direction was not a descent direction).
+    bool steepest_ = true;
+    /// Line searches rescued by a history reset and a steepest-descent retry.
+    int ls_recoveries_ = 0;
+
     // Optimization trace
-    std::vector<OptRecord> trace_;
+    std::vector<ATV::minimizer::OptRecord> trace_;
 };
 
 } // namespace minimizer

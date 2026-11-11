@@ -68,6 +68,7 @@ tools/tb_oracle/
 | `inputs/dftbplus/dftb2-spin-analytic-forces/` | DFTB+ 24.1 | Cluster O₂ triplet r=1.30 Å + forces (`reg_dftb2-spin-analytic-forces`; archived `dftb.out.txt`) |
 | `inputs/dftbplus/dftb2-spin-analytic-stress/` | DFTB+ 24.1 | Cluster tilted O₂ r=1.30 Å; energy+forces, **no cluster stress** (`reg_dftb2-spin-analytic-stress`; archived `dftb.out.txt`) |
 | `inputs/dftbplus/dftb0_h2.note` | DFTB+ | H₂ non-SCC DFTB0 pin twin (`reg_dftb0-h2`; shares the mio-1-1 H₂ transcript) |
+| `inputs/dftbplus/dftb0-analytic-forces/` | DFTB+ 24.1 | Non-SCC (`SCC=No`) H₂ r=0.90 Å, off-eq H₂O, tilted CO; energy + forces (`reg_dftb0-analytic-forces`) |
 | `inputs/dftbplus/dftb3_h2o_mio_note.md` | DFTB+ | H₂O SCC-DFTB3 formula / module boundary (`reg_dftb3-water-mio`) — mixed mio SK + 3ob \(U^{\mathrm d}\), **not** `oracle: dftb+` |
 | `inputs/dftbplus/dftb2_analytic_forces_note.md` | DFTB+ | Formula-level force module boundary (no absolute DFTB+ run) |
 | `inputs/dftbplus/dftb2_spin_analytic_forces_note.md` | DFTB+ | Superseded by `dftb2-spin-analytic-forces/` (24.1 archive) |

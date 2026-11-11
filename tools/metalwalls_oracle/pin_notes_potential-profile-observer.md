@@ -17,7 +17,7 @@ in MD metal units (`units::coulomb`) on a synthetic two-sheet capacitor.
 3. Discrete piecewise-constant \(\rho\) integration (same as
    `cpu::PotentialProfile`) yields mid-gap \(E\), vacuum \(E=0\),
    \(\Psi(z_{\max}) = -E_{\mathrm{gap}}\times 9\).
-4. Recorded in `regressions/md/potential-profile-observer/REFERENCE.md`.
+4. Recorded in `regressions/md/electrode-observables/REFERENCE.md`.
 
 ## Perf
 

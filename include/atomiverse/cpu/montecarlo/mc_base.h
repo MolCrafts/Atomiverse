@@ -49,8 +49,7 @@ namespace mc {
 ///
 /// **Bootstrap invariant:** the policy is seeded from one full-frame energy
 /// evaluation of the *initial* configuration before the first trial move
-/// (step index `kBootstrapStep`; a Mover proposes nothing on a negative
-/// step). Without it the first ΔE is measured against zero.
+/// (energy phase only, step index `kBootstrapStep`). Without it the first ΔE is measured against zero.
 class McBase : public Driver<ATV::sampling::Phase> {
   public:
     /// @brief Flush the deferred component `destroy()` of a live chain.
@@ -67,42 +66,43 @@ class McBase : public Driver<ATV::sampling::Phase> {
     /// @param frame Host-resident system state, updated in place.
     /// @param n_trials Number of trial moves to attempt.
     void run(cpu::Frame& frame, int n_trials) {
-        if (this->begin_run_(frame)) {
-            // Publish the per-move changeset + the RNG so a Mover can reach
-            // them (mirrors NeighborList publishing pair_list). Addresses are
-            // stable.
-            this->backend_->context().mc.proposal = &proposal_;
-            this->backend_->context().mc.rng = &rng_;
-            this->step_once(kBootstrapStep);
-            this->start_outcome_(frame); // seed the policy's reference state
-        }
+        if (this->begin_run_(frame))
+            bootstrapped_ = false;
+        run_trials_(*this->backend_, frame, n_trials);
+        this->backend_->drain_capture();
+    }
 
-        for (int s = 0; s < n_trials; ++s) {
-            this->mutable_outer_status().reset();
-            // frame.meta.get(kEnergy) still holds the LAST ACCEPTED energy here
-            // (the trial evaluator hasn't run yet) — save it for rollback.
-            const AccReal e_before = frame.meta.get(kEnergy);
-            const int trial = this->next_step_();
-            // ONE Transaction serves the whole chain, and only a Mover that
-            // calls `begin()` clears it. Open every trial on a well-formed
-            // EMPTY proposal so a Mover that proposes nothing (nothing left to
-            // move, a draw it refuses) cannot leave the policy judging — and
-            // the rollback splicing — the PREVIOUS trial's verb and patch.
-            // `begin(None, …)` is two stores and a clear: it compiles no pack
-            // plan, and any Mover that does propose re-begins over it.
-            proposal_.begin(Transaction::Verb::None, frame);
-            this->step_once(trial); // propose (mutate + record) → energy
-            const Transaction::Verb verb = proposal_.verb;
-            const Outcome outcome = this->decide_outcome_(frame, trial);
-            tally_(verb, outcome);
-            if (outcome == Outcome::Rollback) {
-                proposal_.rollback(frame);
-                // The frame must reflect the restored state, not the trial.
-                frame.meta.get(kEnergy) = e_before;
+    void build_on(cpu::Runtime& runtime) override {
+        Driver<ATV::sampling::Phase>::build_on(runtime);
+        bootstrapped_ = false;
+    }
+
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override {
+        if (!ctx.exec.runtime)
+            throw std::runtime_error(
+                "MC nested execution requires a parent Runtime");
+        auto& runtime = *ctx.exec.runtime;
+        const auto saved_mc = ctx.mc;
+        const auto saved_loop = ctx.loop;
+        const auto window = frame.resolution_window();
+        struct Restore {
+            cpu::Context& ctx;
+            SamplingServices mc;
+            LoopServices loop;
+            cpu::Frame& frame;
+            ResolutionWindow window;
+            ~Restore() {
+                ctx.mc = mc;
+                ctx.loop = loop;
+                frame.restore_resolution_window(window);
             }
-            if (this->poll_criteria_(s) != Verdict::Continue)
-                break;
-        }
+        } restore{ctx, saved_mc, saved_loop, frame, window};
+        frame.restore_resolution_window(ResolutionWindow{});
+        ctx.loop.status = &this->mutable_outer_status();
+        ctx.loop.metrics = &this->metrics();
+        cpu::Runtime::ScopedPlan active(runtime, this->plan(), 0);
+        return run_trials_(runtime, frame, budget);
     }
 
     /// @brief Configure the trial-move generator (mirrors MD `set_integrator`).
@@ -203,6 +203,10 @@ class McBase : public Driver<ATV::sampling::Phase> {
         return p != ATV::sampling::Phase::energy;
     }
 
+    bool phase_wants_stress(ATV::sampling::Phase p) const override {
+        return p != ATV::sampling::Phase::energy;
+    }
+
     /// @brief A Mover to propose with, and something that can score the
     ///        proposal. Nested method-drivers count as HF energy sources via
     ///        cross-cast.
@@ -222,6 +226,64 @@ class McBase : public Driver<ATV::sampling::Phase> {
     mc::Transaction proposal_; ///< Reused per-move changeset (on the Context).
 
   private:
+    int run_trials_(cpu::Runtime& runtime, cpu::Frame& frame, int n_trials) {
+        auto& ctx = runtime.context();
+        ctx.mc.proposal = &proposal_;
+        ctx.mc.rng = &rng_;
+        if (!bootstrapped_) {
+            score_(runtime, kBootstrapStep);
+            this->start_outcome_(frame, ctx);
+            bootstrapped_ = true;
+        }
+
+        int completed = 0;
+        for (int s = 0; s < n_trials; ++s) {
+            this->mutable_outer_status().reset();
+            const auto metadata_before = frame.meta;
+            const int trial = this->next_step_();
+            proposal_.begin(Transaction::Verb::None, frame);
+            Outcome outcome;
+            try {
+                runtime.step_stage(ATV::slot_of(ATV::sampling::Phase::propose),
+                                   trial);
+                score_(runtime, trial);
+                outcome = this->decide_outcome_(frame, trial, ctx);
+            } catch (...) {
+                // Failed scoring is not an accepted move. Restore geometry and
+                // metadata before propagating the error; no observer runs.
+                proposal_.rollback(frame);
+                frame.meta = metadata_before;
+                throw;
+            }
+            const auto verb = proposal_.verb;
+            if (outcome == Outcome::Rollback) {
+                proposal_.rollback(frame);
+                frame.meta = metadata_before;
+                // Evaluators also publish charges and per-term energies. A
+                // geometry-only patch cannot restore those global outputs.
+                score_(runtime, trial);
+            }
+            tally_(verb, outcome);
+            runtime.step_stage(ATV::slot_of(ATV::sampling::Phase::end_of_step),
+                               trial);
+            ++completed;
+            if (this->poll_criteria_(trial, frame, ctx) != Verdict::Continue)
+                break;
+        }
+        return completed;
+    }
+    void score_(cpu::Runtime& runtime, int step) {
+        auto& exec = runtime.context().exec;
+        const bool saved = exec.trial_evaluation;
+        struct Restore {
+            bool& flag;
+            bool saved;
+            ~Restore() { flag = saved; }
+        } restore{exec.trial_evaluation, saved};
+        exec.trial_evaluation = true;
+        runtime.step_stage(ATV::slot_of(ATV::sampling::Phase::energy), step);
+    }
+    bool bootstrapped_ = false;
     /// @brief Count one decided trial into the per-verb tallies.
     void tally_(Transaction::Verb v, Outcome o) {
         ++attempts_[static_cast<int>(v)];

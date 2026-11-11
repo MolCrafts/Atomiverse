@@ -1,14 +1,17 @@
 /// @file cpu/record/mrec_recorder.cpp
-/// @brief MrecRecorder -- molrs-backed `*.mrec` append on the MD end_of_step
+/// @brief MrecRecorder -- molpy-backed `*.mrec` append on the MD end_of_step
 ///        phase. MPI-aware: collective owner gather, rank-0 I/O.
 
 #include "atomiverse/cpu/record/mrec_recorder.h"
 
+#include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
+#include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
 #include "atomiverse/cpu/communication/gather_for_io.h"
 
@@ -39,11 +42,42 @@ void MrecRecorder::set_timestep(double dt_fs) {
     dt_fs_ = dt_fs;
 }
 
-void MrecRecorder::launch(const cpu::LaunchContext& ctx) {
-    // Stride gate first: ctx.step is identical on every rank, so the
-    // collective below is still entered in lockstep.
-    if ((ctx.step % freq_) != 0)
+// LAMMPS src/output.cpp Output::setup / Output::write and src/verlet.cpp
+// Verlet::run, e8c4c278a8. Copyright (2003) Sandia Corporation.
+// GPL-2.0-only. `update->ntimestep` is incremented at the top of every step,
+// so an end-of-step dump at timestep N holds the state after N steps; setup
+// writes the current timestep when it is a multiple of `every`, and
+// `last_dump` keeps a timestep from being written twice across runs.
+
+void MrecRecorder::setup_output(const cpu::LaunchContext& ctx) {
+    // ctx.step = steps completed so far (identical on every rank).
+    if ((ctx.step % freq_) != 0 || ctx.step == last_step_)
         return;
+    write_(ctx, ctx.step);
+}
+
+void MrecRecorder::launch(const cpu::LaunchContext& ctx) {
+    // End of the step with zero-based index ctx.step: ctx.step + 1 steps are
+    // complete. Stride gate first: identical on every rank, so the
+    // collective below is still entered in lockstep.
+    const BigInt step = loop_output_step(ctx);
+    if ((step % freq_) != 0 || step == last_step_)
+        return;
+    write_(ctx, step);
+}
+
+void MrecRecorder::final_output(const cpu::LaunchContext& ctx) {
+    // LAMMPS Min::run: a minimization that stops early writes its final
+    // state at the final timestep, unless already written (`last_dump`).
+    if (ctx.step == last_step_)
+        return;
+    write_(ctx, ctx.step);
+}
+
+void MrecRecorder::write_(const cpu::LaunchContext& ctx, BigInt step) {
+    // Every rank records the step before the rank gate (they all take part
+    // in the gather), so the never-twice rule stays rank-identical.
+    last_step_ = step;
 
     // Multi-rank: collective owner gather (every rank participates before
     // the rank gate) so the written frame holds the complete tag-ordered
@@ -53,13 +87,35 @@ void MrecRecorder::launch(const cpu::LaunchContext& ctx) {
     if (!src)
         return;
 
-    // `step` is the driver's zero-based iteration index (what Thermo and
-    // XyzRecorder report); the time axis is that index on the integrator's
-    // clock, present only when an integrator pushed a dt.
+    // The time axis is the completed-step count on the integrator's clock,
+    // present only when an integrator pushed a dt.
     const bool has_time = dt_fs_ > 0.0;
-    const double time = has_time ? static_cast<double>(ctx.step) * dt_fs_ : 0.0;
-    writer_.append(*src, static_cast<std::int64_t>(ctx.step), time, has_time);
+    const double time = has_time ? static_cast<double>(step) * dt_fs_ : 0.0;
+    append_frame(tag_ordered_(*src), static_cast<std::int64_t>(step), time,
+                 has_time);
     ++n_written_;
+}
+
+const cpu::Frame& MrecRecorder::tag_ordered_(const cpu::Frame& src) {
+    // The multi-rank gather is tag-ordered already.
+    if (&src == &gathered_)
+        return gathered_;
+    const int n = src.nlocal();
+    const TagInt* tags = src.span(kAtom_tag).data();
+    if (std::is_sorted(tags, tags + n))
+        return src;
+    // Single rank: the live rows are spatially sorted. Write a tag-ordered
+    // copy (the run state itself is FrameImmutable to a recorder).
+    order_.resize(static_cast<std::size_t>(n));
+    std::iota(order_.begin(), order_.end(), 0);
+    std::stable_sort(order_.begin(), order_.end(),
+                     [&](int a, int b) { return tags[a] < tags[b]; });
+    ordered_ = src.clone_structure(n);
+    for (int row = 0; row < n; ++row)
+        ordered_.copy_row_from(src, row, order_[static_cast<std::size_t>(row)]);
+    ordered_.box = src.box;
+    ordered_.meta.copy_serializable_from(src.meta);
+    return ordered_;
 }
 
 void MrecRecorder::destroy(const cpu::DestroyContext& ctx) {

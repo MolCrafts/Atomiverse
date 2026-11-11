@@ -12,8 +12,7 @@
 /// AIMD registers a force evaluator into `cpu::md::MD`:
 ///
 /// @code{.cpp}
-///   cpu::scf::RHF rhf;
-///   rhf.basis = cpu::scf::BasisSet::STO3G;
+///   cpu::scf::RHF rhf{cpu::scf::BasisSet::STO3G};
 ///
 ///   cpu::vib::Hessian driver;
 ///   driver.on(ATV::vib::Phase::force)
@@ -67,6 +66,7 @@ namespace vib {
 /// There is no `ResponseDriver` category in between any more.
 class Hessian : public Driver<ATV::vib::Phase> {
   public:
+    bool requires_full_frame() const override { return true; }
     /// @brief Tag type to construct a driver WITHOUT the HessianAccumulator.
     ///
     /// Exists only so tests can verify `validate_components()` throws when no
@@ -135,7 +135,7 @@ class Hessian : public Driver<ATV::vib::Phase> {
     ///
     /// Same mass-weight + TR-project + diagonalize finalize as after a FD
     /// `run()`, without the 6N force loop. Use when the matrix already exists
-    /// (e.g. `cpu::scf::RHF::hessian`). Frame supplies masses (`kAtom_type`)
+    /// (e.g. `cpu::scf::Hessian<RHF>`). Frame supplies masses (`kAtom_atomic_number`)
     /// and equilibrium geometry for the TR projector.
     ///
     /// Does not require a force evaluator on this driver. Result is cached in
@@ -168,6 +168,19 @@ class Hessian : public Driver<ATV::vib::Phase> {
                           const std::string& mode_xyz_prefix);
 
   protected:
+    /// @brief Keep the caller's row order for the whole FD pass.
+    void install_defaults() override {
+        // The workspace (R0, Hessian rows/columns, normal modes) is indexed
+        // by the row order the caller handed in, and DisplaceStep restores R0
+        // by row. `atom_modify sort` at the setup rebuild or a later one
+        // would scramble that map silently. Drop sorting for the provider's
+        // life, as Minimize and MC do for their row-indexed state.
+        this->for_each_pending_mut([](cpu::Component& c) {
+            if (cpu::NeighborProvider* np = c.neighbor_provider())
+                np->forbid_row_reordering();
+        });
+    }
+
     /// @brief A force evaluator to displace against, and an accumulator to build into.
     void validate_components() const override {
         this->require_force();

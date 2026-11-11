@@ -3,45 +3,47 @@
 
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
+#include "atomiverse/cuda/frame/precision.cuh"
+#include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/minimize/cg.cuh"
 #include <cuda_runtime.h>
 
 namespace ATV {
-
-using cuda::real_t;
-using cuda::work_t;
-
 namespace cuda {
 namespace minimizer {
 
 namespace {
 
 /// @brief Polak-Ribière dot products: pr[0] += g·(g−g_prev),
-///        pr[1] += g_prev·g_prev, with g = −F.
-__global__ void pr_dots(const real_t* __restrict__ fx,
-                        const real_t* __restrict__ fy,
-                        const real_t* __restrict__ fz,
-                        const work_t* __restrict__ g_prev,
-                        work_t* __restrict__ pr, int n) {
+///        pr[1] += g_prev·g_prev, with g = −F decoded from fixed point.
+///        Both reduce in acc_t.
+__global__ void pr_dots(const fixed_t* __restrict__ fx,
+                        const fixed_t* __restrict__ fy,
+                        const fixed_t* __restrict__ fz,
+                        const mixed_t* __restrict__ g_prev,
+                        acc_t* __restrict__ pr, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    work_t num = work_t(0), den = work_t(0);
+    acc_t num = acc_t(0), den = acc_t(0);
     if (i < n) {
-        const work_t g[3] = {-static_cast<work_t>(fx[i]),
-                             -static_cast<work_t>(fy[i]),
-                             -static_cast<work_t>(fz[i])};
+        const mixed_t g[3] = {-decode_force<mixed_t>(fx[i]),
+                              -decode_force<mixed_t>(fy[i]),
+                              -decode_force<mixed_t>(fz[i])};
 #pragma unroll
         for (int c = 0; c < 3; ++c) {
-            const work_t gp = g_prev[c * n + i];
-            num += g[c] * (g[c] - gp);
+            const acc_t gc = acc_t(g[c]);
+            const acc_t gp = acc_t(g_prev[c * n + i]);
+            num += gc * (gc - gp);
             den += gp * gp;
         }
     }
 
-    extern __shared__ work_t warp_scratch[];
-    work_t vals[2] = {num, den};
-    work_t out[2];
-    ATV::cuda::block_reduce_sum_n<2>(vals, warp_scratch, out);
+    ::cuda::std::array<acc_t, 2> vals = {num, den};
+
+    using Reduce =
+        cub::BlockReduce<::cuda::std::array<acc_t, 2>, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const auto out = Reduce(reduction).Reduce(vals, SumComponents<acc_t, 2>{});
     if (threadIdx.x == 0) {
         atomicAdd(&pr[0], out[0]);
         atomicAdd(&pr[1], out[1]);
@@ -50,66 +52,72 @@ __global__ void pr_dots(const real_t* __restrict__ fx,
 
 /// @brief β = max(0, num / den) if den > 0 else 0 — device-resident so
 ///        the step kernel chains off it without a host round-trip.
-__global__ void pr_beta(work_t* __restrict__ pr) {
-    const work_t num = pr[0], den = pr[1];
-    pr[2] = (den > work_t(0)) ? fmax(work_t(0), num / den) : work_t(0);
+__global__ void pr_beta(acc_t* __restrict__ pr) {
+    const acc_t num = pr[0], den = pr[1];
+    pr[2] = (den > acc_t(0)) ? fmax(acc_t(0), num / den) : acc_t(0);
 }
 
 /// @brief Fused CG step: d = −g + β·d_prev, save prev state, move, wrap.
 ///
-/// Saves the PRE-step positions into x_prev (the convergence check
-/// measures displacement against them) and the current gradient /
-/// direction for the next iteration's β. PBC wrap matches the MD
-/// integrator form (by-value Box, cached inv_l).
+/// Saves the PRE-step positions (reconstructed primary + correction, mixed_t)
+/// into x_prev (the convergence check measures displacement against them)
+/// and the current gradient / direction for the next iteration's β. PBC
+/// wrap matches the MD integrators (whole lattice vectors, FP64 Box) and
+/// counts the crossing into the image flags. CG has no rollback: the step is
+/// always accepted. A faulted force is never consumed.
 __global__ void
-cg_step(real_t* __restrict__ x, real_t* __restrict__ y, real_t* __restrict__ z,
-        const real_t* __restrict__ fx, const real_t* __restrict__ fy,
-        const real_t* __restrict__ fz, work_t* __restrict__ x_prev,
-        work_t* __restrict__ g_prev, work_t* __restrict__ d_prev,
-        const work_t* __restrict__ pr, work_t alpha0, cuda::Box box, int n) {
+cg_step(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
+        pos_t* __restrict__ xc, pos_t* __restrict__ yc, pos_t* __restrict__ zc,
+        const fixed_t* __restrict__ fx, const fixed_t* __restrict__ fy,
+        const fixed_t* __restrict__ fz, mixed_t* __restrict__ x_prev,
+        mixed_t* __restrict__ g_prev, mixed_t* __restrict__ d_prev,
+        const acc_t* __restrict__ pr, mixed_t alpha0,
+        ImageInt* __restrict__ image, ForceFault* fault,
+        const std::int64_t* __restrict__ tag, long long step, cuda::Box box,
+        int n) {
+    if (!forces_consumable(fault, tag, step))
+        return;
+    box = box.current();
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n)
         return;
 
-    const work_t beta = pr[2];
-    const work_t g[3] = {-static_cast<work_t>(fx[i]),
-                         -static_cast<work_t>(fy[i]),
-                         -static_cast<work_t>(fz[i])};
-    work_t pos[3] = {static_cast<work_t>(x[i]), static_cast<work_t>(y[i]),
-                     static_cast<work_t>(z[i])};
+    const mixed_t beta = mixed_t(pr[2]);
+    const mixed_t g[3] = {-decode_force<mixed_t>(fx[i]),
+                          -decode_force<mixed_t>(fy[i]),
+                          -decode_force<mixed_t>(fz[i])};
+    mixed_t pos[3] = {load_position(x, xc, i), load_position(y, yc, i),
+                      load_position(z, zc, i)};
 #pragma unroll
     for (int c = 0; c < 3; ++c) {
-        const work_t d = -g[c] + beta * d_prev[c * n + i];
+        const mixed_t d = -g[c] + beta * d_prev[c * n + i];
         x_prev[c * n + i] = pos[c];
         g_prev[c * n + i] = g[c];
         d_prev[c * n + i] = d;
         pos[c] += alpha0 * d;
     }
 
-    const work_t Lx = work_t(box.cell[0]), Ly = work_t(box.cell[4]),
-                 Lz = work_t(box.cell[8]);
-    const work_t inv_Lx = work_t(box.inv_l[0]), inv_Ly = work_t(box.inv_l[1]),
-                 inv_Lz = work_t(box.inv_l[2]);
-    x[i] = static_cast<real_t>(pos[0] - Lx * floor(pos[0] * inv_Lx));
-    y[i] = static_cast<real_t>(pos[1] - Ly * floor(pos[1] * inv_Ly));
-    z[i] = static_cast<real_t>(pos[2] - Lz * floor(pos[2] * inv_Lz));
+    box.wrap_position(pos[0], pos[1], pos[2], image ? image + 3 * i : nullptr);
+    store_position(x, xc, i, pos[0]);
+    store_position(y, yc, i, pos[1]);
+    store_position(z, zc, i, pos[2]);
 }
 
 } // anonymous namespace
 
 void CG::build(const BuildContext& ctx) {
     n_ = ctx.frame.n_atoms();
-    const size_t bytes3n = static_cast<size_t>(3) * n_ * sizeof(work_t);
+    const size_t bytes3n = static_cast<size_t>(3) * n_ * sizeof(mixed_t);
     cudaMalloc(&d_xprev_, bytes3n);
     cudaMalloc(&d_gprev_, bytes3n);
     cudaMalloc(&d_dprev_, bytes3n);
-    cudaMalloc(&d_pr_, 3 * sizeof(work_t));
+    cudaMalloc(&d_pr_, 3 * sizeof(acc_t));
     // Zeroed g_prev/d_prev reproduce the CPU step-0 path: den = 0 → β = 0
     // → d = −g (steepest descent on the first moving step).
     cudaMemset(d_xprev_, 0, bytes3n);
     cudaMemset(d_gprev_, 0, bytes3n);
     cudaMemset(d_dprev_, 0, bytes3n);
-    cudaMemset(d_pr_, 0, 3 * sizeof(work_t));
+    cudaMemset(d_pr_, 0, 3 * sizeof(acc_t));
 
     step_ = 0;
     trace_.clear();
@@ -129,16 +137,17 @@ void CG::launch(const LaunchContext& ctx) {
     const int n = n_;
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(n);
-    int shmem = cuda::warps_per_block(block) * sizeof(work_t);
+    constexpr int shmem = 0;
 
-    cudaMemsetAsync(d_pr_, 0, 2 * sizeof(work_t), stream);
+    cudaMemsetAsync(d_pr_, 0, 2 * sizeof(acc_t), stream);
     pr_dots<<<grid, block, shmem, stream>>>(frame.atoms.fx, frame.atoms.fy,
                                             frame.atoms.fz, d_gprev_, d_pr_, n);
     pr_beta<<<1, 1, 0, stream>>>(d_pr_);
+    const auto& a = frame.atoms;
     cg_step<<<grid, block, 0, stream>>>(
-        frame.atoms.x, frame.atoms.y, frame.atoms.z, frame.atoms.fx,
-        frame.atoms.fy, frame.atoms.fz, d_xprev_, d_gprev_, d_dprev_, d_pr_,
-        static_cast<work_t>(alpha0_), ctx.runtime.host_box, n);
+        a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, d_xprev_,
+        d_gprev_, d_dprev_, d_pr_, static_cast<mixed_t>(alpha0_), a.image,
+        frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box, n);
 
     ++step_;
 }

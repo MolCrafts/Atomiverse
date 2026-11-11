@@ -31,13 +31,38 @@ DensityCubeWriter::DensityCubeWriter(scf::MeanFieldOutputs handle,
         throw std::invalid_argument("DensityCubeWriter: null MeanFieldOutputs");
 }
 
+// LAMMPS src/min.cpp Min::setup / Min::run and src/output.cpp
+// Output::setup / Output::write, e8c4c278a8. Copyright (2003) Sandia
+// Corporation. GPL-2.0-only. Step = completed iterations: setup writes the
+// initial state (step 0), iteration s writes step s + 1 when on stride, an
+// early stop writes the final state, and no step is written twice
+// (`last_dump`) — so the file left behind is the final state's.
+
+void DensityCubeWriter::setup_output(const cpu::LaunchContext& ctx) {
+    if ((ctx.step % stride_) != 0)
+        return;
+    write_(ctx, ctx.step);
+}
+
 void DensityCubeWriter::launch(const cpu::LaunchContext& ctx) {
+    const BigInt step = loop_output_step(ctx);
+    if ((step % stride_) != 0)
+        return;
+    write_(ctx, step);
+}
+
+void DensityCubeWriter::final_output(const cpu::LaunchContext& ctx) {
+    write_(ctx, ctx.step);
+}
+
+void DensityCubeWriter::write_(const cpu::LaunchContext& ctx, BigInt step) {
+    if (step == last_step_)
+        return;
     if (ctx.runtime.mpi_rank != 0)
         return;
     if (!*handle_.ready)
         return;
-    if ((ctx.step % stride_) != 0)
-        return;
+    last_step_ = step;
 
     const auto& shells = *handle_.shells;
     const scf::SlaterDeterminant& det = *handle_.result;

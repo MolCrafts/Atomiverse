@@ -68,7 +68,7 @@ cpu::Frame make_charged_fcc(int n_cells, double a_lat, double q_mag) {
 }
 
 // Real-space screened Coulomb pair energy, replicating CoulLong exactly:
-// E = units::coulomb · q_i q_j · erfc(α r) / r for r < cutoff.
+// E = qqrd2e · q_i q_j · erfc(α r) / r for r < cutoff.
 double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
                                double cutoff) {
     const int n = frame.nlocal();
@@ -100,7 +100,8 @@ double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
             if (r2 >= rc_sq || r2 == 0.0)
                 continue;
             const double r = std::sqrt(r2);
-            e += units::coulomb * frame.span(ATV::kAtom_charge)[i]
+            e += units::UnitSystem::lj().qqrd2e()
+                 * frame.span(ATV::kAtom_charge)[i]
                  * frame.span(ATV::kAtom_charge)[j] * std::erfc(alpha * r) / r;
         }
     }
@@ -165,13 +166,4 @@ TEST(CoulEnergyBruteForce, GlobalEnergyMatchesBruteForce) {
         << ": distributed real-space Coulomb energy " << e_dist
         << " disagrees with brute force " << e_bf << " (rel=" << rel
         << ") — ghost charge (border message) is missing or wrong";
-}
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
 }

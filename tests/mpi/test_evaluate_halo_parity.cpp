@@ -139,8 +139,8 @@ class GhostCountProbe : public cpu::Component {
         const auto* dd = ctx.runtime.md.dd;
         if (dd == nullptr)
             return;
-        n_local = dd->n_local;
-        n_ghost = dd->n_ghost;
+        n_local = ctx.frame.nlocal();
+        n_ghost = ctx.frame.nghost();
         ++launches;
     }
 
@@ -240,12 +240,3 @@ TEST(EvaluateHaloParity, GhostShellIsPopulated) {
 // ── Custom main that initializes MPI before/after GoogleTest ────────────
 //
 // See test_topology.cpp for the OpenMPI 5.0.x macOS teardown rationale.
-
-int main(int argc, char** argv) {
-    int provided = 0;
-    MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
-    ::testing::InitGoogleTest(&argc, argv);
-    const int rc = RUN_ALL_TESTS();
-    MPI_Finalize();
-    return rc;
-}

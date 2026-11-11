@@ -2,7 +2,7 @@
 /// @brief One-shot second-order Green's function (G0F2 / GF2) quasiparticle
 ///        energies (public, result-only header — g0w0.h / mp2.h precedent).
 ///
-/// User path: `RHF::gf2()` on a converged closed-shell RHF reference.
+/// User path: `GF2<RHF>{mf}.run()` after `mf.run` (not a member of `RHF`).
 /// Builds the second-order self-energy in the auxiliary (Lehmann) representation
 /// from the HF Green's function (2h1p + 2p1h), solves the Dyson equation once
 /// with the HF Fock matrix, and reports the physical poles as quasiparticle
@@ -57,6 +57,31 @@ struct GF2Result {
     /// @brief true when the Dyson spectrum yielded a well-defined HOMO/LUMO
     ///        chemical-potential cut (N-electron Aufbau).
     bool converged = false;
+};
+
+/// @brief One-shot GF2 quasiparticle spectrum of a converged closed-shell
+///        reference.
+///
+/// Not a method of `RHF` or `MeanFieldMethod`. Call `mf.run` first.
+/// Instantiated for `RHF`. Mirrors one-shot PySCF `agf2.RAGF2`.
+/// @tparam Method Concrete mean-field type.
+template <typename Method>
+class GF2 {
+  public:
+    /// @brief Bind a mean-field reference. The reference must outlive `*this`.
+    /// @param mf Mean-field method that has already been run (not copied).
+    explicit GF2(const Method& mf);
+
+    /// @brief One-shot Dyson poles from the HF Green's function.
+    /// @return QP energies [Hartree], HOMO–LUMO gap / IP / EA [eV],
+    ///         Galitskii–Migdal e_corr [Hartree].
+    /// @throws std::runtime_error when called before `mf.run` or on a
+    ///         non-restricted reference.
+    /// @throws std::invalid_argument when n_occ = 0 or n_virt = 0.
+    GF2Result run() const;
+
+  private:
+    const Method* mf_ = nullptr;
 };
 
 } // namespace scf

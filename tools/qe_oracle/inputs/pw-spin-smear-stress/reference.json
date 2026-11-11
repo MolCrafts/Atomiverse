@@ -1,0 +1,436 @@
+{
+  "scope": "Actual independent QE7.6 H3 spin-smearing energy and physical stress pins; no native acceptance implied",
+  "binary": "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+  "binary_sha256": "5e03776776ed71bf3f6e1cc01f46a8216a680a0179eaf41fdb3a8e99d6f89f5b",
+  "capture_script": "capture.py",
+  "export_script_sha256": "1aba58c07029f8851ae94a1b4cf4de553ca88bf7c694fcf46450223961aa0f99",
+  "capture_references_sha256": {
+    ".claude/campaigns/dft-gap-wave2-20261026/qe/matrix/reference.json": "c8014996163c1da09125bff28be41b79c12a42f3dc0badb258cb0e46debec7f9",
+    ".claude/campaigns/dft-gap-wave2-20261026/qe/mp-probes/reference.json": "68ac2d834d981a661da6046b9c6ea8f9079c39a0266a455bcc59cb077a8504e3"
+  },
+  "published_potential_source": "/software/sse2/el9_epyc9005/easybuild/prefix/software/CP2K/2026.2-gmpflf-2026.03/share/cp2k/data/GTH_POTENTIALS",
+  "published_potential_source_sha256": "5a9bfbc3b37a55917ade4fb704b80546d210d843759b94e3915e74acfc3fafb2",
+  "potential_sha256": "a08012117c66d3f725ac5e672e1a061a22c41c4d16aa4d41b6863e1c9e634916",
+  "predeclared_bounds": {
+    "energy_ha": 1e-05,
+    "each_stress_ev_ang3": 0.002
+  },
+  "stress_convention": "compressive positive; physical Cartesian tensor; Voigt xx,yy,zz,xy,xz,yz",
+  "magnetization_print_precision": "QE prints two decimal places; pins only qualify nonzero magnetization, not an exact moment",
+  "cases": [
+    {
+      "engine": "Program PWSCF v.7.6 starts on 26Oct2026 at 23:23:14",
+      "converged": true,
+      "energy_ry": -2.85851778,
+      "magnetization_e": 0.93,
+      "entropy_energy_ry": -0.00950455,
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00048312,
+          0.00016522,
+          6.463e-05
+        ],
+        [
+          0.00016522,
+          0.00018325,
+          0.00024305
+        ],
+        [
+          6.463e-05,
+          0.00024305,
+          -0.00048369
+        ]
+      ],
+      "forces_ry_bohr": [
+        [
+          -0.0607612,
+          -0.08061135,
+          -0.05919671
+        ],
+        [
+          0.0253657,
+          0.03033969,
+          0.02493888
+        ],
+        [
+          0.0353955,
+          0.05027166,
+          0.03425783
+        ]
+      ],
+      "stress_voigt_ev_ang3": [
+        -0.044358033940513256,
+        0.016825239525581747,
+        -0.04441036892839637,
+        0.01516980122464729,
+        0.00593405309979999,
+        0.022315822464898463
+      ],
+      "spin_nontrivial": true,
+      "entropy_nontrivial": true,
+      "xc": "LSDA",
+      "input_dft": "SLA+VWN+NOGX+NOGC",
+      "smearing": "fd",
+      "degauss_ry": 0.02,
+      "command": [
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "h3.in"
+      ],
+      "exit_code": 0,
+      "input_sha256": "a28f0be5e22b2e62ca2c1d29e3284fa6e94803a6b5429790db94a275b6bc0f28",
+      "output_sha256": "89a7677ee7fc183d59b612ec69c87f1c8e52ec1456d3f1d68d5eccac7abaf3e1",
+      "output": "lsda-fd-0.02/qe.out",
+      "accepted_external_output": true,
+      "energy_ha": -1.42925889,
+      "source_capture_sha256": "c8014996163c1da09125bff28be41b79c12a42f3dc0badb258cb0e46debec7f9",
+      "raw_output": "captures/lsda-fd-0.02/qe.out.gz",
+      "input": "captures/lsda-fd-0.02/h3.in"
+    },
+    {
+      "engine": "Program PWSCF v.7.6 starts on 26Oct2026 at 23:23:17",
+      "converged": true,
+      "energy_ry": -2.85669328,
+      "magnetization_e": 0.99,
+      "entropy_energy_ry": -0.00179725,
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.0004883,
+          0.00017413,
+          7.028e-05
+        ],
+        [
+          0.00017413,
+          0.00020056,
+          0.00024941
+        ],
+        [
+          7.028e-05,
+          0.00024941,
+          -0.00048051
+        ]
+      ],
+      "forces_ry_bohr": [
+        [
+          -0.06306028,
+          -0.0840072,
+          -0.06158663
+        ],
+        [
+          0.02568452,
+          0.03187576,
+          0.02597167
+        ],
+        [
+          0.03737576,
+          0.05213145,
+          0.03561496
+        ]
+      ],
+      "stress_voigt_ev_ang3": [
+        -0.04483363961987213,
+        0.01841457047340068,
+        -0.0441183947854695,
+        0.01598787971945184,
+        0.0064528121902203825,
+        0.022899770750752214
+      ],
+      "spin_nontrivial": true,
+      "entropy_nontrivial": true,
+      "xc": "LSDA",
+      "input_dft": "SLA+VWN+NOGX+NOGC",
+      "smearing": "gaussian",
+      "degauss_ry": 0.04,
+      "command": [
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "h3.in"
+      ],
+      "exit_code": 0,
+      "input_sha256": "088fd309259cd6fdf41aca63ffa67df1942c349266db4959240cb36633e69ab2",
+      "output_sha256": "83215af2f98373cb464a2aaa484268aa4d5aeaf225b4e82b3aefeed090b724ac",
+      "output": "lsda-gaussian-0.04/qe.out",
+      "accepted_external_output": true,
+      "energy_ha": -1.42834664,
+      "source_capture_sha256": "c8014996163c1da09125bff28be41b79c12a42f3dc0badb258cb0e46debec7f9",
+      "raw_output": "captures/lsda-gaussian-0.04/qe.out.gz",
+      "input": "captures/lsda-gaussian-0.04/h3.in"
+    },
+    {
+      "engine": "Program PWSCF v.7.6 starts on 26Oct2026 at 23:28:31",
+      "converged": true,
+      "energy_ry": -2.85589692,
+      "magnetization_e": 1.02,
+      "entropy_energy_ry": 0.00366967,
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00049315,
+          0.00018047,
+          7.428e-05
+        ],
+        [
+          0.00018047,
+          0.00021518,
+          0.00025462
+        ],
+        [
+          7.428e-05,
+          0.00025462,
+          -0.00047747
+        ]
+      ],
+      "forces_ry_bohr": [
+        [
+          -0.06463981,
+          -0.0865927,
+          -0.06342684
+        ],
+        [
+          0.02581412,
+          0.03278426,
+          0.02658339
+        ],
+        [
+          0.03882569,
+          0.05380844,
+          0.03684346
+        ]
+      ],
+      "stress_voigt_ev_ang3": [
+        -0.045278946095719724,
+        0.019756917004718582,
+        -0.04383927485009286,
+        0.01656999168994127,
+        0.006820075263084377,
+        0.023378130903157567
+      ],
+      "spin_nontrivial": true,
+      "entropy_nontrivial": true,
+      "xc": "LSDA",
+      "input_dft": "SLA+VWN+NOGX+NOGC",
+      "smearing": "mp1",
+      "degauss_ry": 0.04,
+      "command": [
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "h3.in"
+      ],
+      "exit_code": 0,
+      "input_sha256": "11b11418c1215e880f783a536d723e82c77497831c1142f8115be8d401cea81c",
+      "output_sha256": "b8cc69ba7114d87e0bbcb0121f3ab2c0fb89c2d5fe1ae7d2873f817658067885",
+      "output": "lsda-mp1-0.04/qe.out",
+      "accepted_external_output": true,
+      "energy_ha": -1.42794846,
+      "source_capture_sha256": "68ac2d834d981a661da6046b9c6ea8f9079c39a0266a455bcc59cb077a8504e3",
+      "raw_output": "captures/lsda-mp1-0.04/qe.out.gz",
+      "input": "captures/lsda-mp1-0.04/h3.in"
+    },
+    {
+      "engine": "Program PWSCF v.7.6 starts on 26Oct2026 at 23:23:22",
+      "converged": true,
+      "energy_ry": -2.9187583,
+      "magnetization_e": 0.99,
+      "entropy_energy_ry": -0.00388677,
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00053214,
+          0.00016447,
+          6.566e-05
+        ],
+        [
+          0.00016447,
+          0.00016675,
+          0.00024173
+        ],
+        [
+          6.566e-05,
+          0.00024173,
+          -0.00047522
+        ]
+      ],
+      "forces_ry_bohr": [
+        [
+          -0.05202436,
+          -0.07816382,
+          -0.05906587
+        ],
+        [
+          0.01195374,
+          0.02953836,
+          0.02564423
+        ],
+        [
+          0.04007062,
+          0.04862546,
+          0.03342165
+        ]
+      ],
+      "stress_voigt_ev_ang3": [
+        -0.0488588428984615,
+        0.015310279350017768,
+        -0.04363268937160686,
+        0.015100939398485292,
+        0.006028623341062469,
+        0.022194625650853346
+      ],
+      "spin_nontrivial": true,
+      "entropy_nontrivial": true,
+      "xc": "PBE",
+      "input_dft": "PBE",
+      "smearing": "fd",
+      "degauss_ry": 0.02,
+      "command": [
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "h3.in"
+      ],
+      "exit_code": 0,
+      "input_sha256": "b6d78d343b5c0927d07fc3cbe6d861160645bb28ec44fd4763a4af3f3d782554",
+      "output_sha256": "b1e759a85e562e25802898229acdea2ab243c1b16dd0863d7a2afe2e955a2361",
+      "output": "pbe-fd-0.02/qe.out",
+      "accepted_external_output": true,
+      "energy_ha": -1.45937915,
+      "source_capture_sha256": "c8014996163c1da09125bff28be41b79c12a42f3dc0badb258cb0e46debec7f9",
+      "raw_output": "captures/pbe-fd-0.02/qe.out.gz",
+      "input": "captures/pbe-fd-0.02/h3.in"
+    },
+    {
+      "engine": "Program PWSCF v.7.6 starts on 26Oct2026 at 23:23:25",
+      "converged": true,
+      "energy_ry": -2.91806723,
+      "magnetization_e": 1.0,
+      "entropy_energy_ry": -0.0002683,
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00053436,
+          0.00016927,
+          6.866e-05
+        ],
+        [
+          0.00016927,
+          0.00017415,
+          0.0002447
+        ],
+        [
+          6.866e-05,
+          0.0002447,
+          -0.00047408
+        ]
+      ],
+      "forces_ry_bohr": [
+        [
+          -0.05331233,
+          -0.07984637,
+          -0.0602526
+        ],
+        [
+          0.01220042,
+          0.03047638,
+          0.0262768
+        ],
+        [
+          0.04111191,
+          0.04936999,
+          0.03397581
+        ]
+      ],
+      "stress_voigt_ev_ang3": [
+        -0.04906267390390102,
+        0.015989716034816158,
+        -0.043528019395840625,
+        0.015541655085922087,
+        0.006304070645710464,
+        0.02246731848245486
+      ],
+      "spin_nontrivial": true,
+      "entropy_nontrivial": true,
+      "xc": "PBE",
+      "input_dft": "PBE",
+      "smearing": "gaussian",
+      "degauss_ry": 0.04,
+      "command": [
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "h3.in"
+      ],
+      "exit_code": 0,
+      "input_sha256": "deabfbaf86ee4e5f5a05978f8b4aa85e4389d7085c060e584769aac309ecc7b5",
+      "output_sha256": "a7f33eca73563c745552dced7c30b193c466fe48d4eb88a5f84dcd95e6371223",
+      "output": "pbe-gaussian-0.04/qe.out",
+      "accepted_external_output": true,
+      "energy_ha": -1.459033615,
+      "source_capture_sha256": "c8014996163c1da09125bff28be41b79c12a42f3dc0badb258cb0e46debec7f9",
+      "raw_output": "captures/pbe-gaussian-0.04/qe.out.gz",
+      "input": "captures/pbe-gaussian-0.04/h3.in"
+    },
+    {
+      "engine": "Program PWSCF v.7.6 starts on 26Oct2026 at 23:28:37",
+      "converged": true,
+      "energy_ry": -2.91793169,
+      "magnetization_e": 1.0,
+      "entropy_energy_ry": 0.00111858,
+      "stress_tensor_ry_bohr3": [
+        [
+          -0.00053532,
+          0.00017219,
+          7.051e-05
+        ],
+        [
+          0.00017219,
+          0.00017865,
+          0.0002463
+        ],
+        [
+          7.051e-05,
+          0.0002463,
+          -0.00047336
+        ]
+      ],
+      "forces_ry_bohr": [
+        [
+          -0.05410495,
+          -0.08084551,
+          -0.06094012
+        ],
+        [
+          0.01236323,
+          0.03109654,
+          0.02669627
+        ],
+        [
+          0.04174172,
+          0.04974897,
+          0.03424385
+        ]
+      ],
+      "stress_voigt_ev_ang3": [
+        -0.049150817041388385,
+        0.016402886991788154,
+        -0.04346191204272511,
+        0.0158097571291128,
+        0.006473929816910063,
+        0.022614223711600462
+      ],
+      "spin_nontrivial": true,
+      "entropy_nontrivial": true,
+      "xc": "PBE",
+      "input_dft": "PBE",
+      "smearing": "mp1",
+      "degauss_ry": 0.04,
+      "command": [
+        "/software/sse2/el9_epyc9005/easybuild/prefix/software/QuantumESPRESSO/7.6-gmpflf-2026.03/bin/pw.x",
+        "-in",
+        "h3.in"
+      ],
+      "exit_code": 0,
+      "input_sha256": "65f9206226e22130dbd5450541de2fbba2fbb2bd33c1b6352726698a98d14f4f",
+      "output_sha256": "d2e6ade810a0b3e8703ab618b364724b41282eb1d416df65809373684208e40c",
+      "output": "pbe-mp1-0.04/qe.out",
+      "accepted_external_output": true,
+      "energy_ha": -1.458965845,
+      "source_capture_sha256": "68ac2d834d981a661da6046b9c6ea8f9079c39a0266a455bcc59cb077a8504e3",
+      "raw_output": "captures/pbe-mp1-0.04/qe.out.gz",
+      "input": "captures/pbe-mp1-0.04/h3.in"
+    }
+  ]
+}
