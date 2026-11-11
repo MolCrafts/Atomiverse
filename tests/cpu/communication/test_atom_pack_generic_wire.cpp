@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstring>
 #include <span>
+#include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
@@ -197,6 +198,33 @@ TEST(TestAtomPackGenericWire, BorderAllScalarRoundTripIsFieldMajor) {
     EXPECT_DOUBLE_EQ(f.span(kAtom_y)[4], 10.0);
     EXPECT_EQ(f.span(kAtom_tag)[4], static_cast<TagInt>(501));
     EXPECT_EQ(f.span(kAtom_type)[5], 3);
+}
+
+TEST(TestAtomPackGenericWire, ScalarPackUsesEverySendIndex) {
+    cpu::Frame f(8);
+    for (int i = 0; i < 5; ++i) {
+        f.span(kAtom_x)[i] = static_cast<StorageReal>(i);
+        f.span(kAtom_tag)[i] = static_cast<TagInt>(500 + i);
+    }
+    // The endpoints look contiguous, but the interior row is elsewhere.
+    const int send[] = {0, 4, 2};
+    const double shift[] = {5.0, 0.0, 0.0};
+    for (const auto kind :
+         {cpu::comm::PackKind::Comm, cpu::comm::PackKind::Border}) {
+        const auto plan =
+            cpu::comm::make_wire_plan(f, kind, base_fields::engine_contract());
+        std::vector<std::byte> wire(plan.bytes(3));
+        plan.pack(f, send, 3, shift, wire.data(), wire.size());
+        plan.unpack(f, 3, 5, wire.data(), wire.size());
+        for (int k = 0; k < 3; ++k) {
+            EXPECT_DOUBLE_EQ(f.span(kAtom_x)[5 + k], send[k] + shift[0]);
+            if (kind == cpu::comm::PackKind::Border)
+                EXPECT_EQ(f.span(kAtom_tag)[5 + k], 500 + send[k]);
+        }
+        const int invalid[] = {0, f.capacity(), 2};
+        EXPECT_THROW(plan.pack(f, invalid, 3, shift, wire.data(), wire.size()),
+                     std::out_of_range);
+    }
 }
 
 /// A 3-component `image` on the border wire forces the row-major arm.

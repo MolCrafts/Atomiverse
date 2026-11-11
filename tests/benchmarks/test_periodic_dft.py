@@ -119,11 +119,26 @@ def test_si_bloch_multigrid_row_runs_on_both_backends_and_keeps_the_full_mesh():
     assert {p.id for p in row.participants} == {"atv.cpu", "atv.cuda", "cp2k.cpu"}
 
 
-def test_h3_bloch_uks_row_uses_a_full_mesh_on_cpu():
+def test_h3_bloch_uks_row_uses_a_full_mesh_on_cpu_and_cuda():
     row = next(row for row in SPEC.rows if row.id == "gpw.h3-uks-kpoints.pbe")
     assert row.systems[0].spin == 1
     assert row.model["expected_electrons"] == 3
     assert row.model["k_mesh"] == [1, 1, 2]
     assert row.model["ngrids"] == 1
     assert row.model["stress_kind"] == "Analytical"
-    assert {p.id for p in row.participants} == {"atv.cpu", "cp2k.cpu"}
+    assert {p.id for p in row.participants} == {"atv.cpu", "atv.cuda", "cp2k.cpu"}
+
+
+def test_h3_bloch_uks_multigrid_keeps_the_single_grid_model():
+    rows = {row.id: row for row in SPEC.rows}
+    single = rows["gpw.h3-uks-kpoints.pbe"]
+    multi = rows["gpw.h3-uks-kpoints-multigrid.pbe"]
+    assert multi.systems[0].positions_angstrom == single.systems[0].positions_angstrom
+    assert multi.systems[0].spin == single.systems[0].spin
+    for key in ("cell_vectors_angstrom", "k_mesh", "cutoff_ry", "xc",
+                "basis", "pseudopotential", "stress_kind", "expected_electrons"):
+        assert multi.model[key] == single.model[key]
+    assert multi.model["ngrids"] == 3
+    assert multi.model["rel_cutoff"] == 96
+    assert multi.checks == single.checks
+    assert {p.id for p in multi.participants} == {"atv.cpu", "cp2k.cpu"}

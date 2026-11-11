@@ -94,6 +94,7 @@ def _fixture(
             "h2-rks-multigrid": "H₂ RKS Γ, multigrid",
             "h3-uks-ortho": "H₃ UKS Γ",
             "h3-uks-kpoints": "H₃ UKS, two k points",
+            "h3-uks-kpoints-multigrid": "H₃ UKS, two k points and three grid levels",
             "si4-rks-kpoints": "Displaced diamond Si₄ RKS, two k points",
             "si4-rks-kpoints-multigrid": "Displaced diamond Si₄ RKS, two k points and three grid levels",
         }[fixture_id],
@@ -133,6 +134,7 @@ def method_spec(method: str) -> Method:
             ("si4-rks-kpoints", 0, ("PBE",)),
             ("si4-rks-kpoints-multigrid", 0, ("PBE",)),
             ("h3-uks-kpoints", 1, ("PBE",)),
+            ("h3-uks-kpoints-multigrid", 1, ("PBE",)),
         ]
     )
     for fixture_id, spin, functionals in fixtures:
@@ -143,7 +145,7 @@ def method_spec(method: str) -> Method:
         multigrid = fixture_id.endswith("-multigrid")
         kpoints = "-kpoints" in fixture_id
         silicon = fixture_id.startswith("si4-")
-        cpu_only = not pw and spin and kpoints
+        cpu_only = not pw and spin and kpoints and multigrid
         for xc in functionals:
             folder = f"{archive_id}-{xc.lower()}"
             if pw:

@@ -1,13 +1,10 @@
 /// @file cuda/gpw/gpw_solver.cuh
 /// @brief `cuda::gpw::GpwDft` — concrete GPW DFT method on CUDA (product).
 ///
-/// Public twin of `cpu::gpw::GpwDft` for the **landed product slice**:
-/// Γ-point DIIS RKS (Padé LDA or pure PBE-family GGA: PBE, PBEsol, RevPBE,
-/// RPBE) with single-grid (`ngrids==1`) **or**
-/// REL_CUTOFF multigrid (`ngrids>1` + `rel_cutoff>0`), **or collinear UKS
-/// (Padé LSD or PBE-family spin GGA, single-grid only)**, **or multi-k RKS DIIS** (fixed occupations, single-grid or multigrid,
-/// Monkhorst–Pack / explicit list; device phased STVnl and Poisson/XC), periodic Poisson. Parameters are public members (no
-/// `*Config` bag, no `make_*` factory). Stage footholds under
+/// Public twin of `cpu::gpw::GpwDft` for periodic Γ and multi-k DIIS with
+/// fixed occupations, Padé or PBE-family XC (PBE, PBEsol, RevPBE, RPBE), and
+/// Monkhorst–Pack or explicit k points. RKS supports single-grid and
+/// REL_CUTOFF multigrid, and collinear UKS supports single-grid. Stages under
 /// `cuda/gpw/internal/` are composed inside `run()` and are never the user API.
 ///
 /// Hybrid composition (stated, not silent):
@@ -70,9 +67,9 @@ class GpwForceWorkspace;
 /// @brief Concrete GPW DFT method on CUDA — members + `build` / `run` /
 ///        `last_result`.
 ///
-/// Product slice: Γ DIIS RKS (`n_occ`, PADE/PBE family, single grid or REL_CUTOFF
-/// multigrid), collinear UKS (`n_alpha`/`n_beta`, PADE/PBE family, single grid), or
-/// multi-k RKS DIIS (`k_mesh` / `k_points`, single grid or multigrid, fixed occ), periodic.
+/// Periodic Γ and multi-k DIIS with fixed occupations. RKS uses `n_occ`
+/// and either grid representation. Collinear UKS uses `n_alpha`/`n_beta`
+/// on a single grid.
 /// Move-only.
 class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
   public:
@@ -104,7 +101,7 @@ class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
     bool local_pp_on_grid = true;   ///< collocate GTH local SR PP on grid.
     bool use_ot = false;            ///< OT — not on device product (throws).
     /// @brief Monkhorst–Pack subdivisions (CP2K convention). `{1,1,1}` is Γ
-    ///        product path; any \(N_d>1\) selects multi-k RKS DIIS.
+    ///        product path; any \(N_d>1\) selects multi-k DIIS.
     int k_mesh[3] = {1, 1, 1};
     /// @brief Explicit fractional k list (overrides `k_mesh` when non-empty).
     std::vector<std::array<double, 3>> k_points;

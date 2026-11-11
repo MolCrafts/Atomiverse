@@ -339,29 +339,64 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     if (nprod_a == 0 && nprod_b == 0)
         throw std::runtime_error(
             "cuda::gpw KsChainDevice::run_uks: need ≥1 product in α or β");
-    if (xc != cpu::xc::XCType::PADE && !cpu::xc::is_pbe_family(xc))
-        throw std::invalid_argument(
-            "cuda::gpw KsChainDevice::run_uks: unsupported cpu::xc::XCType");
-#if !defined(ATV_HAS_PW)
-    if (cpu::xc::is_pbe_family(xc))
-        throw std::runtime_error("cuda::gpw KsChainDevice::run_uks: PBE-family "
-                                 "XC requires ATV_BUILD_PW");
-#endif
-    ensure_uks_buffers_();
-    if (cpu::xc::is_pbe_family(xc))
-        ensure_uks_gga_buffers_();
-    const size_t bytes_rho = static_cast<size_t>(ntot_) * sizeof(double);
-    const int grid_dim =
-        static_cast<int>((ntot_ + kBlock - 1) / static_cast<long>(kBlock));
-    const int nr = static_cast<int>(ntot_);
+    if (d_acc_a != nullptr && nprod_a == 0)
+        throw std::runtime_error(
+            "cuda::gpw KsChainDevice::run_uks: d_acc_a needs α products");
+    if (d_acc_b != nullptr && nprod_b == 0)
+        throw std::runtime_error(
+            "cuda::gpw KsChainDevice::run_uks: d_acc_b needs β products");
 
-    // 1. Collocate dual spin densities (or zero).
+    ensure_uks_buffers_();
+    const size_t bytes_rho = static_cast<size_t>(ntot_) * sizeof(double);
     check_cuda(cudaMemsetAsync(d_rho_a_, 0, bytes_rho, stream_), "zero rho_a");
     check_cuda(cudaMemsetAsync(d_rho_b_, 0, bytes_rho, stream_), "zero rho_b");
     if (nprod_a > 0)
         collocate_products(coll_grid_, d_prods_a, nprod_a, d_rho_a_, stream_);
     if (nprod_b > 0)
         collocate_products(coll_grid_, d_prods_b, nprod_b, d_rho_b_, stream_);
+
+    build_uks_fields_(d_n_ion, d_v_loc, xc);
+    if (d_acc_a != nullptr)
+        integrate_products(coll_grid_, d_prods_a, nprod_a, d_veff_, d_acc_a,
+                           stream_);
+    if (d_acc_b != nullptr)
+        integrate_products(coll_grid_, d_prods_b, nprod_b, d_veff_b_, d_acc_b,
+                           stream_);
+    return read_uks_energies_(d_v_loc != nullptr);
+}
+
+KsChainEnergies KsChainDevice::run_uks_from_rho(const double* d_rho_a,
+                                                const double* d_rho_b,
+                                                const double* d_n_ion,
+                                                const double* d_v_loc,
+                                                cpu::xc::XCType xc) {
+    if (d_rho_a == nullptr || d_rho_b == nullptr)
+        throw std::invalid_argument(
+            "cuda::gpw KsChainDevice::run_uks_from_rho: need both spin "
+            "densities");
+    ensure_uks_buffers_();
+    device_copy_field(d_rho_a, d_rho_a_, ntot_, stream_);
+    device_copy_field(d_rho_b, d_rho_b_, ntot_, stream_);
+    build_uks_fields_(d_n_ion, d_v_loc, xc);
+    return read_uks_energies_(d_v_loc != nullptr);
+}
+
+void KsChainDevice::build_uks_fields_(const double* d_n_ion,
+                                      const double* d_v_loc,
+                                      cpu::xc::XCType xc) {
+    if (xc != cpu::xc::XCType::PADE && !cpu::xc::is_pbe_family(xc))
+        throw std::invalid_argument(
+            "cuda::gpw KsChainDevice::run_uks_from_rho: unsupported XC type");
+#if !defined(ATV_HAS_PW)
+    if (cpu::xc::is_pbe_family(xc))
+        throw std::runtime_error("cuda::gpw KsChainDevice: PBE-family spin XC "
+                                 "requires ATV_BUILD_PW");
+#endif
+    if (cpu::xc::is_pbe_family(xc))
+        ensure_uks_gga_buffers_();
+    const int grid_dim =
+        static_cast<int>((ntot_ + kBlock - 1) / static_cast<long>(kBlock));
+    const int nr = static_cast<int>(ntot_);
 
     // 2. ρ = ρ_α + ρ_β; n = ρ − n_ion
     add_fields_kernel<<<grid_dim, kBlock, 0, stream_>>>(d_rho_a_, d_rho_b_,
@@ -410,24 +445,9 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     if (d_v_loc != nullptr)
         scale_scalar_kernel<<<1, 1, 0, stream_>>>(d_e_loc_, weight_);
     check_cuda(cudaGetLastError(), "assemble_veff_uks");
+}
 
-    // 6. Optional dual integrate (shape-only; products may differ only by
-    // weight — product list geometry is shared on the product path).
-    if (d_acc_a != nullptr) {
-        if (d_prods_a == nullptr || nprod_a <= 0)
-            throw std::runtime_error(
-                "cuda::gpw KsChainDevice::run_uks: d_acc_a needs α products");
-        integrate_products(coll_grid_, d_prods_a, nprod_a, d_veff_, d_acc_a,
-                           stream_);
-    }
-    if (d_acc_b != nullptr) {
-        if (d_prods_b == nullptr || nprod_b <= 0)
-            throw std::runtime_error(
-                "cuda::gpw KsChainDevice::run_uks: d_acc_b needs β products");
-        integrate_products(coll_grid_, d_prods_b, nprod_b, d_veff_b_, d_acc_b,
-                           stream_);
-    }
-
+KsChainEnergies KsChainDevice::read_uks_energies_(bool has_local_pp) {
     KsChainEnergies out;
     check_cuda(cudaMemcpyAsync(&out.e_hartree, poisson_.last_e_hartree_device(),
                                sizeof(double), cudaMemcpyDeviceToHost, stream_),
@@ -435,7 +455,7 @@ KsChainEnergies KsChainDevice::run_uks(const DeviceProduct* d_prods_a,
     check_cuda(cudaMemcpyAsync(&out.e_xc, d_e_xc_, sizeof(double),
                                cudaMemcpyDeviceToHost, stream_),
                "D2H e_xc");
-    if (d_v_loc != nullptr) {
+    if (has_local_pp) {
         check_cuda(cudaMemcpyAsync(&out.e_locgrid, d_e_loc_, sizeof(double),
                                    cudaMemcpyDeviceToHost, stream_),
                    "D2H e_loc");

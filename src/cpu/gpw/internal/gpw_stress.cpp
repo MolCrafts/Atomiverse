@@ -953,8 +953,7 @@ gpw_stress_at_state_impl(const GpwGeometry& geometry, const GpwDft& method,
     const bool borrow_density =
         kpath && !uks
         && (scf.f_k.empty() || !geometry.product_grid.levels.empty());
-    const bool borrow_spin =
-        kpath && uks && geometry.product_grid.levels.empty() && scf.iters > 0;
+    const bool borrow_spin = kpath && uks && scf.iters > 0;
     const auto& accepted_P_k = scf.iters > 0 ? workspace.accepted_P_k : scf.P_k;
     std::vector<CplxMatrix> rebuilt_P_k, W_k;
     const auto& P_k = borrow_density ? accepted_P_k : rebuilt_P_k;

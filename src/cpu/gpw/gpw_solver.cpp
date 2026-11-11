@@ -2604,7 +2604,7 @@ run_gpw_scf_kpoints_uks(const internal::GpwGeometry& geometry,
 
     auto store_k_payload = [&](const std::vector<CplxMatrix>& Ha_full,
                                const std::vector<CplxMatrix>& Hb_full) {
-        if (res.converged && !use_mg) {
+        if (res.converged) {
             layout.gather_density(Pa_k, nb);
             layout.gather_density(Pb_k, nb);
         }
@@ -4111,7 +4111,7 @@ GpwDft::run_impl_(const internal::GpwGeometry& geometry,
             auto result = run_gpw_scf_kpoints_uks(
                 geometry, cfg, n_ion, v_locsr, e_self, e_core_overlap, e_d3, ws,
                 stage_drive, ot_stage_drive, guess_P_k, guess_P_k_beta);
-            if (!result.converged && geometry.product_grid.levels.empty()) {
+            if (!result.converged) {
                 // A budget-limited dynamics corrector uses the density of
                 // the physical Hamiltonian's final orbitals.
                 ws.accepted_P_k = result.P_k;

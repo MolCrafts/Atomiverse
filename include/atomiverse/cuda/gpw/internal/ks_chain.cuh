@@ -70,7 +70,7 @@ class KsChainDevice {
     double* d_gy_ = nullptr;
     double* d_gz_ = nullptr;
     double* d_div_ = nullptr;
-    // Collinear UKS workspace (allocated on first `run_uks`).
+    // Collinear UKS workspace (allocated on first spin build).
     double* d_rho_a_ = nullptr;
     double* d_rho_b_ = nullptr;
     double* d_vxc_b_ = nullptr;
@@ -171,21 +171,29 @@ class KsChainDevice {
                             double* d_acc_b = nullptr,
                             cpu::xc::XCType xc = cpu::xc::XCType::PADE);
 
+    /// @brief Build spin potentials and energies from two device density grids.
+    /// Both densities have length ntot() and are left intact. Ionic density
+    /// and local PP are optional, as in run_uks().
+    KsChainEnergies run_uks_from_rho(const double* d_rho_a,
+                                     const double* d_rho_b,
+                                     const double* d_n_ion,
+                                     const double* d_v_loc, cpu::xc::XCType xc);
+
     /// @brief Device pointer to last V_eff (RKS) / V_eff^α (UKS) [Hartree].
     const double* d_veff() const { return d_veff_; }
-    /// @brief Device pointer to last V_eff^β after `run_uks` (null before).
+    /// @brief Device pointer to last V_eff^β (null before a spin build).
     const double* d_veff_b() const { return d_veff_b_; }
     /// @brief Device pointer to last ρ (total; length npts).
     const double* d_rho() const { return d_rho_; }
-    /// @brief Device pointer to last ρ_α after `run_uks` (null before).
+    /// @brief Device pointer to last ρ_α (null before a spin build).
     const double* d_rho_a() const { return d_rho_a_; }
-    /// @brief Device pointer to last ρ_β after `run_uks` (null before).
+    /// @brief Device pointer to last ρ_β (null before a spin build).
     const double* d_rho_b() const { return d_rho_b_; }
     /// @brief Device pointer to last V_es (length npts).
     const double* d_v_es() const { return d_v_es_; }
     /// @brief Device pointer to last V_xc (RKS) / V_xc^α (UKS).
     const double* d_vxc() const { return d_vxc_; }
-    /// @brief Device pointer to last V_xc^β after `run_uks` (null before).
+    /// @brief Device pointer to last V_xc^β (null before a spin build).
     const double* d_vxc_b() const { return d_vxc_b_; }
 
     long ntot() const { return ntot_; }
@@ -196,6 +204,9 @@ class KsChainDevice {
   private:
     void ensure_uks_buffers_();
     void ensure_uks_gga_buffers_();
+    void build_uks_fields_(const double* d_n_ion, const double* d_v_loc,
+                           cpu::xc::XCType xc);
+    KsChainEnergies read_uks_energies_(bool has_local_pp);
 };
 
 /// @brief Multi-grid product collocate → fine KS → restrict → integrate.

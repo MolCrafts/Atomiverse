@@ -5,13 +5,14 @@ required participants are Atomiverse CPU and a live independent executable.
 Both methods define a CUDA participant, required with `--require-cuda`.
 The smoke tier runs the two restricted PBEsol cases. Acceptance adds the
 remaining PBE-family cases, mixed PW H₂O, two GPW H₂ geometry cases, GPW H₂
-multigrid, two GPW Si₄ k-point cases, and a CPU GPW H₃ k-point case. Each participant runs one fresh cold calculation and
-at least one fresh warm calculation per case.
+multigrid, two GPW Si₄ k-point cases, and two GPW H₃ k-point cases. Each
+participant runs one fresh cold calculation and at least one fresh warm
+calculation per case.
 
 | Method | Scope | Energy | Every force component | Stress |
 | --- | --- | ---: | ---: | ---: |
 | PW / QE 7.6 | Six Γ Si₂ RKS and skew H₃ UKS cases, 0.02 Ry Fermi–Dirac, plus skew Γ H₂O at fixed PBE occupations | 1e-5 Ha, including −TS for smeared cases | 1e-4 Ha/Bohr | 2e-3 eV/Å³, six Voigt components |
-| GPW / CP2K 2026.2 | Nine Γ single-grid cases, Γ multigrid H₂ and Si₄ RKS on two k points with single-grid and three-level multigrid on CPU and CUDA, plus CPU H₃ UKS on two k points with a single grid, integer occupations | 5e-6 Ha | 5e-5 Ha/Bohr | 5e-5 Ha/Bohr³, xx/yy/zz |
+| GPW / CP2K 2026.2 | Nine Γ single-grid cases, Γ multigrid H₂, two-k-point Si₄ RKS single-grid and multigrid, and two-k-point H₃ UKS single-grid on CPU and CUDA. Two-k-point H₃ UKS multigrid runs on CPU. All use integer occupations. | 5e-6 Ha | 5e-5 Ha/Bohr | 5e-5 Ha/Bohr³, xx/yy/zz |
 
 The original QE decks, GTH files and CP2K decks are under the
 [PW reference](../../regressions/pw/pbe-family/REFERENCE.md) and
@@ -44,8 +45,11 @@ diagonal stresses.
 The Si₄ cases displace one atom of the diamond BCT cell and use PBE with
 DZVP-MOLOPT-GTH and GTH-PBE-q4. Atomiverse and CP2K use the full
 Monkhorst–Pack 1 × 1 × 2 mesh. CP2K reports analytical stress for both cases.
-The multigrid case runs on the CPU and requires multiple populated CP2K
-grid levels.
+The Si₄ multigrid case requires multiple populated CP2K grid levels.
+The H₃ UKS cases use the same full mesh with two α and one β occupied
+orbital at each k point. The single-grid row compares CPU and CUDA against
+the same live CP2K reference for energy, every force component and xx/yy/zz
+stress.
 
 ## Run locally
 

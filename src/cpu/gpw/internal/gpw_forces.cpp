@@ -971,13 +971,13 @@ assemble_gpw_forces_kpoints(const GpwGeometry& geometry, const GpwDft& cfg,
 
     const auto& mg = geometry.product_grid;
     const auto& products = geometry.products;
-    const bool single_grid = mg.levels.empty();
-    const bool use_product_gradient = !uks && !single_grid;
-    if (single_grid && static_cast<int>(geometry.kbg.chi.size()) != nk)
+    const bool use_product_gradient = !mg.levels.empty();
+    if (!use_product_gradient
+        && static_cast<int>(geometry.kbg.chi.size()) != nk)
         throw std::logic_error(
             "GPW k-point forces require the assembled Bloch table");
     const bool borrow_density = !uks && (!metallic || use_product_gradient);
-    const bool borrow_spin = uks && single_grid && scf.iters > 0;
+    const bool borrow_spin = uks && scf.iters > 0;
     if (borrow_spin
         && (workspace.accepted_P_k.size() != kpts.size()
             || workspace.accepted_P_k_beta.size() != kpts.size()))
@@ -1143,35 +1143,32 @@ assemble_gpw_forces_kpoints(const GpwGeometry& geometry, const GpwDft& cfg,
     const auto& grid = geometry.grid;
     const long ng = grid.npts();
     const double wgt = grid.weight();
-    // The dense table is borrowed for the single-grid path.
-    internal::KpointBasisGrid kbg_uks;
-    if (uks && !single_grid)
-        kbg_uks = internal::build_kpoint_basis_grid(grid, basis, kpts, eps);
-    const auto& kbg = uks && !single_grid ? kbg_uks : geometry.kbg;
-
-    std::vector<double> rho(static_cast<std::size_t>(ng), 0.0);
-    std::vector<double> rho_a, rho_b;
-    std::vector<std::vector<double>> D;
-    if (use_product_gradient) {
-        D = internal::build_bloch_density_stack(geometry, P_k);
-        rho = multigrid_collocate_rho_cells(mg, products, nb, D, eps);
-    } else if (uks) {
-        rho_a.assign(static_cast<std::size_t>(ng), 0.0);
-        rho_b.assign(static_cast<std::size_t>(ng), 0.0);
-        for (int ik = 0; ik < nk; ++ik) {
-            const double wk = kpts[static_cast<std::size_t>(ik)].weight;
-            internal::collocate_density_k(
-                kbg, ik, Pa_k[static_cast<std::size_t>(ik)], wk, rho_a);
-            internal::collocate_density_k(
-                kbg, ik, Pb_k[static_cast<std::size_t>(ik)], wk, rho_b);
+    const auto& kbg = geometry.kbg;
+    auto collocate = [&](const std::vector<CplxMatrix>& density,
+                         std::vector<std::vector<double>>& cells) {
+        if (use_product_gradient) {
+            cells = internal::build_bloch_density_stack(geometry, density);
+            return multigrid_collocate_rho_cells(mg, products, nb, cells, eps);
         }
+        std::vector<double> rho(static_cast<std::size_t>(ng), 0.0);
+        for (int ik = 0; ik < nk; ++ik) {
+            const auto k = static_cast<std::size_t>(ik);
+            internal::collocate_density_k(kbg, ik, density[k], kpts[k].weight,
+                                          rho);
+        }
+        return rho;
+    };
+    std::vector<double> rho;
+    std::vector<double> rho_a, rho_b;
+    std::vector<std::vector<double>> D, D_beta;
+    if (uks) {
+        rho_a = collocate(Pa_k, D);
+        rho_b = collocate(Pb_k, D_beta);
+        rho.resize(rho_a.size());
         for (std::size_t g = 0; g < rho.size(); ++g)
             rho[g] = rho_a[g] + rho_b[g];
     } else {
-        for (int ik = 0; ik < nk; ++ik)
-            internal::collocate_density_k(
-                kbg, ik, P_k[static_cast<std::size_t>(ik)],
-                kpts[static_cast<std::size_t>(ik)].weight, rho);
+        rho = collocate(P_k, D);
     }
 
     const bool reuse_uks =
@@ -1183,7 +1180,8 @@ assemble_gpw_forces_kpoints(const GpwGeometry& geometry, const GpwDft& cfg,
         && workspace.v_es.size() == static_cast<std::size_t>(ng);
 
     const bool reuse_potentials = reuse_rks || reuse_uks;
-    if ((borrow_density || borrow_spin) && !reuse_potentials)
+    if ((borrow_density || borrow_spin || use_product_gradient)
+        && !reuse_potentials)
         throw std::logic_error(
             "GPW k-point forces require the accepted potentials");
     GpwWorkspace rebuilt;
@@ -1331,11 +1329,19 @@ assemble_gpw_forces_kpoints(const GpwGeometry& geometry, const GpwDft& cfg,
     }
 
     if (use_product_gradient) {
-        const auto gradient = internal::multigrid_density_center_gradient_cells(
-            mg, products, nb, D, veff, owner, na, eps);
-        for (int a = 0; a < na; ++a)
-            for (int d = 0; d < 3; ++d)
-                forces[a][d] -= gradient[a][d];
+        auto subtract_gradient =
+            [&](const std::vector<std::vector<double>>& cells,
+                const std::vector<double>& potential) {
+                const auto gradient =
+                    internal::multigrid_density_center_gradient_cells(
+                        mg, products, nb, cells, potential, owner, na, eps);
+                for (int a = 0; a < na; ++a)
+                    for (int d = 0; d < 3; ++d)
+                        forces[a][d] -= gradient[a][d];
+            };
+        subtract_gradient(D, uks ? veff_a : veff);
+        if (uks)
+            subtract_gradient(D_beta, veff_b);
     } else {
         // Derivative basis on grid (flat u*3+k), local to this force call.
         std::vector<GridBasisFunction> dflat(static_cast<std::size_t>(nb) * 3);
