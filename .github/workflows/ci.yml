@@ -136,6 +136,7 @@ jobs:
         run: |
           cmake -S . -B build/hf-benchmark-native -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DPython_EXECUTABLE="$(command -v python)" \
+            -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
             -DRust_TOOLCHAIN="$RUSTUP_TOOLCHAIN" -DCORROSION_TOOLS_RUST_TOOLCHAIN="$RUSTUP_TOOLCHAIN" \
             -DATV_BUILD_HF=ON -DATV_BUILD_PYTHON=ON -DATV_BUILD_EVALUATE=ON \
             -DATV_USE_MPI=OFF \
