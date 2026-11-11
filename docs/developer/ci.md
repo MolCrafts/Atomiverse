@@ -46,10 +46,9 @@ pushed ref that differs from the verified commit.
 
 | Event | Verification |
 | --- | --- |
-| Development-fork push | No compilation |
-| Upstream PR | Required hosted platform checks |
+| Development-mirror push | No compilation |
+| Upstream PR, including external and Dependabot | Independent full native validation plus platform checks |
 | Upstream dev merge | Integration was checked by its required PR; no second matrix |
-| External or Dependabot PR | Independent full native validation plus platform checks |
 | Upstream master push | Independent native validation and platform checks |
 | Manual test dispatch | Independent native validation and platform checks |
 | Weekly or manual nightly | Independent HF scientific campaign; artifacts only |
@@ -63,6 +62,11 @@ skipped, missing, cancelled or failed required checks cannot satisfy `test / res
 Dev changes must use PRs; the master-push run independently verifies the exact
 commit that can become a release, even when its PR was already green.
 Hooks are a development gate, not proof that an external contributor ran tests.
+
+`Roy-Kid/Atomiverse` is an independent mirror, outside the upstream GitHub fork
+network. Push a feature branch to `MolCrafts/Atomiverse` and open its PR against
+`dev`; GitHub cannot open a direct cross-repository PR from that mirror. This
+profile grants no trusted-fork exception to independent native validation.
 
 Compiler caches include CPU identity and instruction flags because the native
 build uses `-march=native`. They also account for the compiler, Rust, CMake and

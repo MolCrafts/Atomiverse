@@ -85,9 +85,10 @@ bash -lc '
   `#!/bin/bash -l`, loads `GPU/buildenv-gcccuda/2026.03-cu13.0`, and keeps the
   default aarch64 Rust. `tools/gpu_job.sh` / `tools/cpu_job.sh` are
   parameterised templates, not one script per slug. Never pipe `module load`.
-- **molpy** is consumed from the local MolCrafts/molpy checkout via
+- **Interactive builds** consume molpy from the local MolCrafts/molpy checkout via
   `ATV_MOLPY_PATH` (default `../molpy`). Use its `molcxx/` bridge and `molpy/`
-  wheel together; no revision pin is imposed.
+  wheel together; no revision pin is imposed on interactive builds. CI validation
+  uses the separate pinned checkout described in [Validation and CI](ci.md).
 - Source transport into a reused build tree must invalidate changed files;
   do not preserve older timestamps over newer compiled objects. After class
   layout changes, rebuild every consuming translation unit, including tests

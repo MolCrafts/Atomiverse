@@ -20,7 +20,7 @@ defaults:
 jobs:
   context:
     name: test
-    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@649888661aa133bcdbbc9d8e5702517a6accb1a1
     with:
       profile: cpp-python
   native:
@@ -32,12 +32,12 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
-    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
-    - uses: MolCrafts/molcrafts-ci/actions/setup-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/setup-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
       with:
         python-version: 3.12.12
-    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
       with:
         native: ${{ runner.os != 'Windows' }}
     - run: molci platform native
@@ -64,12 +64,12 @@ jobs:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
-    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
-    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
-    - uses: MolCrafts/molcrafts-ci/actions/setup-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-molci@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/setup-rust@649888661aa133bcdbbc9d8e5702517a6accb1a1
+    - uses: MolCrafts/molcrafts-ci/actions/setup-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
       with:
         python-version: 3.12.12
-    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@649888661aa133bcdbbc9d8e5702517a6accb1a1
       with:
         native: ${{ runner.os != 'Windows' }}
     - run: molci platform ${{ matrix.lane }}
@@ -93,6 +93,6 @@ jobs:
     if: always() && needs.context.outputs.validate == 'true'
     runs-on: ubuntu-latest
     steps:
-    - uses: MolCrafts/molcrafts-ci/actions/validation-result@ab3048e05b6ea9c2464d3fb78fb4e6dd11ef48af
+    - uses: MolCrafts/molcrafts-ci/actions/validation-result@649888661aa133bcdbbc9d8e5702517a6accb1a1
       with:
         needs: ${{ toJSON(needs) }}
