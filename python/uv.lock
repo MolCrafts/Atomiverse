@@ -80,7 +80,7 @@ provides-extras = ["dev", "native", "benchmark", "docs"]
 [package.metadata.requires-dev]
 ci = [
     { name = "build", specifier = ">=1.2" },
-    { name = "molcrafts-ci", git = "https://github.com/MolCrafts/molcrafts-ci?rev=72813fc0f78b220dab40d9091244a989ba56c92d" },
+    { name = "molcrafts-ci", git = "https://github.com/MolCrafts/molcrafts-ci?rev=54799bfe986f247edd1788e6242673a527400306" },
     { name = "pip", specifier = ">=25" },
     { name = "twine", specifier = ">=6" },
 ]
@@ -868,7 +868,7 @@ wheels = [
 [[package]]
 name = "molcrafts-ci"
 version = "0.3.0"
-source = { git = "https://github.com/MolCrafts/molcrafts-ci?rev=72813fc0f78b220dab40d9091244a989ba56c92d#72813fc0f78b220dab40d9091244a989ba56c92d" }
+source = { git = "https://github.com/MolCrafts/molcrafts-ci?rev=54799bfe986f247edd1788e6242673a527400306#54799bfe986f247edd1788e6242673a527400306" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },

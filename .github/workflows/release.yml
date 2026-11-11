@@ -15,7 +15,7 @@ jobs:
     name: release
     permissions:
       contents: read
-    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@72813fc0f78b220dab40d9091244a989ba56c92d
+    uses: MolCrafts/molcrafts-ci/.github/workflows/context.yml@54799bfe986f247edd1788e6242673a527400306
     with:
       profile: cpp-python
   guard:
@@ -30,9 +30,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@72813fc0f78b220dab40d9091244a989ba56c92d
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@54799bfe986f247edd1788e6242673a527400306
       - run: molci run pins
-      - uses: MolCrafts/molcrafts-ci/actions/release-verify@72813fc0f78b220dab40d9091244a989ba56c92d
+      - uses: MolCrafts/molcrafts-ci/actions/release-verify@54799bfe986f247edd1788e6242673a527400306
         with:
           profile: cpp-python
           publish: ${{ needs.context.outputs.publish }}
@@ -48,9 +48,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@72813fc0f78b220dab40d9091244a989ba56c92d
-      - uses: MolCrafts/molcrafts-ci/actions/setup-rust@72813fc0f78b220dab40d9091244a989ba56c92d
-      - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@72813fc0f78b220dab40d9091244a989ba56c92d
+      - uses: MolCrafts/molcrafts-ci/actions/setup-molci@54799bfe986f247edd1788e6242673a527400306
+      - uses: MolCrafts/molcrafts-ci/actions/setup-rust@54799bfe986f247edd1788e6242673a527400306
+      - uses: MolCrafts/molcrafts-ci/actions/setup-cpp-python@54799bfe986f247edd1788e6242673a527400306
         with:
           native: 'false'
           scope: package

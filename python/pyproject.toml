@@ -45,7 +45,7 @@ ci = ["build>=1.2", "twine>=6", "pip>=25", "molcrafts-ci>=0.3"]
 
 [tool.uv.sources]
 molcrafts-molpy = { git = "https://github.com/MolCrafts/molpy", rev = "2ba2b2d974d036da8823e13f4a6c9236bfe46f3f", subdirectory = "molpy" }
-molcrafts-ci = { git = "https://github.com/MolCrafts/molcrafts-ci", rev = "72813fc0f78b220dab40d9091244a989ba56c92d" }
+molcrafts-ci = { git = "https://github.com/MolCrafts/molcrafts-ci", rev = "54799bfe986f247edd1788e6242673a527400306" }
 
 [tool.coverage.run]
 source = ["src/atomiverse"]
