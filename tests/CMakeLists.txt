@@ -508,6 +508,7 @@ if(ATV_BUILD_MD)
         atv_add_cpp_test(test_cpu_md_nvt_sllod_flip_lj
             cpu/dynamics/test_nvt_sllod_flip_lj.cpp)
     endif()
+    atv_add_cpp_test(test_cpu_md_gear_pc      cpu/dynamics/test_gear_pc.cpp)
     atv_add_cpp_test(test_cpu_md_npt_scalars cpu/dynamics/test_npt_scalars.cpp)
     atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)
     atv_add_cpp_test(test_cuda_md_brownian cuda/dynamics/test_brownian.cpp)
