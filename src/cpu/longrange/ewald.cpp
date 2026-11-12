@@ -243,9 +243,9 @@ void KSpaceEwald::add_curvature(const LaunchContext& ctx,
     ti_.resize(nk);
     sum_.phases(x, y, z, n, phases_);
     sum_.structure_factor(phases_, q, n, sr_.data(), si_.data());
-    sum_.directional_factor(x, y, z, q, rows.ux, rows.uy, rows.uz, n,
+    sum_.directional_factor(phases_, q, rows.ux, rows.uy, rows.uz, n,
                             tr_.data(), ti_.data());
-    sum_.add_curvature(x, y, z, q, rows.ux, rows.uy, rows.uz, n, f.box.volume(),
+    sum_.add_curvature(phases_, q, rows.ux, rows.uy, rows.uz, n, f.box.volume(),
                        sr_.data(), si_.data(), tr_.data(), ti_.data(), rows.hx,
                        rows.hy, rows.hz, rows.lap, rows.gx, rows.gy, rows.gz);
 }

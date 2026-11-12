@@ -110,6 +110,129 @@ double rel_max(const std::vector<double>& a, const std::vector<double>& b) {
     return err / scale;
 }
 
+/// A general cell (not upper triangular, so every reciprocal basis vector
+/// has three nonzero components) holding 1200 alternating charges at
+/// fractional coordinates in [−0.1, 1.1), with a vector field u per atom.
+/// Enough (k, atom) pairs that 4 available threads open a team of two.
+struct GeneralCell {
+    static constexpr int kAtoms = 1200;
+    Mat3 h = Mat3::diagonal(14.0, 12.5, 13.3);
+    EwaldSum sum{0.4, 1e-9};
+    double volume = 0;
+    std::vector<double> x, y, z, q, ux, uy, uz;
+
+    GeneralCell() {
+        h(0, 1) = 2.1;
+        h(0, 2) = -1.3;
+        h(1, 2) = 0.9;
+        h(1, 0) = 0.7;
+        h(2, 0) = -0.4;
+        h(2, 1) = 1.1;
+        volume = h.det();
+        sum.rebuild(h.inverse());
+        std::mt19937 rng(7);
+        std::uniform_real_distribution<double> frac(-0.1, 1.1);
+        std::uniform_real_distribution<double> charge(0.5, 1.5);
+        std::uniform_real_distribution<double> unit(-1.0, 1.0);
+        for (int i = 0; i < kAtoms; ++i) {
+            const Vec3 r = h * Vec3{frac(rng), frac(rng), frac(rng)};
+            x.push_back(r[0]);
+            y.push_back(r[1]);
+            z.push_back(r[2]);
+            q.push_back((i % 2 ? -1.0 : 1.0) * charge(rng));
+            ux.push_back(unit(rng));
+            uy.push_back(unit(rng));
+            uz.push_back(unit(rng));
+        }
+    }
+};
+
+/// T(k), the Hessian product H·u, the per-atom Laplacian and the gradient
+/// of the total Laplacian (`EwaldSum::add_curvature`).
+struct Curvature {
+    std::vector<double> tr, ti, hx, hy, hz, lap, gx, gy, gz;
+};
+
+/// The phase-table curvature kernels with `threads` OpenMP threads.
+Curvature tabulated_curvature(const GeneralCell& c, int threads) {
+#ifdef _OPENMP
+    const int saved = omp_get_max_threads();
+    omp_set_num_threads(threads);
+#else
+    (void)threads;
+#endif
+    const int n = GeneralCell::kAtoms;
+    const std::size_t nk = c.sum.size();
+    std::vector<double> sr(nk), si(nk);
+    Curvature r;
+    r.tr.resize(nk);
+    r.ti.resize(nk);
+    for (auto* v : {&r.hx, &r.hy, &r.hz, &r.lap, &r.gx, &r.gy, &r.gz})
+        v->assign(n, 0.0);
+    ATV::longrange::EwaldPhases ph;
+    c.sum.phases(c.x.data(), c.y.data(), c.z.data(), n, ph);
+    c.sum.structure_factor(ph, c.q.data(), n, sr.data(), si.data());
+    c.sum.directional_factor(ph, c.q.data(), c.ux.data(), c.uy.data(),
+                             c.uz.data(), n, r.tr.data(), r.ti.data());
+    c.sum.add_curvature(ph, c.q.data(), c.ux.data(), c.uy.data(), c.uz.data(),
+                        n, c.volume, sr.data(), si.data(), r.tr.data(),
+                        r.ti.data(), r.hx.data(), r.hy.data(), r.hz.data(),
+                        r.lap.data(), r.gx.data(), r.gy.data(), r.gz.data());
+#ifdef _OPENMP
+    omp_set_num_threads(saved);
+#endif
+    return r;
+}
+
+/// The cosine/sine-per-pair curvature sums (`EwaldSum::add_curvature`
+/// formulas, qqrd2e = 1).
+Curvature direct_curvature(const GeneralCell& c) {
+    const EwaldSum& sum = c.sum;
+    const std::size_t nk = sum.size(), n = GeneralCell::kAtoms;
+    const double K = 4.0 * units::pi / c.volume;
+    std::vector<double> sr(nk, 0.0), si(nk, 0.0);
+    Curvature r;
+    r.tr.assign(nk, 0.0);
+    r.ti.assign(nk, 0.0);
+    for (auto* v : {&r.hx, &r.hy, &r.hz, &r.lap, &r.gx, &r.gy, &r.gz})
+        v->assign(n, 0.0);
+    for (std::size_t k = 0; k < nk; ++k) {
+        const double kv[3] = {sum.kx()[k], sum.ky()[k], sum.kz()[k]};
+        for (std::size_t i = 0; i < n; ++i) {
+            const double phase =
+                kv[0] * c.x[i] + kv[1] * c.y[i] + kv[2] * c.z[i];
+            const double ku =
+                kv[0] * c.ux[i] + kv[1] * c.uy[i] + kv[2] * c.uz[i];
+            sr[k] += c.q[i] * std::cos(phase);
+            si[k] += c.q[i] * std::sin(phase);
+            r.tr[k] += c.q[i] * ku * std::cos(phase);
+            r.ti[k] += c.q[i] * ku * std::sin(phase);
+        }
+    }
+    for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t k = 0; k < nk; ++k) {
+            const double kv[3] = {sum.kx()[k], sum.ky()[k], sum.kz()[k]};
+            const double phase =
+                kv[0] * c.x[i] + kv[1] * c.y[i] + kv[2] * c.z[i];
+            const double ku =
+                kv[0] * c.ux[i] + kv[1] * c.uy[i] + kv[2] * c.uz[i];
+            const double co = std::cos(phase), s = std::sin(phase);
+            const double a = 2.0 * K * sum.kw()[k] * c.q[i];
+            const double k2 = kv[0] * kv[0] + kv[1] * kv[1] + kv[2] * kv[2];
+            const double cs = co * sr[k] + s * si[k];
+            const double hs = a * (co * r.tr[k] + s * r.ti[k] - ku * cs);
+            const double gs = 2.0 * a * k2 * (s * sr[k] - co * si[k]);
+            r.hx[i] += hs * kv[0];
+            r.hy[i] += hs * kv[1];
+            r.hz[i] += hs * kv[2];
+            r.gx[i] += gs * kv[0];
+            r.gy[i] += gs * kv[1];
+            r.gz[i] += gs * kv[2];
+            r.lap[i] += a * k2 * (c.q[i] - cs);
+        }
+    return r;
+}
+
 /// Cubic box of edge L [Å] → inv_cell = diag(1/L).
 Mat3 inv_cubic(double L) {
     Mat3 ic;
@@ -237,39 +360,17 @@ TEST(EwaldSumMath, SkewCellReciprocalSphereUsesDualColumnBasis) {
 // The phase-table kernels evaluate the same S(k), forces and energy as the
 // cosine/sine-per-pair sum, in a general cell (every column sign, both
 // in-plane powers negative) with atoms outside the cell and more atoms than
-// one kernel block (256), split over two threads. The rounding differs, so the gate is relative: the
-// direct sum's own phase k·r carries |k·r|·ε ≈ 1e-14 and the recurrence
+// one kernel block (256), split over two threads. The rounding differs, so
+// the gate is relative: the direct sum's own phase k·r carries |k·r|·ε ≈ 1e-14 and the recurrence
 // m·ε; measured differences are below 4e-15, so 1e-12 leaves two orders of
 // margin while any wrong term (a sign, a missing conjugate) shows at O(1).
 TEST(EwaldSumMath, PhaseTablesMatchTheDirectTrigonometricSum) {
-    // A general cell (not upper triangular), so every reciprocal basis
-    // vector has three nonzero components.
-    Mat3 h = Mat3::diagonal(14.0, 12.5, 13.3);
-    h(0, 1) = 2.1;
-    h(0, 2) = -1.3;
-    h(1, 2) = 0.9;
-    h(1, 0) = 0.7;
-    h(2, 0) = -0.4;
-    h(2, 1) = 1.1;
-    const double volume = h.det();
-    EwaldSum sum(0.4, 1e-9);
-    sum.rebuild(h.inverse());
-    constexpr int kAtoms = 1200;
-    // Enough (k, atom) pairs that 4 available threads open a team of two.
-    ASSERT_GT(sum.size() * kAtoms, 2 * EwaldSum::kPairsPerThread);
-
-    std::mt19937 rng(7);
-    std::uniform_real_distribution<double> frac(-0.1, 1.1);
-    std::uniform_real_distribution<double> charge(0.5, 1.5);
-    std::vector<double> x(kAtoms), y(kAtoms), z(kAtoms), q(kAtoms);
-    for (int i = 0; i < kAtoms; ++i) {
-        const Vec3 r = h * Vec3{frac(rng), frac(rng), frac(rng)};
-        x[i] = r[0];
-        y[i] = r[1];
-        z[i] = r[2];
-        q[i] = (i % 2 ? -1.0 : 1.0) * charge(rng);
-    }
-
+    const GeneralCell c;
+    ASSERT_GT(c.sum.size() * GeneralCell::kAtoms,
+              2 * EwaldSum::kPairsPerThread);
+    const EwaldSum& sum = c.sum;
+    const auto &x = c.x, &y = c.y, &z = c.z, &q = c.q;
+    const double volume = c.volume;
     const Reciprocal ref = direct(sum, x, y, z, q, volume);
     const Reciprocal got = tabulated(sum, x, y, z, q, volume, 1);
     EXPECT_LT(rel_max(got.sr, ref.sr), 1e-12);
@@ -288,4 +389,32 @@ TEST(EwaldSumMath, PhaseTablesMatchTheDirectTrigonometricSum) {
     EXPECT_EQ(team.fx, got.fx);
     EXPECT_EQ(team.fy, got.fy);
     EXPECT_EQ(team.fz, got.fz);
+}
+
+// The curvature kernels (T(k), H·u, the per-atom Laplacian and the gradient
+// of the total Laplacian, which the configurational thermostat sums) agree
+// with the cosine/sine-per-pair sums to the same relative 1e-12 (measured
+// below 4e-15), and a split team gives the 1-thread bits.
+TEST(EwaldSumMath, CurvaturePhaseTablesMatchTheDirectTrigonometricSum) {
+    const GeneralCell c;
+    ASSERT_GT(c.sum.size() * GeneralCell::kAtoms,
+              2 * EwaldSum::kPairsPerThread);
+    const Curvature ref = direct_curvature(c);
+    const Curvature got = tabulated_curvature(c, 1);
+    EXPECT_LT(rel_max(got.tr, ref.tr), 1e-12);
+    EXPECT_LT(rel_max(got.ti, ref.ti), 1e-12);
+    EXPECT_LT(rel_max(got.hx, ref.hx), 1e-12);
+    EXPECT_LT(rel_max(got.hy, ref.hy), 1e-12);
+    EXPECT_LT(rel_max(got.hz, ref.hz), 1e-12);
+    EXPECT_LT(rel_max(got.lap, ref.lap), 1e-12);
+    EXPECT_LT(rel_max(got.gx, ref.gx), 1e-12);
+    EXPECT_LT(rel_max(got.gy, ref.gy), 1e-12);
+    EXPECT_LT(rel_max(got.gz, ref.gz), 1e-12);
+
+    const Curvature team = tabulated_curvature(c, 4);
+    EXPECT_EQ(team.tr, got.tr);
+    EXPECT_EQ(team.ti, got.ti);
+    EXPECT_EQ(team.hx, got.hx);
+    EXPECT_EQ(team.lap, got.lap);
+    EXPECT_EQ(team.gz, got.gz);
 }

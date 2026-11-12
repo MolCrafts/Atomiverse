@@ -310,66 +310,156 @@ void EwaldSum::add_forces(const EwaldPhases& ph, const StorageReal* q, int n,
     }
 }
 
-void EwaldSum::directional_factor(const StorageReal* x, const StorageReal* y,
-                                  const StorageReal* z, const StorageReal* q,
+// T(k) = Σ_j q_j (k·u_j) e^{ik·r_j}; per column k·u = (m₀b₀ + m₁b₁)·u + m₂ b₂·u.
+void EwaldSum::directional_factor(const EwaldPhases& ph, const StorageReal* q,
                                   const double* ux, const double* uy,
                                   const double* uz, int n, double* tr,
                                   double* ti) const {
-    const int ng = static_cast<int>(kx_.size());
-#pragma omp parallel for schedule(static)
-    for (int k = 0; k < ng; ++k) {
-        double re = 0, im = 0;
-        const double kxk = kx_[k], kyk = ky_[k], kzk = kz_[k];
-        for (int i = 0; i < n; ++i) {
-            const double phase = kxk * x[i] + kyk * y[i] + kzk * z[i];
-            const double w = q[i] * (kxk * ux[i] + kyk * uy[i] + kzk * uz[i]);
-            re += w * std::cos(phase);
-            im += w * std::sin(phase);
+    const int n_columns = static_cast<int>(columns_.size());
+    const int team =
+        team_for(static_cast<std::size_t>(n) * (kx_.size() + columns_.size()));
+#pragma omp parallel for num_threads(team) if (team > 1) schedule(dynamic, 1)
+    for (int c = 0; c < n_columns; ++c) {
+        const Column col = columns_[c];
+        for (int k = col.begin; k < col.end; ++k) {
+            tr[k] = 0.0;
+            ti[k] = 0.0;
         }
-        tr[k] = re;
-        ti[k] = im;
+        alignas(64) double pr[kBlock], pi[kBlock];
+        alignas(64) double ar[kBlock], ai[kBlock], br[kBlock], bi[kBlock];
+        for (int j0 = 0; j0 < n; j0 += kBlock) {
+            const int jn = std::min(kBlock, n - j0);
+            column_phase(ph, col.mx, col.my, j0, jn, q, pr, pi);
+            const double g0 = col.mx * b_[0][0] + col.my * b_[1][0];
+            const double g1 = col.mx * b_[0][1] + col.my * b_[1][1];
+            const double g2 = col.mx * b_[0][2] + col.my * b_[1][2];
+#pragma omp simd
+            for (int j = 0; j < jn; ++j) {
+                const double u0 = ux[j0 + j], u1 = uy[j0 + j], u2 = uz[j0 + j];
+                const double w = g0 * u0 + g1 * u1 + g2 * u2;
+                const double v = b_[2][0] * u0 + b_[2][1] * u1 + b_[2][2] * u2;
+                ar[j] = w * pr[j];
+                ai[j] = w * pi[j];
+                br[j] = v * pr[j];
+                bi[j] = v * pi[j];
+            }
+            for (int k = col.begin; k < col.end; ++k) {
+                const int mz = col.mz0 + (k - col.begin);
+                const double m2 = mz;
+                const double* __restrict cz = ph.cos_row(2, mz) + j0;
+                const double* __restrict sz = ph.sin_row(2, mz) + j0;
+                double re = 0.0, im = 0.0;
+#pragma omp simd reduction(+ : re, im)
+                for (int j = 0; j < jn; ++j) {
+                    const double xr = ar[j] + m2 * br[j];
+                    const double xi = ai[j] + m2 * bi[j];
+                    re += xr * cz[j] - xi * sz[j];
+                    im += xr * sz[j] + xi * cz[j];
+                }
+                tr[k] += re;
+                ti[k] += im;
+            }
+        }
     }
 }
 
-void EwaldSum::add_curvature(const StorageReal* x, const StorageReal* y,
-                             const StorageReal* z, const StorageReal* q,
+// The header's three sums per atom j, with c + i s = e^{ik·r_j}: each sum
+// over k of a term times k is split per column as
+// (m₀b₀ + m₁b₁) Σ term + b₂ Σ m₂ term.
+void EwaldSum::add_curvature(const EwaldPhases& ph, const StorageReal* q,
                              const double* ux, const double* uy,
                              const double* uz, int n, double volume,
                              const double* sr, const double* si,
                              const double* tr, const double* ti, double* hx,
                              double* hy, double* hz, double* lap, double* gx,
                              double* gy, double* gz) const {
-    const int ng = static_cast<int>(kx_.size());
     const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
-#pragma omp parallel for schedule(static)
-    for (int i = 0; i < n; ++i) {
-        const double qi = q[i];
-        if (qi == 0.0)
-            continue;
-        double h[3] = {0, 0, 0}, g[3] = {0, 0, 0}, l = 0;
-        for (int k = 0; k < ng; ++k) {
-            const double kv[3] = {kx_[k], ky_[k], kz_[k]};
-            const double phase = kv[0] * x[i] + kv[1] * y[i] + kv[2] * z[i];
-            const double c = std::cos(phase), s = std::sin(phase);
-            const double a = 2.0 * K * kw_[k] * qi;
-            const double k2 = kv[0] * kv[0] + kv[1] * kv[1] + kv[2] * kv[2];
-            const double ku = kv[0] * ux[i] + kv[1] * uy[i] + kv[2] * uz[i];
-            const double cs = c * sr[k] + s * si[k];
-            const double hs = a * (c * tr[k] + s * ti[k] - ku * cs);
-            const double gs = 2.0 * a * k2 * (s * sr[k] - c * si[k]);
+    const double* __restrict kx = kx_.data();
+    const double* __restrict ky = ky_.data();
+    const double* __restrict kz = kz_.data();
+    const double* __restrict kw = kw_.data();
+    const int team =
+        team_for(static_cast<std::size_t>(n) * (kx_.size() + columns_.size()));
+#pragma omp parallel num_threads(team) if (team > 1)
+    {
+        int rank = 0, size = 1;
+#ifdef _OPENMP
+        rank = omp_get_thread_num();
+        size = omp_get_num_threads();
+#endif
+        int i0, i1;
+        team_range(n, rank, size, i0, i1);
+        alignas(64) double pr[kBlock], pi[kBlock], ku0[kBlock], ku2[kBlock];
+        alignas(64) double h1[kBlock], h2[kBlock], g1[kBlock], g2[kBlock];
+        alignas(64) double ah[3][kBlock], ag[3][kBlock], al[kBlock];
+        for (int j0 = i0; j0 < i1; j0 += kBlock) {
+            const int jn = std::min(kBlock, i1 - j0);
             for (int d = 0; d < 3; ++d) {
-                h[d] += hs * kv[d];
-                g[d] += gs * kv[d];
+                std::fill_n(ah[d], jn, 0.0);
+                std::fill_n(ag[d], jn, 0.0);
             }
-            l += a * k2 * (qi - cs);
+            std::fill_n(al, jn, 0.0);
+            for (int j = 0; j < jn; ++j)
+                ku2[j] = b_[2][0] * ux[j0 + j] + b_[2][1] * uy[j0 + j]
+                         + b_[2][2] * uz[j0 + j];
+            for (const Column& col : columns_) {
+                column_phase(ph, col.mx, col.my, j0, jn, nullptr, pr, pi);
+                const double c0 = col.mx * b_[0][0] + col.my * b_[1][0];
+                const double c1 = col.mx * b_[0][1] + col.my * b_[1][1];
+                const double c2 = col.mx * b_[0][2] + col.my * b_[1][2];
+                for (int j = 0; j < jn; ++j)
+                    ku0[j] =
+                        c0 * ux[j0 + j] + c1 * uy[j0 + j] + c2 * uz[j0 + j];
+                std::fill_n(h1, jn, 0.0);
+                std::fill_n(h2, jn, 0.0);
+                std::fill_n(g1, jn, 0.0);
+                std::fill_n(g2, jn, 0.0);
+                for (int k = col.begin; k < col.end; ++k) {
+                    const int mz = col.mz0 + (k - col.begin);
+                    const double m2 = mz;
+                    const double* __restrict cz = ph.cos_row(2, mz) + j0;
+                    const double* __restrict sz = ph.sin_row(2, mz) + j0;
+                    const double k2 =
+                        kx[k] * kx[k] + ky[k] * ky[k] + kz[k] * kz[k];
+                    const double w = kw[k], wk2 = kw[k] * k2;
+                    const double s_r = sr[k], s_i = si[k];
+                    const double t_r = tr[k], t_i = ti[k];
+#pragma omp simd
+                    for (int j = 0; j < jn; ++j) {
+                        const double c = pr[j] * cz[j] - pi[j] * sz[j];
+                        const double s = pr[j] * sz[j] + pi[j] * cz[j];
+                        const double cs = c * s_r + s * s_i;
+                        const double ku = ku0[j] + m2 * ku2[j];
+                        const double hs = w * (c * t_r + s * t_i - ku * cs);
+                        const double gs = wk2 * (s * s_r - c * s_i);
+                        h1[j] += hs;
+                        h2[j] += m2 * hs;
+                        g1[j] += gs;
+                        g2[j] += m2 * gs;
+                        al[j] += wk2 * (q[j0 + j] - cs);
+                    }
+                }
+                const double cc[3] = {c0, c1, c2};
+                for (int d = 0; d < 3; ++d) {
+                    const double e = b_[2][d];
+#pragma omp simd
+                    for (int j = 0; j < jn; ++j) {
+                        ah[d][j] += cc[d] * h1[j] + e * h2[j];
+                        ag[d][j] += cc[d] * g1[j] + e * g2[j];
+                    }
+                }
+            }
+            for (int j = 0; j < jn; ++j) {
+                const double a = 2.0 * K * q[j0 + j];
+                hx[j0 + j] += a * ah[0][j];
+                hy[j0 + j] += a * ah[1][j];
+                hz[j0 + j] += a * ah[2][j];
+                lap[j0 + j] += a * al[j];
+                gx[j0 + j] += 2.0 * a * ag[0][j];
+                gy[j0 + j] += 2.0 * a * ag[1][j];
+                gz[j0 + j] += 2.0 * a * ag[2][j];
+            }
         }
-        hx[i] += h[0];
-        hy[i] += h[1];
-        hz[i] += h[2];
-        lap[i] += l;
-        gx[i] += g[0];
-        gy[i] += g[1];
-        gz[i] += g[2];
     }
 }
 

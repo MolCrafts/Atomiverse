@@ -161,13 +161,12 @@ class EwaldSum {
     /// @brief Directional structure factor
     ///        \(T(k) = \sum_j q_j (k\cdot u_j)\, e^{i k\cdot r_j}\) of a
     ///        per-atom vector field \(u\) (the Hessian product needs it).
-    /// @param x,y,z    Atom coordinates [Å], length @p n.
+    /// @param ph       Phase tables of the atoms (#phases).
     /// @param q        Charges [e], length @p n.
     /// @param ux,uy,uz Vector field, length @p n.
     /// @param n        Atom count.
     /// @param[out] tr,ti Real / imaginary part of T(k), length #size().
-    void directional_factor(const StorageReal* x, const StorageReal* y,
-                            const StorageReal* z, const StorageReal* q,
+    void directional_factor(const EwaldPhases& ph, const StorageReal* q,
                             const double* ux, const double* uy,
                             const double* uz, int n, double* tr,
                             double* ti) const;
@@ -183,9 +182,9 @@ class EwaldSum {
     ///  - \(\nabla_i\sum_j\nabla_j^2 E
     ///    = 4K\sum A\,k^2 q_i\,k\,(s_iS_r - c_iS_i)\)
     ///    (from \(\sum_j\nabla_j^2 E = 2K\sum A k^2(\sum q^2 - |S|^2)\)).
+    /// @param ph    Phase tables of the atoms (#phases).
     /// @param sr,si Global S(k); @p tr,ti global T(k) of the same @p u.
-    void add_curvature(const StorageReal* x, const StorageReal* y,
-                       const StorageReal* z, const StorageReal* q,
+    void add_curvature(const EwaldPhases& ph, const StorageReal* q,
                        const double* ux, const double* uy, const double* uz,
                        int n, double volume, const double* sr, const double* si,
                        const double* tr, const double* ti, double* hx,
