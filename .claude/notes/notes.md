@@ -46,6 +46,21 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   ATV reductions), SW+LJ neighbor build ~1.5–2×, no x86/cluster numbers.
 - **Component clone ceiling** — revisit when a real N-replica inner-loop user
   appears.
+- **NEMD thermostats (Petravic & Delhommelle 2003), CPU only.** `GearPC` with
+  Gaussian / configurational thermostats and the curvature protocol behind
+  T_C1 are in (roadmap: molecular-dynamics §1, observables). Open: (1) no
+  standing T_conf = T_kin gate in an equilibrium NaCl melt — statistical,
+  minutes of MD, needs an `md` method in the scientific benchmark framework;
+  under Ewald, D carries the Coulomb background constant −4π k_e Σq²/V
+  (≈0.1 % of D for molten NaCl), and a Gauss-isokinetic run samples its
+  kinetic temperature with 3N − 3 dof, so compare like with like; (2) CUDA
+  twins; (3) PME / PPPM curvature (B-spline second derivatives), so T_C1
+  today needs `KSpaceEwald`; (4) spatial decomposition for `GearPC` and the
+  curvature assembly; (5) Gear start is the customary zero-higher-derivative
+  one (≈40-step transient), no self-starting procedure; (6) a truncated pair
+  potential's δ-shell Laplacian at r_c is not counted (the same truncation the
+  forces make). A Python `MD.run` is an independent simulation, so ξ and the
+  Gear history restart on every call; one call per trajectory.
 
 ## Open debt found, not yet fixed (verify before acting)
 

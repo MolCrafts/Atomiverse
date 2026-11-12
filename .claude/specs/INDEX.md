@@ -24,6 +24,3 @@ tickets: `.claude/notes/notes.md`.
 - [md-unification.md](md-unification.md) — one MD execution model across CPU and
   CUDA: Frame edit/commit, typed model parameters, driver-lifetime
   trajectories, device-controlled CUDA loops, retiring `MultiGpu`.
-- [nemd-thermostats.md](nemd-thermostats.md) — Gear PC integrator with
-  Gaussian (kinetic / flow / transverse) and configurational thermostats, the
-  curvature protocol behind T_conf, PairBorn shift/tail, KSpaceEwald in Python.
