@@ -300,6 +300,42 @@ TEST(Curvature, AForceTermWithoutCurvatureIsRefused) {
     EXPECT_THROW(eval.build(), std::runtime_error);
 }
 
+TEST(ConfigurationalTemperature, RunAverageIsTheRatioOfTheMeans) {
+    // T_CONF of eq. (5) is <N>/(k_B <D>) over the evaluations of the run,
+    // not the mean of T_C1; a rebuilt run starts a new average.
+    constexpr int kSteps = 30;
+    cpu::Frame frame = nacl(1500.0, 11);
+    cpu::md::MD sim;
+    sim.set_units("metal");
+    sim.set_neighbor(cpu::md::NeighborList<>{kCut, 0.5});
+    sim.set_evaluator(cpu::PairBorn{tosi_fumi(), kCut});
+    sim.set_evaluator(cpu::CoulLong{kAlpha, kCut});
+    sim.set_evaluator(cpu::KSpaceEwald{kAlpha, 1e-4});
+    cpu::ConfigurationalTemperature observer;
+    sim.on(ATV::md::Phase::post_force).add_ref(observer, 200);
+    cpu::md::GearPC gear{0.002};
+    sim.set_integrator_ref(gear);
+    sim.build();
+    double sum_n = 0, sum_d = 0, sum_t = 0;
+    for (int step = 0; step < kSteps; ++step) {
+        sim.run(frame, 1);
+        sum_n += observer.last().force_sq;
+        sum_d += observer.last().laplacian;
+        sum_t += observer.last().temperature;
+    }
+    const double kB = units::from_style(units::Style::metal).boltz;
+    ASSERT_EQ(observer.samples(), kSteps);
+    EXPECT_NEAR(observer.mean().force_sq, sum_n / kSteps,
+                1e-13 * sum_n / kSteps);
+    EXPECT_NEAR(observer.mean().laplacian, sum_d / kSteps,
+                1e-13 * sum_d / kSteps);
+    const double t_conf = sum_n / (kB * sum_d);
+    EXPECT_NEAR(observer.mean().temperature, t_conf, 1e-12 * t_conf);
+    // The melt's T_C1 moves enough over the run that the two averages
+    // differ, so the check above tells them apart.
+    EXPECT_GT(std::fabs(sum_t / kSteps - t_conf), 1e-3 * t_conf);
+}
+
 TEST(ConfigurationalThermostat,
      DrivesTheConfigurationalTemperatureToTheTarget) {
     // Unthermostatted, this start relaxes to T_C1 ≈ 1080 K. Asked for a

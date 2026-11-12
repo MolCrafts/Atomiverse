@@ -175,8 +175,24 @@ void ConfigurationalTemperature::set_curvature_terms(
     assembly_.set_terms(std::move(sources), std::move(drives));
 }
 
+void ConfigurationalTemperature::build(const BuildContext& /*ctx*/) {
+    last_ = ConfigurationalSample{};
+    mean_ = ConfigurationalSample{};
+    sum_force_sq_ = 0.0;
+    sum_laplacian_ = 0.0;
+    samples_ = 0;
+}
+
 void ConfigurationalTemperature::launch(const LaunchContext& ctx) {
     last_ = assembly_.evaluate(ctx);
+    sum_force_sq_ += last_.force_sq;
+    sum_laplacian_ += last_.laplacian;
+    ++samples_;
+    const double n = static_cast<double>(samples_);
+    mean_.force_sq = sum_force_sq_ / n;
+    mean_.laplacian = sum_laplacian_ / n;
+    mean_.temperature =
+        mean_.force_sq / (ctx.runtime.units.boltz * mean_.laplacian);
 }
 
 } // namespace cpu

@@ -107,13 +107,14 @@ class CurvatureAssembly : public ForwardPacker, public ReversePacker {
 };
 
 /// @brief Observer: \(T_{C1}\), \(N\) and \(D\) of the current
-///        configuration every `every` steps.
+///        configuration every `every` steps, and their run averages.
 ///
 /// Bound at `post_force` after the force reduction and the drives (order
 /// +200), where positions and forces belong to the same configuration under
-/// every integrator (with `GearPC`, the predicted one). Averages of `N` and
-/// `D` give the paper's \(T_\mathrm{CONF}\) (eq. 5) as
-/// \(\langle N\rangle / (k_B\langle D\rangle)\).
+/// every integrator (with `GearPC`, the predicted one). The averages of `N`
+/// and `D` over the evaluations since the run was built give the paper's
+/// \(T_\mathrm{CONF}\) (eq. 5) as \(\langle N\rangle / (k_B\langle
+/// D\rangle)\) (`mean()`), which is not the mean of \(T_{C1}\).
 class ConfigurationalTemperature : public Observer, public CurvatureConsumer {
   public:
     /// @param every Evaluate every `every` steps (> 0).
@@ -127,10 +128,19 @@ class ConfigurationalTemperature : public Observer, public CurvatureConsumer {
     CurvatureConsumer* as_curvature_consumer() override { return this; }
     void set_curvature_terms(std::vector<CurvatureSource*> sources,
                              std::vector<const ExternalDrive*> drives) override;
+    /// @brief Clear the run averages: a (re)built run starts a new average.
+    void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
     /// @brief The last evaluation.
     const ConfigurationalSample& last() const { return last_; }
+    /// @brief Run averages \(\langle N\rangle\), \(\langle D\rangle\) and
+    ///        \(T_\mathrm{CONF} = \langle N\rangle / (k_B\langle
+    ///        D\rangle)\) over the `samples()` evaluations since the build
+    ///        (all zero before the first).
+    const ConfigurationalSample& mean() const { return mean_; }
+    /// @brief Number of evaluations in `mean()`.
+    long long samples() const { return samples_; }
     /// @brief Per-atom data of the last evaluation.
     const CurvatureAssembly& assembly() const { return assembly_; }
 
@@ -138,6 +148,9 @@ class ConfigurationalTemperature : public Observer, public CurvatureConsumer {
     int every_;
     CurvatureAssembly assembly_;
     ConfigurationalSample last_{};
+    ConfigurationalSample mean_{};
+    double sum_force_sq_ = 0.0, sum_laplacian_ = 0.0;
+    long long samples_ = 0;
 };
 
 } // namespace cpu
