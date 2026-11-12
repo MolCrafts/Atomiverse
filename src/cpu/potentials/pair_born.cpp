@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include <xsimd/xsimd.hpp>
+
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
@@ -224,22 +226,47 @@ void PairBorn::compute(const LaunchContext& ctx) {
         }
         bool skip(const Row& ri) const { return ri.coeff == nullptr; }
 
-        md::PairTerm operator()(const Row& ri, const md::PairSite& p,
-                                const md::PairChunk&) const {
-            const Entry* e = ri.coeff;
-            if (table != nullptr) {
-                const int tj = type[p.j];
-                if (tj < 0 || tj >= n_types || !e[tj].set)
-                    return {};
-                e += tj;
+        /// The coefficients of the pair (row i, partner j), or null when
+        /// the pair does not interact.
+        const Entry* coeff(const Row& ri, int j) const {
+            if (table == nullptr)
+                return ri.coeff;
+            const int tj = type[j];
+            if (tj < 0 || tj >= n_types || !ri.coeff[tj].set)
+                return nullptr;
+            return ri.coeff + tj;
+        }
+
+        /// r and e^{(σ−r)/ρ} of every survivor into chunk.a / chunk.b: the
+        /// root and the exponential one xsimd batch at a time, the per-pair
+        /// exponent in between (`r2` is padded with 1 past `n`).
+        void prepare(const Row& ri, const double* r2, const int* j, int n,
+                     md::PairChunk& c) const {
+            using B = xsimd::batch<double>;
+            constexpr int W = static_cast<int>(B::size);
+            for (int k = 0; k < n; k += W)
+                xsimd::sqrt(B::load_unaligned(r2 + k)).store_aligned(c.a + k);
+            for (int k = 0; k < n; ++k) {
+                const Entry* e = coeff(ri, j[k]);
+                c.b[k] = e ? (e->sigma - c.a[k]) * e->inv_rho : 0.0;
             }
+            for (int k = n; k % W != 0; ++k)
+                c.b[k] = 0.0;
+            for (int k = 0; k < n; k += W)
+                xsimd::exp(B::load_aligned(c.b + k)).store_aligned(c.b + k);
+        }
+
+        md::PairTerm operator()(const Row& ri, const md::PairSite& p,
+                                const md::PairChunk& c) const {
+            const Entry* e = coeff(ri, p.j);
+            if (e == nullptr)
+                return {};
             // One division: 1/r = r·r⁻², as LAMMPS `born` (r2inv).
-            const double r2 = p.r2;
-            const double r = std::sqrt(r2);
-            const double inv_r2 = 1.0 / r2;
+            const double r = c.a[p.k];
+            const double inv_r2 = 1.0 / p.r2;
             const double inv_r6 = inv_r2 * inv_r2 * inv_r2;
             const double inv_r8 = inv_r6 * inv_r2;
-            const double ae = e->A * std::exp((e->sigma - r) * e->inv_rho);
+            const double ae = e->A * c.b[p.k];
             const double v =
                 ae - e->C * inv_r6 + e->D * inv_r8 - shift * e->v_shift;
             // F_i = −dU/dr · r̂ = (−dU/dr / r)·(r_i − r_j), with

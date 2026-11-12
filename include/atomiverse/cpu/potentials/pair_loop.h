@@ -14,7 +14,9 @@
 ///     Row row(int i) const;                     // per-i state hoisted once
 ///     md::PairTerm operator()(const Row& ri, const md::PairSite& p,
 ///                             const md::PairChunk& chunk) const;
-///     // optional, once per survivor chunk of row i:
+///     // optional, once per survivor chunk of row i (or the same with the
+///     // survivors' partner rows `j[0..n)` before `n`, for per-pair
+///     // coefficients):
 ///     void prepare(const Row& ri, const double* r2, int n,
 ///                  md::PairChunk& chunk) const;
 ///     // optional: rows that contribute nothing (e.g. q_i = 0)
@@ -213,6 +215,10 @@ class PairLoop {
         requires(const K& k, const row_t_<K>& r, const double* p,
                  PairChunk& c) { k.prepare(r, p, 0, c); };
     template <class K>
+    static constexpr bool has_prepare_rows_ =
+        requires(const K& k, const row_t_<K>& r, const double* p, const int* j,
+                 PairChunk& c) { k.prepare(r, p, j, 0, c); };
+    template <class K>
     static constexpr bool has_skip_ =
         requires(const K& k, const row_t_<K>& r) { bool(k.skip(r)); };
     template <class K>
@@ -274,6 +280,7 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
         alignas(64) double r2b[kPairChunk];
         alignas(64) int surv[kPairChunk];
         alignas(64) double r2s[kPairChunk + 16];
+        alignas(64) int js[kPairChunk];
         PairChunk chunk;
 
 #pragma omp for schedule(dynamic, 1)
@@ -320,12 +327,19 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
                         r2s[ns] = r2;
                         ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
                     }
-                    if constexpr (has_prepare_<Kernel>) {
+                    if constexpr (has_prepare_<Kernel>
+                                  || has_prepare_rows_<Kernel>) {
                         // Harmless padding for batch tails; never read back.
                         for (int p = ns; p < ns + 16; ++p)
                             r2s[p] = 1.0;
-                        if (ns > 0)
+                        if constexpr (has_prepare_rows_<Kernel>) {
+                            for (int k = 0; k < ns; ++k)
+                                js[k] = neighbors[off + base + surv[k]];
+                            if (ns > 0)
+                                kernel.prepare(ri, r2s, js, ns, chunk);
+                        } else if (ns > 0) {
                             kernel.prepare(ri, r2s, ns, chunk);
+                        }
                     }
                     for (int k = 0; k < ns; ++k) {
                         const int slot = surv[k];
@@ -452,7 +466,10 @@ PairTotals PairLoop::all_pairs_(const LaunchContext& ctx,
                     const double r2 = dx * dx + dy * dy + dz * dz;
                     if (r2 >= rc_sq || r2 == 0.0)
                         continue;
-                    if constexpr (has_prepare_<Kernel>) {
+                    if constexpr (has_prepare_rows_<Kernel>) {
+                        r2one[0] = r2;
+                        kernel.prepare(ri, r2one, &j, 1, chunk);
+                    } else if constexpr (has_prepare_<Kernel>) {
                         r2one[0] = r2;
                         kernel.prepare(ri, r2one, 1, chunk);
                     }
