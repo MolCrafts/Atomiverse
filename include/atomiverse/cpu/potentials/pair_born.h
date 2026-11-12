@@ -67,14 +67,13 @@ struct BornTypeCoeff {
 ///   +6\rho^2r_c+6\rho^3)+2C/r_c^3-8D/(5r_c^5)]\). The single-type form
 /// counts every atom as its one type. Independent of the energy shift.
 ///
-/// Two walks, and which one runs is decided by the CONSTRUCTOR, not only by
-/// what the run publishes: the SINGLE-TYPE arm uses `ctx.md.pair_list` when a
-/// `NeighborList` published one (the production bulk path) and falls back to an
-/// O(N²) all-pairs walk otherwise, while the MULTI-TYPE table arm is always
-/// O(N²) — it has no per-type list to walk. So a one-row table is not a
-/// performance substitute for the single-type constructor, only an energetic
-/// one. Either way `as_neighbor_consumer()` returns null, so no run is ever
-/// REQUIRED to install a `NeighborList` for this style.
+/// Two walks: both arms take the published half list `ctx.md.pair_list` when
+/// it covers the cutoff (`PairList::cutoff`, set by `NeighborList`; the
+/// production bulk path, the partner's type read from the ghost rows), and
+/// fall back to an O(N²) all-pairs walk at minimum image otherwise. A list
+/// that does not cover the cutoff is never walked: `as_neighbor_consumer()`
+/// returns null, so no run is ever REQUIRED to install a `NeighborList` for
+/// this style and no build-time check compares the two radii.
 ///
 /// Coulomb is a separate component (`PairCoulCut` / `CoulLong` + a reciprocal
 /// partner).
@@ -184,6 +183,9 @@ class PairBorn : public Pair, public CurvatureSource {
     const Entry& entry_for_(int ti, int tj) const;
     /// @brief Gather the type counts and set `etail_pref_` / `ptail_pref_`.
     void prepare_tail_(const Frame& frame);
+    /// The published half list if it lists every pair inside the cutoff,
+    /// else null (the all-pairs walk runs).
+    const md::PairList* covering_list_(const LaunchContext& ctx) const;
 
     // Single-type path
     double A_ = 0;

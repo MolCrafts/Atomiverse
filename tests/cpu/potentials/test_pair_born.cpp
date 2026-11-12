@@ -2,15 +2,20 @@
 /// @brief Unit checks for cpu::PairBorn energy/force vs analytic shifted form.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/context.h"
+#include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
+#include "cpu/dynamics/nacl_fixture.h"
 
 using namespace ATV;
 
@@ -43,6 +48,56 @@ double dUdr(double A, double rho, double sigma, double C, double D, double r) {
            - 8.0 * D / std::pow(r, 9);
 }
 
+/// Energy, per-tag forces and virial of one evaluation.
+struct Sums {
+    double energy = 0;
+    std::vector<double> f; ///< 3 per tag, tag-ordered
+    double virial[6] = {};
+};
+
+/// Tosi–Fumi NaCl (64 jittered ions, L = 11.28 Å) under the multi-type
+/// table alone, with a `NeighborList` of interaction radius `list_cutoff`
+/// or none.
+Sums tosi_fumi_sums(double born_cutoff, std::optional<double> list_cutoff) {
+    using namespace nacl_fixture;
+    cpu::Frame f = nacl(1500.0, 11);
+    cpu::Evaluate eval;
+    if (list_cutoff)
+        eval.set_neighbor(
+            cpu::md::NeighborList<>{*list_cutoff, 0.5, 1, 0, true});
+    eval.set_evaluator(cpu::PairBorn{tosi_fumi(), born_cutoff});
+    eval.enable_timing(false);
+    eval.build();
+    eval.run(f);
+    Sums s;
+    s.energy = f.meta.get(kEnergy);
+    s.f.resize(3 * kN);
+    for (int i = 0; i < kN; ++i) {
+        const auto t = static_cast<std::size_t>(f.span(kAtom_tag)[i] - 1);
+        s.f[3 * t] = f.span(kAtom_fx)[i];
+        s.f[3 * t + 1] = f.span(kAtom_fy)[i];
+        s.f[3 * t + 2] = f.span(kAtom_fz)[i];
+    }
+    for (int k = 0; k < 6; ++k)
+        s.virial[k] = f.meta.get(kStress)[k];
+    return s;
+}
+
+/// Energy, forces and virial agree to `rel` of their largest magnitude.
+void expect_same_sums(const Sums& got, const Sums& want, double rel) {
+    EXPECT_NEAR(got.energy, want.energy, rel * std::fabs(want.energy));
+    double f_max = 0, v_max = 0;
+    for (double v : want.f)
+        f_max = std::max(f_max, std::fabs(v));
+    for (double v : want.virial)
+        v_max = std::max(v_max, std::fabs(v));
+    for (std::size_t k = 0; k < want.f.size(); ++k)
+        EXPECT_NEAR(got.f[k], want.f[k], rel * f_max) << "force " << k;
+    for (int k = 0; k < 6; ++k)
+        EXPECT_NEAR(got.virial[k], want.virial[k], rel * v_max)
+            << "virial " << k;
+}
+
 } // namespace
 
 TEST(PairBorn, SpatialHalfRowsMayPointToALowerLocalIndex) {
@@ -54,6 +109,7 @@ TEST(PairBorn, SpatialHalfRowsMayPointToALowerLocalIndex) {
     pairs.firstneigh = {0, 0};
     pairs.neighbors = {0};
     pairs.total_pairs = 1;
+    pairs.cutoff = 8.0;
     cpu::Context context;
     context.md.pair_list = &pairs;
     cpu::PairBorn born(1000.0, 3.0, 1.0, 50.0, 20.0, 8.0);
@@ -347,4 +403,18 @@ TEST(PairBorn, TailCorrectionEqualsTheIntegralOfThePotential) {
     evaluate_born(without, f_off);
     EXPECT_NEAR(f_on.meta.get(kEnergy) - f_off.meta.get(kEnergy), e1 / vol,
                 1e-10 * std::abs(e1 / vol));
+}
+
+// The multi-type table walks a NeighborList that covers its cutoff (owned
+// rows and ghost images, the partner's type read from the ghost rows) and
+// gives the all-pairs minimum-image walk's energy, forces and virial to
+// rounding (the sums run in another order; measured below 1e-14). Cutoff
+// 5.6 Å, just inside L/2: every image but the nearest is out of range. A
+// list that stops short of the cutoff is never walked.
+TEST(PairBorn, MultiTypeTableWalksACoveringListLikeAllPairs) {
+    constexpr double kCut = 5.6;
+    const Sums all_pairs = tosi_fumi_sums(kCut, std::nullopt);
+    ASSERT_NE(all_pairs.energy, 0.0);
+    expect_same_sums(tosi_fumi_sums(kCut, kCut), all_pairs, 1e-12);
+    expect_same_sums(tosi_fumi_sums(kCut, 4.0), all_pairs, 1e-12);
 }

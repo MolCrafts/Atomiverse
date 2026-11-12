@@ -101,6 +101,8 @@ class NeighborList : public cpu::Component, public cpu::NeighborProvider {
           every_(every < 1 ? 1 : every), delay_(delay < 0 ? 0 : delay),
           check_(check) {
         skin_explicit_ = skin >= 0;
+        pairs_.cutoff = cutoff;
+        full_pairs_.cutoff = cutoff;
     }
 
     /// @brief LAMMPS `atom_modify sort Nfreq binsize` — spatial reorder of

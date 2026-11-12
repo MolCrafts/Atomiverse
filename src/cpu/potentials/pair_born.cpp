@@ -182,6 +182,13 @@ const PairBorn::Entry& PairBorn::entry_for_(int ti, int tj) const {
                   + static_cast<std::size_t>(tj)];
 }
 
+const md::PairList* PairBorn::covering_list_(const LaunchContext& ctx) const {
+    const md::PairList* list = ctx.runtime.md.pair_list;
+    return list != nullptr && list->cutoff * list->cutoff >= cutoff_sq_
+               ? list
+               : nullptr;
+}
+
 void PairBorn::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
 
@@ -226,12 +233,10 @@ void PairBorn::compute(const LaunchContext& ctx) {
     };
     const Kernel kernel{this, multi_ ? f.span(kAtom_type).data() : nullptr,
                         cutoff_sq_, energy_shift_ ? 1.0 : 0.0};
-    // The per-type table walks every owned pair (minimum image) as it always
-    // has; the single-type form takes the published half list when there is
-    // one.
-    const md::PairTotals sums = multi_
-                                    ? loop_.all_pairs(ctx, kernel, "PairBorn")
-                                    : loop_.run(ctx, kernel, "PairBorn");
+    const md::PairList* list = covering_list_(ctx);
+    const md::PairTotals sums =
+        list ? loop_.run(ctx, md::PairRows::of(*list), kernel)
+             : loop_.all_pairs(ctx, kernel, "PairBorn");
     f.meta.get(kEnergy) += sums.energy;
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)
@@ -251,12 +256,12 @@ void PairBorn::compute(const LaunchContext& ctx) {
     }
 }
 
-// The pairs of compute(): the per-type table walks every owned pair at
-// minimum image; the single-type form takes the published list if any.
+// The pairs of compute(): the covering half list, else every owned pair at
+// minimum image.
 void PairBorn::add_curvature(const LaunchContext& ctx,
                              const CurvatureRows& rows) {
     const int* type = multi_ ? ctx.frame.span(kAtom_type).data() : nullptr;
-    const bool use_list = !multi_ && ctx.runtime.md.pair_list != nullptr;
+    const bool use_list = covering_list_(ctx) != nullptr;
     const Entry single{A_, inv_rho_, sigma_, C_, D_, v_shift_, true};
     md::for_each_curvature_pair(
         ctx, cutoff_sq_, use_list, "PairBorn",
