@@ -2,6 +2,7 @@
 /// @brief Fifth-order Gear predictor–corrector (see the header).
 #include "atomiverse/cpu/dynamics/gear_pc.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -23,6 +24,16 @@ namespace {
 
 constexpr int kVars = 6;    // x y z vx vy vz
 constexpr int kHistory = 5; // z1..z5 per variable
+
+// Rows each thread must get before a team is worth opening: predicting or
+// correcting a row is a few dozen flops, so a small system (the paper's 512
+// ions) runs on the calling thread instead of paying a fork and join per
+// variable (cf. VelocityVerlet).
+constexpr int kRowsPerThread = 4096;
+
+int team_for(const cpu::LaunchContext& ctx, int rows) {
+    return std::max(1, std::min(ctx.runtime.n_threads, rows / kRowsPerThread));
+}
 
 // The thermostats run inside gear_pc's launches (the Gauss multiplier and
 // projection; T_C1 and its gradient for the configurational one); scoped
@@ -258,6 +269,11 @@ void GearPC::predict_(const cpu::LaunchContext& ctx) {
         f.span(kAtom_x).data(),  f.span(kAtom_y).data(),
         f.span(kAtom_z).data(),  f.span(kAtom_vx).data(),
         f.span(kAtom_vy).data(), f.span(kAtom_vz).data()};
+    const int n = n_;
+    [[maybe_unused]] const int team = team_for(ctx, n);
+    // One team for all six variables; the rows are independent, so no
+    // barrier between them.
+#pragma omp parallel num_threads(team) if (team > 1)
     for (int var = 0; var < kVars; ++var) {
         double* h1 = hist_(var, 1);
         double* h2 = hist_(var, 2);
@@ -265,9 +281,9 @@ void GearPC::predict_(const cpu::LaunchContext& ctx) {
         double* h4 = hist_(var, 4);
         double* h5 = hist_(var, 5);
         StorageReal* col = cols[var];
-        const double* y = state_.data() + var * n_;
-#pragma omp parallel for schedule(static)
-        for (int i = 0; i < n_; ++i) {
+        const double* y = state_.data() + var * n;
+#pragma omp for schedule(static) nowait
+        for (int i = 0; i < n; ++i) {
             double z[ATV::md::kGearValues] = {y[i],  h1[i], h2[i],
                                               h3[i], h4[i], h5[i]};
             ATV::md::gear_predict(z);
@@ -290,6 +306,9 @@ void GearPC::correct_(const cpu::LaunchContext& ctx) {
         f.span(kAtom_z).data(),  f.span(kAtom_vx).data(),
         f.span(kAtom_vy).data(), f.span(kAtom_vz).data()};
     const double h = dt_;
+    const int n = n_;
+    [[maybe_unused]] const int team = team_for(ctx, n);
+#pragma omp parallel num_threads(team) if (team > 1)
     for (int var = 0; var < kVars; ++var) {
         double* h1 = hist_(var, 1);
         double* h2 = hist_(var, 2);
@@ -297,10 +316,10 @@ void GearPC::correct_(const cpu::LaunchContext& ctx) {
         double* h4 = hist_(var, 4);
         double* h5 = hist_(var, 5);
         StorageReal* col = cols[var];
-        double* y = state_.data() + var * n_;
-        const double* rate = rate_.data() + var * n_;
-#pragma omp parallel for schedule(static)
-        for (int i = 0; i < n_; ++i) {
+        double* y = state_.data() + var * n;
+        const double* rate = rate_.data() + var * n;
+#pragma omp for schedule(static) nowait
+        for (int i = 0; i < n; ++i) {
             double z[ATV::md::kGearValues] = {y[i],  h1[i], h2[i],
                                               h3[i], h4[i], h5[i]};
             ATV::md::gear_correct(z, h * rate[i]);
