@@ -20,11 +20,12 @@ namespace cpu {
 
 /// @brief One Born–Mayer–Huggins type-pair coefficient entry.
 ///
-/// Frame `kAtom_type` values are used as-is and are never renumbered. In this
-/// tree that column carries the ATOMIC NUMBER — `cpu::from_molpy` fills it from
-/// the molpy `atomic_number` column — so a Na–Cl row is `{11, 17}` and an argon
-/// dimer is `{18, 18}`, not a 0-based dense index. Symmetric table: (i,j) and
-/// (j,i) share the same parameters.
+/// Frame `kAtom_type` values are used as-is and are never renumbered. That
+/// column is the FORCE-FIELD TYPE index, not the species: `cpu::from_molpy`
+/// (and so the Python binding) fills it from the molpy `atoms.type_id` column,
+/// while the atomic number lives in `kAtom_atomic_number`. A Na–Cl row keys
+/// whatever type ids the frame gives Na and Cl, e.g. `{0, 1}`. Symmetric
+/// table: (i,j) and (j,i) share the same parameters.
 struct BornTypeCoeff {
     int type_i;   ///< first atom type (frame `kAtom_type`)
     int type_j;   ///< second atom type
