@@ -111,7 +111,8 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
         slab_active() ? f.box.length(2) * slab_factor : f.box.length(2);
 
     // ── Partial structure factor S(k) over owned atoms ─────────────────
-    sum_.structure_factor(x, y, z, q, n_local, sr_.data(), si_.data());
+    sum_.phases(x, y, z, n_local, phases_);
+    sum_.structure_factor(phases_, q, n_local, sr_.data(), si_.data());
 
 #ifdef ATV_HAS_MPI
     if (mpi) {
@@ -124,7 +125,7 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
 
     // ── Reciprocal forces on owned atoms from global S(k) ──────────────
     if (ctx.forces_requested)
-        sum_.add_forces(x, y, z, q, n_local, vol, sr_.data(), si_.data(), sp_fx,
+        sum_.add_forces(phases_, q, n_local, vol, sr_.data(), si_.data(), sp_fx,
                         sp_fy, sp_fz);
 
     // ── Self energy (partitions across ranks: owned atoms only) ────────
@@ -240,7 +241,8 @@ void KSpaceEwald::add_curvature(const LaunchContext& ctx,
     const std::size_t nk = sum_.size();
     tr_.resize(nk);
     ti_.resize(nk);
-    sum_.structure_factor(x, y, z, q, n, sr_.data(), si_.data());
+    sum_.phases(x, y, z, n, phases_);
+    sum_.structure_factor(phases_, q, n, sr_.data(), si_.data());
     sum_.directional_factor(x, y, z, q, rows.ux, rows.uy, rows.uz, n,
                             tr_.data(), ti_.data());
     sum_.add_curvature(x, y, z, q, rows.ux, rows.uy, rows.uz, n, f.box.volume(),
@@ -250,6 +252,7 @@ void KSpaceEwald::add_curvature(const LaunchContext& ctx,
 
 void KSpaceEwald::destroy(const DestroyContext&) {
     sum_.clear();
+    phases_ = longrange::EwaldPhases{};
     std::vector<double>().swap(sr_);
     std::vector<double>().swap(si_);
     std::vector<double>().swap(tr_);
@@ -261,7 +264,7 @@ void KSpaceEwald::destroy(const DestroyContext&) {
 }
 
 std::size_t KSpaceEwald::memory_bytes() const {
-    return sum_.memory_bytes()
+    return sum_.memory_bytes() + phases_.memory_bytes()
            + (sr_.capacity() + si_.capacity() + tr_.capacity() + ti_.capacity())
                  * sizeof(double);
 }

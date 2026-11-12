@@ -102,6 +102,9 @@ class KSpaceEwald : public cpu::KSpace, public cpu::CurvatureSource {
     double cached_slab_factor_ = 0.0;
     bool have_kvectors_ = false;
 
+    // Per-atom phase factors of the current positions, built once per
+    // evaluation and shared by S(k) and the forces.
+    longrange::EwaldPhases phases_;
     // Scratch structure-factor accumulators (sized to #k vectors).
     std::vector<double> sr_, si_;
     // Directional structure factor of the curvature field (#k vectors).

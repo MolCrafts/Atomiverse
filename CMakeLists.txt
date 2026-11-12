@@ -310,6 +310,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/communication/gather_for_io.cpp
         src/cpu/communication/rebalance.cpp
         # Direct Ewald always (no external deps); PME gated by ATV_BUILD_KSPACE below
+        src/cpu/longrange/ewald_sum.cpp
         src/cpu/longrange/ewald.cpp
     )
 
