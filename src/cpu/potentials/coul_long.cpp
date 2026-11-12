@@ -9,6 +9,7 @@
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/pair_curvature.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 
 #ifdef _OPENMP
@@ -142,6 +143,42 @@ void CoulLong::launch(const LaunchContext& ctx) {
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)
         sums.virial.flush_to(f.meta.get(kStress));
+}
+
+// The pairs of launch(): the published half list, special scales included.
+void CoulLong::add_curvature(const LaunchContext& ctx,
+                             const CurvatureRows& rows) {
+    const Frame& f = ctx.frame;
+    const StorageReal* q = f.span(kAtom_charge).data();
+    const TagInt* tag = any_special_ ? f.span(kAtom_tag).data() : nullptr;
+    const double qqr2e = ctx.runtime.units.qqrd2e();
+    const double alpha = alpha_;
+    const double c = kEwaldF * alpha; // 2α/√π
+    md::for_each_curvature_pair(
+        ctx, cutoff_sq_, /*use_list=*/true, "CoulLong",
+        [&](int i, int j, int, double dx, double dy, double dz, double r2) {
+            const double qq = qqr2e * q[i] * q[j];
+            if (qq == 0.0)
+                return;
+            const double sc = tag ? special_.scale_owner(i, tag[j]) : 1.0;
+            const double r = std::sqrt(r2);
+            const double inv_r = 1.0 / r;
+            const double inv_r2 = inv_r * inv_r;
+            const double expm2 = std::exp(-alpha * alpha * r2);
+            const double erfcv = std::erfc(alpha * r);
+            // erfc(αr)/r and the plain-Coulomb remainder −(1−s)/r.
+            const double g1 = -erfcv * inv_r2 - c * expm2 * inv_r;
+            const double g2 = 2.0 * erfcv * inv_r2 * inv_r
+                              + 2.0 * c * expm2 * inv_r2
+                              + 2.0 * alpha * alpha * c * expm2;
+            const double rem = 1.0 - sc;
+            md::RadialCurvature k;
+            k.d1 = qq * (g1 + rem * inv_r2);
+            k.d2 = qq * (g2 - 2.0 * rem * inv_r2 * inv_r);
+            k.lap = qq * 2.0 * alpha * alpha * c * expm2;
+            k.dlap = -qq * 4.0 * alpha * alpha * alpha * alpha * c * r * expm2;
+            md::add_pair_curvature(rows, i, j, dx, dy, dz, r, k);
+        });
 }
 
 void CoulLong::destroy(const DestroyContext&) {

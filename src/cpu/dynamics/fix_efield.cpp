@@ -68,6 +68,17 @@ void FixEfield::launch(const cpu::LaunchContext& ctx) {
     f.meta.get(kEnergy) += u;
 }
 
+void FixEfield::subtract_drive_force(const cpu::LaunchContext& ctx, int n,
+                                     double* fx, double* fy, double* fz) const {
+    const StorageReal* q = ctx.frame.span(kAtom_charge).data();
+    for (int i = 0; i < n; ++i) {
+        const double qi = static_cast<double>(q[i]);
+        fx[i] -= qi * Ex;
+        fy[i] -= qi * Ey;
+        fz[i] -= qi * Ez;
+    }
+}
+
 } // namespace md
 } // namespace cpu
 } // namespace ATV

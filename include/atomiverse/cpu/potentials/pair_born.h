@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "atomiverse/cpu/component/curvature_protocol.h"
 #include "atomiverse/cpu/potentials/pair.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 
@@ -78,13 +79,23 @@ struct BornTypeCoeff {
 /// Coulomb is a separate component (`PairCoulCut` / `CoulLong` + a reciprocal
 /// partner).
 ///
+/// **Curvature** (`CurvatureSource`, configurational temperature): over the
+/// pairs the force walk visits,
+/// \(\varphi' = -\tfrac{A}{\rho}E + 6C/r^7 - 8D/r^9\),
+/// \(\varphi'' = \tfrac{A}{\rho^2}E - 42C/r^8 + 72D/r^{10}\),
+/// \(\varphi''' = -\tfrac{A}{\rho^3}E + 336C/r^9 - 720D/r^{11}\)
+/// (\(E = e^{(\sigma-r)/\rho}\)) give the Hessian, the Laplacian
+/// \(L = \varphi'' + 2\varphi'/r\) and \(L' = \varphi''' + 2\varphi''/r
+/// - 2\varphi'/r^2\) (`pair_curvature.h`). The tail correction depends on
+/// the volume only and adds nothing.
+///
 /// Writes energy to `kEnergy` + `kEnergyPair` and the pair virial
 /// \(\sum \Delta r \otimes f\) to `kStress` (Voigt xx yy zz xy xz yz [eV],
 /// LAMMPS sign). The virial is what makes this style usable under a barostat:
 /// in a molten/crystalline salt the Born–Mayer wall is the entire repulsive
 /// half of the pressure, and a constant-pressure run without it collapses the
 /// cell onto the Madelung attraction.
-class PairBorn : public Pair {
+class PairBorn : public Pair, public CurvatureSource {
   public:
     bool requires_full_frame() const override { return true; }
     /// @param A      Born–Mayer prefactor [eV] (must be ≥ 0).
@@ -126,6 +137,10 @@ class PairBorn : public Pair {
     /// @return `*this` (lvalue) or the moved evaluator (rvalue).
     PairBorn& set_tail_correction(bool on) &;
     PairBorn set_tail_correction(bool on) &&;
+
+    CurvatureSource* as_curvature_source() override { return this; }
+    void add_curvature(const LaunchContext& ctx,
+                       const CurvatureRows& rows) override;
 
     /// @brief True when a per-type coefficient table is active.
     bool is_multi_type() const { return multi_; }

@@ -224,6 +224,89 @@ class EwaldSum {
         }
     }
 
+    /// @brief Directional structure factor
+    ///        \(T(k) = \sum_j q_j (k\cdot u_j)\, e^{i k\cdot r_j}\) of a
+    ///        per-atom vector field \(u\) (the Hessian product needs it).
+    /// @param x,y,z    Atom coordinates [Å], length @p n.
+    /// @param q        Charges [e], length @p n.
+    /// @param ux,uy,uz Vector field, length @p n.
+    /// @param n        Atom count.
+    /// @param[out] tr,ti Real / imaginary part of T(k), length #size().
+    void directional_factor(const StorageReal* x, const StorageReal* y,
+                            const StorageReal* z, const StorageReal* q,
+                            const double* ux, const double* uy,
+                            const double* uz, int n, double* tr,
+                            double* ti) const {
+        const int ng = static_cast<int>(kx_.size());
+#pragma omp parallel for schedule(static)
+        for (int k = 0; k < ng; ++k) {
+            double re = 0, im = 0;
+            const double kxk = kx_[k], kyk = ky_[k], kzk = kz_[k];
+            for (int i = 0; i < n; ++i) {
+                const double phase = kxk * x[i] + kyk * y[i] + kzk * z[i];
+                const double w =
+                    q[i] * (kxk * ux[i] + kyk * uy[i] + kzk * uz[i]);
+                re += w * std::cos(phase);
+                im += w * std::sin(phase);
+            }
+            tr[k] = re;
+            ti[k] = im;
+        }
+    }
+
+    /// @brief Second derivatives of the reciprocal energy
+    ///        \(E = K\sum_{k\in\frac12} A_k |S_k|^2\),
+    ///        \(K = 4\pi k_e/V\), added to @p n atoms.
+    ///
+    /// With \(c_i = \cos k\cdot r_i\), \(s_i = \sin k\cdot r_i\):
+    ///  - \((Hu)_i = 2K\sum A\,q_i\,k\,[c_iT_r + s_iT_i
+    ///    - (k\cdot u_i)(c_iS_r + s_iS_i)]\);
+    ///  - \(\nabla_i^2 E = 2K\sum A\,k^2 q_i\,[q_i - (c_iS_r + s_iS_i)]\);
+    ///  - \(\nabla_i\sum_j\nabla_j^2 E
+    ///    = 4K\sum A\,k^2 q_i\,k\,(s_iS_r - c_iS_i)\)
+    ///    (from \(\sum_j\nabla_j^2 E = 2K\sum A k^2(\sum q^2 - |S|^2)\)).
+    /// @param sr,si Global S(k); @p tr,ti global T(k) of the same @p u.
+    void add_curvature(const StorageReal* x, const StorageReal* y,
+                       const StorageReal* z, const StorageReal* q,
+                       const double* ux, const double* uy, const double* uz,
+                       int n, double volume, const double* sr, const double* si,
+                       const double* tr, const double* ti, double* hx,
+                       double* hy, double* hz, double* lap, double* gx,
+                       double* gy, double* gz) const {
+        const int ng = static_cast<int>(kx_.size());
+        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < n; ++i) {
+            const double qi = q[i];
+            if (qi == 0.0)
+                continue;
+            double h[3] = {0, 0, 0}, g[3] = {0, 0, 0}, l = 0;
+            for (int k = 0; k < ng; ++k) {
+                const double kv[3] = {kx_[k], ky_[k], kz_[k]};
+                const double phase = kv[0] * x[i] + kv[1] * y[i] + kv[2] * z[i];
+                const double c = std::cos(phase), s = std::sin(phase);
+                const double a = 2.0 * K * kw_[k] * qi;
+                const double k2 = kv[0] * kv[0] + kv[1] * kv[1] + kv[2] * kv[2];
+                const double ku = kv[0] * ux[i] + kv[1] * uy[i] + kv[2] * uz[i];
+                const double cs = c * sr[k] + s * si[k];
+                const double hs = a * (c * tr[k] + s * ti[k] - ku * cs);
+                const double gs = 2.0 * a * k2 * (s * sr[k] - c * si[k]);
+                for (int d = 0; d < 3; ++d) {
+                    h[d] += hs * kv[d];
+                    g[d] += gs * kv[d];
+                }
+                l += a * k2 * (qi - cs);
+            }
+            hx[i] += h[0];
+            hy[i] += h[1];
+            hz[i] += h[2];
+            lap[i] += l;
+            gx[i] += g[0];
+            gy[i] += g[1];
+            gz[i] += g[2];
+        }
+    }
+
     /// @brief Self-energy correction [eV] for Σ q_i² over owned atoms.
     /// @param qsq_sum Σ_i q_i² [e²].
     /// @return E_self [eV].

@@ -80,6 +80,7 @@
 #include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/constraint_protocol.h"
 #include "atomiverse/cpu/component/criterion.h"
+#include "atomiverse/cpu/component/curvature_protocol.h"
 #include "atomiverse/cpu/component/integrator.h"
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/mover.h"
@@ -1560,6 +1561,50 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         }
         if constexpr (std::is_same_v<PhaseEnum, ATV::md::Phase>)
             negotiate_timestep_();
+        negotiate_curvature_();
+    }
+
+    /// @brief Hand every force term to the configurational-temperature
+    ///        consumers, or refuse a force term they cannot account for.
+    ///
+    /// The configurational temperature divides the squared interaction
+    /// force by the Laplacian of the interaction energy; a force term that
+    /// supplied the force but not its curvature would bias it silently. So
+    /// with a `CurvatureConsumer` mounted, every `provides_force()` term
+    /// must be a `CurvatureSource` or an `ExternalDrive`.
+    /// @see cpu/component/curvature_protocol.h
+    void negotiate_curvature_() {
+        std::vector<cpu::CurvatureConsumer*> consumers;
+        std::unordered_set<const cpu::CurvatureConsumer*> seen_consumers;
+        this->for_each_pending_mut([&](cpu::Component& c) {
+            cpu::CurvatureConsumer* cc = c.as_curvature_consumer();
+            if (cc && seen_consumers.insert(cc).second)
+                consumers.push_back(cc);
+        });
+        if (consumers.empty())
+            return;
+        std::vector<cpu::CurvatureSource*> sources;
+        std::vector<const cpu::ExternalDrive*> drives;
+        std::unordered_set<const cpu::Component*> visited;
+        this->for_each_pending_mut([&](cpu::Component& c) {
+            // Bindings, not components: dedup by identity.
+            if (!visited.insert(&c).second)
+                return;
+            cpu::CurvatureSource* source = c.as_curvature_source();
+            const cpu::ExternalDrive* drive = c.as_external_drive();
+            if (source)
+                sources.push_back(source);
+            if (drive)
+                drives.push_back(drive);
+            if (c.provides_force() && !source && !drive)
+                throw std::runtime_error(
+                    "driver build: force term '" + c.name()
+                    + "' supplies no curvature (CurvatureSource) and is not "
+                      "an ExternalDrive, so the configurational temperature "
+                      "cannot account for it");
+        });
+        for (cpu::CurvatureConsumer* cc : consumers)
+            cc->set_curvature_terms(sources, drives);
     }
 
     void negotiate_timestep_() {

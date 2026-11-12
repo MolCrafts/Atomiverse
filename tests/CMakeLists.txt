@@ -512,6 +512,10 @@ if(ATV_BUILD_MD)
     if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
         atv_add_cpp_test(test_cpu_md_gauss_thermostat
             cpu/dynamics/test_gauss_thermostat.cpp)
+        if(ATV_BUILD_EVALUATE)
+            atv_add_cpp_test(test_cpu_md_configurational_temperature
+                cpu/dynamics/test_configurational_temperature.cpp)
+        endif()
     endif()
     atv_add_cpp_test(test_cpu_md_npt_scalars cpu/dynamics/test_npt_scalars.cpp)
     atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)

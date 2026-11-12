@@ -10,6 +10,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/pair_curvature.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
@@ -248,6 +249,41 @@ void PairBorn::compute(const LaunchContext& ctx) {
             for (int d = 0; d < 3; ++d)
                 f.meta.get(kStress)[d] += ptail_pref_ / vol;
     }
+}
+
+// The pairs of compute(): the per-type table walks every owned pair at
+// minimum image; the single-type form takes the published list if any.
+void PairBorn::add_curvature(const LaunchContext& ctx,
+                             const CurvatureRows& rows) {
+    const int* type = multi_ ? ctx.frame.span(kAtom_type).data() : nullptr;
+    const bool use_list = !multi_ && ctx.runtime.md.pair_list != nullptr;
+    const Entry single{A_, inv_rho_, sigma_, C_, D_, v_shift_, true};
+    md::for_each_curvature_pair(
+        ctx, cutoff_sq_, use_list, "PairBorn",
+        [&](int i, int j, int, double dx, double dy, double dz, double r2) {
+            const Entry& e = type ? entry_for_(type[i], type[j]) : single;
+            if (!e.set)
+                return;
+            const double r = std::sqrt(r2);
+            const double inv_r = 1.0 / r;
+            const double inv_r2 = inv_r * inv_r;
+            const double inv_r6 = inv_r2 * inv_r2 * inv_r2;
+            const double inv_r8 = inv_r6 * inv_r2;
+            const double ae = e.A * std::exp((e.sigma - r) * e.inv_rho);
+            const double k = e.inv_rho;
+            const double d1 = -ae * k + 6.0 * e.C * inv_r6 * inv_r
+                              - 8.0 * e.D * inv_r8 * inv_r;
+            const double d2 =
+                ae * k * k - 42.0 * e.C * inv_r8 + 72.0 * e.D * inv_r8 * inv_r2;
+            const double d3 = -ae * k * k * k + 336.0 * e.C * inv_r8 * inv_r
+                              - 720.0 * e.D * inv_r8 * inv_r2 * inv_r;
+            md::RadialCurvature c;
+            c.d1 = d1;
+            c.d2 = d2;
+            c.lap = d2 + 2.0 * d1 * inv_r;
+            c.dlap = d3 + 2.0 * d2 * inv_r - 2.0 * d1 * inv_r2;
+            md::add_pair_curvature(rows, i, j, dx, dy, dz, r, c);
+        });
 }
 
 } // namespace cpu

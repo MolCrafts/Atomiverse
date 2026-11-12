@@ -219,10 +219,41 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
 #endif
 }
 
+void KSpaceEwald::add_curvature(const LaunchContext& ctx,
+                                const CurvatureRows& rows) {
+    if (cpu::multi_rank_dd(ctx.runtime))
+        throw std::runtime_error(
+            "KSpaceEwald: curvature under spatial decomposition is not "
+            "supported");
+    if (slab_active())
+        throw std::runtime_error(
+            "KSpaceEwald: curvature with the slab correction is not "
+            "supported");
+    sum_.set_qqrd2e(ctx.runtime.units.qqrd2e());
+    const Frame& f = ctx.frame;
+    ensure_kvectors(f, false);
+    const int n = f.nlocal();
+    const StorageReal* x = f.span(kAtom_x).data();
+    const StorageReal* y = f.span(kAtom_y).data();
+    const StorageReal* z = f.span(kAtom_z).data();
+    const StorageReal* q = f.span(kAtom_charge).data();
+    const std::size_t nk = sum_.size();
+    tr_.resize(nk);
+    ti_.resize(nk);
+    sum_.structure_factor(x, y, z, q, n, sr_.data(), si_.data());
+    sum_.directional_factor(x, y, z, q, rows.ux, rows.uy, rows.uz, n,
+                            tr_.data(), ti_.data());
+    sum_.add_curvature(x, y, z, q, rows.ux, rows.uy, rows.uz, n, f.box.volume(),
+                       sr_.data(), si_.data(), tr_.data(), ti_.data(), rows.hx,
+                       rows.hy, rows.hz, rows.lap, rows.gx, rows.gy, rows.gz);
+}
+
 void KSpaceEwald::destroy(const DestroyContext&) {
     sum_.clear();
     std::vector<double>().swap(sr_);
     std::vector<double>().swap(si_);
+    std::vector<double>().swap(tr_);
+    std::vector<double>().swap(ti_);
     box_identity_ = nullptr;
     cell_revision_ = 0;
     cached_slab_factor_ = 0.0;
@@ -231,7 +262,8 @@ void KSpaceEwald::destroy(const DestroyContext&) {
 
 std::size_t KSpaceEwald::memory_bytes() const {
     return sum_.memory_bytes()
-           + (sr_.capacity() + si_.capacity()) * sizeof(double);
+           + (sr_.capacity() + si_.capacity() + tr_.capacity() + ti_.capacity())
+                 * sizeof(double);
 }
 
 } // namespace cpu

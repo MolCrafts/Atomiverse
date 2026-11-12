@@ -8,6 +8,7 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/bias.h"
+#include "atomiverse/cpu/component/curvature_protocol.h"
 
 namespace ATV {
 namespace cpu {
@@ -44,12 +45,15 @@ namespace md {
 /// register explicitly:
 /// `eval.on(evaluate::Phase::evaluate).add(FixEfield{Ex,Ey,Ez})`.
 ///
+/// An `ExternalDrive`: the field is applied work, not part of the interaction
+/// potential, so the configurational temperature excludes its force.
+///
 /// CUDA twin: `cuda::md::FixEfield` (same law, same energy convention).
 ///
 /// ── Not in scope (see spec `external-efield-md`) ──────────────────────
 /// variable (`v_`) fields, region keyword, dipole torque, energy keyword
 /// for minimization-only variable energy.
-class FixEfield : public cpu::Bias {
+class FixEfield : public cpu::Bias, public cpu::ExternalDrive {
   public:
     /// @param Ex Electric field x-component [V/Å] (LAMMPS metal units).
     /// @param Ey Electric field y-component [V/Å].
@@ -70,6 +74,11 @@ class FixEfield : public cpu::Bias {
     }
 
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
+
+    const ExternalDrive* as_external_drive() const override { return this; }
+    /// @brief F −= q E on owned rows (the force `launch` adds).
+    void subtract_drive_force(const LaunchContext& ctx, int n, double* fx,
+                              double* fy, double* fz) const override;
     void launch(const cpu::LaunchContext& ctx) override;
 
     /// @return Last field energy contribution written this launch [eV].

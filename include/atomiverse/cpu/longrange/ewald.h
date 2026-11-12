@@ -33,6 +33,7 @@
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/component/curvature_protocol.h"
 #include "atomiverse/cpu/longrange/ewald_sum.h"
 #include "atomiverse/cpu/longrange/kspace.h"
 
@@ -40,7 +41,14 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Reciprocal-space Ewald summation for periodic electrostatics.
-class KSpaceEwald : public cpu::KSpace {
+///
+/// **Curvature** (`CurvatureSource`, configurational temperature): Hessian
+/// product, Laplacian and Laplacian gradient of the reciprocal energy
+/// (`EwaldSum::add_curvature`), from a structure factor recomputed at the
+/// current positions. Together with `CoulLong`'s real-space part the total
+/// Laplacian is \(-4\pi k_e\sum q^2/V\) for a neutral cell. Single
+/// process, 3D only (slab refused).
+class KSpaceEwald : public cpu::KSpace, public cpu::CurvatureSource {
   public:
     /// @param alpha    Ewald splitting parameter α [1/Å]. Must match the
     ///                 real-space `CoulLong` α.
@@ -68,6 +76,10 @@ class KSpaceEwald : public cpu::KSpace {
         return {ATV::make_binding(ATV::md::Phase::force, 100)};
     }
 
+    CurvatureSource* as_curvature_source() override { return this; }
+    void add_curvature(const LaunchContext& ctx,
+                       const CurvatureRows& rows) override;
+
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
     std::size_t memory_bytes() const override;
@@ -92,6 +104,8 @@ class KSpaceEwald : public cpu::KSpace {
 
     // Scratch structure-factor accumulators (sized to #k vectors).
     std::vector<double> sr_, si_;
+    // Directional structure factor of the curvature field (#k vectors).
+    std::vector<double> tr_, ti_;
 };
 
 } // namespace cpu
