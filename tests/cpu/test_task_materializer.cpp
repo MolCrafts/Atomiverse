@@ -832,7 +832,9 @@ TEST(TaskMaterializer, MdMorseBornDpdRunMatchesHandBuiltDriverBitwise) {
                                                       /*sigma=*/{kBornSigma},
                                                       /*C=*/{kBornC},
                                                       /*D=*/{kBornD},
-                                                      /*cutoff=*/kBornCutoff},
+                                                      /*cutoff=*/kBornCutoff,
+                                                      /*energy_shift=*/false,
+                                                      /*tail=*/true},
                                        std::nullopt});
     entries.push_back(MDComponentEntry{
         PairDpdParams{kDpdA, kDpdGamma, kTinit, kDpdCutoff, kDt, kDpdSeed},
@@ -852,10 +854,14 @@ TEST(TaskMaterializer, MdMorseBornDpdRunMatchesHandBuiltDriverBitwise) {
     // The parallel-vector mirror rebuilt into the coefficient-struct vector
     // the C++ constructor takes — the one place the wire layout and the
     // engine's `BornTypeCoeff` have to agree field for field.
+    // The non-default flags make the energy depend on both reaching the
+    // materialized component.
     sim.set_evaluator(cpu::PairBorn{
         std::vector<cpu::BornTypeCoeff>{{kBornType, kBornType, kBornA, kBornRho,
                                          kBornSigma, kBornC, kBornD}},
-        kBornCutoff});
+        kBornCutoff}
+                          .set_energy_shift(false)
+                          .set_tail_correction(true));
     sim.set_evaluator(
         cpu::PairDpd{kDpdA, kDpdGamma, kTinit, kDpdCutoff, kDt, kDpdSeed});
     sim.build();

@@ -4,8 +4,11 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 
@@ -22,7 +25,89 @@ double shift_of(double A, double inv_rho, double sigma, double C, double D,
     return A * std::exp((sigma - cutoff) * inv_rho) - C / rc6 + D / rc8;
 }
 
+/// Homogeneous-tail prefactors of one ordered type pair (class comment):
+/// energy 2π N_i N_j ∫ r² U and virial −(2π/3) N_i N_j ∫ r³ U' over [r_c, ∞).
+struct BornTail {
+    double energy = 0.0; ///< [eV·Å³]
+    double virial = 0.0; ///< [eV·Å³]
+};
+
+BornTail born_tail(double A, double inv_rho, double sigma, double C, double D,
+                   double rc, double n_i, double n_j) {
+    const double rho = 1.0 / inv_rho;
+    const double rho2 = rho * rho;
+    const double rc2 = rc * rc;
+    const double rc3 = rc2 * rc;
+    const double rc5 = rc3 * rc2;
+    const double ex = A * std::exp((sigma - rc) * inv_rho);
+    const double int_r2_u = ex * rho * (rc2 + 2.0 * rho * rc + 2.0 * rho2)
+                            - C / (3.0 * rc3) + D / (5.0 * rc5);
+    const double int_r3_du =
+        -ex * (rc3 + 3.0 * rho * rc2 + 6.0 * rho2 * rc + 6.0 * rho2 * rho)
+        + 2.0 * C / rc3 - 8.0 * D / (5.0 * rc5);
+    const double pairs = n_i * n_j;
+    return {2.0 * units::pi * pairs * int_r2_u,
+            -(2.0 / 3.0) * units::pi * pairs * int_r3_du};
+}
+
 } // namespace
+
+PairBorn& PairBorn::set_energy_shift(bool on) & {
+    energy_shift_ = on;
+    return *this;
+}
+
+PairBorn PairBorn::set_energy_shift(bool on) && {
+    energy_shift_ = on;
+    return std::move(*this);
+}
+
+PairBorn& PairBorn::set_tail_correction(bool on) & {
+    tail_ = on;
+    tail_ready_ = false;
+    return *this;
+}
+
+PairBorn PairBorn::set_tail_correction(bool on) && {
+    set_tail_correction(on);
+    return std::move(*this);
+}
+
+// LAMMPS PairBorn::init_one tail sum over ordered type pairs with the global
+// type counts. PairBorn requires the full frame, so the owned rows are every
+// atom and no reduction is needed.
+void PairBorn::prepare_tail_(const Frame& frame) {
+    const int n = frame.nlocal();
+    const double rc = std::sqrt(cutoff_sq_);
+    BornTail sum;
+    if (!multi_) {
+        const double count = static_cast<double>(n);
+        sum = born_tail(A_, inv_rho_, sigma_, C_, D_, rc, count, count);
+    } else {
+        const auto type = frame.span(kAtom_type);
+        std::vector<double> count(static_cast<std::size_t>(n_types_), 0.0);
+        for (int i = 0; i < n; ++i) {
+            const int t = type[i];
+            if (t >= 0 && t < n_types_)
+                count[static_cast<std::size_t>(t)] += 1.0;
+        }
+        for (int ti = 0; ti < n_types_; ++ti)
+            for (int tj = 0; tj < n_types_; ++tj) {
+                const Entry& e = entry_for_(ti, tj);
+                if (!e.set)
+                    continue;
+                const BornTail t =
+                    born_tail(e.A, e.inv_rho, e.sigma, e.C, e.D, rc,
+                              count[static_cast<std::size_t>(ti)],
+                              count[static_cast<std::size_t>(tj)]);
+                sum.energy += t.energy;
+                sum.virial += t.virial;
+            }
+    }
+    etail_pref_ = sum.energy;
+    ptail_pref_ = sum.virial;
+    tail_ready_ = true;
+}
 
 PairBorn::PairBorn(double A, double rho, double sigma, double C, double D,
                    double cutoff)
@@ -108,6 +193,7 @@ void PairBorn::compute(const LaunchContext& ctx) {
         const PairBorn* self;
         const int* type; ///< per-type form only
         double rc_sq;
+        double shift; ///< 1 with the energy shift, 0 without
 
         double cutoff_sq() const { return rc_sq; }
         int row(int i) const { return type ? type[i] : 0; }
@@ -130,7 +216,7 @@ void PairBorn::compute(const LaunchContext& ctx) {
             const double r8 = r6 * r2;
             const double expterm = std::exp((e->sigma - r) * e->inv_rho);
             const double v =
-                e->A * expterm - e->C / r6 + e->D / r8 - e->v_shift;
+                e->A * expterm - e->C / r6 + e->D / r8 - shift * e->v_shift;
             const double dUdr = -e->A * e->inv_rho * expterm
                                 + 6.0 * e->C / (r6 * r) - 8.0 * e->D / (r8 * r);
             // F_i = −dU/dr · r̂ = (−dU/dr / r)·(r_i − r_j).
@@ -138,7 +224,7 @@ void PairBorn::compute(const LaunchContext& ctx) {
         }
     };
     const Kernel kernel{this, multi_ ? f.span(kAtom_type).data() : nullptr,
-                        cutoff_sq_};
+                        cutoff_sq_, energy_shift_ ? 1.0 : 0.0};
     // The per-type table walks every owned pair (minimum image) as it always
     // has; the single-type form takes the published half list when there is
     // one.
@@ -149,6 +235,19 @@ void PairBorn::compute(const LaunchContext& ctx) {
     f.meta.get(kEnergyPair) += sums.energy;
     if (ctx.stress_requested)
         sums.virial.flush_to(f.meta.get(kStress));
+
+    // Tail (LAMMPS pair_modify tail yes): constant prefactors over the fixed
+    // type counts, scaled by the current volume because barostats move it.
+    if (tail_) {
+        if (!tail_ready_)
+            prepare_tail_(f);
+        const double vol = f.box.volume();
+        f.meta.get(kEnergy) += etail_pref_ / vol;
+        f.meta.get(kEnergyPair) += etail_pref_ / vol;
+        if (ctx.stress_requested)
+            for (int d = 0; d < 3; ++d)
+                f.meta.get(kStress)[d] += ptail_pref_ / vol;
+    }
 }
 
 } // namespace cpu

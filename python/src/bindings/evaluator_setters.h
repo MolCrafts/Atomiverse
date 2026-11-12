@@ -342,10 +342,8 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
     cls.def(
         "set_evaluator_pair_born",
         [](Handle& self, const ATV::cpu::task::PairBornParams& p) {
-            self.set_categorical(
-                "set_evaluator", p,
-                ATV::cpu::PairBorn{ATV::cpu::task::internal::born_table(p),
-                                   p.cutoff});
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::task::internal::make_pair_born(p));
         },
         nb::arg("comp"),
         "Append the Born-Mayer-Huggins pair evaluator, "

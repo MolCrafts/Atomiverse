@@ -2,7 +2,9 @@
 /// @brief Born–Mayer–Huggins pair: U = A exp((σ−r)/ρ) − C/r⁶ + D/r⁸ (CPU).
 ///
 /// Matches LAMMPS `pair_style born` with energy shift at cutoff
-/// (`pair_modify shift yes`): \(U(r_c)=0\). Units: energy [eV], length [Å].
+/// (`pair_modify shift yes`, the default here; `set_energy_shift(false)` is
+/// `shift no`) and, optionally, the analytic tail correction (`pair_modify
+/// tail yes`, `set_tail_correction`). Units: energy [eV], length [Å].
 /// Multi-type tables enable Fumi–Tosi molten-salt short-range (compose with
 /// `PairCoulCut` / `coul/long` for the Coulomb term).
 #pragma once
@@ -36,18 +38,33 @@ struct BornTypeCoeff {
     double D;     ///< \(r^{-8}\) coefficient [eV·Å⁸]
 };
 
-/// @brief Born–Mayer–Huggins pair potential (shifted at cutoff).
+/// @brief Born–Mayer–Huggins pair potential (shifted at cutoff by default).
 ///
 /// \[
 /// U(r)=A\,e^{(\sigma-r)/\rho}-\frac{C}{r^{6}}+\frac{D}{r^{8}}-U_{\mathrm{shift}},
 /// \quad r < r_c
 /// \]
 /// with
-/// \(U_{\mathrm{shift}}=A e^{(\sigma-r_c)/\rho}-C/r_c^{6}+D/r_c^{8}\).
+/// \(U_{\mathrm{shift}}=A e^{(\sigma-r_c)/\rho}-C/r_c^{6}+D/r_c^{8}\), or
+/// \(U_{\mathrm{shift}}=0\) after `set_energy_shift(false)`.
 ///
 /// Force: \(F=-\nabla U\) with
 /// \(\mathrm{d}U/\mathrm{d}r=-(A/\rho)\,e^{(\sigma-r)/\rho}+6C/r^{7}-8D/r^{9}\)
 /// (unshifted; shift is constant).
+///
+/// **Tail correction** (`set_tail_correction(true)`, LAMMPS `pair_modify tail
+/// yes`): with a homogeneous fluid beyond the cutoff (g(r) = 1) every ordered
+/// type pair (i, j) with global counts \(N_i, N_j\) adds
+/// \(e_{ij}/V\) to the energy and \(p_{ij}/V\) to each diagonal virial
+/// component, where
+/// \(e_{ij}=2\pi N_iN_j\int_{r_c}^{\infty}r^2U(r)\,\mathrm{d}r\) and
+/// \(p_{ij}=-\tfrac{2\pi}{3}N_iN_j\int_{r_c}^{\infty}r^3U'(r)\,\mathrm{d}r\)
+/// (the `PairLJCut` convention), in closed form
+/// \(e_{ij}=2\pi N_iN_j[A\rho e^{(\sigma-r_c)/\rho}(r_c^2+2\rho r_c+2\rho^2)
+///   -C/(3r_c^3)+D/(5r_c^5)]\) and
+/// \(p_{ij}=-\tfrac{2\pi}{3}N_iN_j[-Ae^{(\sigma-r_c)/\rho}(r_c^3+3\rho r_c^2
+///   +6\rho^2r_c+6\rho^3)+2C/r_c^3-8D/(5r_c^5)]\). The single-type form
+/// counts every atom as its one type. Independent of the energy shift.
 ///
 /// Two walks, and which one runs is decided by the CONSTRUCTOR, not only by
 /// what the run publishes: the SINGLE-TYPE arm uses `ctx.md.pair_list` when a
@@ -92,6 +109,24 @@ class PairBorn : public Pair {
 
     std::string name() const override { return "born"; }
 
+    /// @brief LAMMPS `pair_modify shift`: subtract \(U(r_c)\) from every
+    ///        counted pair so the energy is continuous at the cutoff.
+    ///        Forces are unaffected. Default on.
+    /// @param on Whether the shift is subtracted.
+    /// @return `*this` (lvalue) or the moved evaluator (rvalue).
+    PairBorn& set_energy_shift(bool on) &;
+    PairBorn set_energy_shift(bool on) &&;
+
+    /// @brief LAMMPS `pair_modify tail yes` — analytic homogeneous-fluid tail
+    ///        energy and pressure beyond the cutoff (see the class comment).
+    ///        Type counts are taken on the first evaluation after `build()`;
+    ///        every evaluation adds them at the current box volume. Default
+    ///        off.
+    /// @param on Whether the tail is added.
+    /// @return `*this` (lvalue) or the moved evaluator (rvalue).
+    PairBorn& set_tail_correction(bool on) &;
+    PairBorn set_tail_correction(bool on) &&;
+
     /// @brief True when a per-type coefficient table is active.
     bool is_multi_type() const { return multi_; }
 
@@ -110,8 +145,12 @@ class PairBorn : public Pair {
         return nullptr;
     }
 
-    /// @brief Forget the walk's cached row partition.
-    void build(const BuildContext&) override { loop_.reset(); }
+    /// @brief Forget the walk's cached row partition and the tail's type
+    ///        counts (they belong to the frame of this build).
+    void build(const BuildContext&) override {
+        loop_.reset();
+        tail_ready_ = false;
+    }
 
   protected:
     void compute(const LaunchContext& ctx) override;
@@ -128,6 +167,8 @@ class PairBorn : public Pair {
     };
 
     const Entry& entry_for_(int ti, int tj) const;
+    /// @brief Gather the type counts and set `etail_pref_` / `ptail_pref_`.
+    void prepare_tail_(const Frame& frame);
 
     // Single-type path
     double A_ = 0;
@@ -144,6 +185,12 @@ class PairBorn : public Pair {
     std::vector<Entry> table_; ///< dense n_types_ × n_types_
 
     double cutoff_sq_ = 0;
+
+    bool energy_shift_ = true; ///< `pair_modify shift` (set_energy_shift).
+    bool tail_ = false;        ///< `pair_modify tail` (set_tail_correction).
+    bool tail_ready_ = false;
+    /// E_tail = etail_pref_/V; each diagonal virial += ptail_pref_/V.
+    double etail_pref_ = 0.0, ptail_pref_ = 0.0;
 
     md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
 };

@@ -380,7 +380,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                     // rows the C++ constructor takes; the multi-type
                     // constructor covers the single-type one as a one-row
                     // table.
-                    bind(cpu::PairBorn{internal::born_table(p), p.cutoff});
+                    bind(internal::make_pair_born(p));
                 else if constexpr (std::is_same_v<P, PairYukawaParams>)
                     bind(cpu::PairYukawa{p.A, p.kappa, p.cutoff});
                 else if constexpr (std::is_same_v<P, PairWcaParams>)
@@ -481,8 +481,7 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             else if constexpr (std::is_same_v<P, PairBuckParams>)
                 driver.set_evaluator(cpu::PairBuck{p.A, p.rho, p.C, p.cutoff});
             else if constexpr (std::is_same_v<P, PairBornParams>)
-                driver.set_evaluator(
-                    cpu::PairBorn{internal::born_table(p), p.cutoff});
+                driver.set_evaluator(internal::make_pair_born(p));
             else if constexpr (std::is_same_v<P, PairYukawaParams>)
                 driver.set_evaluator(cpu::PairYukawa{p.A, p.kappa, p.cutoff});
             else if constexpr (std::is_same_v<P, PairWcaParams>)
