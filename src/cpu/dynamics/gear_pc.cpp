@@ -11,7 +11,9 @@
 #include "atomiverse/core/dynamics_math.h"
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/gear_pc.h"
+#include "atomiverse/core/timer.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/driver/step_timing.h"
 
 namespace ATV {
 namespace cpu {
@@ -21,6 +23,13 @@ namespace {
 
 constexpr int kVars = 6;    // x y z vx vy vz
 constexpr int kHistory = 5; // z1..z5 per variable
+
+// The thermostats run inside gear_pc's launches (the Gauss multiplier and
+// projection; T_C1 and its gradient for the configurational one); scoped
+// rows let a timing report split them from the integrator.
+constexpr const char* kGaussScope = "gear_pc/gauss";
+constexpr const char* kCurvatureScope = "gear_pc/curvature";
+constexpr int kTimerCategory = static_cast<int>(StepTiming::Modify);
 
 } // namespace
 
@@ -108,6 +117,7 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
             rate_[(3 + d) * n_ + i] = ftm2v * force[d][i] / mass_[i];
         }
     if (configurational_) {
+        ATV_PROFILE_SCOPE(ctx, kCurvatureScope, ctx.stage, kTimerCategory);
         const ConfigurationalSample sample = assembly_.evaluate(ctx);
         if (!(sample.laplacian > 0.0))
             throw std::runtime_error(
@@ -124,6 +134,7 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
     }
     if (!gauss_)
         return;
+    ATV_PROFILE_SCOPE(ctx, kGaussScope, ctx.stage, kTimerCategory);
     const internal::ConstRows3 v = {
         state_.data() + 3 * n_, state_.data() + 4 * n_, state_.data() + 5 * n_};
     const internal::Rows3 w = {w_.data(), w_.data() + n_, w_.data() + 2 * n_};
@@ -139,6 +150,7 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
 
 // Scale the peculiar velocities onto Σ m w² = k0_twice_ (state_ and frame).
 void GearPC::project_(const cpu::LaunchContext& ctx) {
+    ATV_PROFILE_SCOPE(ctx, kGaussScope, ctx.stage, kTimerCategory);
     Frame& f = ctx.frame;
     const internal::ConstRows3 v = {
         state_.data() + 3 * n_, state_.data() + 4 * n_, state_.data() + 5 * n_};

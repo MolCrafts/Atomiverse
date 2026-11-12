@@ -37,6 +37,9 @@ endif()
 if(ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
     # CPU LJ/EAM/SW MD; compare/lj-lammps/compare.py checks it against LAMMPS.
     atv_add_bench(bench_lj_cpu md/bench_lj_cpu.cpp)
+    # 512-ion molten NaCl (Born + CoulLong + direct Ewald, GearPC + Gauss):
+    # ms/step per component; compare/nacl-ewald-lammps sets it beside LAMMPS.
+    atv_add_bench(bench_nacl_ewald md/bench_nacl_ewald.cpp)
     if(ATV_USE_MPI AND ATV_BUILD_KSPACE)
         # MPI GAFF (PPPM/PME) timing and finite-difference force check;
         # driven by compare/gaff-liquid and compare/gaff-peo-lammps.
