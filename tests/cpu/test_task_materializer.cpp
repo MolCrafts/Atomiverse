@@ -1553,10 +1553,9 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
     std::vector<MDComponentEntry> entries;
     entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
-    entries.push_back(
-        MDComponentEntry{PWParams{"", "GTH-PBE-q4", 14, 2.0, 1, 1e-4, 2, 0.7, 5,
-                                  0, false, 1, 0, 0.02, 1, 4},
-                         std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PWParams{/*potentials=*/{{14, PWPotentialFormat::gth, "GTH-PBE-q4"}}},
+        std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), 1});
 
     try {
