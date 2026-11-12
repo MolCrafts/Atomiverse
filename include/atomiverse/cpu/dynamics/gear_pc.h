@@ -66,6 +66,14 @@ namespace md {
 /// shows it), harmless for steady-state averages started from an
 /// equilibrated state.
 ///
+/// **Step size.** The predictor–corrector map is stable on a harmonic mode
+/// of angular frequency \(\omega\) only for \(\omega h < 0.114\) (its
+/// spectral radius exceeds 1 beyond; 1.25 at \(\omega h = 0.2\)), a much
+/// smaller interval than velocity Verlet's \(\omega h < 2\). For a
+/// Tosi–Fumi NaCl melt at 1500 K the paper's 1 fs runs (T_CONF of a
+/// Gauss-isokinetic run stays at the target), while 2 fs diverges within
+/// 200 steps on the stiff Born contacts.
+///
 /// **Bookkeeping.** The Nordsieck history (30 doubles per atom) follows the
 /// atoms by tag, so spatial sorting may reorder rows between steps. The
 /// integrator needs every atom on the rank (`requires_full_frame`), and it

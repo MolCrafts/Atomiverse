@@ -313,7 +313,7 @@ TEST(ConfigurationalTemperature, RunAverageIsTheRatioOfTheMeans) {
     sim.set_evaluator(cpu::KSpaceEwald{kAlpha, 1e-4});
     cpu::ConfigurationalTemperature observer;
     sim.on(ATV::md::Phase::post_force).add_ref(observer, 200);
-    cpu::md::GearPC gear{0.002};
+    cpu::md::GearPC gear{0.001};
     sim.set_integrator_ref(gear);
     sim.build();
     double sum_n = 0, sum_d = 0, sum_t = 0;

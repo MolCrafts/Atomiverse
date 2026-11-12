@@ -520,8 +520,10 @@ void bind_md(nb::module_& m) {
         "or ConfigurationalThermostat the thermostat is inside the step, so "
         "do not add another thermostat. One force evaluation per step, at "
         "the predicted positions. The higher derivatives start at zero (a "
-        "one-time start-up transient). CPU only; spatial decomposition and "
-        "constraints are refused. The MD driver borrows this object, so its "
+        "one-time start-up transient). Stable only for omega*dt < 0.114 on a "
+        "mode of angular frequency omega: 1 fs for molten NaCl, not 2 fs. "
+        "CPU only; spatial decomposition and constraints are refused. The "
+        "MD driver borrows this object, so its "
         "diagnostics stay readable here. Not carried by the MPI task "
         "payload.")
         .def(nb::init<double>(), nb::arg("dt"),
