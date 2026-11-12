@@ -10,6 +10,7 @@ Conclusions only. Binding rules live in docs/developer/project-contract.md; hist
 | CPU MD communication | [md-comm.md](md-comm.md) |
 | CUDA MD: NVIDIA libraries, OpenMM method | [cuda-md-nvidia-libraries.md](cuda-md-nvidia-libraries.md), [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) |
 | GAFF benchmark (CPU vs LAMMPS, CUDA vs OpenMM) | [gaff-md-perf.md](gaff-md-perf.md) |
+| Small dense Coulomb MD (NaCl Ewald vs LAMMPS) | [md-small-coulomb-perf.md](md-small-coulomb-perf.md) |
 | Machines, accounts, workbenches | [arrhenius-workbench.md](arrhenius-workbench.md) |
 | BLAS threading traps | [openblas-thread-binding.md](openblas-thread-binding.md) |
 | ES public-shape debt | [es-architecture-debt.md](es-architecture-debt.md) |
