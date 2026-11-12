@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "atomiverse/core/dynamics_math.h"
 #include "atomiverse/core/frame_schema.h"
@@ -35,6 +36,23 @@ GearPC::GearPC(double dt_fs, GaussThermostat thermostat) : GearPC(dt_fs) {
             "GearPC: Gaussian thermostat temperature must be finite and > 0");
     constraint_ = internal::GaussConstraint(thermostat.kind, thermostat.axis);
     gauss_ = thermostat;
+}
+
+GearPC::GearPC(double dt_fs, ConfigurationalThermostat thermostat)
+    : GearPC(dt_fs) {
+    if (!(thermostat.temperature > 0.0)
+        || !std::isfinite(thermostat.temperature))
+        throw std::invalid_argument("GearPC: configurational thermostat "
+                                    "temperature must be finite and > 0");
+    if (!(thermostat.Q > 0.0) || !std::isfinite(thermostat.Q))
+        throw std::invalid_argument(
+            "GearPC: configurational thermostat Q must be finite and > 0");
+    configurational_ = thermostat;
+}
+
+void GearPC::set_curvature_terms(std::vector<CurvatureSource*> sources,
+                                 std::vector<const ExternalDrive*> drives) {
+    assembly_.set_terms(std::move(sources), std::move(drives));
 }
 
 void GearPC::invalidate_inputs(InputChange changes, const BuildContext&) {
@@ -78,7 +96,7 @@ void GearPC::load_state_(const cpu::LaunchContext& ctx) {
 }
 
 // Right-hand side at the state in `state_` and the frame's forces:
-// ṙ = v, v̇ = F/m − α w.
+// ṙ = v + (ξ/T0) ∂T_C1/∂r, v̇ = F/m − α w, ξ̇ = −Q (T_C1 − T0)/T0.
 void GearPC::rates_(const cpu::LaunchContext& ctx) {
     const Frame& f = ctx.frame;
     const AccReal* force[3] = {f.span(kAtom_fx).data(), f.span(kAtom_fy).data(),
@@ -89,6 +107,21 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
             rate_[d * n_ + i] = state_[(3 + d) * n_ + i];
             rate_[(3 + d) * n_ + i] = ftm2v * force[d][i] / mass_[i];
         }
+    if (configurational_) {
+        const ConfigurationalSample sample = assembly_.evaluate(ctx);
+        if (!(sample.laplacian > 0.0))
+            throw std::runtime_error(
+                "GearPC: the configurational thermostat needs a positive "
+                "Laplacian of the potential energy, got "
+                + std::to_string(sample.laplacian));
+        t_c1_ = sample.temperature;
+        const double t0 = configurational_->temperature;
+        assembly_.temperature_gradient(ctx.runtime.units.boltz, grad_t_);
+        const double gain = xi_[0] / t0;
+        for (int k = 0; k < 3 * n_; ++k)
+            rate_[k] += gain * grad_t_[k];
+        xi_rate_ = -configurational_->Q * (t_c1_ - t0) / t0;
+    }
     if (!gauss_)
         return;
     const internal::ConstRows3 v = {
@@ -151,14 +184,24 @@ void GearPC::start_(const cpu::LaunchContext& ctx) {
                     * gauss_->temperature / ctx.runtime.units.mvv2e;
         project_(ctx);
     }
+    for (double& z : xi_)
+        z = 0.0;
     rates_(ctx);
-    // z1 = h ẏ; z2 = h²/2 r̈ = (h/2)(h v̇) for positions; higher ones zero.
+    // z1 = h ẏ; z2 = h²/2 r̈ for positions, r̈ = v̇ + (ξ̇/T0) ∂T_C1/∂r at
+    // ξ = 0; higher ones zero.
     for (int var = 0; var < kVars; ++var)
         for (int i = 0; i < n_; ++i)
             hist_(var, 1)[i] = dt_ * rate_[var * n_ + i];
     for (int d = 0; d < 3; ++d)
         for (int i = 0; i < n_; ++i)
             hist_(d, 2)[i] = 0.5 * dt_ * hist_(3 + d, 1)[i];
+    if (configurational_) {
+        xi_[1] = dt_ * xi_rate_;
+        const double kick = 0.5 * dt_ * xi_[1] / configurational_->temperature;
+        for (int d = 0; d < 3; ++d)
+            for (int i = 0; i < n_; ++i)
+                hist_(d, 2)[i] += kick * grad_t_[d * n_ + i];
+    }
     started_ = true;
 }
 
@@ -196,6 +239,8 @@ void GearPC::follow_rows_(const cpu::LaunchContext& ctx) {
 
 void GearPC::predict_(const cpu::LaunchContext& ctx) {
     load_state_(ctx);
+    if (configurational_)
+        ATV::md::gear_predict(xi_);
     Frame& f = ctx.frame;
     StorageReal* cols[kVars] = {
         f.span(kAtom_x).data(),  f.span(kAtom_y).data(),
@@ -256,6 +301,8 @@ void GearPC::correct_(const cpu::LaunchContext& ctx) {
             h5[i] = z[5];
         }
     }
+    if (configurational_)
+        ATV::md::gear_correct(xi_, h * xi_rate_);
     if (gauss_)
         project_(ctx);
 }

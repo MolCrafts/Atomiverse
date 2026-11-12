@@ -16,6 +16,8 @@
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/fix_efield.h"
+#include "atomiverse/cpu/dynamics/gear_pc.h"
+#include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/ewald.h"
@@ -255,6 +257,37 @@ class UndeclaredPush : public cpu::Potential {
     }
 };
 
+struct MeltRun {
+    double mean_t_c1 = 0; ///< over the second half [K]
+};
+
+/// Tosi–Fumi NaCl integrated by `gear` for `steps` steps; T_C1 from an
+/// observer on the same (predicted) configuration as the forces.
+MeltRun run_melt(cpu::md::GearPC gear, int steps) {
+    cpu::Frame frame = nacl(1500.0, 7);
+    cpu::md::MD sim;
+    sim.set_units("metal");
+    sim.set_neighbor(cpu::md::NeighborList<>{kCut, 0.5});
+    sim.set_evaluator(cpu::PairBorn{tosi_fumi(), kCut});
+    sim.set_evaluator(cpu::CoulLong{kAlpha, kCut});
+    sim.set_evaluator(cpu::KSpaceEwald{kAlpha, 1e-4});
+    cpu::ConfigurationalTemperature observer;
+    sim.on(ATV::md::Phase::post_force).add_ref(observer, 200);
+    sim.set_integrator_ref(gear);
+    sim.build();
+    MeltRun out;
+    int samples = 0;
+    for (int step = 0; step < steps; ++step) {
+        sim.run(frame, 1);
+        if (step < steps / 2)
+            continue;
+        out.mean_t_c1 += observer.last().temperature;
+        ++samples;
+    }
+    out.mean_t_c1 /= samples;
+    return out;
+}
+
 } // namespace
 
 TEST(Curvature, AForceTermWithoutCurvatureIsRefused) {
@@ -265,4 +298,21 @@ TEST(Curvature, AForceTermWithoutCurvatureIsRefused) {
     cpu::ConfigurationalTemperature observer;
     eval.on(ATV::evaluate::Phase::finalize).add_ref(observer);
     EXPECT_THROW(eval.build(), std::runtime_error);
+}
+
+TEST(ConfigurationalThermostat,
+     DrivesTheConfigurationalTemperatureToTheTarget) {
+    // Unthermostatted, this start relaxes to T_C1 ≈ 1080 K. Asked for a
+    // target on either side, the feedback of eqs. (12a–c) takes the
+    // second-half mean of T_C1 there (within the Nosé–Hoover oscillation:
+    // 643 K and 1540 K measured), heating or cooling as needed.
+    constexpr double kDt = 0.001; // [ps]
+    constexpr int kSteps = 500;
+    constexpr double kQ = 20.0; // [Å²/ps²]
+    for (const double t0 : {700.0, 1500.0}) {
+        const MeltRun held = run_melt(
+            cpu::md::GearPC{kDt, cpu::md::ConfigurationalThermostat{t0, kQ}},
+            kSteps);
+        EXPECT_NEAR(held.mean_t_c1, t0, 0.1 * t0) << "target " << t0;
+    }
 }

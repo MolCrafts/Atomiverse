@@ -1,6 +1,6 @@
 /// @file cpu/dynamics/gear_pc.h
 /// @brief Fifth-order Gear predictor–corrector integrator with optional
-///        Gaussian kinetic thermostats (CPU).
+///        Gaussian kinetic or configurational Nosé–Hoover thermostats (CPU).
 ///
 /// Replaces `VelocityVerlet`. The thermostat is inside the step (it changes
 /// the equations of motion), so do not add `NoseHoover`, `Langevin` or any
@@ -14,8 +14,10 @@
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cpu/component/curvature_protocol.h"
 #include "atomiverse/cpu/component/integrator.h"
 #include "atomiverse/cpu/component/timestep_protocol.h"
+#include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/gauss_thermostat.h"
 #include "atomiverse/cpu/dynamics/internal/gauss_constraint.h"
 
@@ -46,6 +48,14 @@ namespace md {
 /// truncation error and stays at round-off-to-\(O(h^6)\) level; the first
 /// step also moves the initial velocities onto the constraint surface.
 ///
+/// With a `ConfigurationalThermostat` the multiplier enters the POSITION
+/// equation (eqs. 12a–c): \(\dot r = v + (\xi/T_0)\,\partial T_{C1}/
+/// \partial r\), \(\dot\xi = -Q (T_{C1} - T_0)/T_0\), with \(T_{C1}\) and
+/// its gradient from `CurvatureAssembly` at the predicted positions (every
+/// force term of the run must be a `CurvatureSource` or an
+/// `ExternalDrive`). \(\xi\) starts at 0 and is integrated by the same
+/// Gear law.
+///
 /// **Start-up.** The first launch after `build()` (or after the caller
 /// changed positions, velocities or the cell between runs) sets
 /// \(z_1 = h\,\dot y\) for every variable, \(z_2 = \tfrac{h^2}{2}\ddot r\)
@@ -64,7 +74,9 @@ namespace md {
 /// the corrected positions are never evaluated: thermo output at
 /// `end_of_step` pairs corrected velocities with the forces and energy of
 /// the predicted positions, as in every Gear predictor–corrector.
-class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
+class GearPC : public cpu::Integrator,
+               public cpu::TimestepProvider,
+               public cpu::CurvatureConsumer {
   public:
     /// @brief Adiabatic Gear PC.
     /// @param dt_fs Timestep in the run's time unit (ps for `metal`; > 0).
@@ -75,12 +87,22 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     /// @param thermostat Constrained temperature and its geometry.
     GearPC(double dt_fs, GaussThermostat thermostat);
 
+    /// @brief Gear PC with the configurational Nosé–Hoover thermostat.
+    /// @param dt_fs      Timestep in the run's time unit (> 0).
+    /// @param thermostat Target \(T_0\) and feedback constant `Q`.
+    GearPC(double dt_fs, ConfigurationalThermostat thermostat);
+
     std::string name() const override { return "gear_pc"; }
     const cpu::TimestepProvider* as_timestep_provider() const override {
         return this;
     }
     double timestep() const override { return dt_; }
     bool requires_full_frame() const override { return true; }
+    CurvatureConsumer* as_curvature_consumer() override {
+        return configurational_ ? this : nullptr;
+    }
+    void set_curvature_terms(std::vector<CurvatureSource*> sources,
+                             std::vector<const ExternalDrive*> drives) override;
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::initial_integrate, 0),
@@ -103,6 +125,13 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     /// @brief Gaussian multiplier \(\alpha\) [1/time] at the last corrector.
     double gauss_multiplier() const { return alpha_; }
 
+    /// @brief Configurational thermostat variable \(\xi\) [length²/time]
+    ///        after the last corrector.
+    double xi() const { return xi_[0]; }
+
+    /// @brief \(T_{C1}\) [K] at the last evaluated (predicted) state.
+    double configurational_temperature() const { return t_c1_; }
+
   private:
     void start_(const cpu::LaunchContext& ctx);
     void follow_rows_(const cpu::LaunchContext& ctx);
@@ -119,6 +148,12 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     std::optional<GaussThermostat> gauss_;
     internal::GaussConstraint constraint_;
     double k0_twice_ = 0.0; ///< target Σ m w² [mass·velocity²]
+    std::optional<ConfigurationalThermostat> configurational_;
+    CurvatureAssembly assembly_;
+    double xi_[6] = {0, 0, 0, 0, 0, 0}; ///< Nordsieck vector of ξ
+    double xi_rate_ = 0.0;              ///< ξ̇ at the last evaluation
+    double t_c1_ = 0.0;
+    std::vector<double> grad_t_; ///< ∂T_C1/∂r, 3·n
 
     bool started_ = false;
     int n_ = 0;
