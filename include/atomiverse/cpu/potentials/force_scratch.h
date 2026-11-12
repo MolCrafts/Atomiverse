@@ -109,6 +109,10 @@ struct ForceRows {
 /// case, so kernels keep gating their own writes on the request.
 class ChunkForces {
   public:
+    /// Rows each thread of the flush must get (a row is a few adds per
+    /// slot, so below this a team's fork and join cost more than the sum).
+    static constexpr int kFlushRowsPerThread = 4096;
+
     /// Partial sums per chunk: energy + Voigt virial + one style extra.
     /// Eight doubles, one cache line per chunk.
     static constexpr int kSums = 8;
@@ -207,8 +211,15 @@ class ChunkForces {
             const int rows = rows_;
             const Buffer* bufs = bufs_.data();
             // Row-parallel; each row sums its slots in slot order, so the
-            // thread count of the flush itself never changes the result.
-#pragma omp parallel for schedule(static) if (rows > 4096)
+            // thread count of the flush itself never changes the result. A
+            // thread is opened per kFlushRowsPerThread rows, so a small
+            // system's flush stays on the calling thread at any team size.
+            int team = 1;
+#ifdef _OPENMP
+            team = std::clamp(rows / kFlushRowsPerThread, 1,
+                              omp_get_max_threads());
+#endif
+#pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
             for (int i = 0; i < rows; ++i) {
                 double sx = 0.0, sy = 0.0, sz = 0.0;
                 for (int k = 0; k < n_live; ++k) {

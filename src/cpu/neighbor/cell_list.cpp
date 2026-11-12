@@ -402,6 +402,19 @@ inline void ensure_at_least(std::vector<int>& arr, std::size_t n) {
         arr.resize(n);
 }
 
+// Centre rows each thread must get before a team pays for its fork and
+// join: a row scans its stencil's candidates (microseconds), so a cell of a
+// few hundred atoms builds its list on the calling thread.
+constexpr int kRowsPerThread = 256;
+
+int list_team(int rows) {
+    int most = 1;
+#ifdef _OPENMP
+    most = omp_get_max_threads();
+#endif
+    return std::clamp(rows / kRowsPerThread, 1, most);
+}
+
 } // namespace
 
 void CellList::refresh_half(const cpu::Frame& frame, int n_active,
@@ -430,11 +443,6 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
     result.inum = n_local;
     result.n_rows = n;
 
-    int n_threads = 1;
-#ifdef _OPENMP
-    n_threads = omp_get_max_threads();
-#endif
-
     const bool use_half = !triclinic_;
     const int* __restrict atom_cell_ptr = atom_cell_.data();
     const int* __restrict cell_count_ptr = cell_count_.data();
@@ -442,6 +450,7 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
     const int* __restrict binned_ptr = binned_atoms_.data();
     const auto& stencil = use_half ? half_stencil_ : full_stencil_;
     const int n_owned_rows = std::min(n_local, n);
+    const int n_threads = list_team(n_owned_rows);
 
     // One row traversal for serial CSR and thread-private buffers. The
     // LAMMPS half/Newton stencil selects forward cells; only the home cell
@@ -654,10 +663,7 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
     }
     result.inum = result.n_rows = centres;
 
-    int n_threads = 1;
-#ifdef _OPENMP
-    n_threads = omp_get_max_threads();
-#endif
+    const int n_threads = list_team(centres);
 
     // Member-state scratch reuse — same contract as the `refresh_half`
     // version. See the long comment above for the "no allocation in
@@ -816,11 +822,8 @@ void CellList::derive_half(const cpu::Frame& frame, int n_active,
             append(k);
         }
     };
-    int n_threads = 1;
-#ifdef _OPENMP
-    n_threads = omp_get_max_threads();
-#endif
-    if (n_threads == 1 || owned < n_threads) {
+    const int n_threads = list_team(owned);
+    if (n_threads == 1) {
         result.neighbors.clear();
         for (int i = 0; i < owned; ++i) {
             result.firstneigh[i] = static_cast<int>(result.neighbors.size());
