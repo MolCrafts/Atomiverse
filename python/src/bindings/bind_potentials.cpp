@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/cpu/longrange/ewald.h"
 #include "atomiverse/cpu/task/task_spec.h"
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/core/pppm_accuracy.h"
@@ -301,9 +302,10 @@ void bind_potentials(nb::module_& m) {
     nb::class_<cpu::task::PairBornParams>(
         m, "PairBorn",
         "Born-Mayer-Huggins pair table U = A exp((sigma - r)/rho) - C/r^6 + "
-        "D/r^8, shifted at the cutoff (LAMMPS `pair_style born`) — the "
-        "Fumi-Tosi short-range half of a molten-salt model. Add the Coulomb "
-        "term as a separate evaluator.\n\n"
+        "D/r^8 (LAMMPS `pair_style born`), shifted at the cutoff unless "
+        "energy_shift=False — the Fumi-Tosi short-range half of a "
+        "molten-salt model. Add the Coulomb term as a separate evaluator. "
+        "Tosi-Fumi tables write the r^-8 term as -D/r^8, so pass -D.\n\n"
         "The table is per TYPE PAIR and the keys are FORCE-FIELD TYPES: the "
         "frame's per-atom type column is filled from the molpy "
         "`atoms.type_id` column (u64), not from `atomic_number` (the "
@@ -316,15 +318,18 @@ void bind_potentials(nb::module_& m) {
             [](cpu::task::PairBornParams* p, std::vector<int> type_i,
                std::vector<int> type_j, std::vector<double> A,
                std::vector<double> rho, std::vector<double> sigma,
-               std::vector<double> C, std::vector<double> D, double cutoff) {
+               std::vector<double> C, std::vector<double> D, double cutoff,
+               bool energy_shift) {
                 new (p) cpu::task::PairBornParams{
                     std::move(type_i), std::move(type_j),
                     std::move(A),      std::move(rho),
                     std::move(sigma),  std::move(C),
-                    std::move(D),      cutoff};
+                    std::move(D),      cutoff,
+                    energy_shift};
             },
             nb::arg("type_i"), nb::arg("type_j"), nb::arg("A"), nb::arg("rho"),
             nb::arg("sigma"), nb::arg("C"), nb::arg("D"), nb::arg("cutoff"),
+            nb::arg("energy_shift") = true,
             "Construct from PARALLEL sequences, one entry per table row: "
             "type_i / type_j (force-field types, atoms.type_id), A [energy], "
             "rho [length], sigma [length], "
@@ -337,7 +342,19 @@ void bind_potentials(nb::module_& m) {
             "the table is transposed into coefficient rows when the evaluator "
             "is installed, so a length mismatch raises ValueError from "
             "MD.set_evaluator(...), not from here — the same arrangement as "
-            "XYZ and MD.set_record(...).");
+            "XYZ and MD.set_record(...).\n\n"
+            "energy_shift: LAMMPS `pair_modify shift` — subtract U(r_c) per "
+            "pair (default True; forces are unaffected).")
+        .def(
+            "set_tail_correction",
+            [](nb::object self, bool on) {
+                nb::cast<cpu::task::PairBornParams&>(self).tail = on;
+                return self;
+            },
+            nb::arg("on"),
+            "LAMMPS `pair_modify tail yes`: add the analytic homogeneous-fluid "
+            "tail energy and pressure beyond the cutoff for every type pair "
+            "(default off); returns self.");
 
     nb::class_<cpu::task::PairYukawaParams>(
         m, "PairYukawa",
@@ -713,6 +730,40 @@ void bind_potentials(nb::module_& m) {
             },
             "Explicit (K0, K1, K2), or None when derived from grid_spacing.");
 #endif
+
+    nb::class_<cpu::task::KSpaceEwaldParams>(
+        m, "KSpaceEwald",
+        "Reciprocal-space half of an Ewald split evaluated as the direct "
+        "k-space sum (LAMMPS `kspace_style ewald`), conducting (tinfoil) "
+        "boundary: E = coulomb (2 pi / V) sum_{k != 0} exp(-k^2 / 4 alpha^2) "
+        "/ k^2 |S(k)|^2 plus the self and net-charge terms. O(N k) and "
+        "FFT-free, so it exists in every build; it also supplies the "
+        "curvature the configurational temperature needs (KSpacePME and "
+        "KSpacePPPM do not). Install it with CoulLong at the SAME alpha. "
+        "It is not carried by the MPI task wire.")
+        .def(
+            "__init__",
+            [](cpu::task::KSpaceEwaldParams* p, double alpha, double accuracy) {
+                if (!(alpha > 0.0))
+                    throw nb::value_error("KSpaceEwald: alpha must be > 0");
+                if (!(accuracy > 0.0 && accuracy < 1.0))
+                    throw nb::value_error(
+                        "KSpaceEwald: accuracy must be in (0, 1)");
+                new (p) cpu::task::KSpaceEwaldParams{alpha, accuracy};
+            },
+            nb::arg("alpha"), nb::arg("accuracy") = 1e-5,
+            "Construct with alpha [1/length], which must equal the CoulLong "
+            "alpha, and the relative accuracy that sets the spherical "
+            "reciprocal cutoff |k| <= 2 alpha sqrt(-ln accuracy) (default "
+            "1e-5).")
+        .def_static("recommend_alpha", &cpu::KSpaceEwald::recommend_alpha,
+                    nb::arg("cutoff"), nb::arg("accuracy") = 1e-5,
+                    "LAMMPS heuristic alpha = (1.35 - 0.15 ln accuracy) / "
+                    "cutoff [1/length].")
+        .def_ro("alpha", &cpu::task::KSpaceEwaldParams::alpha,
+                "Ewald alpha [1/length].")
+        .def_ro("accuracy", &cpu::task::KSpaceEwaldParams::accuracy,
+                "Relative accuracy target.");
 
     nb::class_<cpu::task::NeighborListParams>(
         m, "NeighborList", "Cell-list based neighbor list component.")

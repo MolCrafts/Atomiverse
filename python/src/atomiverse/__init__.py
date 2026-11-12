@@ -22,12 +22,16 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``md.integrator.NoseHooverNPT``       ``NoseHooverNPT``           ``cpu::md::NoseHooverNPT``
 ``md.integrator.ParrinelloRahmanNPT`` ``ParrinelloRahmanNPT``     ``cpu::md::ParrinelloRahmanNPT``
 ``md.integrator.NvtSllod``            ``NvtSllod``                ``cpu::md::NvtSllod``
+``md.integrator.GearPC``              ``GearPC``                  ``cpu::md::GearPC``
 ``md.thermostat.NoseHoover``          ``NoseHoover``              ``cpu::md::NoseHoover``
 ``md.thermostat.Langevin``            ``Langevin``                ``cpu::md::FixLangevin``
 ``md.thermostat.CSVR``                ``CSVR``                    ``cpu::md::FixCSVR``
+``md.thermostat.GaussThermostat``     ``GaussThermostat``         ``cpu::md::GaussThermostat``
+``md.thermostat.ConfigurationalThermostat`` ``ConfigurationalThermostat`` ``cpu::md::ConfigurationalThermostat``
 ``md.barostat.BerendsenBarostat``     ``BerendsenBarostat``       ``cpu::md::Barostat``
 ``md.InitVelocity``                   ``InitVelocity``            ``cpu::md::InitVelocity``
 ``md.FixEfield``                      ``FixEfield``               ``cpu::md::FixEfield``
+``md.ConfigurationalTemperature``     ``ConfigurationalTemperature`` ``cpu::ConfigurationalTemperature``
 ``minimizer.Minimize``                ``Minimize``                ``cpu::minimizer::Minimize``
 ``minimizer.LBFGS``                   ``LBFGS``                   ``cpu::minimizer::LBFGS``
 ``minimizer.CG``                      ``CG``                      ``cpu::minimizer::CG``
@@ -53,6 +57,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``potentials.pair.WCA``               ``PairWCA``                 ``cpu::PairWCA``
 ``potentials.pair.Dpd``               ``PairDpd``                 ``cpu::PairDpd``
 ``longrange.CoulLong``                ``CoulLong``                ``cpu::CoulLong``
+``longrange.KSpaceEwald``             ``KSpaceEwald``             ``cpu::KSpaceEwald``
 ``longrange.KSpacePME``               ``KSpacePME``               ``cpu::KSpacePME``
 ``longrange.KSpacePPPM``              ``KSpacePPPM``              ``cpu::KSpacePPPM``
 ``potentials.bond.Harmonic``          ``BondHarmonic``            ``cpu::BondHarmonic``
@@ -222,9 +227,15 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "NoseHooverNPT": ("atomiverse.md.integrator", "NoseHooverNPT"),
     "ParrinelloRahmanNPT": ("atomiverse.md.integrator", "ParrinelloRahmanNPT"),
     "NvtSllod": ("atomiverse.md.integrator", "NvtSllod"),
+    "GearPC": ("atomiverse.md.integrator", "GearPC"),
     "NoseHoover": ("atomiverse.md.thermostat", "NoseHoover"),
     "Langevin": ("atomiverse.md.thermostat", "Langevin"),
     "CSVR": ("atomiverse.md.thermostat", "CSVR"),
+    "GaussThermostat": ("atomiverse.md.thermostat", "GaussThermostat"),
+    "ConfigurationalThermostat": (
+        "atomiverse.md.thermostat",
+        "ConfigurationalThermostat",
+    ),
     "BerendsenBarostat": ("atomiverse.md.barostat", "BerendsenBarostat"),
     "Minimize": ("atomiverse.minimizer", "Minimize"),
     "SteepestDescent": ("atomiverse.minimizer", "SteepestDescent"),
@@ -252,6 +263,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "PairWCA": ("atomiverse.potentials.pair", "WCA"),
     "PairDpd": ("atomiverse.potentials.pair", "Dpd"),
     "CoulLong": ("atomiverse.longrange", "CoulLong"),
+    "KSpaceEwald": ("atomiverse.longrange", "KSpaceEwald"),
     "KSpacePME": ("atomiverse.longrange", "KSpacePME"),
     "KSpacePPPM": ("atomiverse.longrange", "KSpacePPPM"),
     "BondHarmonic": ("atomiverse.potentials.bond", "Harmonic"),
@@ -259,6 +271,7 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "AngleHarmonic": ("atomiverse.potentials.angle", "Harmonic"),
     "AngleCosine": ("atomiverse.potentials.angle", "Cosine"),
     "FixEfield": ("atomiverse.md", "FixEfield"),
+    "ConfigurationalTemperature": ("atomiverse.md", "ConfigurationalTemperature"),
     "DihedralMultiHarmonic": ("atomiverse.potentials.dihedral", "MultiHarmonic"),
     "DihedralCharmm": ("atomiverse.potentials.dihedral", "Charmm"),
     "ImproperHarmonic": ("atomiverse.potentials.improper", "Harmonic"),
@@ -336,10 +349,13 @@ _PUBLIC: tuple[str, ...] = (
     "NoseHooverNPT",
     "ParrinelloRahmanNPT",
     "NvtSllod",
+    "GearPC",
     "InitVelocity",
     "NoseHoover",
     "Langevin",
     "CSVR",
+    "GaussThermostat",
+    "ConfigurationalThermostat",
     "BerendsenBarostat",
     "Minimize",
     "SteepestDescent",
@@ -366,12 +382,14 @@ _PUBLIC: tuple[str, ...] = (
     "PairWCA",
     "PairDpd",
     "CoulLong",
+    "KSpaceEwald",
     "NeighborList",
     "BondHarmonic",
     "BondFene",
     "AngleHarmonic",
     "AngleCosine",
     "FixEfield",
+    "ConfigurationalTemperature",
     "DihedralMultiHarmonic",
     "DihedralCharmm",
     "ImproperHarmonic",

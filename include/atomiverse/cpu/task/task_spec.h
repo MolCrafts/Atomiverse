@@ -560,6 +560,21 @@ inline bool operator==(const KSpacePppmParams& a, const KSpacePppmParams& b) {
            && a.order == b.order && a.mesh == b.mesh;
 }
 
+/// @brief Constructor parameters of `cpu::KSpaceEwald(alpha, accuracy)` —
+///        the direct reciprocal-space Ewald sum.
+///
+/// Registered beside the task wire like `KSpacePppmParams`: a launcher
+/// payload cannot name it. Needs no FFT, so it exists in every build.
+struct KSpaceEwaldParams {
+    /// Ewald splitting parameter α [1/Å]. Must equal the paired `CoulLong`.
+    double alpha;
+    /// Relative accuracy target in (0, 1); sets the reciprocal-vector cutoff.
+    double accuracy = 1e-5;
+};
+inline bool operator==(const KSpaceEwaldParams& a, const KSpaceEwaldParams& b) {
+    return a.alpha == b.alpha && a.accuracy == b.accuracy;
+}
+
 /// @brief Constructor parameters of `cpu::ImproperCvff(K, d, n)` — the
 ///        Amber/GAFF improper V = K (1 + d cos(n φ)), d = ±1.
 ///

@@ -40,8 +40,10 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/dynamics/barostat.h"
+#include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/gear_pc.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -145,6 +147,22 @@ struct MdHandle {
         require_configurable_("set_integrator");
         unmirrored_.push_back("nvt_sllod");
         driver.set_integrator(std::move(integrator));
+    }
+
+    /// @brief Borrow a live `GearPC`: its diagnostics (constraint drift,
+    ///        ξ, T_C1) stay readable on the Python object.
+    void set_gear_pc_(cpu::md::GearPC& integrator) {
+        require_configurable_("set_integrator");
+        unmirrored_.push_back("gear_pc");
+        driver.set_integrator_ref(integrator);
+    }
+
+    /// @brief Borrow a live `ConfigurationalTemperature` observer.
+    void set_configurational_temperature_(
+        cpu::ConfigurationalTemperature& observer) {
+        require_configurable_("set_observer");
+        unmirrored_.push_back("configurational_temperature");
+        driver.set_observer_ref(observer);
     }
 
     template <typename Params, typename Component>
@@ -423,6 +441,168 @@ void bind_md(nb::module_& m) {
         .def_ro("Ex", &cpu::task::FixEfieldParams::Ex, "Field x [V/A].")
         .def_ro("Ey", &cpu::task::FixEfieldParams::Ey, "Field y [V/A].")
         .def_ro("Ez", &cpu::task::FixEfieldParams::Ez, "Field z [V/A].");
+
+    nb::class_<cpu::md::GaussThermostat>(
+        m, "GaussThermostat",
+        "Gauss least-constraint kinetic thermostat for GearPC (Petravic & "
+        "Delhommelle, J. Chem. Phys. 118, 7477 (2003)): v' = F/m - alpha w "
+        "with alpha = sum m w.a / sum m w^2, w the peculiar velocity of the "
+        "constrained components and a the total acceleration (an applied "
+        "field included). The constrained kinetic energy stays exactly at "
+        "dof k_B T / 2.\n\n"
+        "  kind 'kinetic'    eq. (9): every axis relative to the centre of "
+        "mass, 3N-3 dof.\n"
+        "  kind 'flow'       eqs. (3), (4), (10): along `axis` relative to "
+        "each species' mean velocity (the frame's type column; the species "
+        "flows are not thermostatted), barycentric on the other axes, "
+        "3N-2-n_species dof.\n"
+        "  kind 'transverse' eq. (11): `axis` free, the other two axes "
+        "barycentric, 2N-2 dof.\n\n"
+        "The paper normalises temperatures by 3N instead of these dof.")
+        .def(
+            "__init__",
+            [](cpu::md::GaussThermostat* p, const std::string& kind,
+               double temperature, int axis) {
+                cpu::md::GaussKind k;
+                if (kind == "kinetic")
+                    k = cpu::md::GaussKind::Kinetic;
+                else if (kind == "flow")
+                    k = cpu::md::GaussKind::Flow;
+                else if (kind == "transverse")
+                    k = cpu::md::GaussKind::Transverse;
+                else
+                    throw nb::value_error(
+                        ("GaussThermostat: kind must be 'kinetic', 'flow' or "
+                         "'transverse', got '"
+                         + kind + "'")
+                            .c_str());
+                if (axis < 0 || axis > 2)
+                    throw nb::value_error(
+                        "GaussThermostat: axis must be 0, 1 or 2");
+                new (p) cpu::md::GaussThermostat{k, temperature, axis};
+            },
+            nb::arg("kind"), nb::arg("temperature"), nb::arg("axis") = 0,
+            "kind 'kinetic' | 'flow' | 'transverse', target temperature "
+            "[temperature], field axis 0..2 (flow / transverse).")
+        .def_ro("temperature", &cpu::md::GaussThermostat::temperature,
+                "Target temperature [temperature].")
+        .def_ro("axis", &cpu::md::GaussThermostat::axis, "Field axis.");
+
+    nb::class_<cpu::md::ConfigurationalThermostat>(
+        m, "ConfigurationalThermostat",
+        "Configurational Nose-Hoover thermostat for GearPC, Petravic & "
+        "Delhommelle eqs. (12a-c): r' = v + (xi/T0) dT_C1/dr, "
+        "xi' = -Q (T_C1 - T0)/T0, with the first-order configurational "
+        "temperature k_B T_C1 = sum F^2 / sum lap U (eq. 7) of the "
+        "interaction potential (FixEfield excluded). Every force term must "
+        "supply its curvature: PairBorn, CoulLong and KSpaceEwald do; "
+        "KSpacePME and KSpacePPPM do not and are refused.")
+        .def(
+            "__init__",
+            [](cpu::md::ConfigurationalThermostat* p, double temperature,
+               double Q) {
+                new (p) cpu::md::ConfigurationalThermostat{temperature, Q};
+            },
+            nb::arg("temperature"), nb::arg("Q"),
+            "Target T0 [temperature] and feedback constant Q "
+            "[length^2/time^2]; xi carries length^2/time.")
+        .def_ro("temperature", &cpu::md::ConfigurationalThermostat::temperature,
+                "Target temperature [temperature].")
+        .def_ro("Q", &cpu::md::ConfigurationalThermostat::Q,
+                "Feedback constant [length^2/time^2].");
+
+    nb::class_<cpu::md::GearPC, cpu::Component>(
+        m, "GearPC",
+        "Fifth-order Gear predictor-corrector integrator on the first-order "
+        "equations of motion (r, v), Gear's first-order corrector "
+        "(95/288, 1, 25/24, 35/72, 5/48, 1/120). Replaces VelocityVerlet; "
+        "without a thermostat the motion is adiabatic, with GaussThermostat "
+        "or ConfigurationalThermostat the thermostat is inside the step, so "
+        "do not add another thermostat. One force evaluation per step, at "
+        "the predicted positions. The higher derivatives start at zero (a "
+        "one-time start-up transient). CPU only; spatial decomposition and "
+        "constraints are refused. The MD driver borrows this object, so its "
+        "diagnostics stay readable here. Not carried by the MPI task "
+        "payload.")
+        .def(nb::init<double>(), nb::arg("dt"),
+             "Adiabatic, timestep dt [time].")
+        .def(nb::init<double, cpu::md::GaussThermostat>(), nb::arg("dt"),
+             nb::arg("thermostat"),
+             "Timestep dt [time] with a Gauss thermostat.")
+        .def(nb::init<double, cpu::md::ConfigurationalThermostat>(),
+             nb::arg("dt"), nb::arg("thermostat"),
+             "Timestep dt [time] with the configurational thermostat.")
+        .def_prop_ro("dt", &cpu::md::GearPC::timestep, "Timestep [time].")
+        .def_prop_ro("constraint_drift", &cpu::md::GearPC::constraint_drift,
+                     "Relative constrained kinetic energy |K/K0 - 1| the last "
+                     "Gauss projection removed (truncation diagnostic).")
+        .def_prop_ro("gauss_multiplier", &cpu::md::GearPC::gauss_multiplier,
+                     "Gauss multiplier alpha [1/time] at the last step.")
+        .def_prop_ro("xi", &cpu::md::GearPC::xi,
+                     "Configurational thermostat variable xi "
+                     "[length^2/time].")
+        .def_prop_ro("configurational_temperature",
+                     &cpu::md::GearPC::configurational_temperature,
+                     "T_C1 [temperature] at the last predicted state "
+                     "(configurational thermostat only).");
+
+    nb::class_<cpu::ConfigurationalTemperature, cpu::Component>(
+        m, "ConfigurationalTemperature",
+        "Observer of the first-order configurational temperature "
+        "k_B T_C1 = N / D, N = sum_i |F_i|^2 of the interaction force (an "
+        "applied FixEfield excluded), D = sum_i lap_i U (Petravic & "
+        "Delhommelle eq. 7), evaluated at post_force every `every` steps. "
+        "The run averages <N> and <D> give T_CONF = <N>/(k_B <D>) of eq. (5) "
+        "(mean_temperature); each run() is a new run and starts a new "
+        "average. Every force "
+        "term must supply its curvature (PairBorn, CoulLong, KSpaceEwald). "
+        "Under Ewald the Coulomb Laplacian is the background constant "
+        "-4 pi k_e sum q^2 / V, which this observer includes. CPU only.")
+        .def(nb::init<int>(), nb::arg("every") = 1,
+             "Evaluate every `every` steps (>= 1).")
+        .def_prop_ro(
+            "temperature",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.last().temperature;
+            },
+            "T_C1 [temperature] of the last evaluation.")
+        .def_prop_ro(
+            "force_sq",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.last().force_sq;
+            },
+            "N = sum |F|^2 [force^2] of the last evaluation.")
+        .def_prop_ro(
+            "laplacian",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.last().laplacian;
+            },
+            "D = sum lap U [energy/length^2] of the last evaluation.")
+        .def_prop_ro(
+            "samples",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.samples();
+            },
+            "Evaluations averaged since the last run() began.")
+        .def_prop_ro(
+            "mean_temperature",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.mean().temperature;
+            },
+            "T_CONF = <N>/(k_B <D>) [temperature] over the last run() "
+            "(eq. 5; not the mean of T_C1).")
+        .def_prop_ro(
+            "mean_force_sq",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.mean().force_sq;
+            },
+            "<N> [force^2] over the last run().")
+        .def_prop_ro(
+            "mean_laplacian",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.mean().laplacian;
+            },
+            "<D> [energy/length^2] over the last run().");
 
     nb::class_<cpu::task::InitVelocityParams>(
         m, "InitVelocity", "Maxwell-Boltzmann velocity initialization.")
@@ -834,6 +1014,22 @@ void bind_md(nb::module_& m) {
                     cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (CSVR).")
+        .def(
+            "set_integrator",
+            [](MdHandle& self, cpu::md::GearPC& integrator) {
+                self.set_gear_pc_(integrator);
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>(),
+            "Fifth-order Gear predictor-corrector, borrowed. Not mirrored "
+            "into the MPI task payload.")
+        .def(
+            "set_observer",
+            [](MdHandle& self, cpu::ConfigurationalTemperature& observer) {
+                self.set_configurational_temperature_(observer);
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>(),
+            "ConfigurationalTemperature observer, borrowed. Not mirrored "
+            "into the MPI task payload.")
         .def(
             "set_observer",
             [](MdHandle& self, const cpu::task::InitVelocityParams& p) {

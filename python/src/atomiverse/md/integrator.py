@@ -43,9 +43,20 @@ ParrinelloRahmanNPT = _cpp.ParrinelloRahmanNPT
 #: add another thermostat. The MPI launcher cannot carry this integrator.
 NvtSllod = _cpp.NvtSllod
 
+#: Fifth-order Gear predictor-corrector on the first-order equations of motion
+#: — ``cpu::md::GearPC(dt [time], thermostat=None)`` with ``thermostat`` a
+#: ``GaussThermostat`` or a ``ConfigurationalThermostat``
+#: (``atomiverse.md.thermostat``). Replaces ``VelocityVerlet``; the thermostat
+#: is inside the step, so do not add another. The driver borrows the object:
+#: ``constraint_drift``, ``gauss_multiplier``, ``xi`` and
+#: ``configurational_temperature`` read its state. CPU only; the MPI launcher
+#: cannot carry it.
+GearPC = _cpp.GearPC
+
 __all__ = [
     "VelocityVerlet",
     "NoseHooverNPT",
     "ParrinelloRahmanNPT",
     "NvtSllod",
+    "GearPC",
 ]
