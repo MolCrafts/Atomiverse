@@ -198,41 +198,64 @@ void PairBorn::compute(const LaunchContext& ctx) {
     // pressure missing its entire short-range repulsion, and the barostat
     // collapses the cell.
     struct Kernel {
-        const PairBorn* self;
-        const int* type; ///< per-type form only
+        const Entry* table; ///< dense n_types × n_types; null: single type
+        const int* type;    ///< per-type form only
+        int n_types;
+        Entry single; ///< the single-type coefficients
         double rc_sq;
         double shift; ///< 1 with the energy shift, 0 without
 
-        double cutoff_sq() const { return rc_sq; }
-        int row(int i) const { return type ? type[i] : 0; }
+        /// Row i's slice of the table (null: type out of range, no pairs),
+        /// or the single-type entry.
+        struct Row {
+            const Entry* coeff;
+        };
 
-        md::PairTerm operator()(int ti, const md::PairSite& p,
+        double cutoff_sq() const { return rc_sq; }
+        Row row(int i) const {
+            if (table == nullptr)
+                return {&single};
+            const int ti = type[i];
+            return {ti >= 0 && ti < n_types
+                        ? table
+                              + static_cast<std::size_t>(ti)
+                                    * static_cast<std::size_t>(n_types)
+                        : nullptr};
+        }
+        bool skip(const Row& ri) const { return ri.coeff == nullptr; }
+
+        md::PairTerm operator()(const Row& ri, const md::PairSite& p,
                                 const md::PairChunk&) const {
-            Entry single;
-            const Entry* e = &single;
-            if (type) {
-                e = &self->entry_for_(ti, type[p.j]);
-                if (!e->set)
+            const Entry* e = ri.coeff;
+            if (table != nullptr) {
+                const int tj = type[p.j];
+                if (tj < 0 || tj >= n_types || !e[tj].set)
                     return {};
-            } else {
-                single = {self->A_, self->inv_rho_, self->sigma_, self->C_,
-                          self->D_, self->v_shift_, true};
+                e += tj;
             }
+            // One division: 1/r = r·r⁻², as LAMMPS `born` (r2inv).
             const double r2 = p.r2;
             const double r = std::sqrt(r2);
-            const double r6 = r2 * r2 * r2;
-            const double r8 = r6 * r2;
-            const double expterm = std::exp((e->sigma - r) * e->inv_rho);
+            const double inv_r2 = 1.0 / r2;
+            const double inv_r6 = inv_r2 * inv_r2 * inv_r2;
+            const double inv_r8 = inv_r6 * inv_r2;
+            const double ae = e->A * std::exp((e->sigma - r) * e->inv_rho);
             const double v =
-                e->A * expterm - e->C / r6 + e->D / r8 - shift * e->v_shift;
-            const double dUdr = -e->A * e->inv_rho * expterm
-                                + 6.0 * e->C / (r6 * r) - 8.0 * e->D / (r8 * r);
-            // F_i = −dU/dr · r̂ = (−dU/dr / r)·(r_i − r_j).
-            return {-dUdr / r, v};
+                ae - e->C * inv_r6 + e->D * inv_r8 - shift * e->v_shift;
+            // F_i = −dU/dr · r̂ = (−dU/dr / r)·(r_i − r_j), with
+            // −dU/dr / r = (A/ρ) e^{(σ−r)/ρ} / r − 6C/r⁸ + 8D/r¹⁰.
+            const double fpair = ae * e->inv_rho * (r * inv_r2)
+                                 - 6.0 * e->C * inv_r8
+                                 + 8.0 * e->D * inv_r8 * inv_r2;
+            return {fpair, v};
         }
     };
-    const Kernel kernel{this, multi_ ? f.span(kAtom_type).data() : nullptr,
-                        cutoff_sq_, energy_shift_ ? 1.0 : 0.0};
+    const Kernel kernel{multi_ ? table_.data() : nullptr,
+                        multi_ ? f.span(kAtom_type).data() : nullptr,
+                        n_types_,
+                        {A_, inv_rho_, sigma_, C_, D_, v_shift_, true},
+                        cutoff_sq_,
+                        energy_shift_ ? 1.0 : 0.0};
     const md::PairList* list = covering_list_(ctx);
     const md::PairTotals sums =
         list ? loop_.run(ctx, md::PairRows::of(*list), kernel)
