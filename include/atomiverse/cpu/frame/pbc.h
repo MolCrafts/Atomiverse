@@ -6,7 +6,12 @@
 /// `CommBrick` rebuilds them with the selected periodic image shifts.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -32,7 +37,14 @@ inline void wrap_owned(cpu::Frame& frame, int n_owned) {
     StorageReal* __restrict sp_y = frame.span(kAtom_y);
     StorageReal* __restrict sp_z = frame.span(kAtom_z);
     ImageInt* __restrict image = frame.span(kAtom_image).data();
-#pragma omp parallel for schedule(static)
+    // A row is one wrap: a thread needs thousands before a team pays for
+    // its fork and join.
+    constexpr int kRowsPerThread = 8192;
+    int team = 1;
+#ifdef _OPENMP
+    team = std::clamp(n_owned / kRowsPerThread, 1, omp_get_max_threads());
+#endif
+#pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
     for (int i = 0; i < n_owned; ++i) {
         double x = sp_x[i], y = sp_y[i], z = sp_z[i];
         frame.box.wrap_into(x, y, z, image + 3 * static_cast<std::size_t>(i));

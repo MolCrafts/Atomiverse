@@ -32,6 +32,24 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
+namespace {
+
+// Threads worth their fork and join for `rows` rows when a thread needs
+// `per_thread` of them.
+int row_team(int rows, int per_thread) {
+    int most = 1;
+#ifdef _OPENMP
+    most = omp_get_max_threads();
+#endif
+    return std::clamp(rows / per_thread, 1, most);
+}
+
+// Rows the binning pass gives a thread: a row is a few divisions, so a small
+// cell and its halo bin on the calling thread.
+constexpr int kBinRowsPerThread = 8192;
+
+} // namespace
+
 // ── CellList ─────────────────────────────────────────────────────
 
 CellList::CellList(double cutoff, double skin)
@@ -319,8 +337,9 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
         return static_cast<int>(x / size) - 1;
     };
 
-// Assign explicit Cartesian owner and image rows to their physical cells.
-#pragma omp parallel for schedule(static)
+    // Assign explicit Cartesian owner and image rows to their physical cells.
+    const int team = row_team(n, kBinRowsPerThread);
+#pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
     for (int i = 0; i < n; ++i) {
         double xi = sp_x[i];
         double yi = sp_y[i];
@@ -407,13 +426,7 @@ inline void ensure_at_least(std::vector<int>& arr, std::size_t n) {
 // few hundred atoms builds its list on the calling thread.
 constexpr int kRowsPerThread = 256;
 
-int list_team(int rows) {
-    int most = 1;
-#ifdef _OPENMP
-    most = omp_get_max_threads();
-#endif
-    return std::clamp(rows / kRowsPerThread, 1, most);
-}
+int list_team(int rows) { return row_team(rows, kRowsPerThread); }
 
 } // namespace
 
