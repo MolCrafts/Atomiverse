@@ -446,6 +446,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/barostat.cpp
             src/cpu/dynamics/deform.cpp
             src/cpu/dynamics/nvt_sllod.cpp
+            src/cpu/dynamics/gauss_constraint.cpp
             src/cpu/dynamics/gear_pc.cpp
             # Electrochemical electrode bookkeeping (MetalWalls E1/E2 map)
             src/cpu/electrodes/charging_work.cpp

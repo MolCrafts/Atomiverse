@@ -1,9 +1,13 @@
 /// @file cpu/dynamics/gear_pc.h
-/// @brief Fifth-order Gear predictor–corrector integrator (CPU).
+/// @brief Fifth-order Gear predictor–corrector integrator with optional
+///        Gaussian kinetic thermostats (CPU).
 ///
-/// Replaces `VelocityVerlet`.
+/// Replaces `VelocityVerlet`. The thermostat is inside the step (it changes
+/// the equations of motion), so do not add `NoseHoover`, `Langevin` or any
+/// other thermostat beside it.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -12,13 +16,15 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/integrator.h"
 #include "atomiverse/cpu/component/timestep_protocol.h"
+#include "atomiverse/cpu/dynamics/gauss_thermostat.h"
+#include "atomiverse/cpu/dynamics/internal/gauss_constraint.h"
 
 namespace ATV {
 namespace cpu {
 namespace md {
 
 /// @brief Six-value Gear predictor–corrector on the first-order equations of
-///        motion \(\dot r = v\), \(\dot v = F/m\).
+///        motion \(\dot r = v\), \(\dot v = F/m - \alpha w\).
 ///
 /// Each Cartesian position and velocity component carries a scaled Nordsieck
 /// vector through its fifth derivative (`core/gear_pc.h`). The step is
@@ -29,8 +35,16 @@ namespace md {
 ///  - `final_integrate`: evaluate the right-hand side at the predicted state
 ///    and correct with Gear's first-order coefficients.
 ///
-/// The motion is adiabatic (Petravic & Delhommelle eq. 8 with
+/// Without a thermostat this is adiabatic (Petravic & Delhommelle eq. 8 with
 /// \(\alpha = 0\)): an external field such as `FixEfield` heats the system.
+/// With a `GaussThermostat` the multiplier \(\alpha\) of
+/// `internal::GaussConstraint` is evaluated from the predicted velocities
+/// and the total force, and after each corrector the constrained kinetic
+/// energy is restored exactly by scaling the peculiar velocities (the
+/// nearest point on the constraint surface in the mass metric). The relative
+/// correction that took, `constraint_drift()`, is the integrator's own
+/// truncation error and stays at round-off-to-\(O(h^6)\) level; the first
+/// step also moves the initial velocities onto the constraint surface.
 ///
 /// **Start-up.** The first launch after `build()` (or after the caller
 /// changed positions, velocities or the cell between runs) sets
@@ -45,7 +59,8 @@ namespace md {
 /// **Bookkeeping.** The Nordsieck history (30 doubles per atom) follows the
 /// atoms by tag, so spatial sorting may reorder rows between steps. The
 /// integrator needs every atom on the rank (`requires_full_frame`), and it
-/// refuses holonomic constraints (\(N_\mathrm{dof}\) must be \(3N-3\)). The forces at
+/// refuses holonomic constraints (the Gauss geometry assumes
+/// \(N_\mathrm{dof} = 3N-3\) for the unconstrained system). The forces at
 /// the corrected positions are never evaluated: thermo output at
 /// `end_of_step` pairs corrected velocities with the forces and energy of
 /// the predicted positions, as in every Gear predictor–corrector.
@@ -54,6 +69,11 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     /// @brief Adiabatic Gear PC.
     /// @param dt_fs Timestep in the run's time unit (ps for `metal`; > 0).
     explicit GearPC(double dt_fs);
+
+    /// @brief Gear PC with a Gaussian kinetic thermostat.
+    /// @param dt_fs      Timestep in the run's time unit (> 0).
+    /// @param thermostat Constrained temperature and its geometry.
+    GearPC(double dt_fs, GaussThermostat thermostat);
 
     std::string name() const override { return "gear_pc"; }
     const cpu::TimestepProvider* as_timestep_provider() const override {
@@ -76,11 +96,19 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     void build(const cpu::BuildContext& ctx) override;
     void launch(const cpu::LaunchContext& ctx) override;
 
+    /// @brief Relative correction \(|K_w/K_0 - 1|\) the last Gaussian
+    ///        projection removed (0 without a Gaussian thermostat).
+    double constraint_drift() const { return drift_; }
+
+    /// @brief Gaussian multiplier \(\alpha\) [1/time] at the last corrector.
+    double gauss_multiplier() const { return alpha_; }
+
   private:
     void start_(const cpu::LaunchContext& ctx);
     void follow_rows_(const cpu::LaunchContext& ctx);
     void load_state_(const cpu::LaunchContext& ctx);
     void rates_(const cpu::LaunchContext& ctx);
+    void project_(const cpu::LaunchContext& ctx);
     void predict_(const cpu::LaunchContext& ctx);
     void correct_(const cpu::LaunchContext& ctx);
     double* hist_(int var, int k) {
@@ -88,6 +116,9 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     }
 
     double dt_;
+    std::optional<GaussThermostat> gauss_;
+    internal::GaussConstraint constraint_;
+    double k0_twice_ = 0.0; ///< target Σ m w² [mass·velocity²]
 
     bool started_ = false;
     int n_ = 0;
@@ -96,6 +127,10 @@ class GearPC : public cpu::Integrator, public cpu::TimestepProvider {
     std::vector<double> state_;      ///< x y z vx vy vz of the frame, 6·n
     std::vector<double> mass_;       ///< per row [mass]
     std::vector<double> rate_;       ///< ẋ ẏ ż v̇x v̇y v̇z, 6·n
+    std::vector<double> w_;          ///< peculiar velocities, 3·n
+
+    double drift_ = 0.0;
+    double alpha_ = 0.0;
 };
 
 } // namespace md

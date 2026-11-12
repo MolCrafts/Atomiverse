@@ -28,6 +28,15 @@ GearPC::GearPC(double dt_fs) : dt_(dt_fs) {
         throw std::invalid_argument("GearPC: dt must be finite and > 0");
 }
 
+GearPC::GearPC(double dt_fs, GaussThermostat thermostat) : GearPC(dt_fs) {
+    if (!(thermostat.temperature > 0.0)
+        || !std::isfinite(thermostat.temperature))
+        throw std::invalid_argument(
+            "GearPC: Gaussian thermostat temperature must be finite and > 0");
+    constraint_ = internal::GaussConstraint(thermostat.kind, thermostat.axis);
+    gauss_ = thermostat;
+}
+
 void GearPC::invalidate_inputs(InputChange changes, const BuildContext&) {
     if (has_input_change(changes, InputChange::Geometry)
         || has_input_change(changes, InputChange::Velocity)
@@ -50,6 +59,8 @@ void GearPC::build(const cpu::BuildContext& ctx) {
             + " degrees of freedom, 3N - 3 = "
             + std::to_string(ATV::md::degrees_of_freedom(n)) + ")");
     started_ = false;
+    drift_ = 0.0;
+    alpha_ = 0.0;
 }
 
 void GearPC::load_state_(const cpu::LaunchContext& ctx) {
@@ -67,7 +78,7 @@ void GearPC::load_state_(const cpu::LaunchContext& ctx) {
 }
 
 // Right-hand side at the state in `state_` and the frame's forces:
-// ṙ = v, v̇ = F/m.
+// ṙ = v, v̇ = F/m − α w.
 void GearPC::rates_(const cpu::LaunchContext& ctx) {
     const Frame& f = ctx.frame;
     const AccReal* force[3] = {f.span(kAtom_fx).data(), f.span(kAtom_fy).data(),
@@ -77,6 +88,44 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
         for (int i = 0; i < n_; ++i) {
             rate_[d * n_ + i] = state_[(3 + d) * n_ + i];
             rate_[(3 + d) * n_ + i] = ftm2v * force[d][i] / mass_[i];
+        }
+    if (!gauss_)
+        return;
+    const internal::ConstRows3 v = {
+        state_.data() + 3 * n_, state_.data() + 4 * n_, state_.data() + 5 * n_};
+    const internal::Rows3 w = {w_.data(), w_.data() + n_, w_.data() + 2 * n_};
+    const internal::ConstRows3 wc = {w[0], w[1], w[2]};
+    const internal::ConstRows3 a = {
+        rate_.data() + 3 * n_, rate_.data() + 4 * n_, rate_.data() + 5 * n_};
+    constraint_.peculiar(n_, mass_.data(), f.span(kAtom_type).data(), v, w);
+    alpha_ = internal::GaussConstraint::multiplier(n_, mass_.data(), wc, a);
+    for (int d = 0; d < 3; ++d)
+        for (int i = 0; i < n_; ++i)
+            rate_[(3 + d) * n_ + i] -= alpha_ * w[d][i];
+}
+
+// Scale the peculiar velocities onto Σ m w² = k0_twice_ (state_ and frame).
+void GearPC::project_(const cpu::LaunchContext& ctx) {
+    Frame& f = ctx.frame;
+    const internal::ConstRows3 v = {
+        state_.data() + 3 * n_, state_.data() + 4 * n_, state_.data() + 5 * n_};
+    const internal::Rows3 w = {w_.data(), w_.data() + n_, w_.data() + 2 * n_};
+    constraint_.peculiar(n_, mass_.data(), f.span(kAtom_type).data(), v, w);
+    const double twice_k = internal::GaussConstraint::twice_kinetic(
+        n_, mass_.data(), {w[0], w[1], w[2]});
+    if (!(twice_k > 0.0))
+        throw std::runtime_error(
+            "GearPC: the constrained kinetic energy is zero; give the atoms "
+            "peculiar velocities before a Gaussian-thermostatted run");
+    drift_ = std::fabs(twice_k / k0_twice_ - 1.0);
+    const double scale = std::sqrt(k0_twice_ / twice_k);
+    StorageReal* vel[3] = {f.span(kAtom_vx).data(), f.span(kAtom_vy).data(),
+                           f.span(kAtom_vz).data()};
+    for (int d = 0; d < 3; ++d)
+        for (int i = 0; i < n_; ++i) {
+            double& vi = state_[(3 + d) * n_ + i];
+            vi += (scale - 1.0) * w[d][i];
+            vel[d][i] = static_cast<StorageReal>(vi);
         }
 }
 
@@ -89,7 +138,19 @@ void GearPC::start_(const cpu::LaunchContext& ctx) {
     state_.assign(static_cast<std::size_t>(kVars) * n_, 0.0);
     rate_.assign(static_cast<std::size_t>(kVars) * n_, 0.0);
     mass_.assign(static_cast<std::size_t>(n_), 0.0);
+    w_.assign(static_cast<std::size_t>(3) * n_, 0.0);
     load_state_(ctx);
+    if (gauss_) {
+        constraint_.bind(n_, f.span(kAtom_type).data());
+        const long long dof = constraint_.dof();
+        if (dof <= 0)
+            throw std::runtime_error(
+                "GearPC: the Gaussian thermostat constrains no degree of "
+                "freedom");
+        k0_twice_ = static_cast<double>(dof) * ctx.runtime.units.boltz
+                    * gauss_->temperature / ctx.runtime.units.mvv2e;
+        project_(ctx);
+    }
     rates_(ctx);
     // z1 = h ẏ; z2 = h²/2 r̈ = (h/2)(h v̇) for positions; higher ones zero.
     for (int var = 0; var < kVars; ++var)
@@ -195,6 +256,8 @@ void GearPC::correct_(const cpu::LaunchContext& ctx) {
             h5[i] = z[5];
         }
     }
+    if (gauss_)
+        project_(ctx);
 }
 
 void GearPC::launch(const cpu::LaunchContext& ctx) {
