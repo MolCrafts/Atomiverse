@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <initializer_list>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
@@ -51,17 +52,18 @@ cpu::md::PairList only_14() {
     return pairs;
 }
 
-double run_coul(cpu::Frame& f, cpu::md::PairList& pairs, double s14) {
+double run_coul(cpu::Frame& f, cpu::md::PairList& pairs, double s14,
+                double alpha = 0.3) {
     f.meta.get(kEnergy) = 0;
     f.meta.get(kEnergyPair) = 0;
     for (int i = 0; i < f.nlocal(); ++i)
         f.span(kAtom_fx)[i] = f.span(kAtom_fy)[i] = f.span(kAtom_fz)[i] = 0;
     cpu::Context ctx;
     ctx.md.pair_list = &pairs;
-    cpu::CoulLong coul(/*alpha=*/0.3, /*cutoff=*/20.0);
+    cpu::CoulLong coul(alpha, /*cutoff=*/20.0);
     coul.set_special_bonds(0.0, 0.0, s14);
     coul.build({ctx, f});
-    coul.launch({ctx, f, 0, 0});
+    coul.launch({ctx, f, 0, 0, true, false});
     coul.destroy({ctx, f});
     return f.meta.get(kEnergy);
 }
@@ -127,4 +129,44 @@ TEST(CoulLongSpecial, Zero12Bonded) {
         ATV::units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0) / 1.5;
     const double e_ref = -pref * std::erf(0.3 * 1.5);
     EXPECT_NEAR(f.meta.get(kEnergy), e_ref, 1e-10 * std::abs(e_ref));
+}
+
+TEST(CoulLongSpecial, PairEnergyAndForceAreTheAnalyticErfc) {
+    // The 1-4 pair (r ≈ 3.6) at x = αr from 0.18 to 4.3, one point in each
+    // erfc interval of the batched evaluation (`ewald_erfc.h`): energy and
+    // force are qq·erfc(αr)/r and its derivative to rounding, a scaled pair
+    // minus (1-f)·qq/r and its force. Reference in long double; the bound
+    // is relative to the larger term, since the two cancel near x ≈ 1.
+    for (double alpha : {0.05, 0.1, 0.3, 0.6, 1.2})
+        for (double s14 : {1.0, 0.5}) {
+            auto f = two_charge_14();
+            auto pairs = only_14();
+            const long double r =
+                f.span(kAtom_x)[3]
+                - static_cast<long double>(f.span(kAtom_x)[0]);
+            const double e = run_coul(f, pairs, s14, alpha);
+            const long double x = static_cast<long double>(alpha) * r;
+            const long double qq =
+                ATV::units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0);
+            const long double e_erfc = qq * erfcl(x) / r;
+            const long double e_plain = (1.0L - s14) * qq / r;
+            // Force on atom 0 is fpair·(x₀ − x₃) = −fpair·r.
+            const long double f_erfc =
+                -qq
+                * (erfcl(x)
+                   + 1.1283791670955125738961589031L * x * expl(-x * x))
+                / (r * r);
+            const long double f_plain = -e_plain / r;
+            const double e_ref = static_cast<double>(e_erfc - e_plain);
+            const double f_ref = static_cast<double>(f_erfc - f_plain);
+            const double e_tol =
+                4e-15 * static_cast<double>(fabsl(e_erfc) + fabsl(e_plain));
+            const double f_tol =
+                4e-15 * static_cast<double>(fabsl(f_erfc) + fabsl(f_plain));
+            EXPECT_NEAR(e, e_ref, e_tol) << "alpha=" << alpha << " s14=" << s14;
+            EXPECT_NEAR(f.span(kAtom_fx)[0], f_ref, f_tol)
+                << "alpha=" << alpha << " s14=" << s14;
+            EXPECT_NEAR(f.span(kAtom_fx)[3], -f_ref, f_tol)
+                << "alpha=" << alpha << " s14=" << s14;
+        }
 }

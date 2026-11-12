@@ -9,6 +9,7 @@
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/pair_list.h"
+#include "atomiverse/cpu/potentials/ewald_erfc.h"
 #include "atomiverse/cpu/potentials/pair_curvature.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 
@@ -89,25 +90,28 @@ struct CoulLongKernel {
     Row row(int i) const { return {i, static_cast<double>(q[i])}; }
     bool skip(const Row& ri) const { return ri.qi == 0.0; }
 
+    /// erfc(αr)/r and its force factor for every survivor, one xsimd batch
+    /// at a time (`ewald_erfc.h`); the walk pads `r2` past `n`.
+    void prepare(const Row&, const double* r2, int n, md::PairChunk& c) const {
+        md::ewald_pair_factors(r2, n, alpha, c.a, c.b);
+    }
+
     md::PairTerm operator()(const Row& ri, const md::PairSite& p,
-                            const md::PairChunk&) const {
+                            const md::PairChunk& c) const {
         const double qj = q[p.j];
         if (qj == 0.0)
             return {};
+        const double qq = qqr2e * ri.qi * qj;
+        double energy = qq * c.a[p.k];
+        double fpair = qq * c.b[p.k];
         const double sc = special ? special->scale_owner(ri.i, tag[p.j]) : 1.0;
-        const double r = std::sqrt(p.r2);
-        const double r2inv = 1.0 / p.r2;
-        const double grij = alpha * r;
-        const double expm2 = std::exp(-grij * grij);
-        const double erfcv = std::erfc(grij);
-        const double prefactor = qqr2e * ri.qi * qj / r;
-        double forcecoul = prefactor * (erfcv + kEwaldF * grij * expm2);
-        if (sc != 1.0)
-            forcecoul -= (1.0 - sc) * prefactor;
-        const double energy = sc != 1.0
-                                  ? prefactor * erfcv - (1.0 - sc) * prefactor
-                                  : prefactor * erfcv;
-        return {forcecoul * r2inv, energy};
+        if (sc != 1.0) {
+            const double r2inv = 1.0 / p.r2;
+            const double comp = (1.0 - sc) * qq * std::sqrt(r2inv);
+            energy -= comp;
+            fpair -= comp * r2inv;
+        }
+        return {fpair, energy};
     }
 };
 
