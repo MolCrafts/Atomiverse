@@ -23,8 +23,32 @@ per-optimization gains are in the `perf(...)` commit messages after
   pairs at exactly r = L/2 makes list and all-pairs walks differ by those
   pairs (≈1e-7 eV/Å); a melt does not.
 - CoulLong erfc and Born r / exp are xsimd batches in the PairLoop `prepare`
-  hook. Curvature (configurational thermostat) is still scalar, CoulLong
-  curvature still `std::erfc`: ≈4.5 ms of a liquid-paper step.
+  hook; the curvature walks of both (configurational thermostat and
+  `ConfigurationalTemperature`) have the same shape in `md::CurvatureLoop`
+  (`pair_curvature.h`). One curvature evaluation costs about 1.7 force
+  evaluations at 1 and at 8 threads (Born ≈ CoulLong, the reciprocal part
+  smallest), so a configurational step scales with threads like the Gauss
+  step. The serial scalar walk it replaced cost 3.7x the force walk of the
+  same pairs: 85 % of a 4-thread step.
+- Past 8 threads the curvature walks stop scaling on 512 ions: ≈ 0.10 ms
+  each at 16 and at 32 threads, where the two force walks together take
+  0.08. Not profiled further; each source flushes its own per-thread
+  accumulators (rows x threads cache lines), the force walks share one flush.
+- What stays serial in a curvature evaluation is `CurvatureAssembly`'s own
+  bookkeeping (zeroing ten ghost-sized rows, the forward comm of u, the
+  reverse comm, the copy-out): ≈ 0.04 ms, a tenth of the evaluation on 8
+  threads. Under a single-process halo no source writes a ghost row any
+  more (the walks fold, the reciprocal part never did).
+- `KSpaceEwald::add_curvature` rebuilds the phase tables and S(k) the force
+  call of the same positions just made (≈ 1/4 of the reciprocal curvature,
+  a few % of the step); nothing tells it the positions are unchanged.
+- `bench_nacl_ewald --thermostat config` starts from the lattice, where
+  T_C1 = 0: keep it to a few hundred steps (the liquid's Laplacian turned
+  negative within 500 and GearPC refuses). Time the thermostat from a melt
+  configuration instead.
+- `.cu` tests include the CPU styles' headers as their oracle, so those
+  headers (and what they include, `pair_curvature.h`) must keep xsimd behind
+  `!defined(__CUDACC__)`; put batch kernels in the `.cpp`.
 
 ## Threads
 
