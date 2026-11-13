@@ -55,6 +55,26 @@ _RECORDER_TYPES: tuple[type, ...] = (_cpp.Thermo, _cpp.XYZ, _cpp.MrecRecorder)
 # The CUDA driver records `*.mrec` only (its Thermo is `set_thermo`).
 _CUDA_RECORDER_TYPES: tuple[type, ...] = (_cpp.MrecRecorder,)
 
+
+def _device_types(cpu_name: str, cuda_name: str) -> dict[type, str]:
+    """Bound class -> device of a component that exists once per device.
+
+    The CUDA class is absent from a CPU-only extension; ``backend_type``
+    reports that when the component is constructed for ``device="cuda"``.
+    """
+    types = {getattr(_cpp, cpu_name): "cpu"}
+    cuda = getattr(_cpp, cuda_name, None)
+    if cuda is not None:
+        types[cuda] = "cuda"
+    return types
+
+
+#: The live (borrowed) components of thermostatted NEMD, by device.
+_GEAR_PC_TYPES = _device_types("GearPC", "_CudaGearPC")
+_CONFIGURATIONAL_TEMPERATURE_TYPES = _device_types(
+    "ConfigurationalTemperature", "_CudaConfigurationalTemperature"
+)
+
 # Escape-hatch phase builder dispatch
 _PHASE_DISPATCH: dict[type, str] = {
     _cpp.PairLJCut: "add_pair_lj_cut",
@@ -197,32 +217,32 @@ class MD:
         ``ConfigurationalThermostat`` — inside the step, so no thermostat is
         added beside it either. The driver borrows the ``GearPC`` object, so
         its diagnostics (``constraint_drift``, ``xi``,
-        ``configurational_temperature``) stay readable on it. CPU only; the
-        MPI launcher cannot carry it.
+        ``configurational_temperature``) stay readable on it. It is built
+        for one device (``GearPC(dt, thermostat, device=...)``), which must
+        be this driver's. The MPI launcher cannot carry it.
 
         On ``device="cuda"`` the integrators are ``VelocityVerlet``,
-        ``NvtSllod`` and ``NoseHooverNPT`` (the same constructor arguments
+        ``NvtSllod``, ``NoseHooverNPT`` (the same constructor arguments
         as on CPU; the cell must be orthorhombic, a triclinic cell is
-        refused when the run is built). ``ParrinelloRahmanNPT`` is CPU only.
+        refused when the run is built) and ``GearPC(..., device="cuda")``.
+        ``ParrinelloRahmanNPT`` is CPU only.
         Both devices refuse a thermostat or barostat beside an NPT
         integrator, in either call order.
         """
-        if type(component) not in (
+        gear_pc = type(component) in _GEAR_PC_TYPES
+        if not gear_pc and type(component) not in (
             _cpp.VelocityVerlet,
             _cpp.NoseHooverNPT,
             _cpp.ParrinelloRahmanNPT,
             _cpp.NvtSllod,
-            _cpp.GearPC,
         ):
             raise TypeError(
                 f"set_integrator expects VelocityVerlet, NoseHooverNPT, "
                 f"ParrinelloRahmanNPT, NvtSllod, or GearPC, got "
                 f"{type(component).__name__}"
             )
-        if self.device == "cuda" and type(component) is _cpp.GearPC:
-            raise ValueError(
-                "CUDA MD has no GearPC; run it with device='cpu'"
-            )
+        if gear_pc:
+            self._require_same_device("GearPC", _GEAR_PC_TYPES[type(component)])
         if self.device == "cuda" and type(component) is _cpp.ParrinelloRahmanNPT:
             raise ValueError(
                 "CUDA MD has no ParrinelloRahmanNPT (full-cell MTK). Use "
@@ -233,7 +253,7 @@ class MD:
             raise ValueError(
                 "NvtSllod already thermostats; do not also set a thermostat"
             )
-        if type(component) is _cpp.GearPC and getattr(self, "_thermostatted", False):
+        if gear_pc and getattr(self, "_thermostatted", False):
             raise ValueError(
                 "GearPC carries its own thermostat (GaussThermostat or "
                 "ConfigurationalThermostat); do not also set a thermostat"
@@ -253,9 +273,18 @@ class MD:
         self._cpp.set_integrator(component)
         self._npt = npt
         self._nvt_sllod = type(component) is _cpp.NvtSllod
-        self._gear_pc = type(component) is _cpp.GearPC
+        self._gear_pc = gear_pc
         self._built = False
         return self
+
+    def _require_same_device(self, name: str, built_for: str) -> None:
+        """Refuse a live component constructed for the other device."""
+        if built_for != self.device:
+            raise ValueError(
+                f"this {name} was constructed for device={built_for!r} and "
+                f"the MD runs on device={self.device!r}; construct it with "
+                f"{name}(..., device={self.device!r})"
+            )
 
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``).
@@ -350,21 +379,24 @@ class MD:
         """Install an observer (``Driver::set_observer``).
 
         ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed)
-        runs on both devices. ``ConfigurationalTemperature`` (CPU only,
-        borrowed) evaluates the first-order configurational temperature;
-        after ``run`` read the last evaluation (``temperature``,
-        ``force_sq``, ``laplacian``) and the run's ``T_CONF``
-        (``mean_temperature``) on the object. Every force term must then
-        supply its curvature.
+        runs on both devices. ``ConfigurationalTemperature`` (borrowed,
+        built for this driver's device with
+        ``ConfigurationalTemperature(every, device=...)``) evaluates the
+        first-order configurational temperature; after ``run`` read the
+        last evaluation (``temperature``, ``force_sq``, ``laplacian``) and
+        the run's ``T_CONF`` (``mean_temperature``) on the object. Every
+        force term must then supply its curvature.
         """
-        if type(component) not in (_cpp.InitVelocity, _cpp.ConfigurationalTemperature):
+        configurational = type(component) in _CONFIGURATIONAL_TEMPERATURE_TYPES
+        if not configurational and type(component) is not _cpp.InitVelocity:
             raise TypeError(
                 f"set_observer expects InitVelocity or ConfigurationalTemperature, "
                 f"got {type(component).__name__}"
             )
-        if self.device == "cuda" and type(component) is _cpp.ConfigurationalTemperature:
-            raise ValueError(
-                "CUDA MD has no ConfigurationalTemperature; run it with device='cpu'"
+        if configurational:
+            self._require_same_device(
+                "ConfigurationalTemperature",
+                _CONFIGURATIONAL_TEMPERATURE_TYPES[type(component)],
             )
         self._cpp.set_observer(component)
         self._built = False
@@ -614,12 +646,20 @@ InitVelocity = _cpp.InitVelocity
 #: −Σ q E·r^u on unwrapped coordinates and no virial is added.
 FixEfield = _cpp.FixEfield
 
-#: First-order configurational temperature observer —
-#: ``cpu::ConfigurationalTemperature(every=1)``; install with
-#: :meth:`MD.set_observer`, then read the last evaluation
-#: (``temperature`` / ``force_sq`` / ``laplacian``) and the run average
-#: ``mean_temperature`` = <N>/(k_B <D>) on it. CPU only.
-ConfigurationalTemperature = _cpp.ConfigurationalTemperature
+def ConfigurationalTemperature(every: int = 1, *, device: str = "cpu"):
+    """First-order configurational temperature observer.
+
+    ``cpu::ConfigurationalTemperature(every)`` or, with ``device="cuda"``,
+    ``cuda::ConfigurationalTemperature(every)``: install it on an ``MD`` of
+    the same device with :meth:`MD.set_observer`, then read the last
+    evaluation (``temperature`` / ``force_sq`` / ``laplacian``) and the run
+    average ``mean_temperature`` = <N>/(k_B <D>) on it. The CUDA observer
+    keeps its sums on the device and publishes them when ``run`` returns.
+    """
+    return backend_type(
+        device, "ConfigurationalTemperature", "_CudaConfigurationalTemperature"
+    )(every)
+
 
 __all__ = [
     "MD",

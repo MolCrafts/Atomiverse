@@ -12,7 +12,7 @@ top-level convenience name ``atomiverse.VelocityVerlet`` is the same class.
 Install via ``MD.set_integrator(VelocityVerlet(dt))``.
 """
 
-from atomiverse._binding import _cpp
+from atomiverse._binding import _cpp, backend_type
 
 #: Symplectic velocity-Verlet integrator — ``cpu::md::VelocityVerlet(dt [time])``.
 VelocityVerlet = _cpp.VelocityVerlet
@@ -43,15 +43,25 @@ ParrinelloRahmanNPT = _cpp.ParrinelloRahmanNPT
 #: add another thermostat. The MPI launcher cannot carry this integrator.
 NvtSllod = _cpp.NvtSllod
 
-#: Fifth-order Gear predictor-corrector on the first-order equations of motion
-#: — ``cpu::md::GearPC(dt [time], thermostat=None)`` with ``thermostat`` a
-#: ``GaussThermostat`` or a ``ConfigurationalThermostat``
-#: (``atomiverse.md.thermostat``). Replaces ``VelocityVerlet``; the thermostat
-#: is inside the step, so do not add another. The driver borrows the object:
-#: ``constraint_drift``, ``gauss_multiplier``, ``xi`` and
-#: ``configurational_temperature`` read its state. CPU only; the MPI launcher
-#: cannot carry it.
-GearPC = _cpp.GearPC
+def GearPC(dt: float, thermostat: object = None, *, device: str = "cpu"):
+    """Fifth-order Gear predictor-corrector on the first-order equations of motion.
+
+    ``cpu::md::GearPC(dt [time], thermostat)`` or, with ``device="cuda"``,
+    ``cuda::md::GearPC`` with the same arguments; ``thermostat`` is ``None``
+    (adiabatic), a ``GaussThermostat`` or a ``ConfigurationalThermostat``
+    (``atomiverse.md.thermostat``). Replaces ``VelocityVerlet``; the
+    thermostat is inside the step, so do not add another. The driver (an
+    ``MD`` of the same device) borrows the object: ``constraint_drift``,
+    ``gauss_multiplier``, ``xi`` and ``configurational_temperature`` read
+    its state, on CUDA as of the last returned ``run``. On the CPU every
+    ``MD.run`` restarts the Gear history and ``xi``; on CUDA a ``run`` on the
+    frame the previous one returned, unedited, continues them (an edited
+    frame restarts). One ``run`` per trajectory is the same on both. The MPI
+    launcher cannot carry it.
+    """
+    native = backend_type(device, "GearPC", "_CudaGearPC")
+    return native(dt) if thermostat is None else native(dt, thermostat)
+
 
 __all__ = [
     "VelocityVerlet",

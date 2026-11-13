@@ -23,19 +23,24 @@
 #ifdef ATV_HAS_MD
 #include "atomiverse/core/sllod_flow.h"
 #include "atomiverse/core/unit_system.h"
+#include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cuda/dynamics/barostat.cuh"
+#include "atomiverse/cuda/dynamics/configurational_temperature.cuh"
 #include "atomiverse/cuda/dynamics/fix_efield.cuh"
 #include "atomiverse/cuda/dynamics/fix_langevin.cuh"
+#include "atomiverse/cuda/dynamics/gear_pc.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
 #include "atomiverse/cuda/dynamics/nvt_sllod.cuh"
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
+#include "atomiverse/cuda/longrange/ewald.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
 #include "atomiverse/cuda/potentials/angle_cosine.cuh"
 #include "atomiverse/cuda/potentials/angle_harmonic.cuh"
 #include "atomiverse/cuda/potentials/bond_fene.cuh"
 #include "atomiverse/cuda/potentials/coul_long.cuh"
+#include "atomiverse/cuda/potentials/pair_born.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
 #include "atomiverse/cuda/record/pressure_series.cuh"
@@ -150,6 +155,30 @@ void bind_cuda_classical(nb::class_<Handle>& cls) {
             // not 1-2 or 1-3 of each other, and 1-4 Coulomb stays on.
             // LAMMPS matches with `special_bonds coul 1 1 1`.
             self.driver.set_evaluator(cuda::CoulLong{p.alpha, p.cutoff});
+        },
+        nb::arg("evaluator"));
+    cls.def(
+        "set_evaluator",
+        [](Handle& self, const cpu::task::PairBornParams& p) {
+            self.require_configurable();
+            // `born_table` owns the column-length check of the mirror; the
+            // rows, the shift and the tail are those of the CPU style.
+            std::vector<cuda::BornTypeCoeff> rows;
+            for (const cpu::BornTypeCoeff& c :
+                 cpu::task::internal::born_table(p))
+                rows.push_back(
+                    {c.type_i, c.type_j, c.A, c.rho, c.sigma, c.C, c.D});
+            self.driver.set_evaluator(cuda::PairBorn{std::move(rows), p.cutoff}
+                                          .set_energy_shift(p.energy_shift)
+                                          .set_tail_correction(p.tail));
+        },
+        nb::arg("evaluator"));
+    cls.def(
+        "set_evaluator",
+        [](Handle& self, const cpu::task::KSpaceEwaldParams& p) {
+            self.require_configurable();
+            // FFT-free reciprocal half; same alpha as the paired CoulLong.
+            self.driver.set_evaluator(cuda::KSpaceEwald{p.alpha, p.accuracy});
         },
         nb::arg("evaluator"));
 #ifdef ATV_HAS_KSPACE
@@ -280,6 +309,80 @@ struct CudaMdHandle {
     }
 };
 #endif
+#ifdef ATV_HAS_MD
+/// The live CUDA components of thermostatted NEMD a driver borrows, with the
+/// constructor arguments and read-only properties of the CPU `GearPC` and
+/// `ConfigurationalTemperature`. Their state reaches the host when run()
+/// returns (the step loop never synchronizes the device).
+void bind_cuda_nemd(nb::module_& m) {
+    using Gear = cuda::md::GearPC;
+    nb::class_<Gear, cuda::Component>(
+        m, "_CudaGearPC",
+        "CUDA twin of GearPC: fifth-order Gear predictor-corrector with the "
+        "Gauss or configurational thermostat inside the step. The history "
+        "and the thermostat sums stay on the device; a thermostat failure "
+        "(zero constrained kinetic energy, non-positive Laplacian sum) "
+        "freezes the state at the failing step and is raised when run() "
+        "returns.")
+        .def(nb::init<double>(), nb::arg("dt"),
+             "Adiabatic, timestep dt [time].")
+        .def(nb::init<double, cpu::md::GaussThermostat>(), nb::arg("dt"),
+             nb::arg("thermostat"),
+             "Timestep dt [time] with a Gauss thermostat.")
+        .def(nb::init<double, cpu::md::ConfigurationalThermostat>(),
+             nb::arg("dt"), nb::arg("thermostat"),
+             "Timestep dt [time] with the configurational thermostat.")
+        .def_prop_ro("dt", &Gear::timestep, "Timestep [time].")
+        .def_prop_ro("constraint_drift", &Gear::constraint_drift,
+                     "Relative constrained kinetic energy |K/K0 - 1| the "
+                     "last Gauss projection of the run removed.")
+        .def_prop_ro("gauss_multiplier", &Gear::gauss_multiplier,
+                     "Gauss multiplier alpha [1/time] at the last step.")
+        .def_prop_ro("xi", &Gear::xi,
+                     "Configurational thermostat variable xi "
+                     "[length^2/time].")
+        .def_prop_ro("configurational_temperature",
+                     &Gear::configurational_temperature,
+                     "T_C1 [temperature] at the last predicted state "
+                     "(configurational thermostat only).");
+
+    using Observer = cuda::ConfigurationalTemperature;
+    nb::class_<Observer, cuda::Component>(
+        m, "_CudaConfigurationalTemperature",
+        "CUDA twin of ConfigurationalTemperature: k_B T_C1 = N / D at "
+        "post_force every `every` steps, sums accumulated on the device and "
+        "read back when run() returns. Every force term must supply its "
+        "curvature (PairBorn, CoulLong, KSpaceEwald) or be an applied "
+        "FixEfield.")
+        .def(nb::init<int>(), nb::arg("every") = 1,
+             "Evaluate every `every` steps (>= 1).")
+        .def_prop_ro(
+            "temperature",
+            [](const Observer& o) { return o.last().temperature; },
+            "T_C1 [temperature] of the last evaluation.")
+        .def_prop_ro(
+            "force_sq", [](const Observer& o) { return o.last().force_sq; },
+            "N = sum |F|^2 [force^2] of the last evaluation.")
+        .def_prop_ro(
+            "laplacian", [](const Observer& o) { return o.last().laplacian; },
+            "D = sum lap U [energy/length^2] of the last evaluation.")
+        .def_prop_ro(
+            "samples", [](const Observer& o) { return o.samples(); },
+            "Evaluations averaged since the last run() began.")
+        .def_prop_ro(
+            "mean_temperature",
+            [](const Observer& o) { return o.mean().temperature; },
+            "T_CONF = <N>/(k_B <D>) [temperature] over the last run().")
+        .def_prop_ro(
+            "mean_force_sq",
+            [](const Observer& o) { return o.mean().force_sq; },
+            "<N> [force^2] over the last run().")
+        .def_prop_ro(
+            "mean_laplacian",
+            [](const Observer& o) { return o.mean().laplacian; },
+            "<D> [energy/length^2] over the last run().");
+}
+#endif
 #ifdef ATV_HAS_MINIMIZER
 struct CudaMinimizeHandle {
     cuda::minimizer::Minimize driver;
@@ -348,6 +451,7 @@ void bind_cuda(nb::module_& m) {
             self.driver.set_evaluator(cuda::AngleCosine{p.K});
         },
         nb::arg("evaluator"));
+    bind_cuda_nemd(m);
     nb::class_<CudaMdHandle> md(m, "_CudaMD");
     ATV::python::bind_units(
         md, [](CudaMdHandle& h) -> cuda::md::MD& { return h.driver; },
@@ -412,6 +516,23 @@ void bind_cuda(nb::module_& m) {
             nb::arg("integrator"),
             "MTK NoseHooverNPT (LAMMPS `fix npt`): integrator + thermostat + "
             "barostat in one Trotter step; replaces VelocityVerlet.")
+        .def(
+            "set_integrator",
+            [](CudaMdHandle& self, cuda::md::GearPC& integrator) {
+                self.require_configurable();
+                self.driver.set_integrator_ref(integrator);
+            },
+            nb::arg("integrator"), nb::keep_alive<1, 2>(),
+            "Borrow a live CUDA GearPC: its diagnostics stay readable on the "
+            "Python object after each run().")
+        .def(
+            "set_observer",
+            [](CudaMdHandle& self, cuda::ConfigurationalTemperature& observer) {
+                self.require_configurable();
+                self.driver.set_observer_ref(observer);
+            },
+            nb::arg("observer"), nb::keep_alive<1, 2>(),
+            "Borrow a live CUDA ConfigurationalTemperature observer.")
         .def(
             "set_pressure_series",
             [](CudaMdHandle& self, const std::string& path, int every,
