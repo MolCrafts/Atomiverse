@@ -673,7 +673,40 @@ void CommBrick::setup(const cpu::LaunchContext& ctx) {
     setup_done_ = true;
 }
 
+namespace {
+
+/// Row -> owned row it images, when every live swap is a self image (one
+/// process): identity on owned rows, and a ghost takes the owner of the row
+/// it was copied from. Swaps run in order and a swap's sources precede its
+/// receive window, so one pass resolves ghosts of ghosts. Left empty when
+/// some swap ships to another rank.
+void map_self_images(const Halo& swaps, int n_local, int n_total,
+                     std::vector<int>& owner) {
+    owner.clear();
+    for (std::size_t s = 0; s < swaps.size(); ++s) {
+        const Swap& swap = swaps[static_cast<int>(s)];
+        if (!swap.is_silent() && !swap.sendself)
+            return;
+    }
+    owner.resize(static_cast<std::size_t>(n_total));
+    for (int i = 0; i < n_local; ++i)
+        owner[static_cast<std::size_t>(i)] = i;
+    for (std::size_t s = 0; s < swaps.size(); ++s) {
+        const Swap& swap = swaps[static_cast<int>(s)];
+        if (swap.is_silent())
+            continue;
+        for (int k = 0; k < swap.nrecv; ++k)
+            owner[static_cast<std::size_t>(swap.firstrecv + k)] =
+                owner[static_cast<std::size_t>(
+                    swap.sendlist[static_cast<std::size_t>(k)])];
+    }
+}
+
+} // namespace
+
 void CommBrick::borders(const cpu::LaunchContext& ctx) {
+    ctx.runtime.md.image_owner = nullptr;
+    ctx.runtime.md.image_owner_rows = 0;
     if (ghost_cutoff_ <= 0.0) {
         ctx.frame.set_nghost(0);
         swaps_.invalidate();
@@ -732,6 +765,11 @@ void CommBrick::borders(const cpu::LaunchContext& ctx) {
                     forward_plan, contract_, ctx.runtime.timer);
     frame.set_nghost(slot - frame.nlocal());
     ++dd->halo_generation;
+    map_self_images(swaps_, frame.nlocal(), frame.n_total(), image_owner_);
+    if (!image_owner_.empty()) {
+        ctx.runtime.md.image_owner = image_owner_.data();
+        ctx.runtime.md.image_owner_rows = frame.n_total();
+    }
     zero_ghost_forces(frame, bufs.reverse_plan, contract_);
     int max_atoms = 1;
     for (std::size_t s = 0; s < swaps_.size(); ++s)
