@@ -24,6 +24,7 @@
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
+#include "atomiverse/cpu/potentials/pair_curvature.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
@@ -38,7 +39,9 @@ namespace cpu {
 /// \(g'' = 2\operatorname{erfc}/r^3 + 2cE/r^2 + 2\alpha^2 cE\), Laplacian
 /// \(L = g'' + 2g'/r = 2\alpha^2 c E\) (not zero: only the bare
 /// \(1/r\) is harmonic) and \(L' = -4\alpha^4 c\,r E\). A special-bond
-/// remainder \(-(1-s)/r\) adds its Hessian and no Laplacian.
+/// remainder \(-(1-s)/r\) adds its Hessian and no Laplacian. Threaded and
+/// batched as the force walk (`md::CurvatureLoop`; erfc and \(E\) from
+/// `ewald_erfc.h`).
 class CoulLong : public cpu::Potential,
                  public cpu::NeighborConsumer,
                  public cpu::LongRangeParticipant,
@@ -97,6 +100,7 @@ class CoulLong : public cpu::Potential,
     unsigned long long special_version_ = 0;
 
     md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
+    md::CurvatureLoop curvature_; ///< its curvature twin (`add_curvature`)
 };
 
 } // namespace cpu

@@ -34,23 +34,25 @@ inline std::vector<ATV::cpu::BornTypeCoeff> tosi_fumi() {
     };
 }
 
-/// @brief Rock salt displaced by up to ±`jitter` Å per axis, Maxwell
-///        velocities at `temperature` [K] with zero total momentum. Rows are
-///        written in reverse lattice order, so a spatial sort permutes them.
+/// @brief Rock salt of `side`³ ions displaced by up to ±`jitter` Å per axis,
+///        Maxwell velocities at `temperature` [K] with zero total momentum.
+///        Rows are written in reverse lattice order, so a spatial sort
+///        permutes them.
 inline ATV::cpu::Frame nacl(double temperature, unsigned seed,
-                            double jitter = 0.25) {
+                            double jitter = 0.25, int side = kSide) {
     using namespace ATV;
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> shift(-jitter, jitter);
     std::normal_distribution<double> gauss(0.0, 1.0);
     const units::UnitSystem metal = units::from_style(units::Style::metal);
-    cpu::Frame f(kN);
+    const int n = side * side * side;
+    cpu::Frame f(n);
     int idx = 0;
     double px = 0, py = 0, pz = 0, mass_sum = 0;
-    for (int i = 0; i < kSide; ++i)
-        for (int j = 0; j < kSide; ++j)
-            for (int k = 0; k < kSide; ++k, ++idx) {
-                const int row = kN - 1 - idx;
+    for (int i = 0; i < side; ++i)
+        for (int j = 0; j < side; ++j)
+            for (int k = 0; k < side; ++k, ++idx) {
+                const int row = n - 1 - idx;
                 const bool na = (i + j + k) % 2 == 0;
                 const double m = na ? kMassNa : kMassCl;
                 const double sd =
@@ -70,12 +72,12 @@ inline ATV::cpu::Frame nacl(double temperature, unsigned seed,
                 pz += m * f.span(kAtom_vz)[row];
                 mass_sum += m;
             }
-    for (int i = 0; i < kN; ++i) {
+    for (int i = 0; i < n; ++i) {
         f.span(kAtom_vx)[i] -= px / mass_sum;
         f.span(kAtom_vy)[i] -= py / mass_sum;
         f.span(kAtom_vz)[i] -= pz / mass_sum;
     }
-    f.box = cpu::Box::cubic(kSide * kSpacing);
+    f.box = cpu::Box::cubic(side * kSpacing);
     f.clear_tag_index();
     f.rebuild_tag_index(0, f.nlocal());
     return f;

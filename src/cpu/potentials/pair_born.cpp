@@ -310,21 +310,52 @@ void PairBorn::compute(const LaunchContext& ctx) {
 // minimum image.
 void PairBorn::add_curvature(const LaunchContext& ctx,
                              const CurvatureRows& rows) {
-    const int* type = multi_ ? ctx.frame.span(kAtom_type).data() : nullptr;
-    const bool use_list = covering_list_(ctx) != nullptr;
-    const Entry single{A_, inv_rho_, sigma_, C_, D_, v_shift_, true};
-    md::for_each_curvature_pair(
-        ctx, cutoff_sq_, use_list, "PairBorn",
-        [&](int i, int j, int, double dx, double dy, double dz, double r2) {
-            const Entry& e = type ? entry_for_(type[i], type[j]) : single;
+    // φ', φ'', L and L' of the class comment; the exponential of a chunk's
+    // survivors is one xsimd batch at a time.
+    struct Kernel {
+        const PairBorn* born;
+        const int* type; ///< per-type form only
+        Entry single;    ///< the single-type coefficients
+        double rc_sq;
+
+        struct Row {
+            int type;
+        };
+
+        double cutoff_sq() const { return rc_sq; }
+        Row row(int i) const { return {type ? type[i] : 0}; }
+
+        /// The coefficients of the pair (row i, partner j); unset when the
+        /// pair does not interact.
+        const Entry& coeff(const Row& ri, int j) const {
+            return type ? born->entry_for_(ri.type, type[j]) : single;
+        }
+
+        /// e^{(σ−r)/ρ} of every survivor into chunk.b.
+        void prepare(const Row& ri, const int* j, int n,
+                     md::CurvatureChunk& c) const {
+            using B = xsimd::batch<double>;
+            constexpr int W = static_cast<int>(B::size);
+            for (int k = 0; k < n; ++k) {
+                const Entry& e = coeff(ri, j[k]);
+                c.b[k] = e.set ? (e.sigma - c.r[k]) * e.inv_rho : 0.0;
+            }
+            for (int k = n; k % W != 0; ++k)
+                c.b[k] = 0.0;
+            for (int k = 0; k < n; k += W)
+                xsimd::exp(B::load_aligned(c.b + k)).store_aligned(c.b + k);
+        }
+
+        md::RadialCurvature operator()(const Row& ri, const md::PairSite& p,
+                                       const md::CurvatureChunk& c) const {
+            const Entry& e = coeff(ri, p.j);
             if (!e.set)
-                return;
-            const double r = std::sqrt(r2);
-            const double inv_r = 1.0 / r;
+                return {};
+            const double inv_r = c.inv_r[p.k];
             const double inv_r2 = inv_r * inv_r;
             const double inv_r6 = inv_r2 * inv_r2 * inv_r2;
             const double inv_r8 = inv_r6 * inv_r2;
-            const double ae = e.A * std::exp((e.sigma - r) * e.inv_rho);
+            const double ae = e.A * c.b[p.k];
             const double k = e.inv_rho;
             const double d1 = -ae * k + 6.0 * e.C * inv_r6 * inv_r
                               - 8.0 * e.D * inv_r8 * inv_r;
@@ -332,13 +363,20 @@ void PairBorn::add_curvature(const LaunchContext& ctx,
                 ae * k * k - 42.0 * e.C * inv_r8 + 72.0 * e.D * inv_r8 * inv_r2;
             const double d3 = -ae * k * k * k + 336.0 * e.C * inv_r8 * inv_r
                               - 720.0 * e.D * inv_r8 * inv_r2 * inv_r;
-            md::RadialCurvature c;
-            c.d1 = d1;
-            c.d2 = d2;
-            c.lap = d2 + 2.0 * d1 * inv_r;
-            c.dlap = d3 + 2.0 * d2 * inv_r - 2.0 * d1 * inv_r2;
-            md::add_pair_curvature(rows, i, j, dx, dy, dz, r, c);
-        });
+            md::RadialCurvature out;
+            out.d1 = d1;
+            out.d2 = d2;
+            out.lap = d2 + 2.0 * d1 * inv_r;
+            out.dlap = d3 + 2.0 * d2 * inv_r - 2.0 * d1 * inv_r2;
+            return out;
+        }
+    };
+    const Kernel kernel{this,
+                        multi_ ? ctx.frame.span(kAtom_type).data() : nullptr,
+                        {A_, inv_rho_, sigma_, C_, D_, v_shift_, true},
+                        cutoff_sq_};
+    curvature_.run(ctx, rows, covering_list_(ctx) != nullptr, "PairBorn",
+                   kernel);
 }
 
 } // namespace cpu

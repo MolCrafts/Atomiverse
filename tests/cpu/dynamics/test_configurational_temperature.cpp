@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include <omp.h>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/unit_system.h"
@@ -52,8 +53,9 @@ struct Result {
     cpu::ConfigurationalSample sample;
 };
 
-Result evaluate_terms(const std::vector<double>& pos, Terms terms) {
-    cpu::Frame f = nacl(1500.0, 3);
+Result evaluate_terms(const std::vector<double>& pos, Terms terms,
+                      int side = kSide) {
+    cpu::Frame f = nacl(1500.0, 3, 0.25, side);
     const int n = f.nlocal();
     for (int i = 0; i < n; ++i) {
         f.span(kAtom_x)[i] = pos[i];
@@ -121,8 +123,8 @@ Result evaluate_terms(const std::vector<double>& pos, Terms terms) {
     return r;
 }
 
-std::vector<double> positions() {
-    const cpu::Frame f = nacl(1500.0, 3);
+std::vector<double> positions(int side = kSide) {
+    const cpu::Frame f = nacl(1500.0, 3, 0.25, side);
     const int n = f.nlocal();
     std::vector<double> pos(3 * n);
     for (int i = 0; i < n; ++i) {
@@ -206,6 +208,47 @@ TEST(Curvature, EwaldCoulombMatchesDifferencesOfItsForces) {
 TEST(Curvature, SpecialBondCoulombRemaindersMatchDifferencesOfTheForces) {
     // Scaled and excluded pairs carry −(1−s)/r: Hessian, no Laplacian.
     check_against_differences(Terms::CoulombSpecial);
+}
+
+// The pair walks open the whole team once their pairs repay it
+// (`md::CurvatureLoop`): 512 ions give the list ≈ 10⁴ pairs and the all-pairs
+// walk (BornTable) 1.3·10⁵, so both run threaded here, each thread into its
+// own accumulator. Every thread count must reproduce the one-thread sums to
+// rounding.
+TEST(Curvature, EveryThreadCountGivesTheOneThreadSums) {
+    constexpr int side = 8;
+    const std::vector<double> pos = positions(side);
+    const int saved = omp_get_max_threads();
+    for (const Terms terms :
+         {Terms::BornTable, Terms::BornListed, Terms::Melt}) {
+        omp_set_num_threads(1);
+        const Result one = evaluate_terms(pos, terms, side);
+        const double h_tol = 1e-11 * max_abs(one.h);
+        const double lap_tol = 1e-11 * max_abs(one.lap);
+        const double g_tol = 1e-11 * max_abs(one.g);
+        const double t_tol = 1e-11 * max_abs(one.grad_t);
+        for (const int threads : {2, 4, 7}) {
+            omp_set_num_threads(threads);
+            const Result many = evaluate_terms(pos, terms, side);
+            ASSERT_EQ(many.n, one.n);
+            for (int k = 0; k < 3 * one.n; ++k) {
+                ASSERT_NEAR(many.h[k], one.h[k], h_tol)
+                    << "HF row " << k << ", " << threads << " threads";
+                ASSERT_NEAR(many.g[k], one.g[k], g_tol)
+                    << "grad D row " << k << ", " << threads << " threads";
+                ASSERT_NEAR(many.grad_t[k], one.grad_t[k], t_tol)
+                    << "grad T row " << k << ", " << threads << " threads";
+            }
+            for (int i = 0; i < one.n; ++i)
+                ASSERT_NEAR(many.lap[i], one.lap[i], lap_tol)
+                    << "laplacian, atom " << i << ", " << threads << " threads";
+            EXPECT_NEAR(many.sample.laplacian, one.sample.laplacian,
+                        1e-11 * std::fabs(one.sample.laplacian));
+            EXPECT_NEAR(many.sample.force_sq, one.sample.force_sq,
+                        1e-11 * one.sample.force_sq);
+        }
+    }
+    omp_set_num_threads(saved);
 }
 
 TEST(Curvature, EwaldCoulombLaplacianIsTheUniformBackgroundConstant) {

@@ -16,6 +16,7 @@
 
 #include "atomiverse/cpu/component/curvature_protocol.h"
 #include "atomiverse/cpu/potentials/pair.h"
+#include "atomiverse/cpu/potentials/pair_curvature.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 
 namespace ATV {
@@ -85,8 +86,9 @@ struct BornTypeCoeff {
 /// \(\varphi''' = -\tfrac{A}{\rho^3}E + 336C/r^9 - 720D/r^{11}\)
 /// (\(E = e^{(\sigma-r)/\rho}\)) give the Hessian, the Laplacian
 /// \(L = \varphi'' + 2\varphi'/r\) and \(L' = \varphi''' + 2\varphi''/r
-/// - 2\varphi'/r^2\) (`pair_curvature.h`). The tail correction depends on
-/// the volume only and adds nothing.
+/// - 2\varphi'/r^2\) (`pair_curvature.h`; threaded and batched as the
+/// force walk, `md::CurvatureLoop`). The tail correction depends on the
+/// volume only and adds nothing.
 ///
 /// Writes energy to `kEnergy` + `kEnergyPair` and the pair virial
 /// \(\sum \Delta r \otimes f\) to `kStress` (Voigt xx yy zz xy xz yz [eV],
@@ -159,10 +161,11 @@ class PairBorn : public Pair, public CurvatureSource {
         return nullptr;
     }
 
-    /// @brief Forget the walk's cached row partition and the tail's type
+    /// @brief Forget the walks' cached row partitions and the tail's type
     ///        counts (they belong to the frame of this build).
     void build(const BuildContext&) override {
         loop_.reset();
+        curvature_.reset();
         tail_ready_ = false;
     }
 
@@ -210,6 +213,7 @@ class PairBorn : public Pair, public CurvatureSource {
     double etail_pref_ = 0.0, ptail_pref_ = 0.0;
 
     md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
+    md::CurvatureLoop curvature_; ///< its curvature twin (`add_curvature`)
 };
 
 } // namespace cpu
