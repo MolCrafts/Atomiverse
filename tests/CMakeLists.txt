@@ -1278,6 +1278,7 @@ if(ATV_BUILD_CUDA)
         # configurational thermostats) against the CPU implementation.
         if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
             atv_add_test(test_cuda_nacl_terms cuda/dynamics/test_nacl_terms.cu)
+            atv_add_test(test_cuda_gear_pc cuda/dynamics/test_gear_pc.cu)
         endif()
     endif()
     if(ATV_BUILD_MINIMIZER)
