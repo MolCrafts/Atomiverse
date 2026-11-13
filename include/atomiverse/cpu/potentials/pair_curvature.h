@@ -17,9 +17,14 @@
 /// A truncated pair potential is treated as zero beyond its cutoff: the
 /// \(\delta\)-shell that a force discontinuity at \(r_c\) puts into the
 /// Laplacian is not included (the same truncation the forces make).
+///
+/// The header is CUDA-safe as `core/pair_kernel.h` is: a `.cu` translation
+/// unit that includes a CPU style's header never instantiates the walk, and
+/// `xsimd` is kept out of it.
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -27,7 +32,9 @@
 #include <utility>
 #include <vector>
 
+#if !defined(__CUDACC__)
 #include <xsimd/xsimd.hpp>
+#endif
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/cpu/component/component.h"
@@ -235,128 +242,138 @@ void CurvatureLoop::run(const LaunchContext& ctx, const CurvatureRows& out,
         rank = omp_get_thread_num();
         size = omp_get_num_threads();
 #endif
-        double* __restrict acc = acc_all + stride * rank;
-        std::fill_n(acc, static_cast<std::size_t>(n_rows) * kRow, 0.0);
-        const auto [ii_begin, ii_end] = range(rank, size);
-        for (int ii = ii_begin; ii < ii_end; ++ii) {
-            const int i = list ? ilist[ii] : ii;
-            const auto ri = kernel.row(i);
-            if constexpr (has_skip_<Kernel>)
-                if (kernel.skip(ri))
-                    continue;
-            const int jnum = list ? numneigh[i] : n - 1 - i;
-            const int off = list ? firstneigh[i] : i + 1;
-            const double xi = x[i], yi = y[i], zi = z[i];
-            const double uix = out.ux[i], uiy = out.uy[i], uiz = out.uz[i];
-            double hix = 0, hiy = 0, hiz = 0, lapi = 0;
-            double gix = 0, giy = 0, giz = 0;
-            for (int base = 0; base < jnum; base += kPairChunk) {
-                const int nc = std::min(kPairChunk, jnum - base);
-                if (list != nullptr) {
-                    // Halo-resolved rows carry their own image.
+        { // the walk; `acc` is this thread's alone until it ends
+            double* __restrict acc = acc_all + stride * rank;
+            std::fill_n(acc, static_cast<std::size_t>(n_rows) * kRow, 0.0);
+            const auto [ii_begin, ii_end] = range(rank, size);
+            for (int ii = ii_begin; ii < ii_end; ++ii) {
+                const int i = list ? ilist[ii] : ii;
+                const auto ri = kernel.row(i);
+                if constexpr (has_skip_<Kernel>)
+                    if (kernel.skip(ri))
+                        continue;
+                const int jnum = list ? numneigh[i] : n - 1 - i;
+                const int off = list ? firstneigh[i] : i + 1;
+                const double xi = x[i], yi = y[i], zi = z[i];
+                const double uix = out.ux[i], uiy = out.uy[i], uiz = out.uz[i];
+                double hix = 0, hiy = 0, hiz = 0, lapi = 0;
+                double gix = 0, giy = 0, giz = 0;
+                for (int base = 0; base < jnum; base += kPairChunk) {
+                    const int nc = std::min(kPairChunk, jnum - base);
+                    if (list != nullptr) {
+                        // Halo-resolved rows carry their own image.
+                        for (int t = 0; t < nc; ++t) {
+                            const int j = neighbors[off + base + t];
+                            const double dx = xi - x[j];
+                            const double dy = yi - y[j];
+                            const double dz = zi - z[j];
+                            dxb[t] = dx;
+                            dyb[t] = dy;
+                            dzb[t] = dz;
+                            r2b[t] = dx * dx + dy * dy + dz * dz;
+                        }
+                    } else {
+                        for (int t = 0; t < nc; ++t) {
+                            const int j = off + base + t;
+                            double dx = xi - x[j];
+                            double dy = yi - y[j];
+                            double dz = zi - z[j];
+                            f.box.min_image(dx, dy, dz);
+                            dxb[t] = dx;
+                            dyb[t] = dy;
+                            dzb[t] = dz;
+                            r2b[t] = dx * dx + dy * dy + dz * dz;
+                        }
+                    }
+                    // Branchless ascending compaction keeps list order.
+                    int ns = 0;
                     for (int t = 0; t < nc; ++t) {
-                        const int j = neighbors[off + base + t];
-                        const double dx = xi - x[j];
-                        const double dy = yi - y[j];
-                        const double dz = zi - z[j];
-                        dxb[t] = dx;
-                        dyb[t] = dy;
-                        dzb[t] = dz;
-                        r2b[t] = dx * dx + dy * dy + dz * dz;
+                        const double r2 = r2b[t];
+                        surv[ns] = t;
+                        r2s[ns] = r2;
+                        ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
                     }
-                } else {
-                    for (int t = 0; t < nc; ++t) {
-                        const int j = off + base + t;
-                        double dx = xi - x[j];
-                        double dy = yi - y[j];
-                        double dz = zi - z[j];
-                        f.box.min_image(dx, dy, dz);
-                        dxb[t] = dx;
-                        dyb[t] = dy;
-                        dzb[t] = dz;
-                        r2b[t] = dx * dx + dy * dy + dz * dz;
+                    if (ns == 0)
+                        continue;
+                    // Harmless padding for batch tails; never read back.
+                    for (int p = ns; p < ns + 16; ++p)
+                        r2s[p] = 1.0;
+#if defined(__CUDACC__)
+                    for (int k = 0; k < ns; ++k) {
+                        chunk.r[k] = std::sqrt(r2s[k]);
+                        chunk.inv_r[k] = 1.0 / chunk.r[k];
+                    }
+#else
+                    {
+                        using B = xsimd::batch<double>;
+                        constexpr int W = static_cast<int>(B::size);
+                        for (int k = 0; k < ns; k += W) {
+                            const B r = xsimd::sqrt(B::load_unaligned(r2s + k));
+                            r.store_aligned(chunk.r + k);
+                            (B(1.0) / r).store_aligned(chunk.inv_r + k);
+                        }
+                    }
+#endif
+                    for (int k = 0; k < ns; ++k)
+                        js[k] = list ? neighbors[off + base + surv[k]]
+                                     : off + base + surv[k];
+                    if constexpr (has_prepare_<Kernel>)
+                        kernel.prepare(ri, js, ns, chunk);
+                    for (int k = 0; k < ns; ++k) {
+                        const int slot = surv[k];
+                        const int j = js[k];
+                        const double dx = dxb[slot];
+                        const double dy = dyb[slot];
+                        const double dz = dzb[slot];
+                        const RadialCurvature c =
+                            kernel(ri,
+                                   PairSite{j, list ? off + base + slot : -1, k,
+                                            r2b[slot], dx, dy, dz},
+                                   chunk);
+                        // u is the same on a ghost and its owner.
+                        const int jo = owner != nullptr ? owner[j] : j;
+                        const double inv_r = chunk.inv_r[k];
+                        const double ex = dx * inv_r, ey = dy * inv_r,
+                                     ez = dz * inv_r;
+                        const double ux = uix - out.ux[jo];
+                        const double uy = uiy - out.uy[jo];
+                        const double uz = uiz - out.uz[jo];
+                        const double radial = c.d1 * inv_r;
+                        const double along =
+                            (c.d2 - radial) * (ex * ux + ey * uy + ez * uz);
+                        const double hx = radial * ux + along * ex;
+                        const double hy = radial * uy + along * ey;
+                        const double hz = radial * uz + along * ez;
+                        const double g = 2.0 * c.dlap;
+                        const double gx = g * ex, gy = g * ey, gz = g * ez;
+                        double* __restrict aj =
+                            acc + static_cast<std::size_t>(jo) * kRow;
+                        aj[0] -= hx;
+                        aj[1] -= hy;
+                        aj[2] -= hz;
+                        aj[3] += c.lap;
+                        aj[4] -= gx;
+                        aj[5] -= gy;
+                        aj[6] -= gz;
+                        hix += hx;
+                        hiy += hy;
+                        hiz += hz;
+                        lapi += c.lap;
+                        gix += gx;
+                        giy += gy;
+                        giz += gz;
                     }
                 }
-                // Branchless ascending compaction keeps list order.
-                int ns = 0;
-                for (int t = 0; t < nc; ++t) {
-                    const double r2 = r2b[t];
-                    surv[ns] = t;
-                    r2s[ns] = r2;
-                    ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
-                }
-                if (ns == 0)
-                    continue;
-                // Harmless padding for batch tails; never read back.
-                for (int p = ns; p < ns + 16; ++p)
-                    r2s[p] = 1.0;
-                {
-                    using B = xsimd::batch<double>;
-                    constexpr int W = static_cast<int>(B::size);
-                    for (int k = 0; k < ns; k += W) {
-                        const B r = xsimd::sqrt(B::load_unaligned(r2s + k));
-                        r.store_aligned(chunk.r + k);
-                        (B(1.0) / r).store_aligned(chunk.inv_r + k);
-                    }
-                }
-                for (int k = 0; k < ns; ++k)
-                    js[k] = list ? neighbors[off + base + surv[k]]
-                                 : off + base + surv[k];
-                if constexpr (has_prepare_<Kernel>)
-                    kernel.prepare(ri, js, ns, chunk);
-                for (int k = 0; k < ns; ++k) {
-                    const int slot = surv[k];
-                    const int j = js[k];
-                    const double dx = dxb[slot];
-                    const double dy = dyb[slot];
-                    const double dz = dzb[slot];
-                    const RadialCurvature c =
-                        kernel(ri,
-                               PairSite{j, list ? off + base + slot : -1, k,
-                                        r2b[slot], dx, dy, dz},
-                               chunk);
-                    // u is the same on a ghost and its owner.
-                    const int jo = owner != nullptr ? owner[j] : j;
-                    const double inv_r = chunk.inv_r[k];
-                    const double ex = dx * inv_r, ey = dy * inv_r,
-                                 ez = dz * inv_r;
-                    const double ux = uix - out.ux[jo];
-                    const double uy = uiy - out.uy[jo];
-                    const double uz = uiz - out.uz[jo];
-                    const double radial = c.d1 * inv_r;
-                    const double along =
-                        (c.d2 - radial) * (ex * ux + ey * uy + ez * uz);
-                    const double hx = radial * ux + along * ex;
-                    const double hy = radial * uy + along * ey;
-                    const double hz = radial * uz + along * ez;
-                    const double g = 2.0 * c.dlap;
-                    const double gx = g * ex, gy = g * ey, gz = g * ez;
-                    double* __restrict aj =
-                        acc + static_cast<std::size_t>(jo) * kRow;
-                    aj[0] -= hx;
-                    aj[1] -= hy;
-                    aj[2] -= hz;
-                    aj[3] += c.lap;
-                    aj[4] -= gx;
-                    aj[5] -= gy;
-                    aj[6] -= gz;
-                    hix += hx;
-                    hiy += hy;
-                    hiz += hz;
-                    lapi += c.lap;
-                    gix += gx;
-                    giy += gy;
-                    giz += gz;
-                }
+                double* __restrict ai =
+                    acc + static_cast<std::size_t>(i) * kRow;
+                ai[0] += hix;
+                ai[1] += hiy;
+                ai[2] += hiz;
+                ai[3] += lapi;
+                ai[4] += gix;
+                ai[5] += giy;
+                ai[6] += giz;
             }
-            double* __restrict ai = acc + static_cast<std::size_t>(i) * kRow;
-            ai[0] += hix;
-            ai[1] += hiy;
-            ai[2] += hiz;
-            ai[3] += lapi;
-            ai[4] += gix;
-            ai[5] += giy;
-            ai[6] += giz;
         }
         // Every accumulator is complete; each row sums them in chunk order.
 #pragma omp barrier
