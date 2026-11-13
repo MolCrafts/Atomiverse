@@ -596,6 +596,7 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/dynamics/fix_settle.cu
                 src/cuda/dynamics/fix_efield.cu
                 src/cuda/dynamics/configurational_temperature.cu
+                src/cuda/dynamics/gear_pc.cu
                 src/cuda/dynamics/brownian.cu
                 src/cuda/dynamics/nose_hoover_npt.cu
                 src/cuda/dynamics/init.cu
