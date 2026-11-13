@@ -7,6 +7,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/device/team.h"
 
 namespace ATV {
 namespace cpu {
@@ -26,9 +27,13 @@ void Virial::launch(const cpu::LaunchContext& ctx) {
 
     double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
 
-#pragma omp parallel for schedule(static) reduction(+ : v_xx)                  \
-    reduction(+ : v_yy) reduction(+ : v_zz) reduction(+ : v_xy)                \
-    reduction(+ : v_xz) reduction(+ : v_yz)
+    // A row is six multiply-adds: the team only once two threads each get
+    // thousands of rows (`device::team_for`).
+    constexpr int kRowsPerThread = 4096;
+    [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
+#pragma omp parallel for schedule(static) num_threads(team) if (team > 1)      \
+    reduction(+ : v_xx) reduction(+ : v_yy) reduction(+ : v_zz)                \
+    reduction(+ : v_xy) reduction(+ : v_xz) reduction(+ : v_yz)
     for (int i = 0; i < n; ++i) {
         const double m = sp_mass[i];
         const double vxi = sp_vx[i];

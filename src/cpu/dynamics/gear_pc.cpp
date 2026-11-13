@@ -14,6 +14,7 @@
 #include "atomiverse/core/gear_pc.h"
 #include "atomiverse/core/timer.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/device/team.h"
 #include "atomiverse/cpu/driver/step_timing.h"
 
 namespace ATV {
@@ -25,15 +26,11 @@ namespace {
 constexpr int kVars = 6;    // x y z vx vy vz
 constexpr int kHistory = 5; // z1..z5 per variable
 
-// Rows each thread must get before a team is worth opening: predicting or
-// correcting a row is a few dozen flops, so a small system (the paper's 512
-// ions) runs on the calling thread instead of paying a fork and join per
-// variable (cf. VelocityVerlet).
+// Rows a thread must get before the team is worth opening
+// (`device::team_for`): predicting or correcting a row is a few dozen
+// flops, so a small system (the paper's 512 ions) runs on the calling thread
+// instead of paying a fork and join per variable (cf. VelocityVerlet).
 constexpr int kRowsPerThread = 4096;
-
-int team_for(const cpu::LaunchContext& ctx, int rows) {
-    return std::max(1, std::min(ctx.runtime.n_threads, rows / kRowsPerThread));
-}
 
 // The thermostats run inside gear_pc's launches (the Gauss multiplier and
 // projection; T_C1 and its gradient for the configurational one); scoped
@@ -270,7 +267,7 @@ void GearPC::predict_(const cpu::LaunchContext& ctx) {
         f.span(kAtom_z).data(),  f.span(kAtom_vx).data(),
         f.span(kAtom_vy).data(), f.span(kAtom_vz).data()};
     const int n = n_;
-    [[maybe_unused]] const int team = team_for(ctx, n);
+    [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
     // One team for all six variables; the rows are independent, so no
     // barrier between them.
 #pragma omp parallel num_threads(team) if (team > 1)
@@ -307,7 +304,7 @@ void GearPC::correct_(const cpu::LaunchContext& ctx) {
         f.span(kAtom_vy).data(), f.span(kAtom_vz).data()};
     const double h = dt_;
     const int n = n_;
-    [[maybe_unused]] const int team = team_for(ctx, n);
+    [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
 #pragma omp parallel num_threads(team) if (team > 1)
     for (int var = 0; var < kVars; ++var) {
         double* h1 = hist_(var, 1);

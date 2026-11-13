@@ -77,19 +77,23 @@ struct EwaldPhases {
 /// Constructed with validated (α, accuracy); rebuilds its k-vector tables from
 /// an inverse cell matrix. No Frame / Component / MPI / FFT.
 ///
-/// The kernels open an OpenMP team of at most `omp_get_max_threads()`
-/// threads, sized so that every thread gets at least
-/// #kPairsPerThread (k-vector, atom) pairs: a small cell runs serially
-/// instead of paying a team's fork and join for microseconds of work. Each
-/// S(k) and each atom's force is summed in the same order whatever the team,
-/// so the results do not depend on the thread count.
+/// Each kernel opens the whole OpenMP team or runs on the calling thread
+/// (`cpu::device::team_for`, which explains why never a count in between):
+/// it goes threaded once two threads would each get #kPairsPerThread
+/// (k-vector, atom) pairs and enough atoms (atom-split kernels) or columns
+/// (column-split kernels) to fill their SIMD lanes and balance, so a small
+/// cell runs serially instead of paying a team's fork and join for
+/// microseconds of work. Each S(k) and each atom's force is summed in the
+/// same order whatever the team, so the results do not depend on the thread
+/// count.
 class EwaldSum {
   public:
-    /// @brief (k-vector, atom) pairs one more thread must get to be worth
-    ///        waking: ≈ 0.1 ms of vectorized work at ≈ 0.2 ns per pair,
-    ///        several times an unbound team's fork, barrier and join on a
-    ///        shared 2-socket node (measured on EPYC 9755).
-    static constexpr std::size_t kPairsPerThread = std::size_t{1} << 19;
+    /// @brief (k-vector, atom) pairs a thread must get to be worth waking:
+    ///        ≈ 15 µs of vectorized work at ≈ 0.2 ns per pair, several times
+    ///        a bound team's fork, barrier and join (EPYC 9755). An unbound
+    ///        team on a shared node can stall far longer at its barriers;
+    ///        bind classical MD (`OMP_PROC_BIND=close`).
+    static constexpr std::size_t kPairsPerThread = std::size_t{1} << 16;
 
     /// @param alpha    Ewald splitting parameter α [1/Å]; must be > 0.
     /// @param accuracy Relative accuracy target in (0, 1); sets |k| cutoff.
@@ -237,6 +241,13 @@ class EwaldSum {
         int mx, my, mz0;
         int begin, end;
     };
+
+    /// Team of the atom-split kernels (phases, forces, curvature) over `n`
+    /// atoms; one split, so each thread reuses its own atoms' tables.
+    int atom_team_(int n) const;
+    /// Team of the column-split kernels (S(k), T(k)) over `n` atoms: every
+    /// thread reads all phase tables, so the pull gates it too.
+    int column_team_(int n) const;
 
     double qqrd2e_ = 1.0;
     double alpha_;

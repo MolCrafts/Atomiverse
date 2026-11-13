@@ -14,6 +14,7 @@
 #endif
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/device/team.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 namespace ATV {
@@ -37,13 +38,10 @@ inline void wrap_owned(cpu::Frame& frame, int n_owned) {
     StorageReal* __restrict sp_y = frame.span(kAtom_y);
     StorageReal* __restrict sp_z = frame.span(kAtom_z);
     ImageInt* __restrict image = frame.span(kAtom_image).data();
-    // A row is one wrap: a thread needs thousands before a team pays for
-    // its fork and join.
+    // A row is one wrap: a thread needs thousands before the team pays for
+    // its fork and join (`device::team_for`).
     constexpr int kRowsPerThread = 8192;
-    int team = 1;
-#ifdef _OPENMP
-    team = std::clamp(n_owned / kRowsPerThread, 1, omp_get_max_threads());
-#endif
+    [[maybe_unused]] const int team = device::team_for(n_owned, kRowsPerThread);
 #pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
     for (int i = 0; i < n_owned; ++i) {
         double x = sp_x[i], y = sp_y[i], z = sp_z[i];

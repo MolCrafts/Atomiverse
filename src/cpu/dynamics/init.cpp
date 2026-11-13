@@ -8,6 +8,7 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/device/team.h"
 
 #include <algorithm>
 #include <cmath>
@@ -36,10 +37,10 @@ void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
     const StorageReal* __restrict sp_vy = f.span(kAtom_vy);
     const StorageReal* __restrict sp_vz = f.span(kAtom_vz);
     // A rank-local sum is cheap enough to vectorize on the calling thread
-    // until there are enough owned rows to amortize a team join.
+    // until there are enough owned rows to amortize a team join
+    // (`device::team_for`).
     constexpr int kRowsPerThread = 16384;
-    [[maybe_unused]] const int team =
-        std::max(1, std::min(ctx.runtime.n_threads, n / kRowsPerThread));
+    [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
 #pragma omp parallel for simd schedule(static) num_threads(team)               \
     reduction(+ : ke) if (parallel : team > 1)
     for (int i = 0; i < n; ++i) {

@@ -4,7 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
+
+#include "atomiverse/cpu/device/team.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -19,17 +22,17 @@ namespace {
 /// atom order, so the block (not the team) fixes its rounding.
 constexpr int kBlock = 256;
 
-/// Threads worth opening for `pairs` (k-vector, atom) pairs.
-int team_for(std::size_t pairs) {
-#ifdef _OPENMP
-    const std::size_t want = pairs / EwaldSum::kPairsPerThread;
-    const auto most = static_cast<std::size_t>(omp_get_max_threads());
-    return static_cast<int>(std::clamp<std::size_t>(want, 1, most));
-#else
-    (void)pairs;
-    return 1;
-#endif
-}
+/// Atoms per thread below which an atom-split kernel's per-column setup
+/// (phase products, coefficient loads) outweighs its SIMD lanes.
+constexpr std::int64_t kMinAtomsPerThread = 32;
+/// Columns per thread a column-split kernel needs for its dynamic pickup to
+/// even out the unequal column lengths of the sphere.
+constexpr std::int64_t kMinColumnsPerThread = 4;
+/// A column-split thread reads every atom's phase tables, written by other
+/// threads, whatever its share of the columns: the kernel goes threaded only
+/// once a thread's share of (k-vector, atom) pairs is at least this many
+/// times the table entries it pulls in.
+constexpr std::int64_t kPairsPerPhaseEntry = 8;
 
 /// Rows [begin, end) of thread `rank` out of `team` over `n` atoms.
 void team_range(int n, int rank, int team, int& begin, int& end) {
@@ -158,6 +161,31 @@ bool EwaldSum::rebuild(const Mat3& inv_cell) {
     return capacity_grows;
 }
 
+// Each kernel opens the whole team or none (`cpu::device::team_for`): once both
+// its (k-vector, atom) pairs and its atoms or columns fill two threads.
+int EwaldSum::atom_team_(int n) const {
+    const auto pairs =
+        static_cast<std::int64_t>(n)
+        * static_cast<std::int64_t>(kx_.size() + columns_.size());
+    return std::min(cpu::device::team_for(
+                        pairs, static_cast<std::int64_t>(kPairsPerThread)),
+                    cpu::device::team_for(n, kMinAtomsPerThread));
+}
+
+int EwaldSum::column_team_(int n) const {
+    const auto pairs =
+        static_cast<std::int64_t>(n)
+        * static_cast<std::int64_t>(kx_.size() + columns_.size());
+    const auto entries =
+        static_cast<std::int64_t>(n) * (mmax_[0] + mmax_[1] + mmax_[2] + 3);
+    return std::min(
+        {cpu::device::team_for(pairs,
+                               static_cast<std::int64_t>(kPairsPerThread)),
+         cpu::device::team_for(static_cast<std::int64_t>(columns_.size()),
+                               kMinColumnsPerThread),
+         cpu::device::team_for(pairs, kPairsPerPhaseEntry * entries)});
+}
+
 void EwaldSum::phases(const StorageReal* x, const StorageReal* y,
                       const StorageReal* z, int n, EwaldPhases& out) const {
     out.n = n;
@@ -167,8 +195,9 @@ void EwaldSum::phases(const StorageReal* x, const StorageReal* y,
         out.re[a].resize(rows * static_cast<std::size_t>(n));
         out.im[a].resize(rows * static_cast<std::size_t>(n));
     }
-    const int team = team_for(static_cast<std::size_t>(n)
-                              * (mmax_[0] + mmax_[1] + mmax_[2] + 3));
+    // The atom split of the force kernels: each thread then finds its own
+    // atoms' tables in its cache there.
+    const int team = atom_team_(n);
 #pragma omp parallel num_threads(team) if (team > 1)
     {
         int rank = 0, size = 1;
@@ -212,8 +241,7 @@ void EwaldSum::phases(const StorageReal* x, const StorageReal* y,
 void EwaldSum::structure_factor(const EwaldPhases& ph, const StorageReal* q,
                                 int n, double* sr, double* si) const {
     const int n_columns = static_cast<int>(columns_.size());
-    const int team =
-        team_for(static_cast<std::size_t>(n) * (kx_.size() + columns_.size()));
+    const int team = column_team_(n);
 #pragma omp parallel for num_threads(team) if (team > 1) schedule(dynamic, 1)
     for (int c = 0; c < n_columns; ++c) {
         const Column col = columns_[c];
@@ -251,8 +279,7 @@ void EwaldSum::add_forces(const EwaldPhases& ph, const StorageReal* q, int n,
     // Half-sphere: energy prefactor is 4π k_e / V; force factor uses 2·ug.
     const double K2 = 2.0 * (qqrd2e_ * 4.0 * ATV::units::pi / volume);
     const double* __restrict kw = kw_.data();
-    const int team =
-        team_for(static_cast<std::size_t>(n) * (kx_.size() + columns_.size()));
+    const int team = atom_team_(n);
 #pragma omp parallel num_threads(team) if (team > 1)
     {
         int rank = 0, size = 1;
@@ -316,8 +343,7 @@ void EwaldSum::directional_factor(const EwaldPhases& ph, const StorageReal* q,
                                   const double* uz, int n, double* tr,
                                   double* ti) const {
     const int n_columns = static_cast<int>(columns_.size());
-    const int team =
-        team_for(static_cast<std::size_t>(n) * (kx_.size() + columns_.size()));
+    const int team = column_team_(n);
 #pragma omp parallel for num_threads(team) if (team > 1) schedule(dynamic, 1)
     for (int c = 0; c < n_columns; ++c) {
         const Column col = columns_[c];
@@ -378,8 +404,7 @@ void EwaldSum::add_curvature(const EwaldPhases& ph, const StorageReal* q,
     const double* __restrict ky = ky_.data();
     const double* __restrict kz = kz_.data();
     const double* __restrict kw = kw_.data();
-    const int team =
-        team_for(static_cast<std::size_t>(n) * (kx_.size() + columns_.size()));
+    const int team = atom_team_(n);
 #pragma omp parallel num_threads(team) if (team > 1)
     {
         int rank = 0, size = 1;

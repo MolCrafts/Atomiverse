@@ -10,8 +10,10 @@
 ///
 /// `PairRowPartition` is rebuilt whenever the list a kernel walks changes
 /// (the neighbor list's version, or a kernel's own filtered copy) and answers:
-///  - how many threads the pair count is worth (`team`), so a small system runs
-///    the single-thread direct path instead of waking the whole team;
+///  - whether the pair count is worth the whole team against a thread's
+///    fixed cost, its fork and its chunk buffer over the touched rows
+///    (`team`), so a small system runs the single-thread direct path instead
+///    of waking the team;
 ///  - how many chunks to cut the rows into (`chunks`) and which contiguous
 ///    rows each chunk takes so the pair counts balance (`range`);
 ///  - the highest row the list references (`n_touch`), which bounds the
@@ -30,22 +32,60 @@
 #include <utility>
 #include <vector>
 
+#include "atomiverse/cpu/device/team.h"
+
 namespace ATV {
 namespace cpu {
 namespace md {
 
 class PairRowPartition {
   public:
-    /// Pairs below which one more thread is not worth its wake-up, its share
-    /// of the buffer zero/reduce and the fork/join barrier.
-    /// About 100 µs of pair work per thread at a few ns per pair.
-    static constexpr std::int64_t kMinPairsPerThread = 49152;
-    /// Chunks per thread when buffers are cheap: enough slack for dynamic
-    /// pickup to absorb a slow thread.
+    /// Fixed cost of one more thread (wake-up, its share of the fork, the
+    /// barriers and the join), in half-list entries: ≈ 2–4 µs at the
+    /// ≈ 1–2 ns a chunked entry costs a cheap kernel.
+    static constexpr std::int64_t kForkEntries = 2048;
+    /// Cost of one row of a chunk's force buffer, in half-list entries: it is
+    /// zeroed on the chunk's first touch and reduced by the flush (≈ 48
+    /// bytes of traffic, about one entry's geometry).
+    static constexpr std::int64_t kEntriesPerBufferRow = 1;
+    /// Most chunks per thread, when buffers are cheap: enough slack for
+    /// dynamic pickup to absorb a slow thread.
     static constexpr int kChunksPerThread = 4;
-    /// Cap on chunk-buffer rows (chunks x touched rows): past it a large
-    /// system gets one chunk per thread, whose balance it does not need.
-    static constexpr std::int64_t kMaxChunkRows = std::int64_t{1} << 20;
+    /// A thread takes extra chunks only while their buffers stay below
+    /// 1/kBufferShare of its entries.
+    static constexpr std::int64_t kBufferShare = 8;
+
+    /// @brief Team for `total` half-list entries that scatter into rows
+    ///        `[0, n_touch)`: all `max_threads`, or one (`device::team_for`).
+    ///
+    /// Every thread costs a fork and at least one chunk buffer of `n_touch`
+    /// rows whatever its share, so the list goes threaded only once two
+    /// threads' shares of the entries each cover that fixed cost. A small
+    /// dense system with a long cutoff (few atoms, many ghost rows)
+    /// therefore stays serial longer than a large one with the same entry
+    /// count.
+    static int team_for(std::int64_t total, int n_touch, int max_threads) {
+        return device::team_for(total,
+                                kForkEntries
+                                    + std::int64_t{std::max(n_touch, 1)}
+                                          * kEntriesPerBufferRow,
+                                max_threads);
+    }
+
+    /// @brief Chunks for `total` entries over a team of `team` (1 for a
+    ///        team of one): a multiple of the team, up to kChunksPerThread
+    ///        per thread while their buffers stay a small share of the work.
+    static int chunks_for(std::int64_t total, int n_touch, int team) {
+        if (team <= 1)
+            return 1;
+        const std::int64_t buffer = kBufferShare
+                                    * std::int64_t{std::max(n_touch, 1)}
+                                    * kEntriesPerBufferRow;
+        const std::int64_t per_thread = total / team;
+        const auto per = static_cast<int>(
+            std::clamp<std::int64_t>(per_thread / buffer, 1, kChunksPerThread));
+        return team * per;
+    }
 
     /// @brief Rebuild from a CSR half list.
     /// @param inum       Number of rows walked.
@@ -76,22 +116,13 @@ class PairRowPartition {
     /// @brief One past the highest row (owner or partner) the list names.
     int n_touch() const { return n_touch_; }
 
-    /// @brief Threads worth using for this list, at most `max_threads`.
+    /// @brief Team for this list: `max_threads` or one.
     int team(int max_threads) const {
-        const std::int64_t by_work = total() / kMinPairsPerThread;
-        return static_cast<int>(
-            std::clamp<std::int64_t>(by_work, 1, std::max(max_threads, 1)));
+        return team_for(total(), n_touch_, max_threads);
     }
 
     /// @brief Chunks for a team of `team` (1 for a team of one).
-    int chunks(int team) const {
-        if (team <= 1)
-            return 1;
-        const std::int64_t many = std::int64_t{team} * kChunksPerThread;
-        return many * std::max(n_touch_, 1) <= kMaxChunkRows
-                   ? static_cast<int>(many)
-                   : team;
-    }
+    int chunks(int team) const { return chunks_for(total(), n_touch_, team); }
 
     /// @brief Walked rows `[begin, end)` of chunk `t` out of `team` chunks,
     ///        cut so every chunk gets about `total() / team` pairs.

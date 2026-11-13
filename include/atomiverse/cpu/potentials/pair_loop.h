@@ -50,12 +50,13 @@
 /// the same kernel runs over all owned pairs with minimum-image separations.
 ///
 /// **Threads and determinism.** The rows are cut into chunks of balanced pair
-/// count (`PairRowPartition`, rebuilt when the walked list changes); the team
-/// follows the pair count, so a small system runs the single-thread direct
-/// path. Chunks are handed out dynamically, but every chunk scatters into its
-/// own `md::ForcePass` slot and stores its own energy / virial partials, all
-/// combined in chunk order: for a given thread count the result is
-/// bit-identical run to run, whichever thread ran which chunk.
+/// count (`PairRowPartition`, rebuilt when the walked list changes); a list
+/// whose pair count does not repay the team runs the single-thread direct
+/// path, any other opens every thread (`device::team_for`). Chunks are handed
+/// out dynamically, but every chunk scatters into its own `md::ForcePass`
+/// slot and stores its own energy / virial partials, all combined in chunk
+/// order: for a given thread count the result is bit-identical run to run,
+/// whichever thread ran which chunk.
 #pragma once
 
 #include <algorithm>
@@ -419,10 +420,8 @@ PairTotals PairLoop::all_pairs_(const LaunchContext& ctx,
     const auto before = [n](std::int64_t i) { return i * n - i * (i + 1) / 2; };
     const std::int64_t total = before(n);
     ForcePass forces(ctx);
-    const int team = static_cast<int>(std::clamp<std::int64_t>(
-        total / PairRowPartition::kMinPairsPerThread, 1, forces.team()));
-    const int n_chunks =
-        team > 1 ? team * PairRowPartition::kChunksPerThread : 1;
+    const int team = PairRowPartition::team_for(total, n, forces.team());
+    const int n_chunks = PairRowPartition::chunks_for(total, n, team);
     forces.open(team, n_chunks, n);
     const auto cut = [&](int c) {
         if (c <= 0)

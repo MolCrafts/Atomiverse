@@ -17,9 +17,11 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/device/team.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <numeric>
 #include <stdexcept>
@@ -33,16 +35,6 @@ namespace cpu {
 namespace md {
 
 namespace {
-
-// Threads worth their fork and join for `rows` rows when a thread needs
-// `per_thread` of them.
-int row_team(int rows, int per_thread) {
-    int most = 1;
-#ifdef _OPENMP
-    most = omp_get_max_threads();
-#endif
-    return std::clamp(rows / per_thread, 1, most);
-}
 
 // Rows the binning pass gives a thread: a row is a few divisions, so a small
 // cell and its halo bin on the calling thread.
@@ -338,7 +330,7 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
     };
 
     // Assign explicit Cartesian owner and image rows to their physical cells.
-    const int team = row_team(n, kBinRowsPerThread);
+    const int team = device::team_for(n, kBinRowsPerThread);
 #pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
     for (int i = 0; i < n; ++i) {
         double xi = sp_x[i];
@@ -421,12 +413,23 @@ inline void ensure_at_least(std::vector<int>& arr, std::size_t n) {
         arr.resize(n);
 }
 
-// Centre rows each thread must get before a team pays for its fork and
-// join: a row scans its stencil's candidates (microseconds), so a cell of a
-// few hundred atoms builds its list on the calling thread.
-constexpr int kRowsPerThread = 256;
+// Distance checks (stencil candidates, ≈ 1–2 ns each) a thread of a list
+// build must get before a team pays for its fork and join.
+constexpr std::int64_t kCandidatesPerThread = 16384;
 
-int list_team(int rows) { return row_team(rows, kRowsPerThread); }
+// Team for `rows` centre rows that each scan `stencil_cells` cells of
+// `n_binned / n_cells` atoms on average: a long cutoff gives a few hundred
+// atoms enough candidates for the team, a short one leaves a small cell on
+// the calling thread.
+int list_team(int rows, std::size_t stencil_cells, int n_binned,
+              std::size_t n_cells) {
+    const std::int64_t per_row =
+        static_cast<std::int64_t>(stencil_cells) * std::max(n_binned, 1)
+        / static_cast<std::int64_t>(std::max<std::size_t>(n_cells, 1));
+    return device::team_for(std::int64_t{rows}
+                                * std::max<std::int64_t>(per_row, 1),
+                            kCandidatesPerThread);
+}
 
 } // namespace
 
@@ -463,7 +466,8 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
     const int* __restrict binned_ptr = binned_atoms_.data();
     const auto& stencil = use_half ? half_stencil_ : full_stencil_;
     const int n_owned_rows = std::min(n_local, n);
-    const int n_threads = list_team(n_owned_rows);
+    const int n_threads =
+        list_team(n_owned_rows, stencil.size(), n, cell_count_.size());
 
     // One row traversal for serial CSR and thread-private buffers. The
     // LAMMPS half/Newton stencil selects forward cells; only the home cell
@@ -676,7 +680,8 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
     }
     result.inum = result.n_rows = centres;
 
-    const int n_threads = list_team(centres);
+    const int n_threads =
+        list_team(centres, full_stencil_.size(), n, cell_count_.size());
 
     // Member-state scratch reuse — same contract as the `refresh_half`
     // version. See the long comment above for the "no allocation in
@@ -835,7 +840,10 @@ void CellList::derive_half(const cpu::Frame& frame, int n_active,
             append(k);
         }
     };
-    const int n_threads = list_team(owned);
+    // Every full-list entry of an owned row is one candidate.
+    const int n_threads =
+        std::min(device::team_for(full.total_pairs, kCandidatesPerThread),
+                 device::team_for(owned, 1));
     if (n_threads == 1) {
         result.neighbors.clear();
         for (int i = 0; i < owned; ++i) {
