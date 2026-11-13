@@ -52,8 +52,9 @@
 /// **Threads and determinism.** The rows are cut into chunks of balanced pair
 /// count (`PairRowPartition`, rebuilt when the walked list changes); a list
 /// whose pair count does not repay the team runs the single-thread direct
-/// path, any other opens every thread (`device::team_for`). Chunks are handed
-/// out dynamically, but every chunk scatters into its own `md::ForcePass`
+/// path, any other opens every thread (`device::team_for`). With one chunk
+/// per thread, thread c runs chunk c; more chunks are handed out
+/// dynamically. Either way every chunk scatters into its own `md::ForcePass`
 /// slot and stores its own energy / virial partials, all combined in chunk
 /// order: for a given thread count the result is bit-identical run to run,
 /// whichever thread ran which chunk.
@@ -79,6 +80,10 @@
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
 #include "atomiverse/cpu/potentials/pair_partition.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace ATV {
 namespace cpu {
@@ -289,6 +294,7 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
         PairRowPartition::chunks_for(partition_.total(), n_rows, team);
     forces.open(team, n_chunks, n_rows);
     const PairRowPartition& part = partition_;
+    int next_chunk = 0; // dynamic pickup counter (more chunks than threads)
 
 #pragma omp parallel num_threads(team) if (team > 1)
     {
@@ -304,8 +310,26 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
         alignas(64) int js[kPairChunk];
         PairChunk chunk;
 
-#pragma omp for schedule(dynamic, 1)
-        for (int c = 0; c < n_chunks; ++c) {
+        int rank = 0, size = 1;
+#ifdef _OPENMP
+        rank = omp_get_thread_num();
+        size = omp_get_num_threads();
+#endif
+        // One chunk per thread: thread c runs chunk c, so chunk c (and its
+        // force buffer) stays on thread c across styles and steps; dynamic
+        // pickup would only move buffers between cores, with no slack to
+        // balance. More chunks than threads are picked up dynamically. The
+        // body stays inline (no per-chunk closure), so the scratch arrays
+        // stay private locals the force stores cannot alias.
+        const bool own = n_chunks == size;
+        const auto pickup = [&next_chunk] {
+            int c;
+#pragma omp atomic capture
+            c = next_chunk++;
+            return c;
+        };
+        for (int c = own ? rank : pickup(); c < n_chunks;
+             c = own ? n_chunks : pickup()) {
             const ForceRows tf = forces.rows(c);
             double energy = 0.0, extra = 0.0;
             double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;

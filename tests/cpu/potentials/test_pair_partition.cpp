@@ -26,6 +26,7 @@
 #include "atomiverse/cpu/potentials/force_scratch.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_partition.h"
 
 using namespace ATV;
@@ -232,6 +233,27 @@ TEST(PairRowPartition, ThreadedLJTableWithSpecialsMatchesOneThread) {
     const auto many = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
     expect_close(many, one);
     // And the threaded run is reproducible bit for bit.
+    const auto again = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
+    EXPECT_EQ(again.energy, many.energy);
+    EXPECT_EQ(again.fx, many.fx);
+}
+
+TEST(PairRowPartition, OneChunkPerThreadMatchesOneThread) {
+    // A partner far out in the ghost rows makes every chunk buffer span the
+    // whole frame, so each of the four threads runs exactly one chunk (the
+    // fixed chunk-per-thread path, not dynamic pickup).
+    auto pairs = all_pairs(kAtoms);
+    pairs.neighbors[static_cast<std::size_t>(pairs.firstneigh[0])] =
+        kAtoms + kGhosts - 1;
+    cpu::md::PairRowPartition part;
+    part.rebuild(pairs.inum, pairs.ilist.data(), pairs.numneigh.data(),
+                 pairs.firstneigh.data(), pairs.neighbors.data());
+    ASSERT_EQ(part.team(4), 4);
+    ASSERT_EQ(part.chunks(4), 4);
+    auto make = [] { return cpu::PairMorse(0.3, 1.2, 1.1, 60.0); };
+    const auto one = run_kernel(make, 1, molecule(kAtoms, kGhosts), pairs);
+    const auto many = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
+    expect_close(many, one);
     const auto again = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
     EXPECT_EQ(again.energy, many.energy);
     EXPECT_EQ(again.fx, many.fx);
