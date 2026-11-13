@@ -49,6 +49,8 @@ python3 run.py --summarize --out "$OUT"
 
 - Repeat `--atv LABEL=PATH` to time several builds (before / after a change)
   in the same allocation.
+- `--repeats N` runs every cell N times, the engines alternating; the tables
+  show the median run and each build's ratio to LAMMPS.
 - `run.py` sets `OMP_NUM_THREADS` per point; LAMMPS runs threaded points
   with `-sf omp -pk omp N` (needs the OPENMP package).
 - `--thermostat config` times Atomiverse's configurational thermostat

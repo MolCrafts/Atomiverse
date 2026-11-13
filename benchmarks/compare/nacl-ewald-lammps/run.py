@@ -4,17 +4,21 @@ NaCl system, state points, Ewald settings and thread counts; print ms/step
 tables. Standard library only.
 
     run.py --atv before=/path/bench_nacl_ewald --atv after=/path/... \\
-           --lmp /path/lmp_omp --out DIR [--threads 1 4 8 16 64]
+           --lmp /path/lmp_omp --out DIR [--threads 1 4 8 16 64] [--repeats 3]
     run.py --summarize --out DIR
 
 Every run appends one JSON line to DIR/results.jsonl; --summarize only
-rereads it. Engines run one after the other, never concurrently.
+rereads it. Engines run one after the other, never concurrently; with
+--repeats the engines alternate, so a slow minute on a shared node hits all
+of them. A cell is the run with the median loop time, and every engine is
+also shown as a ratio to LAMMPS (below 1: faster than LAMMPS).
 """
 
 import argparse
 import json
 import os
 import re
+import statistics
 import subprocess
 import sys
 from pathlib import Path
@@ -128,6 +132,22 @@ def run_lammps(binary, state, setting, threads, steps, warm, prefix):
     return row
 
 
+def median_runs(rows):
+    """One row per (engine, state, setting, threads): the run whose loop time
+    is the median (the lower middle for an even count), so its components
+    belong to a real run."""
+    runs = {}
+    for r in rows:
+        runs.setdefault(
+            (r["engine"], r["state"], r["setting"], r["threads"]), []
+        ).append(r)
+    pick = {}
+    for key, group in runs.items():
+        mid = statistics.median_low([g["ms"] for g in group])
+        pick[key] = next(g for g in group if g["ms"] == mid)
+    return pick, {key: len(group) for key, group in runs.items()}
+
+
 def summarize(out):
     rows = [
         json.loads(line) for line in (out / "results.jsonl").read_text().splitlines()
@@ -135,7 +155,10 @@ def summarize(out):
     engines = list(dict.fromkeys(r["engine"] for r in rows))
     threads = sorted({r["threads"] for r in rows})
     cases = list(dict.fromkeys((r["state"], r["setting"]) for r in rows))
-    pick = {(r["engine"], r["state"], r["setting"], r["threads"]): r for r in rows}
+    pick, counts = median_runs(rows)
+    print(
+        f"runs per cell: {min(counts.values())}-{max(counts.values())} (median shown)\n"
+    )
 
     print("## ms/step (loop)\n")
     print(
@@ -150,6 +173,24 @@ def summarize(out):
             nk = next((g["nk"] for g in got if g), "")
             cells = [f"{g['ms']:.3f}" if g else "" for g in got]
             print(f"| {state} | {setting} | {e} | {nk} | " + " | ".join(cells) + " |")
+    if "lammps" in engines:
+        print("\n## ms/step relative to LAMMPS (engine / lammps)\n")
+        print(
+            "| state | setting | engine | "
+            + " | ".join(f"{t} thr" for t in threads)
+            + " |"
+        )
+        print("|---" * (3 + len(threads)) + "|")
+        for state, setting in cases:
+            for e in engines:
+                if e == "lammps":
+                    continue
+                cells = []
+                for t in threads:
+                    a = pick.get((e, state, setting, t))
+                    b = pick.get(("lammps", state, setting, t))
+                    cells.append(f"{a['ms'] / b['ms']:.2f}" if a and b else "")
+                print(f"| {state} | {setting} | {e} | " + " | ".join(cells) + " |")
     for state, setting in cases:
         print(f"\n## {state}, {setting}: ms/step per component\n")
         print("| engine | threads | " + " | ".join(BUCKETS) + " | loop |")
@@ -179,6 +220,7 @@ def main():
     ap.add_argument("--settings", nargs="+", default=["paper", "accuracy"])
     ap.add_argument("--steps", type=int, default=1000)
     ap.add_argument("--warm", type=int, default=200)
+    ap.add_argument("--repeats", type=int, default=1, help="runs per cell")
     ap.add_argument(
         "--thermostat",
         choices=("gauss", "config"),
@@ -197,30 +239,37 @@ def main():
                 for setting in a.settings:
                     prefix = a.out / f"{state}-{setting}"
                     for t in a.threads:
-                        rows = [
-                            run_atv(
-                                label,
-                                path,
-                                state,
-                                setting,
-                                t,
-                                a.steps,
-                                a.warm,
-                                prefix,
-                                a.thermostat,
-                            )
-                            for label, path in atv
-                        ]
-                        if a.lmp:
-                            rows.append(
-                                run_lammps(
-                                    a.lmp, state, setting, t, a.steps, a.warm, prefix
+                        for _ in range(a.repeats):
+                            rows = [
+                                run_atv(
+                                    label,
+                                    path,
+                                    state,
+                                    setting,
+                                    t,
+                                    a.steps,
+                                    a.warm,
+                                    prefix,
+                                    a.thermostat,
                                 )
-                            )
-                        for row in rows:
-                            log.write(json.dumps(row) + "\n")
-                            log.flush()
-                            print(json.dumps(row), flush=True)
+                                for label, path in atv
+                            ]
+                            if a.lmp:
+                                rows.append(
+                                    run_lammps(
+                                        a.lmp,
+                                        state,
+                                        setting,
+                                        t,
+                                        a.steps,
+                                        a.warm,
+                                        prefix,
+                                    )
+                                )
+                            for row in rows:
+                                log.write(json.dumps(row) + "\n")
+                                log.flush()
+                                print(json.dumps(row), flush=True)
     summarize(a.out)
 
 
