@@ -32,6 +32,7 @@
 #include <stdexcept>
 
 #include "atomiverse/cuda/component/component.cuh"
+#include "atomiverse/cuda/component/curvature_protocol.cuh"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
@@ -253,6 +254,127 @@ __global__ __launch_bounds__(kTileBlock, kTileMinBlocks) void cluster_tile(
     adds.check(fault);
 }
 
+// The curvature walk of the same packed tiles (configurational
+// temperature, `cuda/component/curvature_protocol.cuh`): per pair, with
+// e = (r_i − r_j)/r and u = u_i − u_j, h = (U′/r) u + (U″ − U′/r)(e·u) e is
+// added to (Hu)_i and subtracted from (Hu)_j, ∇²U to both Laplacians and
+// 2 (∇²U)′ e to the Laplacian gradient of i (minus that of j), exactly
+// `cpu::md::add_pair_curvature`. Pair math runs in force_t; each lane sums
+// its I and J rows in FP64 and issues one atomic per row and field.
+template <class Term, bool Ortho>
+__global__
+__launch_bounds__(kTileBlock, kTileMinBlocks) void cluster_tile_curvature(
+    Term term, const pos_t* __restrict__ cx, const pos_t* __restrict__ cy,
+    const pos_t* __restrict__ cz,
+    const typename Term::Param* __restrict__ params,
+    const int* __restrict__ index, const int* __restrict__ packed_ci,
+    const int* __restrict__ packed_j, const std::uint32_t* __restrict__ masks,
+    const int* __restrict__ tile_count, Box box_arg,
+    const ClusterImage* __restrict__ images, force_t cut2, CurvatureRows rows) {
+    using Param = typename Term::Param;
+    constexpr unsigned all = tile::kFullWarp;
+    constexpr int kFields = 7; // (Hu)xyz, ∇²U, (∇ Σ∇²U)xyz
+    const ForceBox box = box_arg.current().as<force_t>();
+    const int num_pairs = *tile_count;
+    const int warps = blockDim.x / 32;
+    const int lane = threadIdx.x % 32;
+    const int p = blockIdx.x * warps + threadIdx.x / 32;
+    if (p >= num_pairs)
+        return;
+    const int ci = packed_ci[p];
+    const int si = ci * 32 + lane;
+    const std::size_t slot = static_cast<std::size_t>(p) * 32 + lane;
+    const int sj = packed_j[slot];
+    const int ai = index[si], bj = sj >= 0 ? index[sj] : -1;
+    force_t ax = cx[si], ay = cy[si], az = cz[si];
+    force_t bx = 0, by = 0, bz = 0;
+    const Param pa = params[si];
+    Param pb{};
+    if (sj >= 0) {
+        bx = cx[sj];
+        by = cy[sj];
+        bz = cz[sj];
+        pb = params[sj];
+    }
+    const bool owned_i = ai >= 0 && ai < rows.n;
+    const bool owned_j = bj >= 0 && bj < rows.n;
+    const double ui[3] = {owned_i ? rows.ux[ai] : 0.0,
+                          owned_i ? rows.uy[ai] : 0.0,
+                          owned_i ? rows.uz[ai] : 0.0};
+    const double ub[3] = {owned_j ? rows.ux[bj] : 0.0,
+                          owned_j ? rows.uy[bj] : 0.0,
+                          owned_j ? rows.uz[bj] : 0.0};
+    const unsigned mask = masks[slot];
+    if (!__any_sync(all, mask != 0))
+        return;
+    bool single_copy = false;
+    if constexpr (Ortho) {
+        const ClusterImage image = images[ci];
+        single_copy = image.single;
+        if (single_copy) {
+            wrap_to(ax, ay, az, image, box);
+            if (bj >= 0)
+                wrap_to(bx, by, bz, image, box);
+        }
+    }
+    double acc_i[kFields] = {}, acc_j[kFields] = {};
+    for (int step = 0; step < 32; ++step) {
+        const int jlane = (lane + step) & 31;
+        const int aj = __shfl_sync(all, bj, jlane);
+        force_t dx = __shfl_sync(all, bx, jlane) - ax;
+        force_t dy = __shfl_sync(all, by, jlane) - ay;
+        force_t dz = __shfl_sync(all, bz, jlane) - az;
+        const double du[3] = {ui[0] - __shfl_sync(all, ub[0], jlane),
+                              ui[1] - __shfl_sync(all, ub[1], jlane),
+                              ui[2] - __shfl_sync(all, ub[2], jlane)};
+        const Param pj = Term::shfl(pb, jlane);
+        if constexpr (Ortho) {
+            if (!single_copy) {
+                dx -= box.cell[0] * nearbyint(dx * box.inv_l[0]);
+                dy -= box.cell[4] * nearbyint(dy * box.inv_l[1]);
+                dz -= box.cell[8] * nearbyint(dz * box.inv_l[2]);
+            }
+        } else {
+            box.min_image(dx, dy, dz);
+        }
+        const force_t r2 = dx * dx + dy * dy + dz * dz;
+        // Contribution to row i; row j takes −h, +∇²U, −gradient.
+        double c[kFields] = {};
+        if (ai >= 0 && aj >= 0 && ai != aj && (mask & (1u << jlane)) && r2 > 0
+            && r2 < cut2) {
+            const tile::RadialCurvature k = term.curvature(r2, pa, pj);
+            const double inv_r = 1.0 / sqrt(static_cast<double>(r2));
+            // e = (r_i − r_j)/r; the tile holds d = r_j − r_i.
+            const double e[3] = {-double(dx) * inv_r, -double(dy) * inv_r,
+                                 -double(dz) * inv_r};
+            const double eu = e[0] * du[0] + e[1] * du[1] + e[2] * du[2];
+            const double radial = double(k.d1) * inv_r;
+            const double along = (double(k.d2) - radial) * eu;
+            for (int d = 0; d < 3; ++d) {
+                c[d] = radial * du[d] + along * e[d];
+                c[4 + d] = 2.0 * double(k.dlap) * e[d];
+            }
+            c[3] = double(k.lap);
+            for (int d = 0; d < kFields; ++d)
+                acc_i[d] += c[d];
+        }
+        const int source = (lane - step) & 31;
+        for (int d = 0; d < kFields; ++d) {
+            const double back = __shfl_sync(all, c[d], source);
+            acc_j[d] += d == 3 ? back : -back;
+        }
+    }
+    double* const columns[kFields] = {rows.hx, rows.hy, rows.hz, rows.lap,
+                                      rows.gx, rows.gy, rows.gz};
+#pragma unroll
+    for (int d = 0; d < kFields; ++d) {
+        if (owned_i)
+            atomicAdd(columns[d] + ai, acc_i[d]);
+        if (owned_j)
+            atomicAdd(columns[d] + bj, acc_j[d]);
+    }
+}
+
 /// @brief Host side of the engine for one term: the packed tiles, the
 ///        slot-ordered parameters and the energy/virial partials of one
 ///        pair style, kept current by a hook in the neighbor rebuild.
@@ -369,6 +491,35 @@ class ClusterTileEngine {
                     ctx.runtime.host_box, p->cl_image, cut2, n_owned,
                     f.atoms.fx, f.atoms.fy, f.atoms.fz, f.force_fault, partial_,
                     partial_capacity_);
+        };
+        if (ctx.runtime.host_box.ortho)
+            run(std::true_type{});
+        else
+            run(std::false_type{});
+        ATV_CUDA_CHECK(cudaGetLastError());
+    }
+
+    /// @brief Enqueue the curvature walk of the step's tiles (the pairs of
+    ///        `tiles()`): the term's `curvature()` accumulated into `rows`.
+    /// @param ctx Launch context (the list of build() is the published one).
+    /// @param cut2 Outer squared cutoff of the term [Å²].
+    /// @param rows Device accumulators and the field u (frame-row indexed).
+    void curvature(const LaunchContext& ctx, force_t cut2,
+                   const CurvatureRows& rows) const {
+        const PairList* p = ctx.runtime.md.pair_list;
+        if (p != list_ || p->hooks != hooks_)
+            throw std::runtime_error("cuda pair tile engine: neighbor list "
+                                     "replaced after pair build");
+        if (!tile_slots_ || p->num_clusters == 0)
+            return;
+        const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+        auto run = [&](auto ortho) {
+            constexpr bool O = decltype(ortho)::value;
+            cluster_tile_curvature<Term, O>
+                <<<tile_grid_, kTileBlock, 0, stream>>>(
+                    term_, p->cl_x, p->cl_y, p->cl_z, params_, p->cl_orig_index,
+                    packed_.ci, packed_.j, packed_.masks, tile_count_(),
+                    ctx.runtime.host_box, p->cl_image, cut2, rows);
         };
         if (ctx.runtime.host_box.ortho)
             run(std::true_type{});

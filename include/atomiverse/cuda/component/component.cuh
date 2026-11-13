@@ -38,6 +38,9 @@ class TimestepProvider;   // opt-in timestep protocol (timestep_protocol.cuh)
 class TimestepConsumer;
 class
     ConstraintProvider; // opt-in constraint protocol (constraint_protocol.cuh)
+class CurvatureSource;  // opt-in curvature protocols (curvature_protocol.cuh)
+class ExternalDrive;
+class CurvatureConsumer;
 
 /// @brief Context for one-time component build (after Runtime + DeviceFrame exist).
 ///
@@ -214,6 +217,17 @@ class Component {
     ///        freedom (`cuda::md::FixSettle`, `cuda::md::FixRattle`). The
     ///        backend sums their counts into `Ndof`. Default: none.
     virtual const ConstraintProvider* as_constraint() const { return nullptr; }
+    /// @brief This component supplies the second derivatives of its energy.
+    /// @see component/curvature_protocol.cuh
+    virtual CurvatureSource* as_curvature_source() { return nullptr; }
+    /// @brief This component is an applied drive, not part of the
+    ///        interaction potential.
+    /// @see component/curvature_protocol.cuh
+    virtual const ExternalDrive* as_external_drive() const { return nullptr; }
+    /// @brief This component must be handed every curvature source and
+    ///        drive of the run before it builds.
+    /// @see component/curvature_protocol.cuh
+    virtual CurvatureConsumer* as_curvature_consumer() { return nullptr; }
 
     /// @brief Scheduling trait (blocking or deferrable).
     /// @return Scheduling::blocking (default) or Scheduling::deferrable.

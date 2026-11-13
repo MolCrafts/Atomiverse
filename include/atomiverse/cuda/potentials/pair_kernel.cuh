@@ -33,6 +33,14 @@ using Contribution = potentials::PairContribution<force_t>;
 
 inline constexpr unsigned kFullWarp = 0xffffffffu;
 
+/// @brief Radial derivatives of one pair energy U(r) for the curvature
+///        (configurational-temperature) walk: `d1` = U′ [eV/Å], `d2` = U″
+///        [eV/Å²], `lap` = U″ + 2U′/r [eV/Å²] and `dlap` = d(lap)/dr
+///        [eV/Å³]. The CUDA twin of `cpu::RadialCurvature`.
+struct RadialCurvature {
+    force_t d1, d2, lap, dlap;
+};
+
 /// One resolved (type_i, type_j) record of `LJTypeTable` in force_t
 /// (LAMMPS lj1..lj4, cut_ljsq, offset; the ATV r^-4 constants).
 struct TypedPairCoeff {
@@ -146,6 +154,91 @@ struct Coulomb {
         if (masked && !(r2 < force_t(kernel.cutoff_sq)))
             return {0, 0};
         return kernel.raw(r2, a.q, b.q);
+    }
+    /// @brief Derivatives of q_i q_j k_e erfc(αr)/r (`cpu::CoulLong::
+    ///        add_curvature`): with c = 2α/√π and e = exp(−α²r²),
+    ///        ∇²U = 2α²c·e and its radial derivative −4α⁴c·r·e.
+    __device__ RadialCurvature curvature(force_t r2, Param a, Param b) const {
+        if (masked && !(r2 < force_t(kernel.cutoff_sq)))
+            return {0, 0, 0, 0};
+        const force_t alpha = force_t(kernel.alpha);
+        const force_t c = force_t(potentials::CoulKernel::kEwaldF) * alpha;
+        const force_t qq = force_t(kernel.qqr2e) * a.q * b.q;
+        const force_t r = sqrt(r2), inv_r = force_t(1) / r;
+        const force_t e = exp(-alpha * alpha * r2);
+        const force_t erfc_r = erfc(alpha * r);
+        const force_t ce = c * e;
+        const force_t g1 = -erfc_r * inv_r * inv_r - ce * inv_r;
+        const force_t g2 = force_t(2) * erfc_r * inv_r * inv_r * inv_r
+                           + force_t(2) * ce * inv_r * inv_r
+                           + force_t(2) * alpha * alpha * ce;
+        const force_t a2 = alpha * alpha;
+        return {qq * g1, qq * g2, qq * force_t(2) * a2 * ce,
+                -qq * force_t(4) * a2 * a2 * ce * r};
+    }
+};
+
+/// One resolved (type_i, type_j) record of `cuda::PairBorn` in force_t;
+/// `set == 0` marks a type pair without a row (it does not interact).
+struct BornPairCoeff {
+    force_t A, inv_rho, sigma, C, D, offset;
+    int set;
+};
+
+/// @brief Born–Mayer–Huggins pair per type pair (LAMMPS `pair_style born`,
+///        `cpu::PairBorn`): U = A e^{(σ−r)/ρ} − C/r⁶ + D/r⁸ − offset inside
+///        the engine's outer cutoff.
+struct TypedBorn {
+    const BornPairCoeff* table = nullptr;
+    int n_types = 0;
+    const int* type = nullptr; ///< Frame type column (rebuild gather).
+    struct Param {
+        int type;
+    };
+    __device__ Param param(int row) const { return {type[row]}; }
+    __device__ static Param shfl(Param p, int lane) {
+        return {__shfl_sync(kFullWarp, p.type, lane)};
+    }
+    __device__ const BornPairCoeff* coeff(Param a, Param b) const {
+        return table + static_cast<std::size_t>(a.type) * n_types + b.type;
+    }
+    __device__ Contribution pair(force_t r2, Param a, Param b) const {
+        const BornPairCoeff* c = coeff(a, b);
+        if (!__ldg(&c->set))
+            return {0, 0};
+        // −U′/r = (A/ρ) e^{(σ−r)/ρ} / r − 6C/r⁸ + 8D/r¹⁰.
+        const force_t r = sqrt(r2), inv_r2 = force_t(1) / r2;
+        const force_t inv_r6 = inv_r2 * inv_r2 * inv_r2;
+        const force_t inv_r8 = inv_r6 * inv_r2;
+        const force_t inv_rho = __ldg(&c->inv_rho);
+        const force_t ae = __ldg(&c->A) * exp((__ldg(&c->sigma) - r) * inv_rho);
+        const force_t C = __ldg(&c->C), D = __ldg(&c->D);
+        return {ae * inv_rho * (r * inv_r2) - force_t(6) * C * inv_r8
+                    + force_t(8) * D * inv_r8 * inv_r2,
+                ae - C * inv_r6 + D * inv_r8 - __ldg(&c->offset)};
+    }
+    /// @brief U′ = −(A/ρ)e + 6C/r⁷ − 8D/r⁹, U″ = (A/ρ²)e − 42C/r⁸ + 72D/r¹⁰,
+    ///        U‴ = −(A/ρ³)e + 336C/r⁹ − 720D/r¹¹ (`cpu::PairBorn::
+    ///        add_curvature`).
+    __device__ RadialCurvature curvature(force_t r2, Param a, Param b) const {
+        const BornPairCoeff* c = coeff(a, b);
+        if (!__ldg(&c->set))
+            return {0, 0, 0, 0};
+        const force_t r = sqrt(r2), inv_r = force_t(1) / r;
+        const force_t inv_r2 = inv_r * inv_r;
+        const force_t inv_r6 = inv_r2 * inv_r2 * inv_r2;
+        const force_t inv_r8 = inv_r6 * inv_r2;
+        const force_t k = __ldg(&c->inv_rho);
+        const force_t ae = __ldg(&c->A) * exp((__ldg(&c->sigma) - r) * k);
+        const force_t C = __ldg(&c->C), D = __ldg(&c->D);
+        const force_t d1 = -ae * k + force_t(6) * C * inv_r6 * inv_r
+                           - force_t(8) * D * inv_r8 * inv_r;
+        const force_t d2 = ae * k * k - force_t(42) * C * inv_r8
+                           + force_t(72) * D * inv_r8 * inv_r2;
+        const force_t d3 = -ae * k * k * k + force_t(336) * C * inv_r8 * inv_r
+                           - force_t(720) * D * inv_r8 * inv_r2 * inv_r;
+        return {d1, d2, d2 + force_t(2) * d1 * inv_r,
+                d3 + force_t(2) * d2 * inv_r - force_t(2) * d1 * inv_r2};
     }
 };
 

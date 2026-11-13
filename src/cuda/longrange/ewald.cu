@@ -195,6 +195,87 @@ ewald_forces(fixed_t* __restrict__ fx, fixed_t* __restrict__ fy,
     add_force_owned(fz, i, fzi, fault);
 }
 
+/// @brief Field structure factor T(k) = Σ_j q_j (k·u_j) exp(i k·r_j) of
+///        the per-atom field u. One CUB block per k.
+__global__ void
+ewald_field_factor(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+                   const pos_t* __restrict__ z, const force_t* __restrict__ q,
+                   const double* __restrict__ ux, const double* __restrict__ uy,
+                   const double* __restrict__ uz, int n,
+                   const double* __restrict__ kx, const double* __restrict__ ky,
+                   const double* __restrict__ kz, double* __restrict__ tr,
+                   double* __restrict__ ti) {
+    const int k = blockIdx.x;
+    const double kxk = kx[k], kyk = ky[k], kzk = kz[k];
+    ::cuda::std::array<double, 2> contribution{};
+    for (int j = threadIdx.x; j < n; j += blockDim.x) {
+        const double phase =
+            kxk * double(x[j]) + kyk * double(y[j]) + kzk * double(z[j]);
+        const double w =
+            double(q[j]) * (kxk * ux[j] + kyk * uy[j] + kzk * uz[j]);
+        contribution[0] += w * cos(phase);
+        contribution[1] += w * sin(phase);
+    }
+    using Reduce =
+        cub::BlockReduce<::cuda::std::array<double, 2>, kDefaultBlock>;
+    __shared__ typename Reduce::TempStorage reduction;
+    const auto sum =
+        Reduce(reduction).Reduce(contribution, SumComponents<double, 2>{});
+    if (threadIdx.x == 0) {
+        tr[k] = sum[0];
+        ti[k] = sum[1];
+    }
+}
+
+/// @brief Reciprocal curvature of atom i (`cpu::KSpaceEwald::
+///        add_curvature`, full k sphere with K = 2π k_e / V and
+///        A = exp(−k²/4α²)/k²). With c, s = cos, sin(k·r_i):
+///        (Hu)_i = 2K Σ A q_i k [c T_r + s T_i − (k·u_i)(c S_r + s S_i)],
+///        ∇_i²E = 2K Σ A k² q_i [q_i − (c S_r + s S_i)],
+///        ∇_i Σ_j ∇_j²E = 4K Σ A k² q_i k (s S_r − c S_i).
+///        The self energy is constant and contributes nothing.
+__global__ void
+ewald_curvature(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
+                const pos_t* __restrict__ z, const force_t* __restrict__ q,
+                const double* __restrict__ kx, const double* __restrict__ ky,
+                const double* __restrict__ kz, const double* __restrict__ kw,
+                const double* __restrict__ sr, const double* __restrict__ si,
+                const double* __restrict__ tr, const double* __restrict__ ti,
+                int ng, Box box_arg, double qqrd2e, CurvatureRows rows) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= rows.n)
+        return;
+    const double K = qqrd2e * 2.0 * ATV::units::pi / box_arg.current().volume();
+    const double xi = double(x[i]), yi = double(y[i]), zi = double(z[i]);
+    const double qi = double(q[i]);
+    const double u[3] = {rows.ux[i], rows.uy[i], rows.uz[i]};
+    double h[3] = {}, g[3] = {}, lap = 0;
+    for (int k = 0; k < ng; ++k) {
+        const double kv[3] = {kx[k], ky[k], kz[k]};
+        const double phase = kv[0] * xi + kv[1] * yi + kv[2] * zi;
+        const double c = cos(phase), s = sin(phase);
+        const double k2 = kv[0] * kv[0] + kv[1] * kv[1] + kv[2] * kv[2];
+        const double ku = kv[0] * u[0] + kv[1] * u[1] + kv[2] * u[2];
+        const double cs = c * sr[k] + s * si[k];
+        const double a = 2.0 * K * kw[k] * qi;
+        const double hk = a * (c * tr[k] + s * ti[k] - ku * cs);
+        const double gk = 2.0 * a * k2 * (s * sr[k] - c * si[k]);
+        lap += a * k2 * (qi - cs);
+        for (int d = 0; d < 3; ++d) {
+            h[d] += hk * kv[d];
+            g[d] += gk * kv[d];
+        }
+    }
+    // One thread owns atom i in this kernel.
+    rows.hx[i] += h[0];
+    rows.hy[i] += h[1];
+    rows.hz[i] += h[2];
+    rows.lap[i] += lap;
+    rows.gx[i] += g[0];
+    rows.gy[i] += g[1];
+    rows.gz[i] += g[2];
+}
+
 } // namespace kernels
 
 KSpaceEwald::KSpaceEwald(double alpha, double accuracy)
@@ -242,7 +323,8 @@ void KSpaceEwald::build(const BuildContext& ctx) {
     ATV_CUDA_CHECK(cudaMemcpy(d_modes_, modes.data(),
                               modes.size() * sizeof(int),
                               cudaMemcpyHostToDevice));
-    for (double** table : {&d_kx_, &d_ky_, &d_kz_, &d_kw_, &d_sr_, &d_si_})
+    for (double** table :
+         {&d_kx_, &d_ky_, &d_kz_, &d_kw_, &d_sr_, &d_si_, &d_tr_, &d_ti_})
         ATV_CUDA_CHECK(cudaMalloc(table, bytes));
     // Strain coefficients refresh with the wave vectors on every cell change,
     // so a later vflag step never reads a stale table.
@@ -310,15 +392,35 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 
+// The wave vectors, weights and S(k) are those of this configuration's
+// force launch (same positions, same published cell).
+void KSpaceEwald::add_curvature(const LaunchContext& ctx,
+                                const CurvatureRows& rows) {
+    if (ng_ == 0 || rows.n == 0)
+        return;
+    const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
+    const auto& a = ctx.frame.atoms;
+    kernels::ewald_field_factor<<<ng_, kDefaultBlock, 0, stream>>>(
+        a.x, a.y, a.z, a.charge, rows.ux, rows.uy, rows.uz, rows.n, d_kx_,
+        d_ky_, d_kz_, d_tr_, d_ti_);
+    kernels::ewald_curvature<<<grid_size(rows.n), kDefaultBlock, 0, stream>>>(
+        a.x, a.y, a.z, a.charge, d_kx_, d_ky_, d_kz_, d_kw_, d_sr_, d_si_,
+        d_tr_, d_ti_, ng_, ctx.runtime.host_box, ctx.runtime.units.qqrd2e(),
+        rows);
+    ATV_CUDA_CHECK(cudaGetLastError());
+}
+
 void KSpaceEwald::destroy(const DestroyContext&) {
     for (void* p :
          {static_cast<void*>(d_modes_), static_cast<void*>(d_kx_),
           static_cast<void*>(d_ky_), static_cast<void*>(d_kz_),
           static_cast<void*>(d_kw_), static_cast<void*>(d_sr_),
-          static_cast<void*>(d_si_), static_cast<void*>(d_virial_), d_tables_})
+          static_cast<void*>(d_si_), static_cast<void*>(d_tr_),
+          static_cast<void*>(d_ti_), static_cast<void*>(d_virial_), d_tables_})
         cudaFree(p);
     d_modes_ = nullptr;
     d_kx_ = d_ky_ = d_kz_ = d_kw_ = d_sr_ = d_si_ = d_virial_ = nullptr;
+    d_tr_ = d_ti_ = nullptr;
     d_tables_ = nullptr;
     ng_ = 0;
 }

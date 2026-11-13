@@ -80,6 +80,7 @@
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/component/component.cuh"
+#include "atomiverse/cuda/component/curvature_protocol.cuh"
 #include "atomiverse/cuda/component/integrator.cuh"
 #include "atomiverse/cuda/component/long_range_protocol.cuh"
 #include "atomiverse/cuda/component/optimizer.cuh"
@@ -173,6 +174,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
         install_defaults();
         validate_long_range_contract_();
         validate_components();
+        negotiate_curvature_();
         Base::build();
         this->plan_.lifecycle_only.assign(criteria_.begin(), criteria_.end());
     }
@@ -751,6 +753,47 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
                 + reciprocal->component->name() + "' ("
                 + std::to_string(static_cast<double>(b)) + ")");
         }
+    }
+
+    /// @brief Hand every force term to the configurational-temperature
+    ///        consumers, or refuse a force term they cannot account for
+    ///        (`cpu::Driver::negotiate_curvature_`): with a
+    ///        `CurvatureConsumer` mounted, every `provides_force()` term
+    ///        must be a `CurvatureSource` or an `ExternalDrive`.
+    /// @see cuda/component/curvature_protocol.cuh
+    void negotiate_curvature_() {
+        std::vector<cuda::CurvatureConsumer*> consumers;
+        std::unordered_set<const cuda::Component*> seen;
+        for_each_pending_mut([&](cuda::Component& c) {
+            if (!seen.insert(&c).second)
+                return;
+            if (cuda::CurvatureConsumer* cc = c.as_curvature_consumer())
+                consumers.push_back(cc);
+        });
+        if (consumers.empty())
+            return;
+        std::vector<cuda::CurvatureSource*> sources;
+        std::vector<const cuda::ExternalDrive*> drives;
+        seen.clear();
+        for_each_pending_mut([&](cuda::Component& c) {
+            // Bindings, not components: dedup by identity.
+            if (!seen.insert(&c).second)
+                return;
+            cuda::CurvatureSource* source = c.as_curvature_source();
+            const cuda::ExternalDrive* drive = c.as_external_drive();
+            if (source)
+                sources.push_back(source);
+            if (drive)
+                drives.push_back(drive);
+            if (c.provides_force() && !source && !drive)
+                throw std::runtime_error(
+                    "Driver::build(): force term '" + c.name()
+                    + "' supplies no curvature (CurvatureSource) and is not "
+                      "an ExternalDrive, so the configurational temperature "
+                      "cannot account for it");
+        });
+        for (cuda::CurvatureConsumer* cc : consumers)
+            cc->set_curvature_terms(sources, drives);
     }
 
     void throw_if_missing_neighbor_list_(const InfraScan& s,

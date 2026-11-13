@@ -73,6 +73,21 @@ efield_k(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
     }
 }
 
+// One thread per owned atom: remove q E from a decoded force row.
+__global__ void efield_subtract_k(const force_t* __restrict__ charge,
+                                  double* __restrict__ fx,
+                                  double* __restrict__ fy,
+                                  double* __restrict__ fz, double ex, double ey,
+                                  double ez, int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n)
+        return;
+    const double qi = static_cast<double>(charge[i]);
+    fx[i] -= qi * ex;
+    fy[i] -= qi * ey;
+    fz[i] -= qi * ez;
+}
+
 std::uint64_t bits_of(double v) {
     std::uint64_t b = 0;
     std::memcpy(&b, &v, sizeof b);
@@ -101,6 +116,15 @@ void FixEfield::launch(const LaunchContext& ctx) {
         a.fy, a.fz, f.force_fault,
         ctx.energy_requested ? &f.scalars->energy : nullptr,
         ctx.runtime.host_box, Ex, Ey, Ez, ctx.forces_requested, n);
+}
+
+void FixEfield::subtract_drive_force(const LaunchContext& ctx, int n,
+                                     double* fx, double* fy, double* fz) const {
+    if (n == 0)
+        return;
+    efield_subtract_k<<<grid_size(n), kDefaultBlock, 0,
+                        static_cast<cudaStream_t>(ctx.runtime.stream)>>>(
+        ctx.frame.atoms.charge, fx, fy, fz, Ex, Ey, Ez, n);
 }
 
 } // namespace md

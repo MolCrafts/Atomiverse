@@ -13,6 +13,7 @@
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/cuda/component/curvature_protocol.cuh"
 #include "atomiverse/cuda/component/potential.cuh"
 
 namespace ATV {
@@ -43,7 +44,7 @@ namespace md {
 ///
 /// Registered through `set_evaluator` (force phase) or, with
 /// `default_bindings()`, at `post_force @ +100` like the CPU class.
-class FixEfield : public cuda::Potential {
+class FixEfield : public cuda::Potential, public cuda::ExternalDrive {
   public:
     /// @param Ex Field x-component [V/Å].
     /// @param Ey Field y-component [V/Å].
@@ -66,6 +67,15 @@ class FixEfield : public cuda::Potential {
 
     void launch(const LaunchContext& ctx) override;
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
+
+    const cuda::ExternalDrive* as_external_drive() const override {
+        return this;
+    }
+    /// @brief Enqueue f −= q E on rows [0, n): the field is applied work,
+    ///        not part of the interaction energy.
+    void subtract_drive_force(const LaunchContext& ctx, int n, double* fx,
+                              double* fy, double* fz) const override;
+    std::uint64_t drive_epoch() const override { return graph_epoch(); }
 };
 
 } // namespace md
