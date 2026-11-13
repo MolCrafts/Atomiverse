@@ -9,7 +9,9 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/unit_system.h"
@@ -210,13 +212,15 @@ TEST(Curvature, SpecialBondCoulombRemaindersMatchDifferencesOfTheForces) {
     check_against_differences(Terms::CoulombSpecial);
 }
 
+#ifdef _OPENMP
 // The pair walks open the whole team once their pairs repay it
-// (`md::CurvatureLoop`): 512 ions give the list ≈ 10⁴ pairs and the all-pairs
-// walk (BornTable) 1.3·10⁵, so both run threaded here, each thread into its
-// own accumulator. Every thread count must reproduce the one-thread sums to
+// (`md::CurvatureLoop`, `PairRowPartition::team_for`: 6·10³ entries for 1000
+// rows). 1000 ions give the list ≈ 1.7·10⁴ entries and the all-pairs walk
+// (BornTable) 5·10⁵, so both run threaded here, each thread into its own
+// accumulator. Every thread count must reproduce the one-thread sums to
 // rounding.
 TEST(Curvature, EveryThreadCountGivesTheOneThreadSums) {
-    constexpr int side = 8;
+    constexpr int side = 10;
     const std::vector<double> pos = positions(side);
     const int saved = omp_get_max_threads();
     for (const Terms terms :
@@ -250,6 +254,7 @@ TEST(Curvature, EveryThreadCountGivesTheOneThreadSums) {
     }
     omp_set_num_threads(saved);
 }
+#endif
 
 TEST(Curvature, EwaldCoulombLaplacianIsTheUniformBackgroundConstant) {
     // Periodic (tinfoil) Coulomb: ∇²ψ = −4πδ + 4π/V, so for a neutral cell
