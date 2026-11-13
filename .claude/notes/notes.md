@@ -11,6 +11,7 @@ Conclusions only. Binding rules live in docs/developer/project-contract.md; hist
 | CUDA MD: NVIDIA libraries, OpenMM method | [cuda-md-nvidia-libraries.md](cuda-md-nvidia-libraries.md), [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) |
 | GAFF benchmark (CPU vs LAMMPS, CUDA vs OpenMM) | [gaff-md-perf.md](gaff-md-perf.md) |
 | Small dense Coulomb MD (NaCl Ewald vs LAMMPS) | [md-small-coulomb-perf.md](md-small-coulomb-perf.md) |
+| CUDA NEMD twins, packing runs on one GPU (MPS) | [cuda-nemd-packing.md](cuda-nemd-packing.md) |
 | Machines, accounts, workbenches | [arrhenius-workbench.md](arrhenius-workbench.md) |
 | BLAS threading traps | [openblas-thread-binding.md](openblas-thread-binding.md) |
 | ES public-shape debt | [es-architecture-debt.md](es-architecture-debt.md) |
@@ -47,15 +48,17 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   ATV reductions), SW+LJ neighbor build ~1.5–2×, no x86/cluster numbers.
 - **Component clone ceiling** — revisit when a real N-replica inner-loop user
   appears.
-- **NEMD thermostats (Petravic & Delhommelle 2003), CPU only.** `GearPC` with
+- **NEMD thermostats (Petravic & Delhommelle 2003), CPU and CUDA.** `GearPC` with
   Gaussian / configurational thermostats and the curvature protocol behind
   T_C1 are in (roadmap: molecular-dynamics §1, observables). Open: (1) no
   standing T_conf = T_kin gate in an equilibrium NaCl melt — statistical,
   minutes of MD, needs an `md` method in the scientific benchmark framework;
   under Ewald, D carries the Coulomb background constant −4π k_e Σq²/V
   (≈0.1 % of D for molten NaCl), and a Gauss-isokinetic run samples its
-  kinetic temperature with 3N − 3 dof, so compare like with like; (2) CUDA
-  twins; (3) PME / PPPM curvature (B-spline second derivatives), so T_C1
+  kinetic temperature with 3N − 3 dof, so compare like with like; (2) the
+  CUDA twins exist ([cuda-nemd-packing.md](cuda-nemd-packing.md)) but more
+  than 48 simulations per card needs several in one process; (3) PME / PPPM
+  curvature (B-spline second derivatives), so T_C1
   today needs `KSpaceEwald`; (4) spatial decomposition for `GearPC` and the
   curvature assembly; (5) Gear start is the customary zero-higher-derivative
   one (≈40-step transient), no self-starting procedure; (6) a truncated pair
