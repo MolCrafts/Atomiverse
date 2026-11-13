@@ -1274,6 +1274,11 @@ if(ATV_BUILD_CUDA)
         if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
             atv_add_test(test_cuda_md_parity cuda/dynamics/test_md_parity.cu)
         endif()
+        # Molten-NaCl NEMD (Born + Ewald, Gear PC, Gaussian and
+        # configurational thermostats) against the CPU implementation.
+        if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+            atv_add_test(test_cuda_nacl_terms cuda/dynamics/test_nacl_terms.cu)
+        endif()
     endif()
     if(ATV_BUILD_MINIMIZER)
         atv_add_test(test_cuda_minimizer_image_flags
