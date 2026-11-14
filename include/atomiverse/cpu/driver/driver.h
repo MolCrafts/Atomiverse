@@ -368,65 +368,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// @throws std::logic_error if called during dispatch.
     void unfix(std::string_view name_or_id) {
         this->require_mutable_();
-        std::vector<cpu::Component*> hits;
-        for (const auto& binding : this->pending_) {
-            cpu::Component* c = binding.component;
-            if (c && c->name() == name_or_id)
-                hits.push_back(c);
-        }
-        for (auto* c : criteria_)
-            if (c->name() == name_or_id)
-                hits.push_back(c);
-        if (hits.empty()) {
-            std::string have;
-            for (const auto& pb : this->pending_) {
-                if (!pb.component)
-                    continue;
-                if (!have.empty())
-                    have += ", ";
-                have += pb.component->name();
-            }
-            throw std::runtime_error(
-                "unfix: no plugin named '" + std::string(name_or_id)
-                + "'. mounted: [" + have
-                + "]. Remount with on(phase).add / set_evaluator.");
-        }
-        cpu::Component* c = hits.front();
-        if (std::any_of(hits.begin(), hits.end(),
-                        [&](cpu::Component* hit) { return hit != c; })) {
-            throw std::runtime_error(
-                "unfix: name '" + std::string(name_or_id)
-                + "' is not unique. Give plugins distinct name() values.");
-        }
-        auto* runtime =
-            attached_runtime_ ? attached_runtime_ : this->backend_.get();
-        if (live_ && runtime && built_plugins_.count(c)) {
-            Plan<cpu::Component> one;
-            one.slots.resize(1);
-            one.slots[0].phase = 0;
-            Operation<cpu::Component> op;
-            op.component = c;
-            one.slots[0].ops.push_back(op);
-            runtime->drain_capture();
-            runtime->destroy_plan(one);
-            built_plugins_.erase(c);
-        }
-        this->pending_.erase(std::remove_if(this->pending_.begin(),
-                                            this->pending_.end(),
-                                            [c](const auto& binding) {
-                                                return binding.component == c;
-                                            }),
-                             this->pending_.end());
-        std::erase(criteria_, c);
-        std::erase_if(criteria_owned_,
-                      [c](const auto& owned) { return owned.get() == c; });
-        this->owned_components_.erase(
-            std::remove_if(this->owned_components_.begin(),
-                           this->owned_components_.end(),
-                           [c](const std::unique_ptr<cpu::Component>& p) {
-                               return p.get() == c;
-                           }),
-            this->owned_components_.end());
+        this->unmount_(
+            name_or_id, launching_,
+            [&](cpu::Component* c) { release_mounted_(c); }, criteria_);
         auto clear_slot = [&](std::optional<std::string>& slot) {
             if (slot && *slot == name_or_id)
                 slot.reset();
@@ -1290,23 +1234,77 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     virtual void clear_singular_on_unfix_(std::string_view) {}
 
     // ─── Singular-setter helpers (used by the categorical setters above) ──
+    //
+    // A singular slot holds one component. A re-call with a component of the
+    // same name replaces the mounted one (LAMMPS `fix ID style args` with an
+    // existing ID of the same style); another name is refused.
+
+    /// @brief Backend side of unmounting `c`: destroy it if a live run built
+    ///        it, and drop it as a criterion.
+    void release_mounted_(cpu::Component* c) {
+        auto* runtime =
+            attached_runtime_ ? attached_runtime_ : this->backend_.get();
+        if (live_ && runtime && built_plugins_.count(c)) {
+            Plan<cpu::Component> one;
+            one.slots.resize(1);
+            one.slots[0].phase = 0;
+            Operation<cpu::Component> op;
+            op.component = c;
+            one.slots[0].ops.push_back(op);
+            runtime->drain_capture();
+            runtime->destroy_plan(one);
+            built_plugins_.erase(c);
+        }
+        std::erase(criteria_, c);
+        std::erase_if(criteria_owned_,
+                      [c](const auto& owned) { return owned.get() == c; });
+    }
+
+    /// @brief Mount a singular component named `n` with `mount()`. A filled
+    ///        slot of the same name has its occupant replaced (unmounted
+    ///        after the newcomer is in, so the set is never incomplete);
+    ///        another name is refused. Re-mounting the borrowed `incoming`
+    ///        that already occupies the slot changes nothing.
+    /// @throws std::invalid_argument when the slot holds another name.
+    template <typename Mount>
+    void mount_singular_(std::optional<std::string>& slot, const std::string& n,
+                         const char* setter_name,
+                         const cpu::Component* incoming, Mount&& mount) {
+        this->require_mutable_();
+        cpu::Component* old = nullptr;
+        if (slot) {
+            if (*slot != n)
+                throw std::invalid_argument(
+                    std::string(setter_name) + " already configured with '"
+                    + *slot + "', rejected re-call with '" + n + "'");
+            old = this->mounted_named_(n, criteria_);
+            if (old == incoming)
+                return;
+        }
+        slot = n;
+        mount();
+        if (!old)
+            return;
+        const auto planned = this->plan_.components();
+        const bool in_plan =
+            std::find(planned.begin(), planned.end(), old) != planned.end();
+        this->erase_mounted_(old,
+                             [&](cpu::Component* c) { release_mounted_(c); });
+        // A compiled plan (or a live run) must not keep the retired one.
+        if (live_ || in_plan)
+            rebind_from_live_table_();
+    }
 
     /// @brief Singular setter using the component's `default_bindings()`.
-    /// Idempotent on same-name re-call; throws on different-name re-call.
+    /// A same-name re-call replaces the mounted component; another name
+    /// throws.
     template <typename C>
     void set_singular_default_owned_(C&& comp, std::optional<std::string>& slot,
                                      const char* setter_name) {
         static_assert(!std::is_lvalue_reference_v<C>);
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->bind_defaults(std::forward<C>(comp));
+        mount_singular_(slot, n, setter_name, nullptr,
+                        [&] { this->bind_defaults(std::forward<C>(comp)); });
     }
 
     /// @brief Borrowing counterpart of `set_singular_default_owned_`.
@@ -1314,15 +1312,8 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     void set_singular_default_ref_(C& comp, std::optional<std::string>& slot,
                                    const char* setter_name) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->bind_defaults_ref(comp);
+        mount_singular_(slot, n, setter_name, &comp,
+                        [&] { this->bind_defaults_ref(comp); });
     }
 
     /// @brief Singular setter at an explicit phase / order. Used for
@@ -1334,15 +1325,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                                 int order) {
         static_assert(!std::is_lvalue_reference_v<C>);
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->on(phase).add(std::forward<C>(comp), order);
+        mount_singular_(slot, n, setter_name, nullptr, [&] {
+            this->on(phase).add(std::forward<C>(comp), order);
+        });
     }
 
     /// @brief Borrowing counterpart of `set_singular_at_owned_`.
@@ -1351,15 +1336,8 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                               const char* setter_name, PhaseEnum phase,
                               int order) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->on(phase).add_ref(comp, order);
+        mount_singular_(slot, n, setter_name, &comp,
+                        [&] { this->on(phase).add_ref(comp, order); });
     }
 
   protected:

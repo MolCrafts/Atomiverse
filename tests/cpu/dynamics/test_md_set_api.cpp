@@ -284,11 +284,11 @@ TEST(MDSetApi, StressConsumerWithMatchedLongRangePairBuilds) {
 
 // ─── Singular setter discipline ─────────────────────────────────────
 
-TEST(MDSetApi, SetPairTwiceWithSameTypeIsIdempotent) {
+TEST(MDSetApi, SetPairTwiceWithSameTypeIsAccepted) {
     ATV::cpu::md::MD sim;
     EXPECT_NO_THROW(
         sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff}));
-    // Same component class — idempotent (no second registration).
+    // Same component class — the second replaces the first.
     EXPECT_NO_THROW(
         sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff}));
 }
@@ -305,10 +305,32 @@ TEST(MDSetApi, SetNeighborTwiceThrowsWhenNameDiffers) {
         sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin}));
 }
 
-TEST(MDSetApi, SetIntegratorTwiceWithSameNameIdempotent) {
+// LAMMPS `fix ID style args` with an existing ID of the same style: the new
+// one replaces the old. A free atom (its partner beyond the cutoff) moves
+// v·dt per step, so the dt it moved by names the integrator that ran.
+TEST(MDSetApi, SecondIntegratorOfTheSameKindReplacesTheFirst) {
+    ATV::cpu::Frame frame(2);
+    for (int i = 0; i < 2; ++i) {
+        frame.span(ATV::kAtom_x)[i] = 5.0 + 20.0 * i;
+        frame.span(ATV::kAtom_y)[i] = 15.0;
+        frame.span(ATV::kAtom_z)[i] = 15.0;
+        frame.span(ATV::kAtom_vx)[i] = 0.25;
+        frame.span(ATV::kAtom_mass)[i] = 1.0;
+        frame.span(ATV::kAtom_tag)[i] = i + 1;
+    }
+    frame.box = ATV::cpu::Box::cubic(40.0);
     ATV::cpu::md::MD sim;
-    EXPECT_NO_THROW(sim.set_integrator(ATV::cpu::md::VelocityVerlet{kDt}));
-    EXPECT_NO_THROW(sim.set_integrator(ATV::cpu::md::VelocityVerlet{kDt}));
+    sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
+    sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
+    sim.set_integrator(ATV::cpu::md::VelocityVerlet{0.5});
+    sim.set_integrator(ATV::cpu::md::VelocityVerlet{2.0});
+    sim.build();
+    sim.run(frame, 3);
+    for (int i = 0; i < 2; ++i) {
+        const int tag = static_cast<int>(frame.span(ATV::kAtom_tag)[i]);
+        EXPECT_NEAR(frame.span(ATV::kAtom_x)[i],
+                    5.0 + 20.0 * (tag - 1) + 0.25 * 2.0 * 3, 1e-12);
+    }
 }
 
 TEST(MDSetApi, SetIntegratorRejectsDifferentTypeAfterFirst) {

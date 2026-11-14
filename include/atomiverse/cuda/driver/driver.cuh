@@ -251,22 +251,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     void unfix(std::string_view name_or_id) {
         this->unmount_(
             name_or_id, launching_,
-            [&](cuda::Component* c) {
-                auto* execution = borrowed_backend_ ? borrowed_backend_
-                                                    : this->backend_.get();
-                if (execution && built_plugins_.count(c)) {
-                    Plan<cuda::Component> one;
-                    one.slots.resize(1);
-                    one.slots[0].ops.push_back({c});
-                    execution->destroy_plan(one);
-                    built_plugins_.erase(c);
-                }
-                std::erase(criteria_, c);
-                std::erase_if(criteria_owned_, [c](const auto& owned) {
-                    return owned.get() == c;
-                });
-            },
-            criteria_);
+            [&](cuda::Component* c) { release_mounted_(c); }, criteria_);
         clear_singular_on_unfix_(name_or_id);
         if (neighbor_set_ && *neighbor_set_ == name_or_id)
             neighbor_set_.reset();
@@ -855,21 +840,70 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @brief Preset hook — clear a singular setter slot whose name was unfixed.
     virtual void clear_singular_on_unfix_(std::string_view /*name_or_id*/) {}
 
+    /// @brief Backend side of unmounting `c`: destroy it if it was built,
+    ///        and drop it as a criterion.
+    void release_mounted_(cuda::Component* c) {
+        auto* execution =
+            borrowed_backend_ ? borrowed_backend_ : this->backend_.get();
+        if (execution && built_plugins_.count(c)) {
+            Plan<cuda::Component> one;
+            one.slots.resize(1);
+            one.slots[0].ops.push_back({c});
+            execution->destroy_plan(one);
+            built_plugins_.erase(c);
+        }
+        std::erase(criteria_, c);
+        std::erase_if(criteria_owned_,
+                      [c](const auto& owned) { return owned.get() == c; });
+    }
+
+    // A singular slot holds one component. A re-call with a component of the
+    // same name replaces the mounted one (LAMMPS `fix ID style args` with an
+    // existing ID of the same style); another name is refused. Same rule as
+    // `cpu::Driver::mount_singular_`.
+
+    /// @brief Mount a singular component named `n` with `mount()`, replacing
+    ///        a same-named occupant (unmounted after the newcomer is in);
+    ///        re-mounting the borrowed `incoming` already there is a no-op.
+    /// @throws std::invalid_argument when the slot holds another name.
+    template <typename Mount>
+    void mount_singular_(std::optional<std::string>& slot, const std::string& n,
+                         const char* setter_name,
+                         const cuda::Component* incoming, Mount&& mount) {
+        this->require_mutable_();
+        cuda::Component* old = nullptr;
+        if (slot) {
+            if (*slot != n)
+                throw std::invalid_argument(
+                    std::string(setter_name) + " already configured with '"
+                    + *slot + "', rejected re-call with '" + n + "'");
+            old = this->mounted_named_(n, criteria_);
+            if (old == incoming)
+                return;
+        }
+        slot = n;
+        mount();
+        if (!old)
+            return;
+        const auto planned = this->plan_.components();
+        const bool in_plan =
+            std::find(planned.begin(), planned.end(), old) != planned.end();
+        this->erase_mounted_(old,
+                             [&](cuda::Component* c) { release_mounted_(c); });
+        // A compiled plan must not keep the retired one.
+        if (in_plan)
+            rebind_from_live_table_();
+    }
+
     template <typename C>
     void set_singular_at_owned_(C&& comp, std::optional<std::string>& slot,
                                 const char* setter_name, PhaseEnum phase,
                                 int order) {
         static_assert(!std::is_lvalue_reference_v<C>);
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->on(phase).add(std::forward<C>(comp), order);
+        mount_singular_(slot, n, setter_name, nullptr, [&] {
+            this->on(phase).add(std::forward<C>(comp), order);
+        });
     }
 
     template <typename C>
@@ -877,15 +911,8 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
                               const char* setter_name, PhaseEnum phase,
                               int order) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->on(phase).add_ref(comp, order);
+        mount_singular_(slot, n, setter_name, &comp,
+                        [&] { this->on(phase).add_ref(comp, order); });
     }
 
   protected:

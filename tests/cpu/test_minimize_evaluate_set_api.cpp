@@ -27,7 +27,7 @@ constexpr double kSkin = 0.3;
 
 // ─── Minimize setters ───────────────────────────────────────────────
 
-TEST(MinimizeSetApi, SetOptimizerSingularSameNameIdempotent) {
+TEST(MinimizeSetApi, SetOptimizerSingularSameNameIsAccepted) {
     ATV::cpu::minimizer::Minimize opt;
     EXPECT_NO_THROW(opt.set_optimizer(ATV::cpu::minimizer::LBFGS{}));
     EXPECT_NO_THROW(opt.set_optimizer(ATV::cpu::minimizer::LBFGS{}));

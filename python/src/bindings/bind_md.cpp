@@ -222,11 +222,11 @@ struct MdHandle {
             driver.set_integrator(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::NoseHooverNptParams>) {
             // Borrowed, not transferred: `run()` re-installs the `[0,
-            // n_steps]` span before every launch. A second NPT keeps the first
-            // (the singular slot is idempotent on the same component name),
-            // so the borrowed storage is never rebuilt underneath the driver.
-            if (!npt_owned)
-                npt_owned.emplace(std::move(comp));
+            // n_steps]` span before every launch. A second NPT replaces the
+            // first in place (setters are refused once the driver has run,
+            // so nothing is built from the old one yet); the slot then
+            // already holds this address.
+            npt_owned.emplace(std::move(comp));
             driver.set_integrator_ref(*npt_owned);
         } else if constexpr (std::is_same_v<P, cpu::task::NoseHooverParams>
                              || std::is_same_v<P, cpu::task::FixCsvrParams>)

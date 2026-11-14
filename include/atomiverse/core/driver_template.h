@@ -395,15 +395,12 @@ class Driver {
             pending_.push_back({db.phase, db.order, &comp});
     }
 
-    /// Unmount an instance and all of its bindings, with backend resource
-    /// release before ownership is erased. Repeated bindings are not namesakes.
-    template <typename Release, typename Extra = std::vector<Component*>>
-    void unmount_(std::string_view name, bool launching, Release&& release,
-                  const Extra& extra = {}) {
-        if (launching)
-            throw std::runtime_error(
-                "unfix: cannot unfix from inside launch(). Unfix between "
-                "steps or run() chunks.");
+    /// The one mounted instance named `name`, among the bindings and `extra`
+    /// (criteria). Repeated bindings of one instance are not namesakes.
+    /// @throws std::runtime_error if none / several instances match.
+    template <typename Extra = std::vector<Component*>>
+    Component* mounted_named_(std::string_view name,
+                              const Extra& extra = {}) const {
         Component* found = nullptr;
         std::string mounted;
         auto inspect = [&](Component* component) {
@@ -428,6 +425,13 @@ class Driver {
             throw std::runtime_error(
                 "unfix: no plugin named '" + std::string(name) + "'. mounted: ["
                 + mounted + "]. Remount with on(phase).add / set_evaluator.");
+        return found;
+    }
+
+    /// Drop every binding and the ownership of `found`, with backend
+    /// resource release (`release(found)`) before ownership is erased.
+    template <typename Release>
+    void erase_mounted_(Component* found, Release&& release) {
         release(found);
         std::erase_if(pending_, [found](const auto& binding) {
             return binding.component == found;
@@ -435,6 +439,18 @@ class Driver {
         std::erase_if(owned_components_, [found](const auto& component) {
             return component.get() == found;
         });
+    }
+
+    /// Unmount the instance named `name` and all of its bindings.
+    template <typename Release, typename Extra = std::vector<Component*>>
+    void unmount_(std::string_view name, bool launching, Release&& release,
+                  const Extra& extra = {}) {
+        if (launching)
+            throw std::runtime_error(
+                "unfix: cannot unfix from inside launch(). Unfix between "
+                "steps or run() chunks.");
+        erase_mounted_(mounted_named_(name, extra),
+                       std::forward<Release>(release));
     }
 
     const bool* mutation_lock_ = nullptr;

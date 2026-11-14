@@ -498,18 +498,19 @@ void bind_cuda(nb::module_& m) {
                 // (`cpu::md::NoseHooverNPT`); orthorhombic cells only,
                 // refused with a how-to at build. The CPU-only
                 // `set_couple_xy` / `set_surface_tension` are not bound on
-                // either backend.
-                if (self.npt)
-                    throw std::invalid_argument(
-                        "set_integrator already configured with "
-                        "'nose_hoover_npt'; one NoseHooverNPT per CUDA MD");
+                // either backend. A second NPT replaces the first in place
+                // (nothing is built before the first run, and setters are
+                // refused after it); the slot then already holds this
+                // address.
+                const bool had_npt = self.npt.has_value();
                 self.npt.emplace(p.T_target, p.tau_T, p.P_target, p.tau_P, p.dt,
                                  p.drag, p.mtchain, p.mpchain, p.couple_axis,
                                  p.T_stop);
                 try {
                     self.driver.set_integrator_ref(*self.npt);
                 } catch (...) {
-                    self.npt.reset();
+                    if (!had_npt)
+                        self.npt.reset();
                     throw;
                 }
             },

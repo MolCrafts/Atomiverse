@@ -40,8 +40,8 @@
 /// `MD` exposes the same 11-method categorical surface as
 /// `cpu::md::MD` (chain link `msu-pe-cuda-components-02`, Phase G.4):
 /// `set_evaluator / set_evaluator / set_angle / set_dihedral / set_neighbor`
-/// (singular, idempotent on same-class re-call, throw on
-/// different-class re-call), `set_integrator` (singular via the
+/// (singular: a same-name re-call replaces the first, a
+/// different-name re-call throws), `set_integrator` (singular via the
 /// component's own `default_bindings()`), `set_thermostat /
 /// set_barostat / set_observer / set_record` (plural — each call
 /// appends, insertion order preserved), and `set_thermo(int every)`
@@ -284,16 +284,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// @param integ Integrator; must outlive this driver.
     template <typename I>
     MD& set_integrator_ref(I& integ) {
-        const std::string n = integ.name();
-        if (integrator_set_) {
-            if (*integrator_set_ == n)
-                return *this;
-            throw std::invalid_argument(
-                "set_integrator already configured with '" + *integrator_set_
-                + "', rejected re-call with '" + n + "'");
-        }
-        integrator_set_ = n;
-        this->bind_defaults_ref(integ);
+        this->mount_singular_(integrator_set_, integ.name(), "set_integrator",
+                              &integ, [&] { this->bind_defaults_ref(integ); });
         return *this;
     }
 
@@ -482,15 +474,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
                           const char* setter_name, ATV::md::Phase phase,
                           int order) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->on(phase).add(std::forward<C>(comp), order);
+        this->mount_singular_(slot, n, setter_name, nullptr, [&] {
+            this->on(phase).add(std::forward<C>(comp), order);
+        });
     }
 
     /// @brief Singular setter using the component's `default_bindings()`.
@@ -498,15 +484,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     void set_singular_default_(C&& comp, std::optional<std::string>& slot,
                                const char* setter_name) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->bind_defaults(std::forward<C>(comp));
+        this->mount_singular_(slot, n, setter_name, nullptr, [&] {
+            this->bind_defaults(std::forward<C>(comp));
+        });
     }
 
   private:

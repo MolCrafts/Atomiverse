@@ -24,6 +24,8 @@ from _domains import skip_module_unless
 
 skip_module_unless("ATV_BUILD_MD")
 
+from atomiverse._binding import _cpp
+
 from atomiverse.longrange import CoulLong, KSpaceEwald
 from atomiverse.md import MD, ConfigurationalTemperature, FixEfield
 from atomiverse.md.integrator import GearPC, VelocityVerlet
@@ -126,9 +128,22 @@ def _rock_salt(
     return frame
 
 
-def _melt_md(integrator: GearPC, accuracy: float = 1e-6) -> MD:
+#: The extension carries the CUDA MD driver.
+_HAS_CUDA_MD: bool = hasattr(_cpp, "_CudaMD")
+_DEVICES = [
+    "cpu",
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA"),
+    ),
+]
+
+
+def _melt_md(
+    integrator: GearPC, accuracy: float = 1e-6, device: str = "cpu"
+) -> MD:
     """Tosi–Fumi NaCl with Ewald electrostatics, integrated by *integrator*."""
-    sim = MD(units="metal")
+    sim = MD(units="metal", device=device)
     sim.set_integrator(integrator)
     sim.set_neighbor(NeighborList(_CUT, 0.5))
     sim.set_evaluator(_tosi_fumi())
@@ -437,6 +452,23 @@ class TestGearPC:
         sim.run(frame, 300)
         assert observer.samples == 300
         assert abs(observer.mean_temperature / t0 - 1.0) < 0.1
+
+    @pytest.mark.parametrize("device", _DEVICES)
+    def test_a_second_set_integrator_replaces_the_first(self, device: str) -> None:
+        """Set twice, the second GearPC is the one that integrates (LAMMPS
+        ``fix`` with an existing ID): the melt ends at its 1000 K, not the
+        first one's 1500 K, and its diagnostics are the ones that move."""
+        first = GearPC(_DT, GaussThermostat("kinetic", 1500.0), device=device)
+        second = GearPC(_DT, GaussThermostat("kinetic", 1000.0), device=device)
+        sim = _melt_md(first, device=device)
+        sim.set_integrator(second)
+        frame = _rock_salt(_SPACING, jitter=0.25, temperature=1800.0, seed=5)
+        sim.run(frame, 20)
+        assert _constrained_temperature(frame, "kinetic") == pytest.approx(
+            1000.0, rel=1e-12
+        )
+        assert second.constraint_drift > 0.0
+        assert first.constraint_drift == 0.0
 
     def test_a_second_thermostat_beside_gear_is_refused(self) -> None:
         """GearPC thermostats inside its own step; another thermostat would

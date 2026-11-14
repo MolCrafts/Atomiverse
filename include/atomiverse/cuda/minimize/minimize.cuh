@@ -156,29 +156,14 @@ class Minimize : public cuda::Driver<ATV::minimizer::Phase> {
               std::enable_if_t<!std::is_lvalue_reference_v<O>, int> = 0>
     Minimize& set_optimizer(O&& o) {
         const std::string n = o.name();
-        if (optimizer_set_) {
-            if (*optimizer_set_ == n)
-                return *this;
-            throw std::invalid_argument(
-                "set_optimizer already configured with '" + *optimizer_set_
-                + "', rejected re-call with '" + n + "'");
-        }
-        optimizer_set_ = n;
-        this->bind_defaults(std::forward<O>(o));
+        this->mount_singular_(optimizer_set_, n, "set_optimizer", nullptr,
+                              [&] { this->bind_defaults(std::forward<O>(o)); });
         return *this;
     }
     template <typename O>
     Minimize& set_optimizer_ref(O& o) {
-        const std::string n = o.name();
-        if (optimizer_set_) {
-            if (*optimizer_set_ == n)
-                return *this;
-            throw std::invalid_argument(
-                "set_optimizer already configured with '" + *optimizer_set_
-                + "', rejected re-call with '" + n + "'");
-        }
-        optimizer_set_ = n;
-        this->bind_defaults_ref(o);
+        this->mount_singular_(optimizer_set_, o.name(), "set_optimizer", &o,
+                              [&] { this->bind_defaults_ref(o); });
         return *this;
     }
     template <typename O>
