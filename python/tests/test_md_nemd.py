@@ -406,9 +406,8 @@ class TestConfigurationalTemperature:
 
 
 class TestGearPC:
-    """Each ``MD.run`` is an independent simulation (the molpy overload
-    tears the run down), so every Gear history, ξ and run average below
-    belongs to one ``run`` call."""
+    """``MD.run`` on the frame the previous run returned continues the
+    trajectory (Gear history, ξ); run averages belong to one ``run`` call."""
 
     @pytest.mark.parametrize("kind", ["kinetic", "flow", "transverse"])
     def test_gauss_thermostat_holds_its_temperature_under_a_field(
@@ -437,20 +436,22 @@ class TestGearPC:
     def test_configurational_thermostat_drives_tconf_to_the_target(
         self,
     ) -> None:
-        """Eqs. (12a–c) with Q = 20 Å²/ps² cool the melt's configurational
+        """Eqs. (12a–c) with Q = 100 Å²/ps² cool the melt's configurational
         temperature to 700 K: after a 300-step run from the 1500 K start,
-        T_CONF = <N>/(k_B <D>) of a second 300-step run lies within 10 % of
-        the target (720 K measured; unthermostatted, the same protocol
-        gives 1075 K). The second run averages its own 300 evaluations.
+        T_CONF = <N>/(k_B <D>) of the 600 steps that continue it lies within
+        10 % of the target (694 K measured; unthermostatted, the same
+        protocol gives 1079 K). The second run continues the trajectory and
+        averages its own 600 evaluations. (At Q = 20 ξ oscillates with a
+        period near 1000 steps, longer than a window of this test.)
         """
         t0 = 700.0
         observer = ConfigurationalTemperature()
-        sim = _melt_md(GearPC(_DT, ConfigurationalThermostat(t0, 20.0)), 1e-4)
+        sim = _melt_md(GearPC(_DT, ConfigurationalThermostat(t0, 100.0)), 1e-4)
         sim.set_observer(observer)
         frame = _rock_salt(_SPACING, jitter=0.25, temperature=1500.0, seed=7)
         sim.run(frame, 300)
-        sim.run(frame, 300)
-        assert observer.samples == 300
+        sim.run(frame, 600)
+        assert observer.samples == 600
         assert abs(observer.mean_temperature / t0 - 1.0) < 0.1
 
     @pytest.mark.parametrize("device", _DEVICES)
@@ -469,6 +470,75 @@ class TestGearPC:
         )
         assert second.constraint_drift > 0.0
         assert first.constraint_drift == 0.0
+
+    @staticmethod
+    def _assert_same_state(a: molpy.Frame, b: molpy.Frame, atol: float) -> None:
+        """Positions (minimum image in the cubic cell) and velocities."""
+
+        def cols(frame: molpy.Frame, keys: tuple[str, ...]) -> np.ndarray:
+            return np.stack(
+                [np.asarray(frame["atoms"][k], dtype=np.float64) for k in keys]
+            )
+
+        edge = _SIDE * _SPACING
+        dx = cols(a, ("x", "y", "z")) - cols(b, ("x", "y", "z"))
+        dx -= edge * np.round(dx / edge)
+        np.testing.assert_allclose(dx, 0.0, rtol=0, atol=atol)
+        np.testing.assert_allclose(
+            cols(a, ("vx", "vy", "vz")), cols(b, ("vx", "vy", "vz")), rtol=0, atol=atol
+        )
+
+    def _configurational_md(self, device: str) -> tuple[MD, GearPC]:
+        gear = GearPC(_DT, ConfigurationalThermostat(1000.0, 20.0), device=device)
+        return _melt_md(gear, 1e-4, device=device), gear
+
+    @pytest.mark.parametrize("device", _DEVICES)
+    def test_two_runs_on_the_returned_frame_are_one_trajectory(
+        self, device: str
+    ) -> None:
+        """``run(f, 40); run(f, 40)`` continues one trajectory (the Gear
+        history and ξ carry over, LAMMPS ``run N pre no``): it ends where a
+        single ``run(f, 80)`` from the same start ends. Restarting the
+        history at the boundary misses by 2e-4 (Å, Å/ps)."""
+        start = _rock_salt(_SPACING, jitter=0.25, temperature=1500.0, seed=7)
+        once, chunked = start.copy(), start.copy()
+        sim, gear = self._configurational_md(device)
+        sim.run(once, 80)
+        sim2, gear2 = self._configurational_md(device)
+        sim2.run(chunked, 40)
+        sim2.run(chunked, 40)
+        self._assert_same_state(chunked, once, 1e-10)
+        assert gear2.xi == pytest.approx(gear.xi, rel=1e-10)
+
+    @pytest.mark.parametrize("device", _DEVICES)
+    def test_an_edited_frame_restarts_the_history(self, device: str) -> None:
+        """A run on a frame edited since the last run returned starts the
+        Gear history and ξ afresh: it ends where a new MD started on the
+        edited frame ends."""
+        frame = _rock_salt(_SPACING, jitter=0.25, temperature=1500.0, seed=7)
+        sim, gear = self._configurational_md(device)
+        sim.run(frame, 40)
+        frame["atoms"]["vx"] = 0.5 * np.asarray(frame["atoms"]["vx"])
+        fresh = frame.copy()
+        sim.run(frame, 40)
+        sim2, gear2 = self._configurational_md(device)
+        sim2.run(fresh, 40)
+        self._assert_same_state(frame, fresh, 1e-10)
+        assert gear.xi == pytest.approx(gear2.xi, rel=1e-10)
+
+    @pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA")
+    def test_two_runs_agree_between_devices(self) -> None:
+        """Two consecutive 100-step runs from one melt give the same ξ and
+        trajectory on the CPU and on CUDA (FP64)."""
+        frames, xi = {}, {}
+        for device in ("cpu", "cuda"):
+            frame = _rock_salt(_SPACING, jitter=0.25, temperature=1500.0, seed=7)
+            sim, gear = self._configurational_md(device)
+            sim.run(frame, 100)
+            sim.run(frame, 100)
+            frames[device], xi[device] = frame, gear.xi
+        self._assert_same_state(frames["cuda"], frames["cpu"], 1e-8)
+        assert xi["cuda"] == pytest.approx(xi["cpu"], rel=1e-8)
 
     def test_a_second_thermostat_beside_gear_is_refused(self) -> None:
         """GearPC thermostats inside its own step; another thermostat would

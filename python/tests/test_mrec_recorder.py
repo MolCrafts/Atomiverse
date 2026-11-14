@@ -236,6 +236,22 @@ def test_recorded_kinetic_stress_is_that_of_the_recorded_velocities(
         assert 0.5 * got[:3].sum() == pytest.approx(float(fr.meta["kinetic"]), rel=1e-12)
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_continuation_extends_one_trajectory(tmp_path: Path, device: str) -> None:
+    """Two run() calls on one frame continue the step axis, the boundary
+    step is written once, and each run() returns with its frames in the
+    store."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+    path = tmp_path / f"{device}.mrec"
+    frame = _argon_frame()
+    sim = _lj_md(device, MrecRecorder(str(path), 2))
+    sim.run(frame, 4)  # steps 0, 2, 4
+    assert _read_all(path)[0] == [0, 2, 4]
+    sim.run(frame, 4)  # (4 already written), 6, 8
+    assert _read_all(path)[0] == [0, 2, 4, 6, 8]
+
+
 @pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA")
 class TestMrecRecorderCuda:
     def test_cuda_frames_match_cpu(self, tmp_path: Path) -> None:
@@ -268,18 +284,6 @@ class TestMrecRecorderCuda:
                     atol=atol,
                     err_msg=key,
                 )
-
-    def test_cuda_continuation_extends_one_trajectory(self, tmp_path: Path) -> None:
-        """On CUDA two run() calls on one frame continue the step axis, the
-        boundary step is written once, and each run() returns with its
-        frames in the store."""
-        path = tmp_path / "gpu.mrec"
-        frame = _argon_frame()
-        sim = _lj_md("cuda", MrecRecorder(str(path), 2))
-        sim.run(frame, 4)  # steps 0, 2, 4
-        assert _read_all(path)[0] == [0, 2, 4]
-        sim.run(frame, 4)  # (4 already written), 6, 8
-        assert _read_all(path)[0] == [0, 2, 4, 6, 8]
 
     @pytest.mark.parametrize("which", ["type", "species", "both"])
     def test_cuda_identity_columns_follow_the_frame(

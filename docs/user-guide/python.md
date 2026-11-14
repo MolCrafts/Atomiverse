@@ -1241,13 +1241,11 @@ with MrecReader(Path("traj.mrec")) as traj:
 - **After `run()` returns, the store holds every frame of that run** on both
   devices; open it with `MrecReader(Path(path))` (a plain `str` is refused
   as ambiguous by molpy).
-- **CPU:** each `run()` is an independent simulation that restarts at step
-  0, so one recorder records one `run()` — use a new `MD` and recorder for
-  another run.
-- **CUDA:** `run()` calls on the same frame continue one trajectory, and the
-  recorder keeps appending to it; the step axis continues and the boundary
-  step is written once (`run(f, 4); run(f, 4)` at `every=2` gives steps
-  0, 2, 4, 6, 8). Frames are frozen on the device at
+- `run()` calls on the same frame continue one trajectory on both devices,
+  and the recorder keeps appending to it; the step axis continues and the
+  boundary step is written once (`run(f, 4); run(f, 4)` at `every=2` gives
+  steps 0, 2, 4, 6, 8).
+- **CUDA:** Frames are frozen on the device at
   end_of_step, copied to the host asynchronously and written by worker
   threads; the MD loop never waits for the disk. A few frames can queue on
   the device and on the host; if the writer falls further behind (a very slow

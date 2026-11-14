@@ -53,10 +53,9 @@ def GearPC(dt: float, thermostat: object = None, *, device: str = "cpu"):
     thermostat is inside the step, so do not add another. The driver (an
     ``MD`` of the same device) borrows the object: ``constraint_drift``,
     ``gauss_multiplier``, ``xi`` and ``configurational_temperature`` read
-    its state, on CUDA as of the last returned ``run``. On the CPU every
-    ``MD.run`` restarts the Gear history and ``xi``; on CUDA a ``run`` on the
-    frame the previous one returned, unedited, continues them (an edited
-    frame restarts). One ``run`` per trajectory is the same on both. The MPI
+    its state, on CUDA as of the last returned ``run``. On both devices a
+    ``run`` on the frame the previous one returned, unedited, continues the
+    Gear history and ``xi``; an edited frame restarts them. The MPI
     launcher cannot carry it.
     """
     native = backend_type(device, "GearPC", "_CudaGearPC")

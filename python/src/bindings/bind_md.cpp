@@ -51,6 +51,7 @@
 #include "atomiverse/cpu/dynamics/nvt_sllod.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/frame/input_snapshot.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "units_binding.h"
@@ -93,6 +94,18 @@ struct MdHandle {
     // component outlives the driver that references it.
     std::optional<cpu::md::NoseHooverNPT> npt_owned;
     std::vector<std::unique_ptr<cpu::md::FixLangevin>> langevin_owned;
+#ifdef ATV_HAS_IO
+    // Borrowed by the driver so `run()` can commit them: after a run returns
+    // the store holds every frame so far, although the run stays live.
+    std::vector<std::unique_ptr<cpu::MrecRecorder>> mrec_owned;
+#endif
+    // The trajectory: the molpy.Frame it runs on and the engine frame that
+    // carries it across `run()` calls (engine row order). Declared before
+    // the driver, which keeps the engine frame's address.
+    nb::object frame_owner;
+    std::unique_ptr<cpu::Frame> work;
+    std::vector<TagInt> import_tags;      ///< molpy row order, by tag
+    cpu::FrameInputSnapshot written_back; ///< the molpy.Frame as run() left it
 
     cpu::md::MD driver;
     std::vector<MDComponentEntry> mirror;
@@ -245,8 +258,15 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
                 static_cast<const cpu::task::ThermoParams&>(p).freq);
-        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>
-                           || std::is_same_v<P, cpu::task::MrecRecorderParams>)
+#ifdef ATV_HAS_IO
+        else if constexpr (std::is_same_v<P, cpu::task::MrecRecorderParams>) {
+            // Borrowed: `run()` commits it before returning.
+            mrec_owned.push_back(
+                std::make_unique<cpu::MrecRecorder>(std::move(comp)));
+            driver.set_record_ref(*mrec_owned.back());
+        }
+#endif
+        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>)
             // The trajectory sinks own their file handle and their own
             // stride gate, so they go in whole through the recorder slot
             // (plural) rather than through a driver-level cadence like
@@ -304,26 +324,7 @@ struct MdHandle {
     void run(nb::object frame_obj, std::int64_t n_steps) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
-            // Every ramping component gets THIS run's span `[0, n_steps]`,
-            // identical to what `TaskMaterializer` installs on the launcher
-            // path. Each `run()` is an independent simulation — the molpy
-            // overload of `cpu::md::MD::run` tears its run down before
-            // returning, so the next call's `LaunchContext::step` restarts at
-            // 0 and a span carried over from an earlier call would put the
-            // ramp fraction permanently past 1. One continuous temperature
-            // ramp is therefore ONE `run()` with the full step budget, not a
-            // chunked sequence of them.
-            const std::int64_t nlast = n_steps;
-            if (npt_owned)
-                npt_owned->set_run_span(0, nlast);
-            for (auto& langevin : langevin_owned)
-                langevin->set_run_span(0, nlast);
-            auto frame = borrow_molpy_frame(frame_obj);
-            require_charge_column(*frame);
-            {
-                nb::gil_scoped_release release;
-                driver.run(*frame, n_steps);
-            }
+            run_local_(frame_obj, n_steps);
             // Armed only on a COMPLETED run: a run that threw (missing
             // integrator, chargeless frame, ...) left no compiled plan behind,
             // so the caller must still be able to finish configuring.
@@ -359,7 +360,101 @@ struct MdHandle {
 #endif
     }
 
+    /// @brief Fix the ramp span of the Langevin thermostats and the NPT
+    ///        `T_stop` ramp to `[nfirst, nlast]` for every trajectory.
+    void set_run_span(std::int64_t nfirst, std::int64_t nlast) {
+        require_configurable_("set_run_span");
+        if (!npt_owned && langevin_owned.empty())
+            throw std::runtime_error("set_run_span requires a Langevin "
+                                     "thermostat or a NoseHooverNPT "
+                                     "integrator");
+        if (nlast <= nfirst)
+            throw std::invalid_argument(
+                "run span nlast must be greater than nfirst");
+        if (npt_owned)
+            npt_owned->set_run_span(nfirst, nlast);
+        for (auto& langevin : langevin_owned)
+            langevin->set_run_span(nfirst, nlast);
+        span_fixed = true;
+    }
+
   private:
+    bool span_fixed = false; ///< `set_run_span` chose the ramp span
+
+    /// @brief One `run()` without the launcher.
+    ///
+    /// Consecutive calls on the molpy.Frame the previous one returned,
+    /// unedited, extend ONE trajectory (`cpu::md::MD::run` continuation,
+    /// LAMMPS `run N pre no`): the integrator history and thermostat
+    /// variables, the step count and the recorders' step axis carry over,
+    /// as on CUDA. An edit to that frame (positions, velocities, charges,
+    /// cell, population) reaches the engine frame as an input change, and
+    /// the components that depend on it restart (`invalidate_inputs`).
+    /// Another molpy.Frame is an independent simulation. A ramp span is
+    /// `set_run_span`'s, else that of the run that starts a trajectory; a
+    /// later chunk continues it (the CUDA handle's rule).
+    void run_local_(nb::object frame_obj, std::int64_t n_steps) {
+        auto frame = borrow_molpy_frame(frame_obj);
+        require_charge_column(*frame);
+        cpu::Frame incoming = cpu::from_molpy(*frame);
+        const bool continued = work && frame_owner.is(frame_obj);
+        std::unique_ptr<cpu::Frame> fresh;
+        if (!continued) {
+            // A new address: the driver tears the previous run down (it
+            // compares the frame it was given), so the old engine frame
+            // stays alive until this run has started.
+            fresh = std::make_unique<cpu::Frame>(std::move(incoming));
+            if (!span_fixed) {
+                if (npt_owned)
+                    npt_owned->set_run_span(0, n_steps);
+                for (auto& langevin : langevin_owned)
+                    langevin->set_run_span(0, n_steps);
+            }
+        } else if (written_back.changes(incoming,
+                                        cpu::FrameInputSnapshot::state_input)
+                   != InputChange::None) {
+            // The engine's row order, so the edit reads as the edit (a
+            // velocity edit is a velocity change, not a new population).
+            const std::vector<TagInt> engine(work->span(kAtom_tag).data(),
+                                             work->span(kAtom_tag).data()
+                                                 + work->nlocal());
+            const bool same_atoms = incoming.restore_import_order(
+                engine.data(), static_cast<int>(engine.size()));
+            *work = std::move(incoming);
+            if (!same_atoms)
+                remember_import_order_(*work);
+        }
+        cpu::Frame& target = fresh ? *fresh : *work;
+        if (fresh)
+            remember_import_order_(target);
+        {
+            nb::gil_scoped_release release;
+            driver.run(target, n_steps);
+        }
+        if (fresh) {
+            work = std::move(fresh);
+            frame_owner = frame_obj;
+        }
+        // Owned rows may have been sorted spatially: write each atom back
+        // to the row it came from, from a copy, so the engine keeps its
+        // order (and its neighbor list) for the next chunk.
+        cpu::Frame out(*work);
+        out.restore_import_order(import_tags.data(),
+                                 static_cast<int>(import_tags.size()));
+        cpu::to_molpy(out, *frame);
+        written_back.capture(cpu::from_molpy(*frame),
+                             cpu::FrameInputSnapshot::state_input);
+#ifdef ATV_HAS_IO
+        for (auto& rec : mrec_owned)
+            rec->flush();
+#endif
+    }
+
+    void remember_import_order_(const cpu::Frame& f) {
+        import_tags.assign(f.span(kAtom_tag).data(),
+                           f.span(kAtom_tag).data() + f.nlocal());
+    }
+
     /// True once a `run()` has completed; see `require_configurable_`.
     bool ran_ = false;
     std::vector<std::string> unmirrored_;
@@ -712,10 +807,9 @@ void bind_md(nb::module_& m) {
             "ramp "
             "across the run span, as in LAMMPS. Any value >= 0 is taken as "
             "the ramp end (equal to T_target means a constant setpoint); "
-            "< 0 folds to T_target. The run span itself is wired "
-            "automatically by run(), which ramps over [0, n_steps]: every "
-            "run() is an independent simulation, so one continuous ramp is "
-            "one run() with the full step budget.");
+            "< 0 folds to T_target. The run span is MD.set_run_span's "
+            "window, else the first run()'s [0, n_steps]; continued run() "
+            "calls continue it.");
 
     nb::class_<cpu::task::ParrinelloRahmanNptParams>(
         m, "ParrinelloRahmanNPT",
@@ -869,12 +963,10 @@ void bind_md(nb::module_& m) {
         "accounting of the driver's capture buffer (`budget_bytes`, "
         "`frame_bytes`, `peak_bytes`, `blocked_episodes`, "
         "`blocked_seconds`).\n\n"
-        "The first frame replaces any store at the path. A recorder records "
-        "one run: on the CPU driver each run() is an independent simulation "
-        "(steps restart at 0), so give a second run() a new MD and "
-        "recorder; on the CUDA driver continued run() calls on the same "
-        "frame extend the same trajectory, the step axis continuing and the "
-        "boundary step written once. Under the MPI launcher every rank "
+        "The first frame replaces any store at the path. Continued run() "
+        "calls on the same frame extend the same trajectory on both "
+        "devices, the step axis continuing and the boundary step written "
+        "once. Under the MPI launcher every rank "
         "gathers its atoms to rank 0, which alone writes.\n\n"
         "CUDA recording is asynchronous but lossless: frames travel through "
         "the driver's one shared capture buffer (MD(capture_buffer_bytes=…)) "
@@ -1133,14 +1225,25 @@ void bind_md(nb::module_& m) {
         .def(
             "build", [](MdHandle& self) { self.driver.build(); },
             "Compile the execution plan.")
+        .def("set_run_span", &MdHandle::set_run_span, nb::arg("nfirst"),
+             nb::arg("nlast"),
+             "Fix the Langevin / NoseHooverNPT T_stop ramp to [nfirst, "
+             "nlast] completed steps for a trajectory of several run() "
+             "calls.")
         .def("run", &MdHandle::run, nb::arg("frame"), nb::arg("n_steps"),
              "Run MD on a molpy.Frame for n_steps. GIL released during "
              "compute; under the MPI launcher this dispatches ONE task to "
              "every rank and writes the gathered result back.\n\n"
-             "Each call is an INDEPENDENT simulation starting from the "
-             "frame's current state: the step index restarts at 0 and any "
-             "temperature ramp is re-installed over [0, n_steps]. A single "
-             "continuous ramp is one run() with the full step budget.\n\n"
+             "A run() on the molpy.Frame the previous one returned, "
+             "unedited, continues that trajectory (LAMMPS `run N pre no`): "
+             "integrator history, thermostat variables, the step count and "
+             "the recorders' step axis carry over, as on CUDA. An edit to "
+             "that frame restarts what depends on the edited input (e.g. the "
+             "Gear history after a velocity edit). Another molpy.Frame starts "
+             "an independent simulation. A temperature ramp spans "
+             "set_run_span's window, else the first run's [0, n_steps]; "
+             "later chunks continue it. Without the launcher only: under it "
+             "each call is one task.\n\n"
              "A completed run() freezes the configuration: the plan is "
              "compiled once, so every setter and on(phase) raises "
              "RuntimeError from here on. Running again is still allowed and "

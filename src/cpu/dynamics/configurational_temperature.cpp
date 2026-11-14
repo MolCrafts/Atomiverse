@@ -175,7 +175,7 @@ void ConfigurationalTemperature::set_curvature_terms(
     assembly_.set_terms(std::move(sources), std::move(drives));
 }
 
-void ConfigurationalTemperature::build(const BuildContext& /*ctx*/) {
+void ConfigurationalTemperature::setup_output(const LaunchContext& /*ctx*/) {
     last_ = ConfigurationalSample{};
     mean_ = ConfigurationalSample{};
     sum_force_sq_ = 0.0;

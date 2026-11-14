@@ -25,11 +25,12 @@ Numbers are not kept in git; rerun it.
 
 ## Where the two devices differ (by design or inherited)
 
-- A CPU `run()` restarts the Gear history and ξ. The CUDA backend continues
-  a run on unchanged inputs (`forces_ready_`, LAMMPS `run N pre no`), and the
-  Gear start hangs on the initial force evaluation, so a second `run()` on
-  the frame the first one returned continues history and ξ; an edited frame
-  restarts. One `run()` per trajectory is identical on both.
+- (Fixed: both devices now continue.) A `run()` on the molpy.Frame the
+  previous one returned, unedited, continues the Gear history, ξ, the step
+  count and the recorders' step axis (LAMMPS `run N pre no`); an edited
+  frame restarts what the edit invalidates. The CPU handle keeps its engine
+  frame across calls (python/src/bindings/bind_md.cpp `run_local_`). CUDA
+  refuses another molpy.Frame; the CPU starts an independent simulation.
 - `cuda::md::InitVelocity` draws once, at build, from the device generator:
   the same seed gives other velocities than the CPU, and a second `run()`
   does not redraw.
@@ -40,8 +41,8 @@ Numbers are not kept in git; rerun it.
   take the minimum image per pair, there are no ghost rows.
 - Thermostat faults (zero constrained kinetic energy, Laplacian ≤ 0) are
   device status bits, thrown when the run returns.
-- A second `set_integrator` on one Python `MD` does not replace the first
-  on either device. Build a new `MD`.
+- (Fixed.) A second `set_integrator` of the same kind replaces the first
+  on both devices (LAMMPS `fix` with an existing ID).
 
 ## Cost and packing (GH200, FP64, 512 ions)
 

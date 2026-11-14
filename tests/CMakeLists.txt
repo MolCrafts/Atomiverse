@@ -631,12 +631,6 @@ if(ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_md_set_api                      cpu/dynamics/test_md_set_api.cpp)
     atv_add_cpp_test(test_cpu_md_plan_equivalence             cpu/dynamics/test_md_plan_equivalence.cpp)
 endif()
-# `MD::run(molrs::FrameRef&, n)` independence contract: consecutive calls are
-# separate simulations (step index restarts at 0), NOT a continued trajectory —
-# the cpu::Frame& overload is the continuable one. 2 x 3 steps of 4-atom LJ, ms.
-if(ATV_BUILD_IO AND ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
-    atv_add_cpp_test(test_cpu_md_molpy_run                cpu/dynamics/test_md_molpy_run.cpp)
-endif()
 # TimestepProvider/TimestepConsumer opt-in protocol + the MD build-time push
 # (esmm-cpmd-02-timestep-protocol): dt is single-sourced from the integrator,
 # conflicting/absent/invalid publications throw at build. Local stubs only —

@@ -63,8 +63,9 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   curvature assembly; (5) Gear start is the customary zero-higher-derivative
   one (≈40-step transient), no self-starting procedure; (6) a truncated pair
   potential's δ-shell Laplacian at r_c is not counted (the same truncation the
-  forces make). A Python `MD.run` is an independent simulation, so ξ and the
-  Gear history restart on every call; one call per trajectory.
+  forces make). A Python `MD.run` on the frame the previous one returned,
+  unedited, continues ξ and the Gear history on both devices; an edit
+  restarts them.
 
 ## Open debt found, not yet fixed (verify before acting)
 

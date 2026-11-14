@@ -16,6 +16,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/component/component.h"
 #include "atomiverse/cpu/component/potential.h"
 #include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/fix_efield.h"
@@ -348,10 +349,33 @@ TEST(Curvature, AForceTermWithoutCurvatureIsRefused) {
     EXPECT_THROW(eval.build(), std::runtime_error);
 }
 
+/// Sums the observer's per-step evaluations from the same phase, after it.
+class SampleSums final : public cpu::Component {
+  public:
+    explicit SampleSums(const cpu::ConfigurationalTemperature& observer)
+        : observer_(observer) {}
+    std::string name() const override { return "sample_sums"; }
+    std::vector<ATV::DefaultBinding> default_bindings() const override {
+        return {ATV::make_binding(ATV::md::Phase::post_force, 300)};
+    }
+    void launch(const cpu::LaunchContext& /*ctx*/) override {
+        n += observer_.last().force_sq;
+        d += observer_.last().laplacian;
+        t += observer_.last().temperature;
+        ++count;
+    }
+    void reset() { n = d = t = 0.0, count = 0; }
+    double n = 0.0, d = 0.0, t = 0.0;
+    int count = 0;
+
+  private:
+    const cpu::ConfigurationalTemperature& observer_;
+};
+
 TEST(ConfigurationalTemperature, RunAverageIsTheRatioOfTheMeans) {
     // T_CONF of eq. (5) is <N>/(k_B <D>) over the evaluations of the run,
-    // not the mean of T_C1; a rebuilt run starts a new average.
-    constexpr int kSteps = 30;
+    // not the mean of T_C1; every run() starts a new average, a continued
+    // one included (the CUDA observer's rule).
     cpu::Frame frame = nacl(1500.0, 11);
     cpu::md::MD sim;
     sim.set_units("metal");
@@ -361,27 +385,30 @@ TEST(ConfigurationalTemperature, RunAverageIsTheRatioOfTheMeans) {
     sim.set_evaluator(cpu::KSpaceEwald{kAlpha, 1e-4});
     cpu::ConfigurationalTemperature observer;
     sim.on(ATV::md::Phase::post_force).add_ref(observer, 200);
+    SampleSums sums{observer};
+    sim.on(ATV::md::Phase::post_force).add_ref(sums, 300);
     cpu::md::GearPC gear{0.001};
     sim.set_integrator_ref(gear);
     sim.build();
-    double sum_n = 0, sum_d = 0, sum_t = 0;
-    for (int step = 0; step < kSteps; ++step) {
-        sim.run(frame, 1);
-        sum_n += observer.last().force_sq;
-        sum_d += observer.last().laplacian;
-        sum_t += observer.last().temperature;
-    }
     const double kB = units::from_style(units::Style::metal).boltz;
-    ASSERT_EQ(observer.samples(), kSteps);
-    EXPECT_NEAR(observer.mean().force_sq, sum_n / kSteps,
-                1e-13 * sum_n / kSteps);
-    EXPECT_NEAR(observer.mean().laplacian, sum_d / kSteps,
-                1e-13 * sum_d / kSteps);
-    const double t_conf = sum_n / (kB * sum_d);
-    EXPECT_NEAR(observer.mean().temperature, t_conf, 1e-12 * t_conf);
-    // The melt's T_C1 moves enough over the run that the two averages
-    // differ, so the check above tells them apart.
-    EXPECT_GT(std::fabs(sum_t / kSteps - t_conf), 1e-3 * t_conf);
+    for (const int steps : {30, 10}) {
+        SCOPED_TRACE("run of " + std::to_string(steps) + " steps");
+        sums.reset();
+        sim.run(frame, steps);
+        ASSERT_EQ(sums.count, steps);
+        ASSERT_EQ(observer.samples(), steps);
+        EXPECT_NEAR(observer.mean().force_sq, sums.n / steps,
+                    1e-13 * sums.n / steps);
+        EXPECT_NEAR(observer.mean().laplacian, sums.d / steps,
+                    1e-13 * sums.d / steps);
+        const double t_conf = sums.n / (kB * sums.d);
+        EXPECT_NEAR(observer.mean().temperature, t_conf, 1e-12 * t_conf);
+        // Over the first run the melt's T_C1 moves enough that the two
+        // averages differ, so the check above tells them apart; the second
+        // run continues it and averages only its own steps.
+        if (steps == 30)
+            EXPECT_GT(std::fabs(sums.t / steps - t_conf), 1e-3 * t_conf);
+    }
 }
 
 TEST(ConfigurationalThermostat,

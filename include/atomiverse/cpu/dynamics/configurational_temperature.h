@@ -112,7 +112,8 @@ class CurvatureAssembly : public ForwardPacker, public ReversePacker {
 /// Bound at `post_force` after the force reduction and the drives (order
 /// +200), where positions and forces belong to the same configuration under
 /// every integrator (with `GearPC`, the predicted one). The averages of `N`
-/// and `D` over the evaluations since the run was built give the paper's
+/// and `D` over the evaluations since the current `run()` began (a
+/// continued run starts a new average, as on CUDA) give the paper's
 /// \(T_\mathrm{CONF}\) (eq. 5) as \(\langle N\rangle / (k_B\langle
 /// D\rangle)\) (`mean()`), which is not the mean of \(T_{C1}\).
 class ConfigurationalTemperature : public Observer, public CurvatureConsumer {
@@ -128,16 +129,16 @@ class ConfigurationalTemperature : public Observer, public CurvatureConsumer {
     CurvatureConsumer* as_curvature_consumer() override { return this; }
     void set_curvature_terms(std::vector<CurvatureSource*> sources,
                              std::vector<const ExternalDrive*> drives) override;
-    /// @brief Clear the run averages: a (re)built run starts a new average.
-    void build(const BuildContext& ctx) override;
+    /// @brief Start of every `run()`: clear the averages, a new average.
+    void setup_output(const LaunchContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
     /// @brief The last evaluation.
     const ConfigurationalSample& last() const { return last_; }
     /// @brief Run averages \(\langle N\rangle\), \(\langle D\rangle\) and
     ///        \(T_\mathrm{CONF} = \langle N\rangle / (k_B\langle
-    ///        D\rangle)\) over the `samples()` evaluations since the build
-    ///        (all zero before the first).
+    ///        D\rangle)\) over the `samples()` evaluations since the
+    ///        current `run()` began (all zero before the first).
     const ConfigurationalSample& mean() const { return mean_; }
     /// @brief Number of evaluations in `mean()`.
     long long samples() const { return samples_; }

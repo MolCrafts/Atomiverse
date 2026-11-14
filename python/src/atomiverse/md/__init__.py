@@ -124,7 +124,8 @@ class MD:
         NoseHoover, Berendsen and NoseHooverNPT (orthorhombic cells)
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One
         angle style per CUDA run (singular slot). Continuation stays on one
-        molpy.Frame.
+        molpy.Frame (CUDA refuses another; on the CPU another frame starts
+        an independent simulation).
     units : str, optional
         LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
         ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
@@ -329,17 +330,12 @@ class MD:
         """Fix the temperature ramp to ``[nfirst, nlast]`` before the first chunk.
 
         Applies to the ``Langevin`` thermostat and the ``NoseHooverNPT``
-        ``T_stop`` ramp. CUDA continuation keeps the step counter, so one
-        cool is many ``run(chunk)`` calls on one driver and the span is the
-        whole cool. Without it the first ``run(n)`` sets ``[0, n]``. Call
-        this after ``set_thermostat`` / ``set_integrator`` and before
-        ``run``.
+        ``T_stop`` ramp. Continuation keeps the step counter (both
+        devices), so one cool is many ``run(chunk)`` calls on one driver and
+        the span is the whole cool. Without it the first ``run(n)`` sets
+        ``[0, n]``. Call this after ``set_thermostat`` / ``set_integrator``
+        and before ``run``.
         """
-        if self.device != "cuda":
-            raise ValueError(
-                "set_run_span is the CUDA continuation ramp; CPU MD takes "
-                "the span from each run()"
-            )
         if int(nlast) <= int(nfirst):
             raise ValueError(f"run span [{nfirst}, {nlast}] is empty")
         self._cpp.set_run_span(int(nfirst), int(nlast))
@@ -529,11 +525,10 @@ class MD:
           written by a worker thread through the driver's shared capture
           buffer (``MD(capture_buffer_bytes=...)``) — the step loop waits
           only when that buffer is full, never drops a frame, and a writer
-          failure stops the run with ``RuntimeError`` naming the store. On CPU each ``run()``
-          restarts at step 0, so one recorder records one ``run()``; CUDA
-          ``run()`` calls on the same frame continue its trajectory (the
-          boundary step is written once: ``run(f, 4); run(f, 4)`` at
-          ``every=2`` records steps 0, 2, 4, 6, 8).
+          failure stops the run with ``RuntimeError`` naming the store.
+          ``run()`` calls on the same frame continue its trajectory on both
+          devices (the boundary step is written once: ``run(f, 4);
+          run(f, 4)`` at ``every=2`` records steps 0, 2, 4, 6, 8).
           Carried by the MPI launcher (rank 0 gathers and writes).
 
         An unsupported component raises ``TypeError`` naming the
@@ -599,8 +594,15 @@ class MD:
 
         The plan is compiled on the FIRST call only. A completed run freezes
         the configuration (every setter refuses afterwards), so calling
-        ``run`` again re-runs that same compiled plan on the frame's current
-        state — it never recompiles.
+        ``run`` again re-runs that same compiled plan — it never recompiles.
+
+        On both devices a ``run`` on the frame the previous one returned,
+        unedited, continues that trajectory (LAMMPS ``run N pre no``): the
+        integrator's history and thermostat variables (Gear history, ξ,
+        Nosé–Hoover chains), the step count and the recorders' step axis
+        carry over. Editing that frame between runs restarts what depends
+        on the edited input (e.g. the Gear history and ξ after a position or
+        velocity edit).
         """
         if not self._built:
             self.build()

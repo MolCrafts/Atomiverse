@@ -245,6 +245,33 @@ class TestCudaInitVelocity:
             assert abs(float(np.sum(m * _columns(frame, key)))) < 1e-9
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_set_run_span_spans_chunked_runs(device: str) -> None:
+    """An explicit span over 50 steps run as two chunks of 25 heats less
+    by the first chunk's end than a 25-step span does, and the second
+    chunk continues the ramp to the same end as one 50-step run."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+
+    def npt_md() -> MD:
+        sim = _lj_md(device)
+        sim.set_integrator(NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=1000.0))
+        return sim
+
+    long_frame, short_frame = _ar_frame(3.8, 10.0), _ar_frame(3.8, 10.0)
+    once_frame = _ar_frame(3.8, 10.0)
+    long_span = npt_md()
+    long_span.set_run_span(0, 50)
+    long_span.run(long_frame, 25)
+    npt_md().run(short_frame, 25)
+    assert _temperature(long_frame) < _temperature(short_frame)
+    long_span.run(long_frame, 25)  # continuation finishes the span
+    npt_md().run(once_frame, 50)
+    np.testing.assert_allclose(
+        _velocities(long_frame), _velocities(once_frame), rtol=0, atol=1e-10
+    )
+
+
 @needs_cuda
 class TestCudaNoseHooverNpt:
     def test_compressed_lj_box_expands_toward_zero_pressure(self) -> None:
@@ -315,25 +342,6 @@ class TestCudaNoseHooverNpt:
         ramp.set_integrator(NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=1000.0))
         ramp.run(ramp_frame, 25)
         assert _temperature(ramp_frame) > _temperature(flat_frame)
-
-    def test_set_run_span_spans_chunked_runs(self) -> None:
-        """An explicit span over 50 steps run as two chunks of 25 heats less
-        by the first chunk's end than a 25-step span does."""
-        long_frame, short_frame = _ar_frame(3.8, 10.0), _ar_frame(3.8, 10.0)
-        long_span = _lj_md("cuda")
-        long_span.set_integrator(
-            NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=1000.0)
-        )
-        long_span.set_run_span(0, 50)
-        long_span.run(long_frame, 25)
-        short_span = _lj_md("cuda")
-        short_span.set_integrator(
-            NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=1000.0)
-        )
-        short_span.run(short_frame, 25)
-        assert _temperature(long_frame) < _temperature(short_frame)
-        long_span.run(long_frame, 25)  # continuation finishes the span
-        assert math.isfinite(_temperature(long_frame))
 
     def test_couple_axis_freezes_z(self) -> None:
         frame = _ar_frame(3.5, 50.0)
