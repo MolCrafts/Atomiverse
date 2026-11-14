@@ -1136,7 +1136,9 @@ Components register through **categorical setters**, mirroring the C++
 - `sim.set_thermostat(NoseHoover(T, tau_T, dt))`
 - `sim.set_barostat(BerendsenBarostat(P, tau_P, dt))` — rides alongside the
   integrator (see *Constant pressure: NPT* below)
-- `sim.set_observer(InitVelocity(T, seed))`
+- `sim.set_observer(InitVelocity(T, seed))` — draws once when a trajectory
+  starts; a seed gives the same velocities on the CPU and on CUDA (the draw
+  follows the atom tags, not the row order)
 - `sim.set_neighbor(NeighborList(cutoff, skin=-1))`
 - `sim.set_evaluator(PairLJCut / BondHarmonic / …)` — plural energy sources
 - `sim.set_thermo(N)` — LAMMPS-style print cadence

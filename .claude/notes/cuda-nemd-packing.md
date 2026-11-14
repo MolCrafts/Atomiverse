@@ -31,9 +31,10 @@ Numbers are not kept in git; rerun it.
   frame restarts what the edit invalidates. The CPU handle keeps its engine
   frame across calls (python/src/bindings/bind_md.cpp `run_local_`). CUDA
   refuses another molpy.Frame; the CPU starts an independent simulation.
-- `cuda::md::InitVelocity` draws once, at build, from the device generator:
-  the same seed gives other velocities than the CPU, and a second `run()`
-  does not redraw.
+- (Fixed.) `InitVelocity` makes one draw on both devices
+  (`core/velocity_create.h`: mt19937 by tag, host side), so a seed gives
+  the same velocities; it draws once per trajectory, at build — neither a
+  continued `run()` nor an edited frame redraws.
 - The flow thermostat's species table is a fixed device array
   (`kMaxSpecies = 8`).
 - A list radius above L/2 (the paper's cutoff L/2 plus a 2 Å skin) is

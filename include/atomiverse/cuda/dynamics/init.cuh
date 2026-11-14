@@ -99,7 +99,11 @@ class ZeroMomentum : public Component {
 /// Generates Gaussian-distributed velocities at the target temperature
 /// and removes center-of-mass velocity (zero total momentum).
 ///
-/// One-time initialization in build(). launch() is a no-op.
+/// The draw is the CPU one (`ATV::md::velocity_create_draws`: mt19937 by
+/// tag, on the host), so a seed gives the same velocities as
+/// `cpu::md::InitVelocity` with `dist gaussian`. One-time initialization in
+/// build(), once per trajectory: a continued run and an input edit keep the
+/// velocities. launch() is a no-op.
 ///
 /// `role()` stays `None` — it is a one-shot setup component, not a loop slot
 /// (Integrator / Thermostat / …).
@@ -122,7 +126,7 @@ class InitVelocity : public Component {
     /// @brief Construct velocity initializer.
     /// @param temperature Target temperature [K].
     /// @param seed Random number seed.
-    InitVelocity(double temperature, unsigned long long seed)
+    InitVelocity(double temperature, unsigned seed)
         : temperature_(temperature), seed_(seed) {}
 
     /// @brief Component name.
@@ -151,11 +155,11 @@ class InitVelocity : public Component {
 
     /// @brief Random seed.
     /// @return Seed value.
-    unsigned long long seed() const { return seed_; }
+    unsigned seed() const { return seed_; }
 
   private:
-    double temperature_;      ///< Target temperature [K].
-    unsigned long long seed_; ///< RNG seed.
+    double temperature_; ///< Target temperature [K].
+    unsigned seed_;      ///< RNG seed.
 };
 
 } // namespace md

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -123,7 +124,8 @@ void ZeroMomentum::launch(const cpu::LaunchContext& ctx) {
 
 // ── InitVelocity ─────────────────────────────────────────────────
 
-InitVelocity::InitVelocity(double temperature, unsigned seed, VelocityDist dist)
+InitVelocity::InitVelocity(double temperature, unsigned seed,
+                           ATV::md::VelocityDist dist)
     : temperature_(temperature), seed_(seed), dist_(dist) {}
 
 void InitVelocity::build(const cpu::BuildContext& ctx) {
@@ -140,8 +142,7 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     const int n = owned_count(ctx);
 
     // Hoisted once for the whole function -- every step below (draw,
-    // COM removal, rescale) reads/writes the same mass/v columns, and
-    // both the gaussian and uniform branches need them.
+    // COM removal, rescale) reads/writes the same mass/v columns.
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);
     StorageReal* __restrict sp_vy = f.span(kAtom_vy);
@@ -151,29 +152,20 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     // LAMMPS scales the raw draw by `1/sqrt(m)` (velocity.cpp:287-291);
     // the absolute scale is then fixed by the temperature rescale in
     // step 3, so the per-component prefactor only needs to be consistent.
+    // Keyed by tag (ATV::md::velocity_create_draws), the CUDA draw.
     std::mt19937 rng(seed_);
     if (multi_rank_dd(ctx.runtime)) {
         std::seed_seq sequence{seed_,
                                static_cast<unsigned>(ctx.runtime.mpi_rank)};
         rng.seed(sequence);
     }
-    if (dist_ == VelocityDist::gaussian) {
-        std::normal_distribution<double> draw(0.0, 1.0); // N(0,1)
-        for (int i = 0; i < n; ++i) {
-            const double s = 1.0 / std::sqrt(sp_mass[i]);
-            sp_vx[i] = draw(rng) * s;
-            sp_vy[i] = draw(rng) * s;
-            sp_vz[i] = draw(rng) * s;
-        }
-    } else { // VelocityDist::uniform
-        // LAMMPS draws `random->uniform() - 0.5` → U(-0.5, 0.5).
-        std::uniform_real_distribution<double> draw(-0.5, 0.5);
-        for (int i = 0; i < n; ++i) {
-            const double s = 1.0 / std::sqrt(sp_mass[i]);
-            sp_vx[i] = draw(rng) * s;
-            sp_vy[i] = draw(rng) * s;
-            sp_vz[i] = draw(rng) * s;
-        }
+    const std::vector<double> draws =
+        ATV::md::velocity_create_draws(rng, dist_, f.span(kAtom_tag).data(), n);
+    for (int i = 0; i < n; ++i) {
+        const double s = 1.0 / std::sqrt(sp_mass[i]);
+        sp_vx[i] = draws[3 * i] * s;
+        sp_vy[i] = draws[3 * i + 1] * s;
+        sp_vz[i] = draws[3 * i + 2] * s;
     }
 
     // ── 2. global COM velocity removal (LAMMPS `mom yes` default) ─────

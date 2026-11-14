@@ -272,6 +272,81 @@ def test_set_run_span_spans_chunked_runs(device: str) -> None:
     )
 
 
+def _seeded_md(device: str) -> MD:
+    sim = _lj_md(device)
+    sim.set_integrator(VelocityVerlet(2.0))
+    sim.set_observer(InitVelocity(120.0, 5))
+    return sim
+
+
+def _resting_frame(order: np.ndarray | None = None) -> "molpy.Frame":
+    """The 3.8 Å Ar box at rest; with ``order``, rows permuted and tagged
+    so that tag ``k + 1`` is the same lattice site in every order."""
+    frame = _ar_frame(3.8, 1.0)
+    n = _SIDE**3
+    for key in ("vx", "vy", "vz"):
+        frame["atoms"][key] = np.zeros(n)
+    if order is not None:
+        atoms = frame["atoms"]
+        for key in ("x", "y", "z"):
+            atoms[key] = np.ascontiguousarray(_columns(frame, key)[order])
+        atoms.insert("tag", (order + 1).astype(np.int32))
+    return frame
+
+
+@needs_cuda
+def test_same_seed_draws_the_same_velocities_on_both_devices() -> None:
+    """InitVelocity(T, seed) gives every atom the same velocity on the CPU
+    and on CUDA (FP64): one draw, keyed by tag."""
+    v = {}
+    for device in ("cpu", "cuda"):
+        frame = _resting_frame()
+        _seeded_md(device).run(frame, 0)
+        v[device] = _velocities(frame)
+    np.testing.assert_allclose(
+        v["cuda"], v["cpu"], rtol=0, atol=1e-12 * np.abs(v["cpu"]).max()
+    )
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_the_draw_follows_the_tags_not_the_rows(device: str) -> None:
+    """Rows in another order, same tags: the same velocity per tag."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+    n = _SIDE**3
+    order = np.random.default_rng(3).permutation(n)
+    ordered, shuffled = _resting_frame(np.arange(n)), _resting_frame(order)
+    _seeded_md(device).run(ordered, 0)
+    _seeded_md(device).run(shuffled, 0)
+    want = _velocities(ordered)  # the COM sum order differs: rounding
+    np.testing.assert_allclose(
+        _velocities(shuffled), want, rtol=0, atol=1e-13 * np.abs(want).max()
+    )
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_velocities_are_drawn_once_per_trajectory(device: str) -> None:
+    """The draw happens when a trajectory starts (LAMMPS ``velocity
+    create`` once): a continued run() keeps the trajectory's velocities,
+    and velocities edited between runs are the ones the next run uses."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+    chunked, once = _resting_frame(), _resting_frame()
+    sim = _seeded_md(device)
+    sim.run(chunked, 10)
+    sim.run(chunked, 10)
+    _seeded_md(device).run(once, 20)
+    np.testing.assert_allclose(
+        _velocities(chunked), _velocities(once), rtol=0, atol=1e-12
+    )
+
+    for key in ("vx", "vy", "vz"):
+        chunked["atoms"][key] = 0.5 * _columns(chunked, key)
+    edited = _velocities(chunked)
+    sim.run(chunked, 0)
+    np.testing.assert_allclose(_velocities(chunked), edited, rtol=0, atol=0)
+
+
 @needs_cuda
 class TestCudaNoseHooverNpt:
     def test_compressed_lj_box_expands_toward_zero_pressure(self) -> None:
