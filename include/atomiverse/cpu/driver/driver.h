@@ -453,9 +453,8 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
 
   protected:
     /// @brief Subclass hook — install opt-in infrastructure components
-    /// derived from declared user state (e.g. `NoseHooverNPT::reads()
-    /// == Stress` → inject `Virial`; pair evaluator + multi-rank
-    /// build → inject MPI halo exchange). Default no-op. Subclasses
+    /// derived from declared user state (e.g. pair evaluator +
+    /// multi-rank build → inject MPI halo exchange). Default no-op. Subclasses
     /// override to apply category-specific rules. Called from `build()`
     /// before `validate_components()` so the auto-injected set counts
     /// toward validation.
@@ -1371,8 +1370,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// pass over `pending_` populates everything.
     struct InfraScan {
         bool needs_stress = false; ///< Some pending component reads Stress.
-        bool has_virial_stress =
-            false; ///< Canonical Stress provider already there.
         bool has_neighbor_list = false; ///< NeighborList already there.
         bool has_constraint = false; ///< A Constraint component is registered.
         bool has_charge_updater =
@@ -1450,8 +1447,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                 s.has_mover = true;
             if (c.requires_system_stress())
                 s.needs_stress = true;
-            if (c.provides_system_stress())
-                s.has_virial_stress = true;
             if (c.as_neighbor_provider())
                 s.has_neighbor_list = true;
             if (c.as_constraint())

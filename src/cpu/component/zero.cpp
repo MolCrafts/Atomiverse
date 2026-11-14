@@ -75,10 +75,10 @@ void ZeroStress::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
     for (int k = 0; k < 6; ++k)
         f.meta.get(kStress)[k] = 0;
-    // `stress_kinetic` is overwritten (not accumulated) by Virial
-    // each step, so it does not strictly need zeroing -- but zero it
-    // here for symmetry and so observers that read it before Virial
-    // ever ran see a deterministic zero rather than uninitialised data.
+    // `stress_kinetic` is overwritten (not accumulated) by MD's
+    // `KineticEnergy` at end_of_step, so it does not strictly need zeroing
+    // -- but a driver without one (Evaluate, Minimize) must not export a
+    // stale value carried in by the input frame.
     for (int k = 0; k < 6; ++k)
         f.meta.get(kStressKinetic)[k] = 0;
 }

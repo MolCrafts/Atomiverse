@@ -14,7 +14,6 @@
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #ifdef ATV_HAS_MOLPY
 #include "atomiverse/cpu/potentials/eam.h"
@@ -264,7 +263,6 @@ int main(int argc, char** argv) {
 #endif
         sim.set_neighbor(cpu::md::NeighborList<>{cutoff, 0.3, 1, 0, true});
         sim.set_integrator(cpu::md::VelocityVerlet{dt});
-        sim.set_observer(cpu::md::Virial{});
         if (nested) {
             // Correctness-only mode: one continuous child trajectory, bracketed
             // by the same owner snapshots as the direct benchmark.

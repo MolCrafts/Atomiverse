@@ -51,7 +51,7 @@ Stress is the **system** 6-component virial in `frame.meta` under key
 - Real-space: `CoulLong` accumulates pair virial `r·F`.
 - Reciprocal: Ewald and PME write the influence-function geometric factor
   `V_ab = ug · (δ_ab + vt · k_a k_b)` (m-space form for PME).
-- Kinetic: `Virial` observer → `kStressKinetic`.
+- Kinetic: MD's `KineticEnergy` (end_of_step) → `kStressKinetic`.
 - Barostat pressure: `P = tr(σ_virial + σ_kinetic) / (3V)`, positive compressive.
 
 ## Cell refresh vs capacity rebuild

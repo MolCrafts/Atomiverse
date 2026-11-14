@@ -284,7 +284,6 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/multiscale/internal/qm_subsystem.cpp
         src/cpu/multiscale/internal/qm_mm_vdw.cpp
         src/cpu/asynchronous/async_consumer.cpp
-        src/cpu/observe/virial_stress.cpp
         src/cpu/observe/widom.cpp
         src/cpu/observe/electrode_charge.cpp
         src/cpu/observe/classical_polarization.cpp

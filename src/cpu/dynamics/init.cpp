@@ -30,7 +30,7 @@ namespace md {
 void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx); // owned only -- ghosts duplicate owners' KE
-    double ke = 0;
+    double s_xx = 0, s_yy = 0, s_zz = 0, s_xy = 0, s_xz = 0, s_yz = 0;
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     const StorageReal* __restrict sp_vx = f.span(kAtom_vx);
@@ -42,14 +42,29 @@ void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
     constexpr int kRowsPerThread = 16384;
     [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
 #pragma omp parallel for simd schedule(static) num_threads(team)               \
-    reduction(+ : ke) if (parallel : team > 1)
+    reduction(+ : s_xx, s_yy, s_zz, s_xy, s_xz, s_yz) if (parallel : team > 1)
     for (int i = 0; i < n; ++i) {
-        double v2 =
-            sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
-        ke += sp_mass[i] * v2;
+        const double m = sp_mass[i];
+        const double vx = sp_vx[i], vy = sp_vy[i], vz = sp_vz[i];
+        s_xx += m * vx * vx;
+        s_yy += m * vy * vy;
+        s_zz += m * vz * vz;
+        s_xy += m * vx * vy;
+        s_xz += m * vx * vz;
+        s_yz += m * vy * vz;
     }
 
-    f.meta.get(kKinetic) = double(0.5) * ctx.runtime.units.mvv2e * ke;
+    // mass·v² times the run's mvv2e is energy (LAMMPS compute ke and the
+    // kinetic part of compute pressure, both from the current velocities).
+    const double mvv2e = ctx.runtime.units.mvv2e;
+    f.meta.get(kKinetic) = 0.5 * mvv2e * (s_xx + s_yy + s_zz);
+    auto& stress = f.meta.get(kStressKinetic);
+    stress[0] = mvv2e * s_xx;
+    stress[1] = mvv2e * s_yy;
+    stress[2] = mvv2e * s_zz;
+    stress[3] = mvv2e * s_xy;
+    stress[4] = mvv2e * s_xz;
+    stress[5] = mvv2e * s_yz;
 }
 
 // ── ZeroMomentum ─────────────────────────────────────────────────

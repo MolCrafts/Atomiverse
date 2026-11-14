@@ -15,9 +15,13 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-/// @brief Compute kinetic energy at end_of_step phase.
+/// @brief Kinetic energy and kinetic stress at the end_of_step phase.
 ///
-/// KE = 0.5 * mvv2e * sum(m * v^2), with OpenMP reduction.
+/// From the owned velocities of the state the step leaves:
+/// `kStressKinetic` = mvv2e·Σ m v_α v_β (Voigt xx yy zz xy xz yz,
+/// extensive like `kStress`: not divided by V) and `kKinetic` = half its
+/// trace — LAMMPS `compute ke` and the kinetic part of `compute pressure`
+/// at thermo time. One reduction, OpenMP over rows.
 class KineticEnergy : public cpu::Observer {
   public:
     bool supports_input_changes(InputChange) const override { return true; }

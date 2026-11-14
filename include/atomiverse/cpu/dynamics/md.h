@@ -37,7 +37,6 @@
 #ifdef ATV_HAS_MOLPY
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #endif
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/record/timing_report.h"
 
 namespace ATV {
@@ -53,8 +52,9 @@ namespace md {
 /// are inherited from Driver), and runs `install_defaults()` at `build()`
 /// time to derive opt-in infrastructure from declared component requirements:
 ///
-///   - Stress capability dependency → auto-injects `Virial`
-///     (deduped against an explicitly-registered `Virial`).
+///   - The kinetic stress `kStressKinetic` is written with the kinetic
+///     energy by the always-on `KineticEnergy` (end_of_step), from the
+///     velocities of the state the step leaves.
 ///   - Halo / exchange live on `ctx.md.comm` (`CommBrick`); the Plan
 ///     does not mount `CommBrick` / `Comm::exchange` / `CommBrick::forward_comm`.
 ///   - A `NeighborConsumer` (pair evaluator / real-space Coulomb) was
@@ -408,8 +408,6 @@ class MD : public Driver<ATV::md::Phase> {
         // zeroing an unconsumed `stress` was a running sum over all steps.
         if (!this->pending_named_("zero_stress"))
             this->on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
-        if (s.needs_stress && !s.has_virial_stress)
-            this->bind_defaults(Virial{});
 
         // Halo / exchange / reverse live on `ctx.md.comm` (Runtime Verlet
         // and linear wrap). Constraint and charge-updater ghost refresh is

@@ -397,9 +397,9 @@ virial $\sigma$ in `frame.meta.get(kStress)`, accumulated by the force
 evaluators as $\sigma = \sum_{i<j} \mathbf{r}_{ij}\otimes\mathbf{f}_{ij}$
 with $\mathbf{r}_{ij}$ the pair separation and $\mathbf{f}_{ij}$ the force
 it carries. The kinetic part is $\sigma^{\mathrm{kin}}$ in
-`frame.meta.get(kStressKinetic)`, written by the `Virial` observer as
-$\sum_i m_i \mathbf{v}_i\otimes\mathbf{v}_i$, so its trace is twice the
-kinetic energy. Neither is divided by volume when stored, so the barostat
+`frame.meta.get(kStressKinetic)`, written by MD's `KineticEnergy` at the
+end of every step as $\sum_i m_i \mathbf{v}_i\otimes\mathbf{v}_i$, so its
+trace is twice the kinetic energy. Neither is divided by volume when stored, so the barostat
 does that division itself, with $V$ the cell volume:
 
 $$
@@ -409,7 +409,7 @@ $$
 
 That plus sign matters: it is LAMMPS's `compute pressure` convention, in
 which a positive $P$ is a system pushing outwards on its box, so holding it
-requires compression. Every pressure quantity in Atomiverse — `Virial`,
+requires compression. Every pressure quantity in Atomiverse — `kStressKinetic`,
 `Barostat`, `NoseHooverNPT` — uses this one convention, and a `P_target`
 you pass anywhere carries the same sign.
 

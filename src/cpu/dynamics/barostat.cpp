@@ -41,8 +41,9 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     //   P = (2·KE + Σ virial) / (3·V).
     // `frame.meta.get(kStress)` holds the pair-virial part Σ r·F; the kinetic
     // part Σ m·v² (trace = 2·KE) lives in `frame.meta.get(kStressKinetic)`.
-    // Berendsen runs at `end_of_step`, so both fields are at the same
-    // post-force velocity snapshot. This `+trace/(3V)` convention is
+    // Berendsen runs at `end_of_step` @ -45, after `KineticEnergy` (@ -100)
+    // wrote the kinetic part from the step's final velocities (LAMMPS fix
+    // press/berendsen evaluates compute pressure at end_of_step). This `+trace/(3V)` convention is
     // identical to `NoseHooverNPT` and LAMMPS — the link
     // `lammps-api-align-04` flipped the previous `−trace/(3V)`.
     // In the run's pressure unit (× nktv2p), like P_target and the bulk

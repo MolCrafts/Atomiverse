@@ -272,7 +272,7 @@ Components. Three legs:
 | Charges / types | \((-1)^{i_x+i_y+i_z}\): +1 cation (type 0, \(\alpha=0\)), −1 anion (type 1, \(\alpha=3.0\) Å³) |
 | Symmetry breaking | `disp[a] = 0.15·sin(1.7·(i+1) + 2.3·a)` Å (a perfect rock-salt lattice has \(E_{\mathrm{pol}}\equiv 0\)) |
 | PIM | cutoff 4.0 Å (min-image), `thole_a = 0.39`, `tt_b = 0`, `pol_tol = 10^{-13}` e·Å, `pol_max_iter = 1000` (pin converges in 25 Jacobi iterations); \(k = 14.399645\) eV·Å/e² |
-| NPT leg | lattice **stretched** to \(d=2.9\) Å (\(L = 11.6\) Å, start tension \(P_0\approx-0.12\) eV/Å³); `PairLJCut{0.01 eV, 3.0 Å}` + `PairCoulCut` + PIM (`pol_tol` 1e-10, 500 iterations); `NoseHooverNPT{T=800 K, τ_T=100 fs, P=0, τ_P=500 fs, dt=1 fs}` + `Virial` + `InitVelocity`, 250 steps |
+| NPT leg | lattice **stretched** to \(d=2.9\) Å (\(L = 11.6\) Å, start tension \(P_0\approx-0.12\) eV/Å³); `PairLJCut{0.01 eV, 3.0 Å}` + `PairCoulCut` + PIM (`pol_tol` 1e-10, 500 iterations); `NoseHooverNPT{T=800 K, τ_T=100 fs, P=0, τ_P=500 fs, dt=1 fs}` + `InitVelocity`, 250 steps |
 
 The NPT leg starts stretched: a stretched ionic melt contracts onto the stiff
 \(r^{-12}\) wall (self-limiting), while the compressed pin-leg density
@@ -314,7 +314,6 @@ sim.set_integrator(cpu::md::NoseHooverNPT{
     /*T_target [K]=*/800.0, /*tau_T [fs]=*/100.0,
     /*P_target [eV/Å³]=*/0.0, /*tau_P [fs]=*/500.0, /*dt [fs]=*/1.0});
 sim.set_observer(cpu::md::InitVelocity{800.0, 20260727u});
-sim.set_observer(cpu::md::Virial{});         // kinetic stress
 sim.build();
 sim.run(f2, 250);
 

@@ -12,9 +12,7 @@
 ///     re-call with a different component
 ///   - append setters (set_thermostat, set_observer, set_record) accept
 ///     repeated calls
-///   - install_infra: Stress dependency from NPT auto-injects Virial
-///   - install_infra: explicit Virial via set_observer suppresses
-///     the auto-inject (driver-level dedup by canonical-provider name)
+///   - install_infra: the virial is cleared once, before the force phase
 ///   - install_infra: pair evaluator without set_neighbor throws at build
 ///
 /// Acceptance: T3 / T4 / T5 / T11 / T12 / T14 of
@@ -38,7 +36,6 @@
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pair_morse.h"
@@ -273,8 +270,7 @@ TEST(MDSetApi, MultiPhaseBindingDoesNotDuplicateLongRangeParticipant) {
 }
 
 TEST(MDSetApi, StressConsumerWithMatchedLongRangePairBuilds) {
-    // Stress requirement is satisfied by auto-injected Virial (or any
-    // provides_system_stress provider). Long-range halves only need alpha match.
+    // Long-range halves only need alpha match.
     ATV::cpu::md::MD sim;
     add_test_integrator(sim);
     sim.set_evaluator(
@@ -323,39 +319,16 @@ TEST(MDSetApi, SetIntegratorRejectsDifferentTypeAfterFirst) {
                  std::invalid_argument);
 }
 
-// ─── install_infra: Stress dependency → Virial ────────────────
+// ─── install_infra: stress zeroing ─────────────────────────────────
 
-TEST(MDSetApi, NPTAutoInjectsVirialStress) {
-    IntrospectMD sim;
-    sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
-    sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
-    sim.set_integrator(ATV::cpu::md::NoseHooverNPT{kT, 100.0, kP, 1000.0, kDt});
-    EXPECT_NO_THROW(sim.build());
-    EXPECT_EQ(sim.name_counts["virial"], 1)
-        << "NPT::reads()==Stress → install_infra must add Virial once";
-}
-
-TEST(MDSetApi, ExplicitVirialStressSuppressesAutoInject) {
-    IntrospectMD sim;
-    sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
-    sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
-    sim.set_integrator(ATV::cpu::md::NoseHooverNPT{kT, 100.0, kP, 1000.0, kDt});
-    sim.set_observer(ATV::cpu::md::Virial{});
-    EXPECT_NO_THROW(sim.build());
-    EXPECT_EQ(sim.name_counts["virial"], 1)
-        << "Explicit Virial via set_observer must dedup the auto-inject";
-}
-
-TEST(MDSetApi, ExplicitVirialWithoutBarostatClearsStressOnceBeforeForce) {
+TEST(MDSetApi, StressIsClearedOnceBeforeForce) {
     IntrospectMD sim;
     sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
     sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
     sim.set_integrator(ATV::cpu::md::VelocityVerlet{kDt});
-    sim.set_observer(ATV::cpu::md::Virial{});
     for (int compile = 0; compile < 2; ++compile) {
         sim.name_counts.clear();
         ASSERT_NO_THROW(sim.build());
-        EXPECT_EQ(sim.name_counts["virial"], 1);
         EXPECT_EQ(sim.name_counts["zero_stress"], 1);
         for (const auto& slot : sim.plan().slots)
             for (const auto& op : slot.ops)
@@ -363,17 +336,6 @@ TEST(MDSetApi, ExplicitVirialWithoutBarostatClearsStressOnceBeforeForce) {
                     EXPECT_EQ(slot.phase,
                               ATV::slot_of(ATV::md::Phase::pre_force));
     }
-}
-
-TEST(MDSetApi, NoStressReadsLeavesVirialStressOut) {
-    IntrospectMD sim;
-    sim.set_evaluator(ATV::cpu::PairLJCut{kEps, kSigma, kCutoff});
-    sim.set_neighbor(ATV::cpu::md::NeighborList<>{kCutoff, kSkin});
-    sim.set_integrator(
-        ATV::cpu::md::VelocityVerlet{kDt}); // NVE — no stress dep
-    EXPECT_NO_THROW(sim.build());
-    EXPECT_EQ(sim.name_counts["virial"], 0)
-        << "VelocityVerlet does not read Stress → no Virial injection";
 }
 
 // The pair virial in `stress` is the virial of the step, also when nothing

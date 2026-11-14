@@ -333,10 +333,11 @@ void NoseHooverNPT::update_eps_dot(const cpu::LaunchContext& ctx,
     // Standard MTK sign convention (Tuckerman 2006, LAMMPS `fix_nh.cpp`):
     // pressure positive ⇔ compressive. `frame.meta.get(kStress)[0..2]` holds the
     // per-axis pair-virial diagonal; the kinetic diagonal `2·KE_α` is
-    // computed fresh from the current velocities (NOT the stale
-    // `frame.meta.get(kStressKinetic)` snapshot taken at `post_force` time, before
-    // `kick_v_by_force` / `scale_v_by_baro` — using it pumped a runaway
-    // box drift; see tests/cpu/md/test_lammps_npt_parity.cpp).
+    // computed fresh from the current velocities (NOT
+    // `frame.meta.get(kStressKinetic)`, which holds the previous step's
+    // end-of-step velocities, before `kick_v_by_force` / `scale_v_by_baro`
+    // — a stale kinetic part pumped a runaway box drift; see
+    // tests/cpu/md/test_lammps_npt_parity.cpp).
     //
     // Why a *fresh per-axis* kinetic diagonal: `scale_v_by_baro` scales
     // velocity component α by `exp(-ε̇_α·dt/2)`, removing `2·ε̇_α·KE_α`
