@@ -49,7 +49,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/ewald.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
@@ -494,7 +493,6 @@ double cut_of(System s) {
 
 void mount_cpu_forces(cpu::md::MD& sim, System s) {
     sim.set_neighbor(cpu::md::NeighborList<>{cut_of(s), kLjSkin, 1, 0, true});
-    sim.on(md::Phase::post_force).add(cpu::md::Virial{}, -50);
     switch (s) {
     case System::lj:
         sim.set_evaluator(cpu::PairLJCut{kLjEps, kLjSigma, kLjCut});

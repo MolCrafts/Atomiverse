@@ -22,7 +22,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/ewald.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/coul_long.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 #include "atomiverse/cuda/dynamics/fix_efield.cuh"
@@ -64,7 +63,6 @@ inline void mount(cpu::md::MD& sim, const Terms& t) {
     using namespace nacl_fixture;
     sim.set_units("metal");
     sim.set_neighbor(cpu::md::NeighborList<>{kCut, kSkin});
-    sim.on(md::Phase::post_force).add(cpu::md::Virial{}, -50);
     if (t.born)
         sim.set_evaluator(cpu::PairBorn{tosi_fumi(), kCut}
                               .set_energy_shift(false)

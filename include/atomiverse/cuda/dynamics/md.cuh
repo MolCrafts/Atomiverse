@@ -368,11 +368,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
 
         if (s.needs_stress && !s.has_virial_stress) {
             // `cuda::Virial` has no default_bindings(); bind it
-            // explicitly to `post_force @ -50` — the slot the CPU
-            // sibling `cpu::md::Virial::default_bindings()` uses,
-            // where pair / bonded virials are already accumulated and
-            // the velocities are post-integrator-kick so Σ m·v·v
-            // reflects the appropriate time-slice.
+            // explicitly to `post_force @ -50`, where pair / bonded
+            // virials are already accumulated.
             this->on(ATV::md::Phase::post_force).add(cuda::Virial{}, -50);
         }
 
