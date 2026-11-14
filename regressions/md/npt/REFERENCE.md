@@ -150,9 +150,19 @@ Converting the published SI table (`1×10⁻¹⁹ J = 1/e eV`,
 
 | pair | A [eV] | σ [Å] | C [eV Å⁶] | D [eV Å⁸] |
 |---|---|---|---|---|
-| Na⁺–Na⁺ | 0.2637038 | 2.340 | 0.6553585 | 0.3114513 |
-| Na⁺–Cl⁻ | 0.2109630 | 2.755 | 4.3690564 | 5.4176299 |
-| Cl⁻–Cl⁻ | 0.1582223 | 3.170 | 45.2509408 | 90.8139570 |
+| Na⁺–Na⁺ | 0.2637038 | 2.340 | 1.0485735 | 0.4993207 |
+| Na⁺–Cl⁻ | 0.2109630 | 2.755 | 6.9904902 | 8.6756976 |
+| Cl⁻–Cl⁻ | 0.1582223 | 3.170 | 72.4015053 | 145.4271614 |
+
+with the published `C = 1.68, 11.2, 116 ×10⁻⁷⁹ J·m⁶` and
+`D = 0.8, 13.9, 233 ×10⁻⁹⁹ J·m⁸`.
+
+**Erratum.** Until the correction the case carried C and D divided once more
+by 1.602177 (0.6553585, 4.3690564, 45.2509408 and 0.3114513, 5.4176299,
+90.8139570): 38 % too little dispersion. Every measured number below
+(cohesive energy, the pressure bracket, the NPT lattice constant) was
+obtained with that table and has not been re-measured; the case is archived
+and not run.
 
 `cpu::PairBorn` evaluates `A exp((σ−r)/ρ) − C/r⁶ **+** D/r⁸` (LAMMPS
 `pair_style born`), so the case passes **negated** `D`. Energies are shifted to

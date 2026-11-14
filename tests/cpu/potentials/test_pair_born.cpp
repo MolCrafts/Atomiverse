@@ -278,17 +278,6 @@ double integrate_to_infinity(double rc, G g) {
     return sum * h / 3.0;
 }
 
-/// Tosi–Fumi NaCl (`regressions/md/npt/npt_pme_nacl.cpp`): D enters
-/// negated because PairBorn's dispersion term is +D/r⁸.
-std::vector<cpu::BornTypeCoeff> tosi_fumi() {
-    constexpr double rho = 0.317;
-    return {
-        {0, 0, 0.2637038, rho, 2.340, 0.6553585, -0.3114513},
-        {0, 1, 0.2109630, rho, 2.755, 4.3690564, -5.4176299},
-        {1, 1, 0.1582223, rho, 3.170, 45.2509408, -90.8139570},
-    };
-}
-
 /// Ions in a cubic cell; the tail depends on the type counts and the volume
 /// only, not on where they sit.
 cpu::Frame ions(int n_na, int n_cl, double box) {
@@ -324,7 +313,7 @@ TEST(PairBorn, WithoutEnergyShiftTheEnergyIsTheBarePotential) {
     EXPECT_EQ(bare.span(kAtom_fx)[0], shifted.span(kAtom_fx)[0]);
 
     // Same switch on the per-type table.
-    const auto table = tosi_fumi();
+    const auto table = nacl_fixture::tosi_fumi();
     auto f_on = dimer(2.9, 0, 1);
     auto f_off = dimer(2.9, 0, 1);
     cpu::PairBorn t_on(table, 9.0);
@@ -342,7 +331,7 @@ TEST(PairBorn, WithoutEnergyShiftTheEnergyIsTheBarePotential) {
 // potential itself, E = Σ_ij 2π N_i N_j/V ∫ r²U and W_αα = Σ_ij −(2π/3)
 // N_i N_j/V ∫ r³U' over [r_c, ∞), ordered type pairs.
 TEST(PairBorn, TailCorrectionEqualsTheIntegralOfThePotential) {
-    const auto table = tosi_fumi();
+    const auto table = nacl_fixture::tosi_fumi();
     const double rc = 5.0, box = 31.0;
     const int n_na = 4, n_cl = 6;
     const double counts[2] = {n_na, n_cl};
@@ -417,4 +406,38 @@ TEST(PairBorn, MultiTypeTableWalksACoveringListLikeAllPairs) {
     ASSERT_NE(all_pairs.energy, 0.0);
     expect_same_sums(tosi_fumi_sums(kCut, kCut), all_pairs, 1e-12);
     expect_same_sums(tosi_fumi_sums(kCut, 4.0), all_pairs, 1e-12);
+}
+
+// Oracle: Valeriani, Sanz and Frenkel, J. Chem. Phys. 122, 194501 (2005),
+// Table 1 (Fumi–Tosi NaCl), U = A e^{B(σ−r)} − C/r⁶ − D/r⁸ with A [kJ/mol],
+// B = 3.1546 Å⁻¹, C [kJ/mol Å⁶], D [kJ/mol Å⁸], σ [Å] — another paper, other
+// units. The shared NEMD fixture table must evaluate to that potential to
+// the 6 digits Valeriani print; a table short by any constant factor on C
+// or D misses by 1e-3 eV or more at these separations.
+TEST(PairBorn, TosiFumiFixtureIsThePublishedPotential) {
+    constexpr double kKjPerMolPerEv = 96.48533212; // N_A e / 1000
+    constexpr double kB = 3.1546;                  // [1/Å]
+    struct Row {
+        int ti, tj;
+        double A, C, D, sigma, r;
+    };
+    const Row rows[] = {
+        {nacl_fixture::kNa, nacl_fixture::kNa, 25.4435, 101.1719, 48.1771,
+         2.340, 3.0},
+        {nacl_fixture::kNa, nacl_fixture::kCl, 20.3548, 674.4793, 837.0770,
+         2.755, 2.8},
+        {nacl_fixture::kCl, nacl_fixture::kCl, 15.2661, 6985.6786, 14031.5785,
+         3.170, 3.6},
+    };
+    for (const Row& w : rows) {
+        const double want = (w.A * std::exp(kB * (w.sigma - w.r))
+                             - w.C / std::pow(w.r, 6) - w.D / std::pow(w.r, 8))
+                            / kKjPerMolPerEv;
+        auto f = dimer(w.r, w.ti, w.tj);
+        cpu::PairBorn born = cpu::PairBorn(nacl_fixture::tosi_fumi(), 9.0)
+                                 .set_energy_shift(false);
+        evaluate_born(born, f);
+        EXPECT_NEAR(f.meta.get(kEnergy), want, 2e-6)
+            << "types " << w.ti << "-" << w.tj << " at r = " << w.r;
+    }
 }

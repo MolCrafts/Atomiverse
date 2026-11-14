@@ -63,8 +63,13 @@ _DT: float = 0.001  # [ps]
 def _tosi_fumi() -> Born:
     """Tosi–Fumi NaCl short-range table (Born–Mayer–Huggins).
 
-    The Tosi–Fumi d/r⁸ term is attractive; ``Born`` adds +D/r⁸, so D is
-    the negated dispersion coefficient.
+    Fumi and Tosi, J. Phys. Chem. Solids 25, 31 and 45 (1964), cgs: b =
+    0.338e-12 erg with Pauling factors 1.25, 1.00, 0.75; ρ = 0.317 Å;
+    σ_Na = 1.170, σ_Cl = 1.585 Å; C = 1.68, 11.2, 116 × 1e-60 erg cm⁶;
+    D = 0.8, 13.9, 233 × 1e-76 erg cm⁸ (Na–Na, Na–Cl, Cl–Cl). In eV and Å
+    (1 eV = 1.602176634e-12 erg, 1 cm = 1e8 Å) every coefficient is its cgs
+    mantissa / 1.602176634. The Tosi–Fumi d/r⁸ term is attractive;
+    ``Born`` adds +D/r⁸, so D is the negated dispersion coefficient.
     """
     return Born(
         type_i=[_TYPE_NA, _TYPE_NA, _TYPE_CL],
@@ -72,8 +77,8 @@ def _tosi_fumi() -> Born:
         A=[0.2637038, 0.2109630, 0.1582223],
         rho=[0.317, 0.317, 0.317],
         sigma=[2.340, 2.755, 3.170],
-        C=[0.6553585, 4.3690564, 45.2509408],
-        D=[-0.3114513, -5.4176299, -90.8139570],
+        C=[1.0485735, 6.9904902, 72.4015053],
+        D=[-0.4993207, -8.6756976, -145.4271614],
         cutoff=_CUT,
     )
 
@@ -162,6 +167,71 @@ def _constrained_temperature(frame: molpy.Frame, kind: str) -> float:
         axes, dof = (1, 2), 2 * n - 2
     twice_k = sum(float(np.sum(mass * w[:, d] ** 2)) for d in axes)
     return _MVV2E * twice_k / (dof * _BOLTZ)
+
+
+class TestTosiFumiTable:
+    """The melt's Born table is the Fumi–Tosi NaCl model.
+
+    HARD-CODED GOLDEN — Valeriani, Sanz and Frenkel, J. Chem. Phys. 122,
+    194501 (2005), Table 1 ("Potential parameters for NaCl", Fumi and
+    Tosi): U = A e^{B(σ−r)} − C/r⁶ − D/r⁸ with A [kJ/mol], B = 3.1546 Å⁻¹,
+    C [kJ/mol Å⁶], D [kJ/mol Å⁸], σ [Å]. A table in other units from
+    another paper: converted to eV it agrees with the Fumi–Tosi cgs
+    constants to the 6 digits Valeriani print.
+    """
+
+    _KJ_PER_MOL_PER_EV: float = 96.48533212  # N_A·e/1000 (CODATA 2018)
+    _B: float = 3.1546  # [1/Å]
+    #: (type i, type j, A, C, D, σ) per pair, Valeriani's units.
+    _ROWS = {
+        "Na-Na": (_TYPE_NA, _TYPE_NA, 25.4435, 101.1719, 48.1771, 2.340),
+        "Na-Cl": (_TYPE_NA, _TYPE_CL, 20.3548, 674.4793, 837.0770, 2.755),
+        "Cl-Cl": (_TYPE_CL, _TYPE_CL, 15.2661, 6985.6786, 14031.5785, 3.170),
+    }
+
+    def _published(self, pair: str, r: float) -> float:
+        """Valeriani's U(r) [eV], shifted to 0 at the melt's cutoff."""
+        _, _, a, c, d, sigma = self._ROWS[pair]
+
+        def u(x: float) -> float:
+            return (
+                a * math.exp(self._B * (sigma - x)) - c / x**6 - d / x**8
+            ) / self._KJ_PER_MOL_PER_EV
+
+        return u(r) - u(_CUT)
+
+    @pytest.mark.parametrize(
+        "pair, r", [("Na-Na", 3.0), ("Na-Cl", 2.8), ("Cl-Cl", 3.6)]
+    )
+    def test_dimer_energy_is_the_published_potential(
+        self, pair: str, r: float
+    ) -> None:
+        """A dimer of each pair under ``_tosi_fumi()`` has the published
+        energy to 2e-6 eV (the digits of the table). The dispersion terms
+        are 0.1–3.8e-2 eV at these separations; a table that is short by
+        any constant factor on C or D misses by 1e-3 eV or more."""
+        ti, tj, *_ = self._ROWS[pair]
+        atoms = molpy.Block()
+        atoms.insert("x", np.array([5.0, 5.0 + r]))
+        atoms.insert("y", np.array([5.0, 5.0]))
+        atoms.insert("z", np.array([5.0, 5.0]))
+        mass = {_TYPE_NA: _MASS_NA, _TYPE_CL: _MASS_CL}
+        atoms.insert("mass", np.array([mass[ti], mass[tj]]))
+        number = {_TYPE_NA: 11, _TYPE_CL: 17}
+        atoms.insert(
+            "atomic_number", np.array([number[ti], number[tj]], dtype=np.uint32)
+        )
+        atoms.insert("type_id", np.array([ti, tj], dtype=np.uint32))
+        frame = molpy.Frame()
+        frame["atoms"] = atoms
+        frame.box = molpy.Box.cube(20.0)
+        sim = MD(units="metal")
+        sim.set_integrator(VelocityVerlet(_DT))
+        sim.set_evaluator(_tosi_fumi())
+        sim.run(frame, 0)
+        assert float(frame.meta["energy"]) == pytest.approx(
+            self._published(pair, r), abs=2e-6
+        )
 
 
 class TestPairBornCutoffTreatment:
@@ -277,7 +347,7 @@ class TestConfigurationalTemperature:
 
         Tosi–Fumi Na–Cl coefficients at r = 3.0 Å, where φ'' + 2φ'/r > 0.
         """
-        a, rho, sigma, c, dd = 0.2109630, 0.317, 2.755, 4.3690564, -5.4176299
+        a, rho, sigma, c, dd = 0.2109630, 0.317, 2.755, 6.9904902, -8.6756976
         atoms = molpy.Block()
         atoms.insert("x", np.array([5.0, 8.0]))
         atoms.insert("y", np.array([5.0, 5.0]))
@@ -356,7 +426,7 @@ class TestGearPC:
         temperature to 700 K: after a 300-step run from the 1500 K start,
         T_CONF = <N>/(k_B <D>) of a second 300-step run lies within 10 % of
         the target (720 K measured; unthermostatted, the same protocol
-        gives 1090 K). The second run averages its own 300 evaluations.
+        gives 1075 K). The second run averages its own 300 evaluations.
         """
         t0 = 700.0
         observer = ConfigurationalTemperature()

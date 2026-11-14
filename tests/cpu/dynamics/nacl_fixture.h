@@ -25,12 +25,19 @@ inline constexpr double kMassNa = 22.9898;   ///< [g/mol]
 inline constexpr double kMassCl = 35.453;    ///< [g/mol]
 
 /// @brief Tosi–Fumi NaCl rows; `PairBorn` adds +D/r⁸, so D is negated.
+///
+/// Fumi and Tosi, J. Phys. Chem. Solids 25, 31 and 45 (1964), cgs: b =
+/// 0.338e-12 erg with Pauling factors 1.25, 1.00, 0.75; ρ = 0.317 Å;
+/// σ_Na = 1.170, σ_Cl = 1.585 Å; C = 1.68, 11.2, 116 × 1e-60 erg cm⁶; D =
+/// 0.8, 13.9, 233 × 1e-76 erg cm⁸ (Na–Na, Na–Cl, Cl–Cl). In eV and Å
+/// (1 eV = 1.602176634e-12 erg, 1 cm = 1e8 Å) every coefficient is its cgs
+/// mantissa / 1.602176634.
 inline std::vector<ATV::cpu::BornTypeCoeff> tosi_fumi() {
     constexpr double rho = 0.317; // [Å]
     return {
-        {kNa, kNa, 0.2637038, rho, 2.340, 0.6553585, -0.3114513},
-        {kNa, kCl, 0.2109630, rho, 2.755, 4.3690564, -5.4176299},
-        {kCl, kCl, 0.1582223, rho, 3.170, 45.2509408, -90.8139570},
+        {kNa, kNa, 0.2637038, rho, 2.340, 1.0485735, -0.4993207},
+        {kNa, kCl, 0.2109630, rho, 2.755, 6.9904902, -8.6756976},
+        {kCl, kCl, 0.1582223, rho, 3.170, 72.4015053, -145.4271614},
     };
 }
 
