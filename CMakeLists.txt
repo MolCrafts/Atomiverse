@@ -1369,6 +1369,19 @@ if(NOT ATV_DOCS_ONLY)
         endif()
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
+        # The source revision the extension is built from (git checkout, or
+        # the `.atv-source-commit` a copy without .git carries), re-read on
+        # every build: `_atomiverse.__git_commit__` / `__git_dirty__`.
+        set(_atv_stamp_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/stamp")
+        add_custom_target(atv_source_stamp
+            COMMAND "${CMAKE_COMMAND}" -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DOUTPUT=${_atv_stamp_dir}/atv_source_stamp.h
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AtvSourceStamp.cmake"
+            BYPRODUCTS "${_atv_stamp_dir}/atv_source_stamp.h"
+            COMMENT "Stamping the source revision"
+            VERBATIM)
+        add_dependencies(_atomiverse atv_source_stamp)
+        target_include_directories(_atomiverse PRIVATE "${_atv_stamp_dir}")
 
         # ── Pin the extension to the BLAS it was linked against ────────
         #

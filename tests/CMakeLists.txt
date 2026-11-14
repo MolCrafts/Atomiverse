@@ -1631,3 +1631,13 @@ if(_atv_unit_mpi_sources)
     target_include_directories(atv_tests_mpi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set_target_properties(atv_tests_mpi PROPERTIES CXX_STANDARD 20)
 endif()
+
+# The source-revision stamp of the Python extension (cmake/AtvSourceStamp.cmake)
+# on a git checkout, a copy carrying .atv-source-commit, and a bare copy.
+add_test(NAME source_stamp
+    COMMAND ${CMAKE_COMMAND}
+            -DSTAMP=${CMAKE_SOURCE_DIR}/cmake/AtvSourceStamp.cmake
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_stamp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_source_stamp.cmake)
+set_tests_properties(source_stamp PROPERTIES
+    LABELS unit TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS})

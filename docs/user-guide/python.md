@@ -108,6 +108,22 @@ real_storage = "double"
 **`--hf`** is the flag spelling of the `hf` module: it configures Gaussian
 SCF (`ATV_BUILD_HF=ON`) exactly like every other product module.
 
+**Which source a build came from:** `atomiverse.__git_commit__` is the
+commit the extension was compiled from and `atomiverse.__git_dirty__`
+whether tracked files differed from it, read at every build of the tree. A
+copy without `.git` (rsync, `git archive`) carries them in a one-line file
+`.atv-source-commit` at its root, `<40-hex commit> clean|dirty`, written by
+whoever made the copy:
+
+```bash
+printf '%s %s\n' "$(git rev-parse HEAD)" \
+  "$(git status --porcelain --untracked-files=no | grep -q . \
+     && echo dirty || echo clean)" > /path/to/copy/.atv-source-commit
+```
+
+Without either the commit is `"unknown"` and `__git_dirty__` is `None`; a
+malformed file fails the build.
+
 **Version lock:** the checkout's `__version__` must equal the installed
 package version — `config` refuses otherwise, so a native build never
 silently swaps the release you installed for a different tree.

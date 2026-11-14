@@ -207,6 +207,7 @@ from typing import Any
 
 from atomiverse._binding import (
     MissingDomainError,
+    _cpp,
     extension_available,
     has_domain,
     missing_domain_message,
@@ -455,6 +456,12 @@ def __getattr__(name: str) -> Any:
         names = [n for n in _PUBLIC if _carried(n)]
         globals()["__all__"] = names
         return names
+    if name in ("__git_commit__", "__git_dirty__"):
+        # The source revision the extension was built from: a 40-hex commit
+        # or "unknown", and whether tracked files differed from it (None
+        # when unknown). See cmake/AtvSourceStamp.cmake.
+        require_cpp()
+        return getattr(_cpp, name)
     if name not in _COMPUTE_EXPORTS:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     # Extension must be present before any compute symbol resolves.
