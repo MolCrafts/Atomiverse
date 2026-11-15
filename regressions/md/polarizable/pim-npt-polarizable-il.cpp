@@ -24,7 +24,6 @@
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cpu/potentials/pim_induced_dipole.h"
@@ -103,7 +102,8 @@ int run() {
     // Offline pins were eV (qqr2e = units::coulomb). The engine multiplies
     // qqrd2e, so energy, virial and the pressure made from that virial scale.
     const double e_scale =
-        ATV::units::UnitSystem::lj().qqrd2e() / ATV::units::coulomb;
+        ATV::units::from_style(ATV::units::Style::metal).qqrd2e()
+        / ATV::units::coulomb;
     const double E_pol_pin = -8.695749870555906 * e_scale;
     const double W_pin[6] = {
         -10.66184373345355 * e_scale, -12.125914211727187 * e_scale,
@@ -126,6 +126,7 @@ int run() {
         cpu::PimInducedDipole pim(pim_cut, {0.0, alpha_anion}, thole_a,
                                   /*pol_tol=*/1e-13, /*max_iter=*/1000);
         cpu::Evaluate eval;
+        eval.set_units("metal");
         eval.on(evaluate::Phase::evaluate).add_ref(pim);
         eval.build();
         eval.run(f);
@@ -174,6 +175,7 @@ int run() {
     {
         auto f = make_start_frame(kDPin);
         cpu::Evaluate eval;
+        eval.set_units("metal");
         eval.set_evaluator(cpu::PairLJCut{0.01, 3.0, pim_cut});
         eval.set_evaluator(cpu::PairCoulCut{pim_cut});
         eval.set_neighbor(cpu::md::NeighborList<>{pim_cut, 0.3});
@@ -187,6 +189,7 @@ int run() {
     {
         auto f = make_start_frame(kDPin);
         cpu::Evaluate eval;
+        eval.set_units("metal");
         eval.set_evaluator(cpu::PairLJCut{0.01, 3.0, pim_cut});
         eval.set_evaluator(cpu::PairCoulCut{pim_cut});
         eval.set_evaluator(cpu::PimInducedDipole{
@@ -221,15 +224,15 @@ int run() {
                                   /*pol_tol=*/1e-10, /*max_iter=*/500);
         TrackVolume vol;
         cpu::md::MD sim;
+        sim.set_units("metal");
         sim.set_evaluator(cpu::PairLJCut{0.01, 3.0, pim_cut});
         sim.set_evaluator(cpu::PairCoulCut{pim_cut});
         sim.set_evaluator_ref(pim);
         sim.set_neighbor(cpu::md::NeighborList<>{pim_cut, 0.3});
         sim.set_integrator(cpu::md::NoseHooverNPT{
-            /*T_target=*/T, /*tau_T=*/100.0, /*P_target=*/0.0,
-            /*tau_P=*/500.0, /*dt=*/1.0});
+            /*T_target=*/T, /*tau_T=*/0.1, /*P_target=*/0.0,
+            /*tau_P=*/0.5, /*dt=*/0.001}); // [K, ps, bar] (`units metal`)
         sim.set_observer(cpu::md::InitVelocity{T, 20260727u});
-        sim.set_observer(cpu::md::Virial{});
         sim.add_criterion_ref(vol);
         sim.enable_timing(false);
         sim.build();

@@ -535,14 +535,21 @@ like-for-like kernel benchmark.
    density would expand ballistically through the soft side).
    `cpu::md::MD` + `PairLJCut{0.01 eV, 3.0 Å}` + `PairCoulCut` (both
    virial-correct) + `PimInducedDipole` +
-   `NoseHooverNPT{T=800 K, τ_T=100 fs, P=0, τ_P=500 fs, dt=1 fs}` +
-   `Virial` (kinetic stress) + `InitVelocity` + an out-of-library
+   `NoseHooverNPT{T=800 K, τ_T=100 fs, P=0, τ_P=500 fs, dt=1 fs}` (passed
+   in ps: every driver runs `units metal`) + `InitVelocity` + an out-of-library
    `TrackVolume` Criterion, 250 steps. Invariants: per-step SCC convergence
    (the component throws otherwise), finite MTK conserved quantity,
    contraction happened (V_min < 0.97·V₀), bounded
    (0.5·V₀ < V_min, V_max < 1.2·V₀).
 
 Runtime ≪ 60 s (N = 64, O(N²) SCC per step).
+
+Re-run 2026-11-15 after the case moved to `units metal` (before, it ran the
+default `lj` style with eV/Å/fs inputs, and its NPT leg failed: the cell
+never contracted), compiled on its own with a one-line stand-in for
+`harness/registry.h`: PASS. PIM pin E_pol = −8.69574987055589 eV (pin
+−8.69574987055591), every virial component to ≤ 5e-14 relative; NPT
+V 1560.9 → 1427.8 Å³ (−8.5 %), V_min/V₀ = 0.845, V_max/V₀ = 1.000.
 
 
 ## extended-lagrangian-dipoles

@@ -17,7 +17,6 @@
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
@@ -113,7 +112,6 @@ Out run_on_device(Device dev, int steps = 80, bool projected = false) {
         // on both backends (InitVelocity RNGs differ, so not used here).
         const double T = projected ? 1.0 : 1.0 / units::UnitSystem::lj().boltz;
         sim.set_integrator(cpu::md::NoseHooverNPT{T, 0.1, 0.0, 1.0, kDt});
-        sim.set_observer(cpu::md::Virial{});
         sim.enable_timing(false);
         sim.build();
         sim.run(frame, steps);

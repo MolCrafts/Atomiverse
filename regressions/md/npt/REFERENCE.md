@@ -66,6 +66,13 @@ Public thermostat-free `cpu::md::NphIntegrator` (isotropic NPH):
 Martyna, Tobias, Klein, *J. Chem. Phys.* **101**, 4177 (1994) — MTK barostat;
 NPH is the thermostat-free subset (conserved extended enthalpy).
 
+### Re-run (2026-11-15)
+
+The case now runs `units metal` (times passed in ps); before, it ran the
+default `lj` style with eV/Å/fs inputs and failed its volume gate. Compiled
+on its own as described under *npt_pme_nacl — Re-measurement*: PASS,
+max |ΔH|/max(1,|H₀|) = 5.3×10⁻⁶ (H₀ = −5.673 eV), V 3796 → 4559 Å³.
+
 
 ## pr_npt_lj — Parrinello–Rahman NPT on compressed LJ argon
 
@@ -104,6 +111,13 @@ Public `cpu::md::ParrinelloRahmanNPT` on compressed FCC argon (LJ):
 
 Parrinello & Rahman, *J. Appl. Phys.* **52**, 7182 (1981);
 Martyna, Tobias, Klein, *J. Chem. Phys.* **101**, 4177 (1994).
+
+### Re-run (2026-11-15)
+
+The case now runs `units metal` (times passed in ps); before, it ran the
+default `lj` style with eV/Å/fs inputs and failed its shear gate. Compiled
+on its own as described under *npt_pme_nacl — Re-measurement*: PASS,
+V 3582 → 5257 Å³.
 
 
 ## Reference — rock-salt NaCl under PME electrostatics at zero pressure
@@ -157,12 +171,12 @@ Converting the published SI table (`1×10⁻¹⁹ J = 1/e eV`,
 with the published `C = 1.68, 11.2, 116 ×10⁻⁷⁹ J·m⁶` and
 `D = 0.8, 13.9, 233 ×10⁻⁹⁹ J·m⁸`.
 
-**Erratum.** Until the correction the case carried C and D divided once more
+**Erratum.** Until 2026-11-14 the case carried C and D divided once more
 by 1.602177 (0.6553585, 4.3690564, 45.2509408 and 0.3114513, 5.4176299,
-90.8139570): 38 % too little dispersion. Every measured number below
-(cohesive energy, the pressure bracket, the NPT lattice constant) was
-obtained with that table and has not been re-measured; the case is archived
-and not run.
+90.8139570): 38 % too little dispersion. The numbers below were re-measured
+with the corrected table on 2026-11-15 (see *Re-measurement*). The extra
+dispersion moves the static zero-pressure spacing from +0.6 % above
+experiment to −0.15 % below it, so the equilibrium bracket is now two-sided.
 
 `cpu::PairBorn` evaluates `A exp((σ−r)/ρ) − C/r⁶ **+** D/r⁸` (LAMMPS
 `pair_style born`), so the case passes **negated** `D`. Energies are shifted to
@@ -220,7 +234,7 @@ signature and are pinned here and in
 Tosi–Fumi is *fitted* to NaCl, so both of these are experiment:
 
 ```text
-E_coh(a₀) = −7.9324 eV per ion pair    experiment −7.94 eV   (0.1 %)
+E_coh(a₀) = −8.0025 eV per ion pair    experiment −7.94 eV   (0.8 %)
 ```
 
 The experimental static lattice energy of NaCl is 7.94 eV per ion pair
@@ -230,19 +244,22 @@ The experimental static lattice energy of NaCl is 7.94 eV per ion pair
 The zero-pressure lattice constant is bracketed rather than solved:
 
 ```text
-P(a₀)        = +0.499 GPa   (wants to expand)
-P(1.015 a₀)  = −0.642 GPa   (wants to contract)
+P(0.985 a₀)  = +1.2095 GPa  (wants to expand)
+P(a₀)        = −0.1251 GPa  (wants to contract)
+P(1.015 a₀)  = −1.1854 GPa  (wants to contract)
 ```
 
-so the model's mechanical equilibrium is inside `a₀ ± 1.5 %`. (Its static
-minimum is `a = 5.675 Å`, +0.6 %.)
+so the model's mechanical equilibrium is inside `a₀ ± 1.5 %`. (A quadratic
+through the three points puts its static zero-pressure spacing at
+`a = 5.631 Å`, −0.15 %.)
 
 #### 5. NPT at `P_target = 0`
 
 `NoseHooverNPT` — Martyna–Tobias–Klein isotropic barostat with Nosé–Hoover
 chains (Martyna, Tobias, Klein, *J. Chem. Phys.* **101**, 4177 (1994); Shinoda
 et al., *Phys. Rev. B* **69**, 134103 (2004)). `T = 300 K`, `τ_T = 100 fs`,
-`τ_P = 500 fs`, `dt = 0.5 fs`, 8000 steps = 4 ps ≈ 8 barostat times.
+`τ_P = 500 fs`, `dt = 0.5 fs` (passed in ps: the case runs `units metal`),
+8000 steps = 4 ps ≈ 8 barostat times.
 
 The cell **starts 3 % compressed**, so the barostat has to push it back out. A
 stress that is too small shows up as a cell that never recovers — which a bare
@@ -250,13 +267,13 @@ stress that is too small shows up as a cell that never recovers — which a bare
 not started at equilibrium.
 
 ```text
-⟨a⟩ over the last 2 ps = 5.7395 Å    experiment 5.6402 Å   (+1.76 %)
-max|ΔH|/max(1,|H₀|)     = 1.24×10⁻⁶  over 4 ps
+⟨a⟩ over the last 2 ps = 5.6949 Å    experiment 5.6402 Å   (+0.97 %)
+max|ΔH|/max(1,|H₀|)     = 1.26×10⁻⁶  over 4 ps
 ```
 
-`+1.76 %` is the model's own answer, not an error budget: the Tosi–Fumi static
-minimum is `+0.6 %` and NaCl's linear thermal expansion (α ≈ 40×10⁻⁶ K⁻¹) adds
-roughly another `+1.2 %` by 300 K. The 3 % gate leaves ~3σ of headroom on the
+`+0.97 %` is the model's own answer, not an error budget: the Tosi–Fumi static
+zero-pressure spacing is `−0.15 %` and NaCl's linear thermal expansion
+(α ≈ 40×10⁻⁶ K⁻¹) adds roughly another `+1.2 %` by 300 K. The 3 % gate leaves ~3σ of headroom on the
 volume fluctuation of a 64-ion cell (`σ_V/V = √(k_B T κ_T/V) ≈ 1 %`, so
 `σ_a/a ≈ 0.35 %`, further reduced by averaging 20 chunks).
 
@@ -266,19 +283,27 @@ volume fluctuation of a 64-ion cell (`σ_V/V = √(k_B T κ_T/V) ≈ 1 %`, so
 |---|---|---|---|
 | Madelung `E/E_ref` | 3.8e-8 | 5e-4 | PME grid 0.5 Å, order 6, box ~11 Å |
 | Scaling `E(s)·s/E(1)` | 1.4e-8 | 5e-4 | same discretization at both volumes |
-| Virial identity | 1.9e-8 | 1e-5 | central difference at h = 1e-6; the identity is exact, so this is FD truncation + rounding only |
-| Cohesive energy | 0.1 % | 2 % | Tosi–Fumi's own fit quality against the Born–Haber lattice energy |
-| Equilibrium bracket | ±1.5 % | sign change required | the model's static minimum is +0.6 % |
-| ⟨a⟩ under NPT | +1.76 % | 3 % | static minimum + thermal expansion, ~3σ of cell-fluctuation headroom |
-| Conserved `max\|ΔH\|/max(1,\|H₀\|)` | 1.24e-6 | 5e-3 | MTK is symplectic; a secular ramp means a force/stress or cell-refresh bug |
+| Virial identity | 1.8e-8 | 1e-5 | central difference at h = 1e-6; the identity is exact, so this is FD truncation + rounding only |
+| Cohesive energy | 0.8 % | 2 % | Tosi–Fumi's own fit quality against the Born–Haber lattice energy |
+| Equilibrium bracket | ±1.5 % | sign change required | the model's static zero-pressure spacing is −0.15 % |
+| ⟨a⟩ under NPT | +0.97 % | 3 % | static minimum + thermal expansion, ~3σ of cell-fluctuation headroom |
+| Conserved `max\|ΔH\|/max(1,\|H₀\|)` | 1.26e-6 | 5e-3 | MTK is symplectic; a secular ramp means a force/stress or cell-refresh bug |
 
-Runtime: 2.6 s single-threaded.
+Runtime: 3 s on four threads (Apple M-series).
+
+### Re-measurement
+
+2026-11-15 (the commit that wrote this section): the runner is gone, so the case was
+compiled on its own against a Release CPU build (`ATV_BUILD_KSPACE=ON`) with
+a one-line stand-in for `harness/registry.h` that turns `ATV_REGRESSION`
+into `main`, and run once; it printed `PASS`. Madelung 3.8e-8 and scaling
+1.4e-8 are unchanged (the short-range table does not enter them).
 
 ### Units
 
-Distance Å, energy eV, force eV/Å, mass amu, time fs, temperature K, pressure
-eV/Å³ (`1 eV/Å³ = 160.21766 GPa`). Every gate is evaluated in eV/Å³; GPa
-appears only in the printed lines.
+LAMMPS `units metal` (set on every driver): distance Å, energy eV, force
+eV/Å, mass amu, time ps, temperature K. Every gate is evaluated in eV/Å³
+(`1 eV/Å³ = 160.21766 GPa`); GPa appears only in the printed lines.
 
 ### History
 
@@ -342,6 +367,15 @@ Gate C (fixed 24³ mesh, both modes identical to three digits):
 The force error grows by 1.6× at +5 % linear strain (the effective mesh
 spacing grows with the cell), and stays within the s = 1 accuracy class.
 
+Re-run 2026-11-15 (GH200, CUDA 13.2, double), after the case moved to
+`units metal` (times in ps, P = 1 bar; before, it ran the default `lj`
+style with eV/Å/fs inputs and the 1 bar target in eV/Å³): compiled on its
+own with a one-line stand-in for `harness/registry.h`, A/B/C pass. A is
+unchanged (|E/E_M − 1| 1.4e-5, diagonal 3.24e-4, off-diagonal 1.6e-18); B
+step-0 |ΔW|/|W| 8.8e-15, 100-step |ΔV|/V 3.3e-16 (V 11482 → 10982 Å³),
+CUDA |H(100) − H(1)|/N 1.4e-6 eV; C identical to the table above to three
+digits.
+
 
 ## surface-tension-coupling — constant surface-tension NPT (couple xy)
 
@@ -398,6 +432,13 @@ Pin snapshot (`lmp`, OMP=1, 2026-07-24):
 
 Metal conversion used for the pin: \(1\,\mathrm{eV/Å^3} = 1.6021766208\times10^6\,\mathrm{bar}\),
 so \(P_\perp=-209.434\,\mathrm{bar}\).
+
+Re-run 2026-11-15, the case now in `units metal` like the pin (before, it
+ran the default `lj` style with eV/Å/fs inputs), compiled on its own as
+described under *npt_pme_nacl — Re-measurement*: PASS, step 200
+\(L_x = L_y = 16.473106\), \(L_z = 16.315748\) Å (pin 16.527384 /
+16.249165; the gap is the dynamic \(P_\perp(L_z)\) and the RNG),
+\(\gamma_\mathrm{inst} = 5.76\times10^{-4}\) eV/Å².
 
 ### Dual gate (regression)
 

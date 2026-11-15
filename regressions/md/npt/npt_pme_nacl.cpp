@@ -11,7 +11,7 @@
 ///      one gate that does not need a literature value and the one that
 ///      catches a force field whose pressure is not the derivative of its
 ///      energy,
-///   4. the model's mechanical equilibrium: P(a) = 0 within 1.5 % of the
+///   4. the model's mechanical equilibrium: P(a) = 0 within ±1.5 % of the
 ///      experimental NaCl lattice constant, and the cohesive energy there
 ///      against the experimental lattice energy,
 ///   5. a 4 ps NPT run at P = 0: the cell relaxes to a lattice constant
@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
@@ -107,6 +108,7 @@ cpu::Frame nacl(double d) {
 /// @brief Bare point-charge electrostatics — the Madelung / scaling oracle.
 double electrostatic_energy(cpu::Frame& frame) {
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.set_neighbor(cpu::md::NeighborList<>{kCut, /*skin=*/0.3});
     eval.set_evaluator(cpu::CoulLong{kAlpha, kCut});
     eval.set_evaluator(cpu::KSpacePME{kAlpha, kPmeSpacing, kPmeOrder});
@@ -125,6 +127,7 @@ struct Point {
 Point single_point(double d) {
     cpu::Frame f = nacl(d);
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.set_neighbor(cpu::md::NeighborList<>{kCut, /*skin=*/0.3});
     eval.set_evaluator(cpu::PairBorn{tosi_fumi_nacl(), kCut});
     eval.set_evaluator(cpu::CoulLong{kAlpha, kCut});
@@ -142,8 +145,9 @@ int run() {
     // ── (1) Madelung ───────────────────────────────────────────────────
     cpu::Frame frame = nacl(kDExp);
     const double e0 = electrostatic_energy(frame);
-    const double e_ref =
-        -0.5 * kN * kMadelung * units::UnitSystem::lj().qqrd2e() / kDExp;
+    const double e_ref = -0.5 * kN * kMadelung
+                         * units::from_style(units::Style::metal).qqrd2e()
+                         / kDExp;
     const double madelung_rel = std::fabs(e0 / e_ref - 1.0);
     std::printf("NaCl PME Madelung: E = %.6f eV  ref = %.6f eV  |rel| = %.3e\n",
                 e0, e_ref, madelung_rel);
@@ -206,13 +210,17 @@ int run() {
                     e_per_pair, kLatticeEnergyExp);
         return 1;
     }
-    // Bracket the zero-pressure spacing: P > 0 (wants to expand) at the
-    // experimental spacing, P < 0 (wants to contract) 1.5 % beyond it.
+    // Bracket the zero-pressure spacing within ±1.5 % of experiment:
+    // P > 0 (wants to expand) 1.5 % below it, P < 0 (wants to contract)
+    // 1.5 % above it.
+    const Point narrow = single_point(kDExp * 0.985);
     const Point wide = single_point(kDExp * 1.015);
-    std::printf("P(a=%.4f) = %+.4f GPa   P(a=%.4f) = %+.4f GPa\n", kA0Exp,
+    std::printf("P(a=%.4f) = %+.4f GPa   P(a=%.4f) = %+.4f GPa   "
+                "P(a=%.4f) = %+.4f GPa\n",
+                kA0Exp * 0.985, narrow.pressure * kEvPerA3InGPa, kA0Exp,
                 at_exp.pressure * kEvPerA3InGPa, kA0Exp * 1.015,
                 wide.pressure * kEvPerA3InGPa);
-    if (!(at_exp.pressure > 0.0 && wide.pressure < 0.0)) {
+    if (!(narrow.pressure > 0.0 && wide.pressure < 0.0)) {
         std::printf("FAIL: the model's zero-pressure lattice constant is not "
                     "within 1.5%% of the experimental %.4f Å\n",
                     kA0Exp);
@@ -227,14 +235,16 @@ int run() {
     cpu::Frame dyn = nacl(kDExp * 0.97);
     const double V0 = dyn.box.volume();
 
-    constexpr double dt = 0.5;      // [fs]
-    constexpr double T = 300.0;     // [K]
-    constexpr double tau_T = 100.0; // [fs]
-    constexpr double tau_P = 500.0; // [fs]
-    constexpr int n_steps = 8000;   // 4 ps ≈ 8 barostat times
+    // LAMMPS `units metal`: time in ps, pressure in bar.
+    constexpr double dt = 0.0005; // [ps] = 0.5 fs
+    constexpr double T = 300.0;   // [K]
+    constexpr double tau_T = 0.1; // [ps]
+    constexpr double tau_P = 0.5; // [ps]
+    constexpr int n_steps = 8000; // 4 ps ≈ 8 barostat times
     constexpr int n_chunks = 40;
 
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_observer(cpu::md::InitVelocity{T, /*seed=*/42u});
     sim.set_integrator(cpu::md::NoseHooverNPT{T, tau_T, 0.0, tau_P, dt});
     sim.set_neighbor(cpu::md::NeighborList<>{kCut, /*skin=*/0.5});
@@ -281,7 +291,7 @@ int run() {
     }
     const double V1 = dyn.box.volume();
     const double a_mean = std::cbrt(v_sum / v_samples) / kNSide * 2.0;
-    std::printf("NPT %d steps (dt=%.2f fs): V0=%.3f V1=%.3f  H0=%.6e "
+    std::printf("NPT %d steps (dt=%.4f ps): V0=%.3f V1=%.3f  H0=%.6e "
                 "H_end=%.6e  max|ΔH|/max(1,|H0|)=%.3e\n",
                 n_steps, dt, V0, V1, H0, H_last, worst_rel);
     std::printf("  <a> over the last 2 ps = %.4f Å  (experiment %.4f Å, "

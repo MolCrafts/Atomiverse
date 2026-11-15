@@ -8,7 +8,6 @@
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "harness/registry.h"
 
@@ -44,7 +43,6 @@ int run() {
     sim.set_neighbor(cpu::md::NeighborList<>{2.5, 0.3});
     sim.set_evaluator(cpu::PairLJCut{1.0, 1.0, 2.5});
     sim.set_integrator(cpu::md::NoseHooverNPT{1.0, 0.1, 0.0, 1.0, 0.005});
-    sim.set_observer(cpu::md::Virial{});
     sim.enable_timing(false);
     sim.build();
     sim.run(frame, 80);

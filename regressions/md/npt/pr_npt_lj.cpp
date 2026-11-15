@@ -15,7 +15,6 @@
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "harness/registry.h"
 
@@ -33,9 +32,10 @@ int run() {
     const int n_cells = 3;    // 108 atoms
     const double T = 100.0;
     const double P_target = 0.0;
-    const double dt = 1.0;
-    const double tau_T = 100.0;
-    const double tau_P = 1000.0;
+    // LAMMPS `units metal`: time in ps.
+    const double dt = 0.001;  // [ps]
+    const double tau_T = 0.1; // [ps]
+    const double tau_P = 1.0; // [ps]
     const int n_steps = 800;
 
     const int n = n_cells * n_cells * n_cells * 4;
@@ -58,12 +58,12 @@ int run() {
     const double V0 = frame.box.volume();
 
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
     sim.set_integrator(
         cpu::md::ParrinelloRahmanNPT{T, P_target, tau_T, tau_P, dt});
     sim.set_observer(cpu::md::InitVelocity{T, 42u});
-    sim.set_observer(cpu::md::Virial{});
     sim.enable_timing(false);
     sim.build();
 
@@ -78,7 +78,7 @@ int run() {
                          + std::fabs(h(2, 0)) + std::fabs(h(2, 1));
     const double H = frame.meta.get(ATV::kConserved);
 
-    std::printf("PR-NPT LJ FCC, N=%d, T=%.0f K, a=%.1f A, P=0, dt=%.1f fs\n", n,
+    std::printf("PR-NPT LJ FCC, N=%d, T=%.0f K, a=%.1f A, P=0, dt=%.3f ps\n", n,
                 T, a_lat, dt);
     std::printf("  V0            = %.3f A^3\n", V0);
     std::printf("  V1            = %.3f A^3   (want V1 > V0)\n", V1);
