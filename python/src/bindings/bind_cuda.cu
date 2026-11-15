@@ -230,7 +230,7 @@ struct CudaMdHandle {
     // the driver releases its borrow first; both are kept to set the
     // temperature-ramp span from the first run's step budget.
     nb::object frame_owner;
-    std::optional<cpu::Frame> work;
+    std::unique_ptr<cpu::Frame> work;
     std::optional<cuda::md::FixLangevin> langevin;
     std::optional<cuda::md::NoseHooverNPT> npt;
 #ifdef ATV_HAS_IO
@@ -239,7 +239,7 @@ struct CudaMdHandle {
     // every frame so far, as on the CPU driver.
     std::vector<std::unique_ptr<cuda::MrecRecorder>> mrec;
 #endif
-    bool span_fixed = false;
+    bool span_fixed = false; ///< `set_run_span` chose the ramp span
     cuda::md::MD driver;
     bool ran = false;
     void require_configurable() const {
@@ -251,30 +251,30 @@ struct CudaMdHandle {
         require_local_cuda();
         if (steps < 0)
             throw std::invalid_argument("MD step budget must be nonnegative");
-        if (frame_owner.ptr() != nullptr && frame_owner.ptr() != obj.ptr())
-            throw std::invalid_argument(
-                "CUDA MD continuation requires the same molpy.Frame; use a new "
-                "MD for another frame");
         auto frame = borrow_molpy_frame(obj);
         auto incoming = cpu::from_molpy(*frame);
-        if (!work) {
-            work.emplace(std::move(incoming));
-            frame_owner = obj;
+        // The same molpy.Frame continues its trajectory; another one is an
+        // independent simulation (cuda::md::MD::run on another host frame
+        // tears the previous run down), as on the CPU driver. The previous
+        // boundary frame stays alive until the new run has started.
+        std::unique_ptr<cpu::Frame> fresh;
+        if (!work || !frame_owner.is(obj)) {
+            fresh = std::make_unique<cpu::Frame>(std::move(incoming));
+            // A caller that set the cool window keeps it; otherwise the run
+            // that starts a trajectory owns the ramp, and a later chunk
+            // continues that window instead of collapsing onto T_stop.
+            if (!span_fixed) {
+                if (langevin)
+                    langevin->set_run_span(0, static_cast<std::int64_t>(steps));
+                if (npt)
+                    npt->set_run_span(0, static_cast<std::int64_t>(steps));
+            }
         } else {
             // Update the existing boundary object; native MD detects host
             // input edits and invalidates device/force/electronic state.
             *work = std::move(incoming);
         }
-        // A caller that already set the cool window keeps it. Otherwise the
-        // first run owns the ramp, and a later chunk on this same driver
-        // continues that window instead of collapsing onto T_stop.
-        if ((langevin || npt) && !span_fixed) {
-            if (langevin)
-                langevin->set_run_span(0, static_cast<std::int64_t>(steps));
-            if (npt)
-                npt->set_run_span(0, static_cast<std::int64_t>(steps));
-            span_fixed = true;
-        }
+        cpu::Frame& target = fresh ? *fresh : *work;
         {
             nb::gil_scoped_release release;
 #ifdef ATV_HAS_IO
@@ -284,7 +284,7 @@ struct CudaMdHandle {
             // the error propagates; the original error wins.
             std::exception_ptr failed;
             try {
-                driver.run(*work, steps);
+                driver.run(target, steps);
             } catch (...) {
                 failed = std::current_exception();
             }
@@ -301,8 +301,12 @@ struct CudaMdHandle {
             if (failed)
                 std::rethrow_exception(failed);
 #else
-            driver.run(*work, steps);
+            driver.run(target, steps);
 #endif
+        }
+        if (fresh) {
+            work = std::move(fresh);
+            frame_owner = obj;
         }
         cpu::to_molpy(*work, *frame);
         ran = true;

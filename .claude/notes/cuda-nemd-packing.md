@@ -29,8 +29,8 @@ Numbers are not kept in git; rerun it.
   previous one returned, unedited, continues the Gear history, ξ, the step
   count and the recorders' step axis (LAMMPS `run N pre no`); an edited
   frame restarts what the edit invalidates. The CPU handle keeps its engine
-  frame across calls (python/src/bindings/bind_md.cpp `run_local_`). CUDA
-  refuses another molpy.Frame; the CPU starts an independent simulation.
+  frame across calls (python/src/bindings/bind_md.cpp `run_local_`). Another
+  molpy.Frame starts an independent simulation on both devices.
 - (Fixed.) `InitVelocity` makes one draw on both devices
   (`core/velocity_create.h`: mt19937 by tag, host side), so a seed gives
   the same velocities; it draws once per trajectory, at build — neither a

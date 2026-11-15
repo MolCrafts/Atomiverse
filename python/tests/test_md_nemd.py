@@ -526,6 +526,24 @@ class TestGearPC:
         self._assert_same_state(frame, fresh, 1e-10)
         assert gear.xi == pytest.approx(gear2.xi, rel=1e-10)
 
+    @pytest.mark.parametrize("device", _DEVICES)
+    def test_another_frame_starts_an_independent_simulation(
+        self, device: str
+    ) -> None:
+        """A run on another molpy.Frame is a new simulation (the driver's
+        documented rule): it ends where a new MD started on that frame
+        ends, whatever the first frame's history and ξ were."""
+        first = _rock_salt(_SPACING, jitter=0.25, temperature=1500.0, seed=7)
+        other = _rock_salt(_SPACING, jitter=0.25, temperature=1200.0, seed=11)
+        fresh = other.copy()
+        sim, gear = self._configurational_md(device)
+        sim.run(first, 40)
+        sim.run(other, 40)
+        sim2, gear2 = self._configurational_md(device)
+        sim2.run(fresh, 40)
+        self._assert_same_state(other, fresh, 1e-10)
+        assert gear.xi == pytest.approx(gear2.xi, rel=1e-10)
+
     @pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA")
     def test_two_runs_agree_between_devices(self) -> None:
         """Two consecutive 100-step runs from one melt give the same ξ and

@@ -124,8 +124,8 @@ class MD:
         NoseHoover, Berendsen and NoseHooverNPT (orthorhombic cells)
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One
         angle style per CUDA run (singular slot). Continuation stays on one
-        molpy.Frame (CUDA refuses another; on the CPU another frame starts
-        an independent simulation).
+        molpy.Frame; another frame starts an independent simulation (both
+        devices).
     units : str, optional
         LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
         ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
