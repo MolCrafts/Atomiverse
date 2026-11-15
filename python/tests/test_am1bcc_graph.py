@@ -8,6 +8,9 @@ import atomiverse as atv
 import molpy as mp
 import numpy as np
 import pytest
+from _domains import skip_module_unless
+
+skip_module_unless("ATV_BUILD_SEMIEMPIRICAL")
 
 
 def _tetrahedron(atomic_number: int, formal_charge: int = 0) -> mp.Atomistic:
