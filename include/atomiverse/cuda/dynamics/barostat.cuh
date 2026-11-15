@@ -46,9 +46,7 @@ class Barostat : public cuda::Barostat {
     /// @return ComponentRole::Barostat.
     /* role via Barostat base */
     /// @brief Reads — consumes `Stress` to drive the Berendsen volume
-    ///        rescale. Triggers `cuda::md::MD::install_infra_` to
-    ///        auto-inject `cuda::Virial` via capability matching
-    ///        (the `role()==Barostat` proxy is no longer required).
+    ///        rescale, so it demands the virial every step (`demand()`).
 
     std::vector<DefaultBinding> default_bindings() const override;
     void build(const BuildContext& ctx) override;

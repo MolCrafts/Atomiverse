@@ -314,8 +314,7 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
 
   protected:
     /// @brief Subclass hook — attach default handlers / auto-inject infrastructure
-    ///        derived from declared user state (`cuda::md::MD` injects `cuda::Virial`
-    ///        when a component reads Stress; `cuda::minimizer::Minimize` attaches a
+    ///        derived from declared user state (`cuda::minimizer::Minimize` attaches a
     ///        `ForceConverged` handler when the user attached none). Default no-op.
     ///        Called from `build()` before `validate_components()`, so anything it adds
     ///        counts toward validation.
@@ -584,9 +583,6 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// @brief Aggregate of pending-component facts for install_defaults /
     ///        require_*. Single pass over `pending_`.
     struct InfraScan {
-        bool needs_stress = false; ///< Some plugin requires system stress.
-        bool has_virial_stress =
-            false; ///< A system-stress provider is present.
         bool has_neighbor_list = false; ///< A NeighborProvider is registered.
         bool has_energy = false;        ///< Some plugin provides_energy().
         bool has_force = false;         ///< Some plugin provides_force().
@@ -614,10 +610,6 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
                 s.has_integrator = true;
             if (dynamic_cast<const cuda::Optimizer*>(&c))
                 s.has_optimizer = true;
-            if (c.requires_system_stress())
-                s.needs_stress = true;
-            if (c.provides_system_stress())
-                s.has_virial_stress = true;
             if (c.as_neighbor_provider())
                 s.has_neighbor_list = true;
             if (c.as_neighbor_consumer() && s.neighbor_consumer_name.empty())

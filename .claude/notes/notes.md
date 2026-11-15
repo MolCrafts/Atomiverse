@@ -107,8 +107,8 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   `test_lammps_units_parity` (stock LAMMPS, lj/real/metal/si/electron).
 - Not LAMMPS-exact yet (algorithm, not units): `NoseHoover` splits xi by
   dt/2 where `fix nvt` uses dt/4 kicks; `NoseHooverNPT` uses the MTK mass
-  `(N_f+3)kT tau_P^2` and a fused remap; `Virial` kinetic stress mounted at
-  `post_force` sees half-step velocities (LAMMPS thermo uses end-of-step).
+  `(N_f+3)kT tau_P^2` and a fused remap. (The kinetic stress is now taken
+  at end_of_step by `KineticEnergy` on both devices, as LAMMPS thermo does.)
 - Electronic-structure force sources return eV/Å: a BOMD run is physical
   only in `units metal`; the ES-MD regressions still run in the default lj.
 

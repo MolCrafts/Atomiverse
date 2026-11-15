@@ -29,11 +29,11 @@
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/longrange/ewald.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
-#include "atomiverse/cuda/observe/stress.cuh"
 #include "atomiverse/cuda/potentials/coul_long.cuh"
 #include "atomiverse/cuda/potentials/pair_born.cuh"
 
 #include "../../cpu/dynamics/nacl_fixture.h"
+#include "virial_demand.cuh"
 
 namespace nacl_parity {
 
@@ -80,7 +80,7 @@ inline void mount(cuda::md::MD& sim, const Terms& t) {
     using namespace nacl_fixture;
     sim.set_units("metal");
     sim.set_neighbor(cuda::NeighborList{kCut, kSkin});
-    sim.on(md::Phase::post_force).add(cuda::Virial{}, -50);
+    sim.on(md::Phase::post_force).add(cuda_parity::VirialDemand{}, -50);
     if (t.born)
         sim.set_evaluator(cuda::PairBorn{cuda_tosi_fumi(), kCut}
                               .set_energy_shift(false)

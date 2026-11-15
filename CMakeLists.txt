@@ -571,7 +571,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
             src/cuda/component/zero.cu
-            src/cuda/observe/stress.cu
             src/cuda/scf/hamiltonian.cu
             src/cuda/scf/eigen_solver.cu
             src/cuda/scf/density_builder.cu

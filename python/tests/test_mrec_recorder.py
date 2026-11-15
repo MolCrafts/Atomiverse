@@ -34,6 +34,7 @@ pytestmark = pytest.mark.skipif(not _HAS_MREC, reason="needs ATV_BUILD_MD")
 if _HAS_MREC:
     import atomiverse as av
     from atomiverse.md import MD
+    from atomiverse.md.barostat import BerendsenBarostat
     from atomiverse.md.integrator import VelocityVerlet
     from atomiverse.neighbor import NeighborList
     from atomiverse.potentials.pair import LJCut
@@ -199,15 +200,17 @@ class TestMrecRecorderCpu:
 _MVV2E_METAL: float = 1.0364269e-4
 
 
+@pytest.mark.parametrize("barostat", [False, True], ids=["nve", "berendsen"])
 @pytest.mark.parametrize("device", ["cpu", "cuda"])
 def test_recorded_kinetic_stress_is_that_of_the_recorded_velocities(
-    tmp_path: Path, device: str
+    tmp_path: Path, device: str, barostat: bool
 ) -> None:
     """Every recorded frame's ``stress_kinetic`` is mvv2e·Σ m v⊗v (Voigt xx
     yy zz xy xz yz, extensive: not divided by V, the ``frame.stress``
     convention) of that frame's own velocities, and half its trace is the
     frame's ``kinetic``. The velocities are those of the recorded state,
-    after the step's last kick (LAMMPS ``compute pressure`` at thermo)."""
+    after the step's last kick (LAMMPS ``compute pressure`` at thermo),
+    with or without a barostat reading the stress."""
     if device == "cuda" and not _HAS_CUDA_MD:
         pytest.skip("needs ATV_BUILD_CUDA")
     path = tmp_path / f"{device}.mrec"
@@ -219,6 +222,8 @@ def test_recorded_kinetic_stress_is_that_of_the_recorded_velocities(
     sim.set_integrator(VelocityVerlet(0.002))
     sim.set_neighbor(NeighborList(_CUTOFF, _SKIN))
     sim.set_evaluator(LJCut(0.0104, 3.4, _CUTOFF))
+    if barostat:
+        sim.set_barostat(BerendsenBarostat(0.0, 0.5, 0.002, bulk_modulus=1.0e4))
     sim.set_record(MrecRecorder(str(path), 1))
     sim.run(frame, 3)
 
