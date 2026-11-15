@@ -53,9 +53,10 @@ needs_kspace = pytest.mark.skipif(
     not _HAS_KSPACE, reason="needs ATV_BUILD_KSPACE"
 )
 
-#: core/units.h: k_B [eV/K] and 1 amu·Å²/fs² in eV.
-_KB = 8.617333262e-5
-_MVV2E = 103.642696562
+#: LAMMPS ``units metal`` (eV, Å, ps, amu, K), the style every MD here
+#: runs in: k_B [eV/K] and 1 amu·Å²/ps² in eV (``Update::set_units``).
+_KB = 8.617343e-5
+_MVV2E = 1.0364269e-4
 
 #: Ar Lennard-Jones (LAMMPS-style metal units).
 _EPS = 0.0104  # [eV]
@@ -153,7 +154,7 @@ def _meta_pressure(frame: "molpy.Frame") -> float:
 
 
 def _lj_md(device: str) -> MD:
-    sim = MD(device=device)
+    sim = MD(device=device, units="metal")
     sim.set_neighbor(NeighborList(_CUTOFF, _SKIN))
     sim.set_evaluator(LJCut(_EPS, _SIG, _CUTOFF))
     return sim
@@ -202,8 +203,8 @@ class TestCudaNoseHooverNvt:
         target, t0 = 50.0, 200.0
         frame = _ar_frame(3.8, t0)
         sim = _lj_md("cuda")
-        sim.set_integrator(VelocityVerlet(2.0))
-        sim.set_thermostat(NoseHoover(target, 50.0, 2.0))
+        sim.set_integrator(VelocityVerlet(0.002))
+        sim.set_thermostat(NoseHoover(target, 0.05, 0.002))
         temps = _chunked(sim, frame, 20, 25, _temperature)
         late = float(np.mean(temps[10:]))
         assert all(math.isfinite(t) for t in temps)
@@ -211,16 +212,16 @@ class TestCudaNoseHooverNvt:
 
         nve = _ar_frame(3.8, t0)
         plain = _lj_md("cuda")
-        plain.set_integrator(VelocityVerlet(2.0))
+        plain.set_integrator(VelocityVerlet(0.002))
         plain_temps = _chunked(plain, nve, 20, 25, _temperature)
         assert float(np.mean(plain_temps[10:])) > late + 0.25 * (t0 - target)
 
     def test_langevin_and_nose_hoover_both_accepted(self) -> None:
         """The thermostat slot is plural on both devices."""
         sim = _lj_md("cuda")
-        sim.set_integrator(VelocityVerlet(2.0))
-        sim.set_thermostat(NoseHoover(50.0, 50.0, 2.0))
-        sim.set_thermostat(Langevin(50.0, 50.0, 100.0, 2.0, 11))
+        sim.set_integrator(VelocityVerlet(0.002))
+        sim.set_thermostat(NoseHoover(50.0, 0.05, 0.002))
+        sim.set_thermostat(Langevin(50.0, 50.0, 0.1, 0.002, 11))
         frame = _ar_frame(3.8, 60.0)
         sim.run(frame, 10)
         assert math.isfinite(_temperature(frame))
@@ -236,7 +237,7 @@ class TestCudaInitVelocity:
         for key in ("vx", "vy", "vz"):
             frame["atoms"][key] = np.zeros(_SIDE**3)
         sim = _lj_md("cuda")
-        sim.set_integrator(VelocityVerlet(2.0))
+        sim.set_integrator(VelocityVerlet(0.002))
         sim.set_observer(InitVelocity(120.0, 5))
         sim.run(frame, 0)
         assert _temperature(frame) == pytest.approx(120.0, rel=1e-6)
@@ -255,7 +256,7 @@ def test_set_run_span_spans_chunked_runs(device: str) -> None:
 
     def npt_md() -> MD:
         sim = _lj_md(device)
-        sim.set_integrator(NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=1000.0))
+        sim.set_integrator(NoseHooverNPT(10.0, 0.06, 0.0, 100.0, 0.004, T_stop=1000.0))
         return sim
 
     long_frame, short_frame = _ar_frame(3.8, 10.0), _ar_frame(3.8, 10.0)
@@ -274,7 +275,7 @@ def test_set_run_span_spans_chunked_runs(device: str) -> None:
 
 def _seeded_md(device: str) -> MD:
     sim = _lj_md(device)
-    sim.set_integrator(VelocityVerlet(2.0))
+    sim.set_integrator(VelocityVerlet(0.002))
     sim.set_observer(InitVelocity(120.0, 5))
     return sim
 
@@ -358,7 +359,7 @@ class TestCudaNoseHooverNpt:
         v0, p0 = frame.box.volume(), _lj_pressure(frame)
         assert p0 > 1e-4, p0  # precondition: compressive start
         sim = _lj_md("cuda")
-        sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+        sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
         pressures = _chunked(sim, frame, 20, 25, _lj_pressure)
         assert all(math.isfinite(p) for p in pressures)
         assert frame.box.volume() > 1.01 * v0
@@ -393,7 +394,7 @@ class TestCudaNoseHooverNpt:
             sim.set_evaluator(KSpacePPPM(alpha, 1.0, 5))
         else:
             sim.set_evaluator(KSpacePME(alpha, 1.0, 6))
-        sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+        sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
         trace = _chunked(
             sim, frame, 20, 25, lambda f: (_meta_pressure(f), _lj_pressure(f))
         )
@@ -411,10 +412,10 @@ class TestCudaNoseHooverNpt:
         CPU); T_stop == T_target holds it. Near-rigid cell (τ_P = 1e5 fs)."""
         flat_frame, ramp_frame = _ar_frame(3.8, 10.0), _ar_frame(3.8, 10.0)
         flat = _lj_md("cuda")
-        flat.set_integrator(NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=10.0))
+        flat.set_integrator(NoseHooverNPT(10.0, 0.06, 0.0, 100.0, 0.004, T_stop=10.0))
         flat.run(flat_frame, 25)
         ramp = _lj_md("cuda")
-        ramp.set_integrator(NoseHooverNPT(10.0, 60.0, 0.0, 1.0e5, 4.0, T_stop=1000.0))
+        ramp.set_integrator(NoseHooverNPT(10.0, 0.06, 0.0, 100.0, 0.004, T_stop=1000.0))
         ramp.run(ramp_frame, 25)
         assert _temperature(ramp_frame) > _temperature(flat_frame)
 
@@ -425,7 +426,7 @@ class TestCudaNoseHooverNpt:
         sim = _lj_md("cuda")
         sim.set_integrator(
             NoseHooverNPT(
-                50.0, 100.0, 0.0, 500.0, 2.0, couple_axis=(True, True, False)
+                50.0, 0.1, 0.0, 0.5, 0.002, couple_axis=(True, True, False)
             )
         )
         sim.run(frame, 50)
@@ -437,13 +438,15 @@ class TestCudaNoseHooverNpt:
 @needs_cuda
 class TestCudaBerendsen:
     def test_berendsen_beside_nose_hoover_expands_a_compressed_box(self) -> None:
-        """The split NPT recipe: VelocityVerlet + NoseHoover + Berendsen."""
+        """The split NPT recipe: VelocityVerlet + NoseHoover + Berendsen,
+        with a liquid-argon bulk modulus (1e4 bar; the 1 bar default
+        saturates the dilation clamp at every step)."""
         frame = _ar_frame(3.5, 50.0)
         v0, p0 = frame.box.volume(), _lj_pressure(frame)
         sim = _lj_md("cuda")
-        sim.set_integrator(VelocityVerlet(2.0))
-        sim.set_thermostat(NoseHoover(50.0, 100.0, 2.0))
-        sim.set_barostat(BerendsenBarostat(0.0, 500.0, 2.0))
+        sim.set_integrator(VelocityVerlet(0.002))
+        sim.set_thermostat(NoseHoover(50.0, 0.1, 0.002))
+        sim.set_barostat(BerendsenBarostat(0.0, 0.5, 0.002, bulk_modulus=1.0e4))
         pressures = _chunked(sim, frame, 10, 25, _lj_pressure)
         assert frame.box.volume() > v0
         assert pressures[-1] < p0
@@ -455,7 +458,7 @@ class TestCudaBerendsen:
 #: summation order (double CUDA build), so 1e-9 relative is generous.
 _RTOL = 1e-9
 _ATOL_X = 1e-10  # [Å]
-_ATOL_V = 1e-12  # [Å/fs]
+_ATOL_V = 1e-9  # [Å/ps]
 
 
 def _assert_same_state(cpu_frame, cuda_frame, *, box: bool) -> None:
@@ -483,8 +486,8 @@ class TestCpuCudaParity:
         for device in ("cpu", "cuda"):
             frame = _ar_frame(3.8, 120.0)
             sim = _lj_md(device)
-            sim.set_integrator(VelocityVerlet(2.0))
-            sim.set_thermostat(NoseHoover(40.0, 30.0, 99.0))
+            sim.set_integrator(VelocityVerlet(0.002))
+            sim.set_thermostat(NoseHoover(40.0, 0.03, 0.099))
             sim.run(frame, steps)
             frames[device] = frame
         before = _ar_frame(3.8, 120.0)
@@ -498,7 +501,7 @@ class TestCpuCudaParity:
             frame = _ar_frame(3.5, 50.0)
             sim = _lj_md(device)
             sim.set_integrator(
-                NoseHooverNPT(50.0, 100.0, 0.0, 200.0, 2.0, drag=0.1, mtchain=4)
+                NoseHooverNPT(50.0, 0.1, 0.0, 0.2, 0.002, drag=0.1, mtchain=4)
             )
             sim.run(frame, steps)
             frames[device] = frame
@@ -525,7 +528,7 @@ class TestCpuCudaParity:
             sim = _lj_md(device)
             sim.set_evaluator(CoulLong(alpha, _CUTOFF))
             sim.set_evaluator(KSpacePPPM(alpha, 1.0, 5))
-            sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 200.0, 2.0))
+            sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.2, 0.002))
             sim.run(frame, 1)
             frames[device] = frame
         np.testing.assert_allclose(
@@ -550,33 +553,33 @@ _DEVICES = ["cpu", pytest.param("cuda", marks=needs_cuda)]
 class TestNptRefusesASecondThermostatOrBarostat:
     def test_thermostat_after_npt(self, device: str) -> None:
         sim = _lj_md(device)
-        sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+        sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
         with pytest.raises(ValueError, match="already thermostats"):
-            sim.set_thermostat(NoseHoover(50.0, 100.0, 2.0))
+            sim.set_thermostat(NoseHoover(50.0, 0.1, 0.002))
 
     def test_npt_after_thermostat(self, device: str) -> None:
         sim = _lj_md(device)
-        sim.set_thermostat(NoseHoover(50.0, 100.0, 2.0))
+        sim.set_thermostat(NoseHoover(50.0, 0.1, 0.002))
         with pytest.raises(ValueError, match="do not also set a thermostat"):
-            sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+            sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
 
     def test_barostat_after_npt(self, device: str) -> None:
         sim = _lj_md(device)
-        sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+        sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
         with pytest.raises(ValueError, match="already barostats"):
-            sim.set_barostat(BerendsenBarostat(0.0, 500.0, 2.0))
+            sim.set_barostat(BerendsenBarostat(0.0, 0.5, 0.002))
 
     def test_npt_after_barostat(self, device: str) -> None:
         sim = _lj_md(device)
-        sim.set_barostat(BerendsenBarostat(0.0, 500.0, 2.0))
+        sim.set_barostat(BerendsenBarostat(0.0, 0.5, 0.002))
         with pytest.raises(ValueError, match="barostat"):
-            sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+            sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
 
     def test_nose_hoover_beside_nvt_sllod(self, device: str) -> None:
         sim = _lj_md(device)
-        sim.set_integrator(NvtSllod(50.0, 100.0, 2.0, 1e-6, 0))
+        sim.set_integrator(NvtSllod(50.0, 0.1, 0.002, 0.001, 0))
         with pytest.raises(ValueError, match="NvtSllod already thermostats"):
-            sim.set_thermostat(NoseHoover(50.0, 100.0, 2.0))
+            sim.set_thermostat(NoseHoover(50.0, 0.1, 0.002))
 
 
 @needs_cuda
@@ -584,16 +587,16 @@ class TestCudaRefusals:
     def test_csvr_names_the_alternatives(self) -> None:
         sim = _lj_md("cuda")
         with pytest.raises(ValueError, match="NoseHoover or Langevin"):
-            sim.set_thermostat(CSVR(50.0, 100.0, 2.0, 3))
+            sim.set_thermostat(CSVR(50.0, 0.1, 0.002, 3))
 
     def test_parrinello_rahman_names_the_alternatives(self) -> None:
         sim = _lj_md("cuda")
         with pytest.raises(ValueError, match="NoseHooverNPT"):
-            sim.set_integrator(ParrinelloRahmanNPT(50.0, 0.0, 100.0, 500.0, 2.0))
+            sim.set_integrator(ParrinelloRahmanNPT(50.0, 0.0, 0.1, 0.5, 0.002))
 
     def test_triclinic_npt_is_refused_with_a_how_to(self) -> None:
         sim = _lj_md("cuda")
-        sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+        sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
         frame = _ar_frame(3.8, 50.0, tilt=1.0)
         with pytest.raises(RuntimeError, match="(?s)triclinic.*orthorhombic"):
             sim.run(frame, 1)
@@ -601,17 +604,17 @@ class TestCudaRefusals:
     def test_bad_nose_hoover_parameters(self) -> None:
         sim = _lj_md("cuda")
         with pytest.raises(ValueError, match="must be finite and > 0"):
-            sim.set_thermostat(NoseHoover(0.0, 100.0, 2.0))
+            sim.set_thermostat(NoseHoover(0.0, 0.1, 0.002))
 
     def test_set_run_span_needs_a_ramp_owner(self) -> None:
         sim = _lj_md("cuda")
-        sim.set_integrator(VelocityVerlet(2.0))
-        sim.set_thermostat(NoseHoover(50.0, 100.0, 2.0))
+        sim.set_integrator(VelocityVerlet(0.002))
+        sim.set_thermostat(NoseHoover(50.0, 0.1, 0.002))
         with pytest.raises(RuntimeError, match="Langevin thermostat or a NoseHooverNPT"):
             sim.set_run_span(0, 100)
 
     def test_second_integrator_is_refused(self) -> None:
         sim = _lj_md("cuda")
-        sim.set_integrator(VelocityVerlet(2.0))
+        sim.set_integrator(VelocityVerlet(0.002))
         with pytest.raises(ValueError, match="set_integrator already configured"):
-            sim.set_integrator(NoseHooverNPT(50.0, 100.0, 0.0, 500.0, 2.0))
+            sim.set_integrator(NoseHooverNPT(50.0, 0.1, 0.0, 0.5, 0.002))
