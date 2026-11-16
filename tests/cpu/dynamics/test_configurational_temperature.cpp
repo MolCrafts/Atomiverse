@@ -413,13 +413,18 @@ TEST(ConfigurationalTemperature, RunAverageIsTheRatioOfTheMeans) {
 
 TEST(ConfigurationalThermostat,
      DrivesTheConfigurationalTemperatureToTheTarget) {
-    // Unthermostatted, this start relaxes to T_C1 ≈ 1080 K. Asked for a
+    // Unthermostatted, this start relaxes to T_C1 ≈ 1160 K. Asked for a
     // target on either side, the feedback of eqs. (12a–c) takes the
-    // second-half mean of T_C1 there (within the Nosé–Hoover oscillation:
-    // 643 K and 1540 K measured), heating or cooling as needed.
+    // second-half mean of T_C1 there, heating or cooling as needed (710 K
+    // and 1573 K measured). At this Q, T_C1 reaches the target within ~150
+    // steps and the second half averages its fluctuation about it: 664–742 K
+    // and 1396–1589 K over 16 starting melts (seeds 1–16). At Q = 20 the
+    // feedback swings about the target with a period of ~1200 steps, and the
+    // 250-step mean measured where in that swing the run ended (524–652 K
+    // and 1350–1679 K over the same melts).
     constexpr double kDt = 0.001; // [ps]
     constexpr int kSteps = 500;
-    constexpr double kQ = 20.0; // [Å²/ps²]
+    constexpr double kQ = 160.0; // [Å²/ps²]
     for (const double t0 : {700.0, 1500.0}) {
         const MeltRun held = run_melt(
             cpu::md::GearPC{kDt, cpu::md::ConfigurationalThermostat{t0, kQ}},

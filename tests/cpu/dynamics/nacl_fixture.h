@@ -4,11 +4,11 @@
 #pragma once
 
 #include <cmath>
-#include <random>
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/unit_system.h"
+#include "atomiverse/cpu/dynamics/internal/gauss_stream.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/potentials/pair_born.h"
 
@@ -45,12 +45,19 @@ inline std::vector<ATV::cpu::BornTypeCoeff> tosi_fumi() {
 ///        Maxwell velocities at `temperature` [K] with zero total momentum.
 ///        Rows are written in reverse lattice order, so a spatial sort
 ///        permutes them.
+///
+/// The draws come from `GaussStream` (splitmix64, Box–Muller), whose output
+/// the code fixes: the C++ standard fixes `std::mt19937` but not
+/// `std::uniform_real_distribution` or `std::normal_distribution`, so on
+/// those one seed was one melt under libc++ (macOS) and another under
+/// libstdc++ (Linux), and a bound measured on one platform was never checked
+/// on the other's configuration.
 inline ATV::cpu::Frame nacl(double temperature, unsigned seed,
                             double jitter = 0.25, int side = kSide) {
     using namespace ATV;
-    std::mt19937 rng(seed);
-    std::uniform_real_distribution<double> shift(-jitter, jitter);
-    std::normal_distribution<double> gauss(0.0, 1.0);
+    cpu::md::internal::GaussStream rng{seed};
+    const auto shift = [&] { return jitter * (2.0 * rng.next_u01() - 1.0); };
+    const auto gauss = [&] { return rng.next(); };
     const units::UnitSystem metal = units::from_style(units::Style::metal);
     const int n = side * side * side;
     cpu::Frame f(n);
@@ -64,12 +71,12 @@ inline ATV::cpu::Frame nacl(double temperature, unsigned seed,
                 const double m = na ? kMassNa : kMassCl;
                 const double sd =
                     std::sqrt(metal.boltz * temperature / (m * metal.mvv2e));
-                f.span(kAtom_x)[row] = i * kSpacing + shift(rng);
-                f.span(kAtom_y)[row] = j * kSpacing + shift(rng);
-                f.span(kAtom_z)[row] = k * kSpacing + shift(rng);
-                f.span(kAtom_vx)[row] = sd * gauss(rng);
-                f.span(kAtom_vy)[row] = sd * gauss(rng);
-                f.span(kAtom_vz)[row] = sd * gauss(rng);
+                f.span(kAtom_x)[row] = i * kSpacing + shift();
+                f.span(kAtom_y)[row] = j * kSpacing + shift();
+                f.span(kAtom_z)[row] = k * kSpacing + shift();
+                f.span(kAtom_vx)[row] = sd * gauss();
+                f.span(kAtom_vy)[row] = sd * gauss();
+                f.span(kAtom_vz)[row] = sd * gauss();
                 f.span(kAtom_charge)[row] = na ? 1.0 : -1.0;
                 f.span(kAtom_mass)[row] = m;
                 f.span(kAtom_type)[row] = na ? kNa : kCl;

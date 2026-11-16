@@ -256,7 +256,7 @@ TEST_P(GearPCGauss, HoldsTheConstrainedTemperatureUnderAStrongField) {
     sim.set_integrator_ref(gear);
     sim.build();
 
-    double worst_t = 0, worst_drift = 0;
+    double worst_t = 0, worst_drift = 0, split_sum = 0;
     int permutations = 0;
     std::vector<TagInt> previous(frame.span(kAtom_tag).data(),
                                  frame.span(kAtom_tag).data() + kN);
@@ -266,6 +266,7 @@ TEST_P(GearPCGauss, HoldsTheConstrainedTemperatureUnderAStrongField) {
         worst_t = std::max(worst_t, std::fabs(constrained(t, kind) / kT0 - 1));
         if (step >= kStartup)
             worst_drift = std::max(worst_drift, gear.constraint_drift());
+        split_sum += t.flow_split;
 
         const auto tags = frame.span(kAtom_tag);
         bool moved = false;
@@ -275,19 +276,23 @@ TEST_P(GearPCGauss, HoldsTheConstrainedTemperatureUnderAStrongField) {
         }
         permutations += moved ? 1 : 0;
     }
-    const Temperatures end = measure(frame);
     // The constrained temperature, measured independently from the frame
     // with its own degrees of freedom, is exact at every step.
     EXPECT_LT(worst_t, 1e-12);
-    // What the projection removes is the integrator's truncation error
-    // (≤ 2e-7 per step here), not the field's work: an isokinetic α without
-    // the field term leaves 1e-2. Flow and transverse α carry no field term
-    // (the field does no work on the species-peculiar or transverse motion).
-    EXPECT_LT(worst_drift, 1e-6);
+    // What the projection removes is the integrator's truncation error, not
+    // the field's work: an isokinetic α without the field term leaves 1e-2.
+    // The truncation error scatters from step to step (1e-8 to 1e-6 here);
+    // its largest step reached 1.8e-6 over 16 starting melts (seeds 1–16)
+    // and the three kinds. Flow and transverse α carry no field term (the
+    // field does no work on the species-peculiar or transverse motion).
+    EXPECT_LT(worst_drift, 1e-5);
     // The rows really were permuted under the integrator.
     EXPECT_GT(permutations, 10);
-    // The field separates the species flows (Na⁺ along +x).
-    EXPECT_GT(end.flow_split, 0.0);
+    // The field separates the species flows (Na⁺ along +x) over the run:
+    // 1.5 to 3.2 Å/ps on average over the same melts and kinds, while the
+    // split at any one step is noise of that size (the last step's: −1.0 to
+    // 8.0 Å/ps).
+    EXPECT_GT(split_sum / kSteps, 0.0);
 }
 
 INSTANTIATE_TEST_SUITE_P(Kinds, GearPCGauss,
