@@ -380,9 +380,9 @@ TEST(EwaldSumMath, PhaseTablesMatchTheDirectTrigonometricSum) {
     EXPECT_LT(rel_max(got.fz, ref.fz), 1e-12);
     EXPECT_LT(std::fabs(got.energy / ref.energy - 1.0), 1e-12);
 
-    // Each S(k) and each atom's force is summed in one order whatever the
-    // team: a split team (columns and atom ranges per thread, partial
-    // blocks) gives the 1-thread bits.
+    // Each S(k) and each atom's force is summed in one order and in one atom
+    // block whatever the team: a split team (columns and whole atom blocks
+    // per thread) gives the 1-thread bits.
     const Reciprocal team = tabulated(sum, x, y, z, q, volume, 4);
     EXPECT_EQ(team.sr, got.sr);
     EXPECT_EQ(team.si, got.si);

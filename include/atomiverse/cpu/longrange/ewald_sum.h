@@ -80,12 +80,13 @@ struct EwaldPhases {
 /// Each kernel opens the whole OpenMP team or runs on the calling thread
 /// (`cpu::device::team_for`, which explains why never a count in between):
 /// it goes threaded once two threads would each get #kPairsPerThread
-/// (k-vector, atom) pairs and enough atoms (atom-split kernels) or columns
-/// (column-split kernels) to fill their SIMD lanes and balance, so a small
-/// cell runs serially instead of paying a team's fork and join for
+/// (k-vector, atom) pairs and an atom block (atom-split kernels) or enough
+/// columns (column-split kernels) to fill their SIMD lanes and balance, so a
+/// small cell runs serially instead of paying a team's fork and join for
 /// microseconds of work. Each S(k) and each atom's force is summed in the
-/// same order whatever the team, so the results do not depend on the thread
-/// count.
+/// same order whatever the team, and an atom-split thread takes whole atom
+/// blocks fixed by the atom count, so the results do not depend on the
+/// thread count.
 class EwaldSum {
   public:
     /// @brief (k-vector, atom) pairs a thread must get to be worth waking:
@@ -243,7 +244,7 @@ class EwaldSum {
     };
 
     /// Team of the atom-split kernels (phases, forces, curvature) over `n`
-    /// atoms; one split, so each thread reuses its own atoms' tables.
+    /// atoms; one block split, so each thread reuses its own atoms' tables.
     int atom_team_(int n) const;
     /// Team of the column-split kernels (S(k), T(k)) over `n` atoms: every
     /// thread reads all phase tables, so the pull gates it too.

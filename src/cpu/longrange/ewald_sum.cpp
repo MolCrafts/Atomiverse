@@ -22,9 +22,17 @@ namespace {
 /// atom order, so the block (not the team) fixes its rounding.
 constexpr int kBlock = 256;
 
-/// Atoms per thread below which an atom-split kernel's per-column setup
-/// (phase products, coefficient loads) outweighs its SIMD lanes.
-constexpr std::int64_t kMinAtomsPerThread = 32;
+/// Fewest atoms of an atom-split block: below it the per-column setup
+/// (phase products, coefficient loads) eats into the SIMD lanes (phases,
+/// S(k) and forces of 238 atoms on 1 thread: 110 µs in one block, 113 µs in
+/// 64-atom blocks, 119 µs in 32-atom blocks).
+constexpr int kMinAtomBlock = 64;
+/// Blocks the atom split cuts once its blocks would exceed the minimum: a
+/// wide team (two sockets of EPYC cores) still balances whole blocks.
+constexpr int kAtomBlocks = 256;
+/// Atom-block sizes are a multiple of one 512-bit register of doubles, so
+/// only the last block of a kernel has a vector remainder.
+constexpr int kAtomBlockQuantum = 8;
 /// Columns per thread a column-split kernel needs for its dynamic pickup to
 /// even out the unequal column lengths of the sphere.
 constexpr std::int64_t kMinColumnsPerThread = 4;
@@ -34,11 +42,36 @@ constexpr std::int64_t kMinColumnsPerThread = 4;
 /// times the table entries it pulls in.
 constexpr std::int64_t kPairsPerPhaseEntry = 8;
 
-/// Rows [begin, end) of thread `rank` out of `team` over `n` atoms.
+/// Items [begin, end) of thread `rank` out of `team` over `n` items.
 void team_range(int n, int rank, int team, int& begin, int& end) {
     begin = static_cast<int>(static_cast<long long>(n) * rank / team);
     end = static_cast<int>(static_cast<long long>(n) * (rank + 1) / team);
 }
+
+/// The atom blocks of the atom-split kernels (phases, forces, curvature)
+/// over `n` atoms; a thread takes whole blocks (`team_range` over `count`).
+///
+/// The blocks are a function of `n` alone, so each atom meets the same
+/// instructions whatever the team. Cutting the atoms per thread instead
+/// moved the atoms next to a cut between a block loop's vector body and its
+/// remainder, which GCC's default -ffp-contract=fast fuses into different
+/// multiply-adds (x86-64-v4, 512-bit body): their 4-thread forces left the
+/// 1-thread bits.
+struct AtomBlocks {
+    explicit AtomBlocks(int n_atoms) : n(n_atoms) {
+        const int share = (n + kAtomBlocks - 1) / kAtomBlocks;
+        const int quantized = (share + kAtomBlockQuantum - 1)
+                              / kAtomBlockQuantum * kAtomBlockQuantum;
+        size = std::clamp(quantized, kMinAtomBlock, kBlock);
+        count = (n + size - 1) / size;
+    }
+    int begin(int b) const { return b * size; }
+    int end(int b) const { return std::min(n, (b + 1) * size); }
+
+    int n;     ///< atoms
+    int size;  ///< atoms per block, ≤ kBlock (the last block may be short)
+    int count; ///< blocks
+};
 
 /// exp(i (mx b₀ + my b₁)·r_j) for atoms [j0, j0 + jn), times q_j when `q`
 /// is given. A negative power is the conjugate of the tabulated one.
@@ -162,14 +195,14 @@ bool EwaldSum::rebuild(const Mat3& inv_cell) {
 }
 
 // Each kernel opens the whole team or none (`cpu::device::team_for`): once both
-// its (k-vector, atom) pairs and its atoms or columns fill two threads.
+// its (k-vector, atom) pairs and its atom blocks or columns fill two threads.
 int EwaldSum::atom_team_(int n) const {
     const auto pairs =
         static_cast<std::int64_t>(n)
         * static_cast<std::int64_t>(kx_.size() + columns_.size());
     return std::min(cpu::device::team_for(
                         pairs, static_cast<std::int64_t>(kPairsPerThread)),
-                    cpu::device::team_for(n, kMinAtomsPerThread));
+                    cpu::device::team_for(AtomBlocks(n).count, 1));
 }
 
 int EwaldSum::column_team_(int n) const {
@@ -195,8 +228,9 @@ void EwaldSum::phases(const StorageReal* x, const StorageReal* y,
         out.re[a].resize(rows * static_cast<std::size_t>(n));
         out.im[a].resize(rows * static_cast<std::size_t>(n));
     }
-    // The atom split of the force kernels: each thread then finds its own
+    // The atom blocks of the force kernels: each thread then finds its own
     // atoms' tables in its cache there.
+    const AtomBlocks blocks(n);
     const int team = atom_team_(n);
 #pragma omp parallel num_threads(team) if (team > 1)
     {
@@ -205,33 +239,36 @@ void EwaldSum::phases(const StorageReal* x, const StorageReal* y,
         rank = omp_get_thread_num();
         size = omp_get_num_threads();
 #endif
-        int j0, j1;
-        team_range(n, rank, size, j0, j1);
-        for (int a = 0; a < 3; ++a) {
-            double* __restrict re = out.re[a].data();
-            double* __restrict im = out.im[a].data();
-            const double ba0 = b_[a][0], ba1 = b_[a][1], ba2 = b_[a][2];
-            for (int j = j0; j < j1; ++j) {
-                const double phase = ba0 * x[j] + ba1 * y[j] + ba2 * z[j];
-                re[j] = 1.0;
-                im[j] = 0.0;
-                if (mmax_[a] > 0) {
-                    re[n + j] = std::cos(phase);
-                    im[n + j] = std::sin(phase);
-                }
-            }
-            // exp(i m θ) = exp(i (m−1) θ) · exp(i θ).
-            const double* __restrict c1 = re + n;
-            const double* __restrict s1 = im + n;
-            for (int m = 2; m <= mmax_[a]; ++m) {
-                const double* __restrict cp = re + (m - 1) * std::size_t(n);
-                const double* __restrict sp = im + (m - 1) * std::size_t(n);
-                double* __restrict cm = re + m * std::size_t(n);
-                double* __restrict sm = im + m * std::size_t(n);
-#pragma omp simd
+        int b0, b1;
+        team_range(blocks.count, rank, size, b0, b1);
+        for (int b = b0; b < b1; ++b) {
+            const int j0 = blocks.begin(b), j1 = blocks.end(b);
+            for (int a = 0; a < 3; ++a) {
+                double* __restrict re = out.re[a].data();
+                double* __restrict im = out.im[a].data();
+                const double ba0 = b_[a][0], ba1 = b_[a][1], ba2 = b_[a][2];
                 for (int j = j0; j < j1; ++j) {
-                    cm[j] = cp[j] * c1[j] - sp[j] * s1[j];
-                    sm[j] = sp[j] * c1[j] + cp[j] * s1[j];
+                    const double phase = ba0 * x[j] + ba1 * y[j] + ba2 * z[j];
+                    re[j] = 1.0;
+                    im[j] = 0.0;
+                    if (mmax_[a] > 0) {
+                        re[n + j] = std::cos(phase);
+                        im[n + j] = std::sin(phase);
+                    }
+                }
+                // exp(i m θ) = exp(i (m−1) θ) · exp(i θ).
+                const double* __restrict c1 = re + n;
+                const double* __restrict s1 = im + n;
+                for (int m = 2; m <= mmax_[a]; ++m) {
+                    const double* __restrict cp = re + (m - 1) * std::size_t(n);
+                    const double* __restrict sp = im + (m - 1) * std::size_t(n);
+                    double* __restrict cm = re + m * std::size_t(n);
+                    double* __restrict sm = im + m * std::size_t(n);
+#pragma omp simd
+                    for (int j = j0; j < j1; ++j) {
+                        cm[j] = cp[j] * c1[j] - sp[j] * s1[j];
+                        sm[j] = sp[j] * c1[j] + cp[j] * s1[j];
+                    }
                 }
             }
         }
@@ -279,6 +316,7 @@ void EwaldSum::add_forces(const EwaldPhases& ph, const StorageReal* q, int n,
     // Half-sphere: energy prefactor is 4π k_e / V; force factor uses 2·ug.
     const double K2 = 2.0 * (qqrd2e_ * 4.0 * ATV::units::pi / volume);
     const double* __restrict kw = kw_.data();
+    const AtomBlocks blocks(n);
     const int team = atom_team_(n);
 #pragma omp parallel num_threads(team) if (team > 1)
     {
@@ -287,13 +325,14 @@ void EwaldSum::add_forces(const EwaldPhases& ph, const StorageReal* q, int n,
         rank = omp_get_thread_num();
         size = omp_get_num_threads();
 #endif
-        int i0, i1;
-        team_range(n, rank, size, i0, i1);
+        int b0, b1;
+        team_range(blocks.count, rank, size, b0, b1);
         alignas(64) double pr[kBlock], pi[kBlock];
         alignas(64) double t1[kBlock], t2[kBlock];
         alignas(64) double ax[kBlock], ay[kBlock], az[kBlock];
-        for (int j0 = i0; j0 < i1; j0 += kBlock) {
-            const int jn = std::min(kBlock, i1 - j0);
+        for (int b = b0; b < b1; ++b) {
+            const int j0 = blocks.begin(b);
+            const int jn = blocks.end(b) - j0;
             std::fill_n(ax, jn, 0.0);
             std::fill_n(ay, jn, 0.0);
             std::fill_n(az, jn, 0.0);
@@ -404,6 +443,7 @@ void EwaldSum::add_curvature(const EwaldPhases& ph, const StorageReal* q,
     const double* __restrict ky = ky_.data();
     const double* __restrict kz = kz_.data();
     const double* __restrict kw = kw_.data();
+    const AtomBlocks blocks(n);
     const int team = atom_team_(n);
 #pragma omp parallel num_threads(team) if (team > 1)
     {
@@ -412,13 +452,14 @@ void EwaldSum::add_curvature(const EwaldPhases& ph, const StorageReal* q,
         rank = omp_get_thread_num();
         size = omp_get_num_threads();
 #endif
-        int i0, i1;
-        team_range(n, rank, size, i0, i1);
+        int b0, b1;
+        team_range(blocks.count, rank, size, b0, b1);
         alignas(64) double pr[kBlock], pi[kBlock], ku0[kBlock], ku2[kBlock];
         alignas(64) double h1[kBlock], h2[kBlock], g1[kBlock], g2[kBlock];
         alignas(64) double ah[3][kBlock], ag[3][kBlock], al[kBlock];
-        for (int j0 = i0; j0 < i1; j0 += kBlock) {
-            const int jn = std::min(kBlock, i1 - j0);
+        for (int b = b0; b < b1; ++b) {
+            const int j0 = blocks.begin(b);
+            const int jn = blocks.end(b) - j0;
             for (int d = 0; d < 3; ++d) {
                 std::fill_n(ah[d], jn, 0.0);
                 std::fill_n(ag[d], jn, 0.0);
