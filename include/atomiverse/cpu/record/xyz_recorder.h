@@ -49,9 +49,8 @@ namespace cpu {
 /// index `ctx.step` writes step `ctx.step + 1` when that is a multiple of
 /// `freq` (LAMMPS `Output::write`); a step is never written twice (LAMMPS
 /// `last_dump`). The completed-step count is cumulative across chunked
-/// `run(cpu::Frame&, …)` calls — that overload continues one trajectory,
-/// while `run(molrs::FrameRef&, …)` materializes a fresh working frame per
-/// call and does not (@see cpu::md::MD::run). So a fresh `n`-step run at
+/// `run(frame, …)` calls on the same frame, which continue one trajectory
+/// (@see cpu::md::MD::run). So a fresh `n`-step run at
 /// `freq` writes the steps `0, freq, 2*freq, …` up to and including `n` —
 /// a 10-step run at freq 5 writes 3 frames (steps 0, 5 and 10).
 /// `cpu::minimizer::Minimize` follows the same convention per iteration

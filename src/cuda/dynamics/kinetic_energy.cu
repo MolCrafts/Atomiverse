@@ -77,11 +77,7 @@ void KineticEnergy::launch(const LaunchContext& ctx) {
     int block = cuda::kDefaultBlock;
     int grid = cuda::grid_size(static_cast<int>(n));
     constexpr int shmem = 0;
-    // Fused KE + kinetic-stress reduction. Passes
-    // `frame.scalars->stress_kinetic` so a co-bound `Virial`
-    // doesn't need its own kernel launch — that component now
-    // becomes a zero-kernel auto-injection that just declares the
-    // capability (cuda-md-review-cleanup-05-reductions-and-atomics).
+    // Fused KE + kinetic-stress reduction, every step.
     kinetic_energy_stress<<<grid, block, shmem, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.mass,
         &frame.scalars->kinetic,

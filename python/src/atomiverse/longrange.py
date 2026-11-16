@@ -24,6 +24,16 @@ boundary between them falls:
     transformed back — O(N log N) instead of the O(N²) direct sum
     (``cpu::KSpacePME``).
 
+``KSpaceEwald``
+    Reciprocal space — the direct Ewald k-space sum (``cpu::KSpaceEwald``,
+    LAMMPS ``kspace_style ewald``) with a spherical cutoff set by
+    ``accuracy``, conducting boundary. O(N·k) and FFT-free, so it is part
+    of every build; it is also the reciprocal half that supplies the
+    second derivatives the configurational temperature and thermostat need
+    (``ConfigurationalTemperature``, ``GearPC`` with
+    ``ConfigurationalThermostat``). ``KSpaceEwald.recommend_alpha(cutoff,
+    accuracy)`` is the LAMMPS heuristic for ``alpha``.
+
 ``KSpacePPPM``
     The same split with Hockney–Eastwood PPPM and ik differentiation, the
     LAMMPS ``pppm`` default. The mesh Green's function is the alias-sum
@@ -55,10 +65,10 @@ neutral system is still expressible — insert an explicit zero column.
 
 ``CoulLong`` comes with the ``potentials`` module: without it, importing
 this module raises ``MissingDomainError`` naming ``ATV_BUILD_POTENTIALS``.
-The reciprocal solver needs FFTW3 and is its own module, ``kspace``: on an
+The mesh solvers need FFTW3 and are their own module, ``kspace``: on an
 extension built without ``ATV_BUILD_KSPACE=ON`` this module still exports
-``CoulLong``, and asking for ``KSpacePME`` or ``KSpacePPPM`` raises
-``AttributeError`` naming the flag.
+``CoulLong`` and ``KSpaceEwald``, and asking for ``KSpacePME`` or
+``KSpacePPPM`` raises ``AttributeError`` naming the flag.
 For the cutoff (non-Ewald) Coulomb style see
 :data:`atomiverse.potentials.pair.CoulCut`.
 """
@@ -79,6 +89,11 @@ require_domain(__name__, "potentials")
 #: Real-space Ewald/PME half — ``cpu::CoulLong(alpha [1/Å], cutoff [Å])``.
 CoulLong = _cpp.CoulLong
 
+#: Direct reciprocal Ewald half —
+#: ``cpu::KSpaceEwald(alpha [1/Å], accuracy = 1e-5)``. Not carried by the MPI
+#: task wire.
+KSpaceEwald = _cpp.KSpaceEwald
+
 if has_domain("kspace"):
     #: Reciprocal-space Ewald/PME half —
     #: ``cpu::KSpacePME(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6)``.
@@ -89,9 +104,9 @@ if has_domain("kspace"):
     #: order=6, alpha=None, mesh=None)`` is LAMMPS ``kspace_style pppm
     #: <accuracy>`` (alpha and mesh for this frame's cell and charges).
     KSpacePPPM = _cpp.KSpacePPPM
-    __all__ = ["CoulLong", "KSpacePME", "KSpacePPPM"]
+    __all__ = ["CoulLong", "KSpaceEwald", "KSpacePME", "KSpacePPPM"]
 else:
-    __all__ = ["CoulLong"]
+    __all__ = ["CoulLong", "KSpaceEwald"]
 
 
 def __getattr__(name: str) -> Any:

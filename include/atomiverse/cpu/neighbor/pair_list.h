@@ -66,6 +66,12 @@ struct PairList {
     /// against their last-seen value to decide whether their cache is stale.
     /// Zero at `NeighborList::build`; never reset.
     unsigned long long version = 0;
+    /// @brief Interaction radius [Å] inside which every pair is listed: the
+    /// provider's `supported_cutoff()` (pairs are enumerated out to cutoff +
+    /// skin). 0 = undeclared, e.g. a hand-built list. A style that is not a
+    /// `NeighborConsumer`, so that no build-time coverage check applies to
+    /// it, walks a list only when this covers its own cutoff.
+    double cutoff = 0.0;
 
     /// @brief Resident heap bytes owned by this CSR. Uses `size()` (live,
     /// written elements ≈ resident pages) rather than `capacity()` — reserved-

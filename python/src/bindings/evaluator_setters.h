@@ -34,6 +34,7 @@
 #ifdef ATV_HAS_MD
 #include "atomiverse/cpu/dynamics/fix_efield.h"
 #endif
+#include "atomiverse/cpu/longrange/ewald.h"
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/cpu/longrange/pme.h"
 #include "atomiverse/cpu/longrange/pppm.h"
@@ -198,6 +199,18 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "frame's improper topology; its type_id indexes the per-type "
         "vectors. Not an MPI task-wire component.");
 
+    cls.def(
+        "set_evaluator_kspace_ewald",
+        [](Handle& self, const ATV::cpu::task::KSpaceEwaldParams& p) {
+            self.set_unmirrored_evaluator(
+                ATV::cpu::KSpaceEwald{p.alpha, p.accuracy}, "KSpaceEwald",
+                true);
+        },
+        nb::arg("comp"),
+        "Append the direct reciprocal-space Ewald sum. build() requires "
+        "exactly one CoulLong at the SAME alpha [1/A]. Not an MPI task-wire "
+        "component: a launcher run that names it is refused.");
+
 #ifdef ATV_HAS_KSPACE
     cls.def(
         "set_evaluator_kspace_pme",
@@ -342,10 +355,8 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
     cls.def(
         "set_evaluator_pair_born",
         [](Handle& self, const ATV::cpu::task::PairBornParams& p) {
-            self.set_categorical(
-                "set_evaluator", p,
-                ATV::cpu::PairBorn{ATV::cpu::task::internal::born_table(p),
-                                   p.cutoff});
+            self.set_categorical("set_evaluator", p,
+                                 ATV::cpu::task::internal::make_pair_born(p));
         },
         nb::arg("comp"),
         "Append the Born-Mayer-Huggins pair evaluator, "

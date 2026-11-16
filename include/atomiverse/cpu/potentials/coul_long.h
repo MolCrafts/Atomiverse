@@ -20,9 +20,11 @@
 
 #include "atomiverse/core/precision.h"
 #include "atomiverse/core/role.h"
+#include "atomiverse/cpu/component/curvature_protocol.h"
 #include "atomiverse/cpu/component/long_range_protocol.h"
 #include "atomiverse/cpu/component/neighbor_protocol.h"
 #include "atomiverse/cpu/component/potential.h"
+#include "atomiverse/cpu/potentials/pair_curvature.h"
 #include "atomiverse/cpu/potentials/pair_loop.h"
 #include "atomiverse/cpu/potentials/special_scale.h"
 
@@ -30,9 +32,20 @@ namespace ATV {
 namespace cpu {
 
 /// @brief Real-space screened Coulomb force/energy (Ewald/PME real part).
+///
+/// **Curvature** (`CurvatureSource`): with \(g = \operatorname{erfc}(\alpha
+/// r)/r\), \(c = 2\alpha/\sqrt\pi\), \(E = e^{-\alpha^2 r^2}\):
+/// \(g' = -\operatorname{erfc}/r^2 - cE/r\),
+/// \(g'' = 2\operatorname{erfc}/r^3 + 2cE/r^2 + 2\alpha^2 cE\), Laplacian
+/// \(L = g'' + 2g'/r = 2\alpha^2 c E\) (not zero: only the bare
+/// \(1/r\) is harmonic) and \(L' = -4\alpha^4 c\,r E\). A special-bond
+/// remainder \(-(1-s)/r\) adds its Hessian and no Laplacian. Threaded and
+/// batched as the force walk (`md::CurvatureLoop`; erfc and \(E\) from
+/// `ewald_erfc.h`).
 class CoulLong : public cpu::Potential,
                  public cpu::NeighborConsumer,
-                 public cpu::LongRangeParticipant {
+                 public cpu::LongRangeParticipant,
+                 public cpu::CurvatureSource {
   public:
     /// @brief Real-space Coulomb reads the neighbour charge.
     /// @return This style's ghost declarations.
@@ -60,6 +73,10 @@ class CoulLong : public cpu::Potential,
         return {LongRangeRole::RealSpace, alpha_, cutoff_, AccReal(0)};
     }
 
+    CurvatureSource* as_curvature_source() override { return this; }
+    void add_curvature(const LaunchContext& ctx,
+                       const CurvatureRows& rows) override;
+
     AccReal neighbor_cutoff() const override { return cutoff_; }
     AccReal pair_cutoff() const { return cutoff_; }
 
@@ -83,6 +100,7 @@ class CoulLong : public cpu::Potential,
     unsigned long long special_version_ = 0;
 
     md::PairLoop loop_; ///< shared CPU pair walk (cached row partition)
+    md::CurvatureLoop curvature_; ///< its curvature twin (`add_curvature`)
 };
 
 } // namespace cpu

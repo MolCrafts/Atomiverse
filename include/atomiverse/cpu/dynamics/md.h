@@ -34,10 +34,6 @@
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nvt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
-#ifdef ATV_HAS_MOLPY
-#include "atomiverse/cpu/frame/molpy_exchange.h"
-#endif
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/record/timing_report.h"
 
 namespace ATV {
@@ -53,8 +49,9 @@ namespace md {
 /// are inherited from Driver), and runs `install_defaults()` at `build()`
 /// time to derive opt-in infrastructure from declared component requirements:
 ///
-///   - Stress capability dependency → auto-injects `Virial`
-///     (deduped against an explicitly-registered `Virial`).
+///   - The kinetic stress `kStressKinetic` is written with the kinetic
+///     energy by the always-on `KineticEnergy` (end_of_step), from the
+///     velocities of the state the step leaves.
 ///   - Halo / exchange live on `ctx.md.comm` (`CommBrick`); the Plan
 ///     does not mount `CommBrick` / `Comm::exchange` / `CommBrick::forward_comm`.
 ///   - A `NeighborConsumer` (pair evaluator / real-space Coulomb) was
@@ -143,46 +140,6 @@ class MD : public Driver<ATV::md::Phase> {
         this->backend_->checkpoint_inputs();
         return iterations;
     }
-
-    /// @brief User-facing entry — advance the system stored in a molpy.Frame.
-    ///
-    /// Each call to this overload materializes a fresh `cpu::Frame`, so consecutive
-    /// `run(molrs::FrameRef&, …)` calls are independent simulations (no trajectory
-    /// continuation): every call hands its components the step indices 0 … n_steps-1.
-    /// For a continued trajectory materialize once and use the `cpu::Frame&` overload.
-    ///
-    /// The independence is **structural**: the live run is torn down here, before the
-    /// working frame dies, so `Driver::begin_run_` never compares the next call's frame
-    /// address against a dangling pointer into this call's destroyed stack local. The
-    /// teardown fires component `destroy()` and ends the live run, so the next call
-    /// re-runs `setup_pass` from a zeroed step counter — no stateful integrator,
-    /// thermostat ramp or recorder cadence carries over.
-    ///
-    /// Owned rows may be spatially sorted during the run. This overload puts
-    /// each atom back in the row it occupied at import before export, so a
-    /// row-indexed molpy bond table still names the same atoms. The restore
-    /// is skipped when the owned count changed or the tags are not a unique
-    /// permutation of the import snapshot.
-    ///
-    /// @param frame molpy.Frame handle (input geometry + output sink).
-    /// @param n_steps Step budget.
-    /// @return Number of iterations actually executed.
-#ifdef ATV_HAS_MOLPY
-    BigInt run(molrs::FrameRef& frame, BigInt n_steps) {
-        cpu::Frame work = cpu::from_molpy(frame);
-        const int n_import = work.nlocal();
-        std::vector<TagInt> import_tags(
-            static_cast<std::size_t>(std::max(n_import, 0)));
-        if (n_import > 0)
-            std::copy_n(work.span(kAtom_tag).data(), n_import,
-                        import_tags.begin());
-        const BigInt iterations = run(work, n_steps);
-        work.restore_import_order(import_tags.data(), n_import);
-        cpu::to_molpy(work, frame);
-        this->flush_live_();
-        return iterations;
-    }
-#endif
 
     MD() {
         // Force/energy accumulators every force eval. Stress zeroing is
@@ -408,8 +365,6 @@ class MD : public Driver<ATV::md::Phase> {
         // zeroing an unconsumed `stress` was a running sum over all steps.
         if (!this->pending_named_("zero_stress"))
             this->on(ATV::md::Phase::pre_force).add(ZeroStress{}, -998);
-        if (s.needs_stress && !s.has_virial_stress)
-            this->bind_defaults(Virial{});
 
         // Halo / exchange / reverse live on `ctx.md.comm` (Runtime Verlet
         // and linear wrap). Constraint and charge-updater ghost refresh is

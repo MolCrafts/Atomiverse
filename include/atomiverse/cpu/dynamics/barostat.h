@@ -102,10 +102,9 @@ class Barostat : public cpu::Barostat, public cpu::TimestepConsumer {
 
     std::string name() const override { return "barostat"; }
     /* role via Barostat base */
-    /// @brief Reads `frame.stress` to derive internal pressure for
-    /// the rescaling factor `μ`. Triggers auto-injection of
-    /// `Virial` in `MD::install_defaults()` when no canonical
-    /// stress provider is otherwise registered.
+    /// @brief Reads `frame.stress` and `frame.stress_kinetic` (written by
+    /// `KineticEnergy` at end_of_step @ -100) to derive the internal
+    /// pressure for the rescaling factor `μ`.
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::end_of_step, -45)};
     }

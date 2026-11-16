@@ -13,6 +13,7 @@
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
+#include "atv_source_stamp.h"
 #include "molpy_frame_bridge.h"
 #include "units_binding.h"
 #include <nanobind/nanobind.h>
@@ -61,6 +62,14 @@ void bind_cuda_scf(nb::module_& m);
 
 NB_MODULE(_atomiverse, m) {
     m.doc() = "Atomiverse: molecular simulation compute backend";
+    // The source revision this extension was built from
+    // (cmake/AtvSourceStamp.cmake): a 40-hex commit or "unknown", and
+    // whether tracked files differed from it (None when unknown).
+    m.attr("__git_commit__") = ATV_SOURCE_COMMIT;
+    if (ATV_SOURCE_DIRTY < 0)
+        m.attr("__git_dirty__") = nb::none();
+    else
+        m.attr("__git_dirty__") = nb::bool_(ATV_SOURCE_DIRTY == 1);
     nb::class_<ATV::cpu::Component>(m, "_Component");
     nb::class_<ATV::cpu::DriverNode>(m, "_DriverNode");
     m.def("_single_point_component",

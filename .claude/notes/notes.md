@@ -10,6 +10,8 @@ Conclusions only. Binding rules live in docs/developer/project-contract.md; hist
 | CPU MD communication | [md-comm.md](md-comm.md) |
 | CUDA MD: NVIDIA libraries, OpenMM method | [cuda-md-nvidia-libraries.md](cuda-md-nvidia-libraries.md), [cuda-openmm-md-perf.md](cuda-openmm-md-perf.md) |
 | GAFF benchmark (CPU vs LAMMPS, CUDA vs OpenMM) | [gaff-md-perf.md](gaff-md-perf.md) |
+| Small dense Coulomb MD (NaCl Ewald vs LAMMPS) | [md-small-coulomb-perf.md](md-small-coulomb-perf.md) |
+| CUDA NEMD twins, packing runs on one GPU (MPS) | [cuda-nemd-packing.md](cuda-nemd-packing.md) |
 | Machines, accounts, workbenches | [arrhenius-workbench.md](arrhenius-workbench.md) |
 | BLAS threading traps | [openblas-thread-binding.md](openblas-thread-binding.md) |
 | ES public-shape debt | [es-architecture-debt.md](es-architecture-debt.md) |
@@ -46,6 +48,24 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   ATV reductions), SW+LJ neighbor build ~1.5–2×, no x86/cluster numbers.
 - **Component clone ceiling** — revisit when a real N-replica inner-loop user
   appears.
+- **NEMD thermostats (Petravic & Delhommelle 2003), CPU and CUDA.** `GearPC` with
+  Gaussian / configurational thermostats and the curvature protocol behind
+  T_C1 are in (roadmap: molecular-dynamics §1, observables). Open: (1) no
+  standing T_conf = T_kin gate in an equilibrium NaCl melt — statistical,
+  minutes of MD, needs an `md` method in the scientific benchmark framework;
+  under Ewald, D carries the Coulomb background constant −4π k_e Σq²/V
+  (≈0.1 % of D for molten NaCl), and a Gauss-isokinetic run samples its
+  kinetic temperature with 3N − 3 dof, so compare like with like; (2) the
+  CUDA twins exist ([cuda-nemd-packing.md](cuda-nemd-packing.md)) but more
+  than 48 simulations per card needs several in one process; (3) PME / PPPM
+  curvature (B-spline second derivatives), so T_C1
+  today needs `KSpaceEwald`; (4) spatial decomposition for `GearPC` and the
+  curvature assembly; (5) Gear start is the customary zero-higher-derivative
+  one (≈40-step transient), no self-starting procedure; (6) a truncated pair
+  potential's δ-shell Laplacian at r_c is not counted (the same truncation the
+  forces make). A Python `MD.run` on the frame the previous one returned,
+  unedited, continues ξ and the Gear history on both devices; an edit
+  restarts them.
 
 ## Open debt found, not yet fixed (verify before acting)
 
@@ -87,8 +107,8 @@ Loop queues live under `.claude/campaigns/` (gitignored): `cp2k-method-queue.md`
   `test_lammps_units_parity` (stock LAMMPS, lj/real/metal/si/electron).
 - Not LAMMPS-exact yet (algorithm, not units): `NoseHoover` splits xi by
   dt/2 where `fix nvt` uses dt/4 kicks; `NoseHooverNPT` uses the MTK mass
-  `(N_f+3)kT tau_P^2` and a fused remap; `Virial` kinetic stress mounted at
-  `post_force` sees half-step velocities (LAMMPS thermo uses end-of-step).
+  `(N_f+3)kT tau_P^2` and a fused remap. (The kinetic stress is now taken
+  at end_of_step by `KineticEnergy` on both devices, as LAMMPS thermo does.)
 - Electronic-structure force sources return eV/Å: a BOMD run is physical
   only in `units metal`; the ES-MD regressions still run in the default lj.
 

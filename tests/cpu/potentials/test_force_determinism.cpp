@@ -150,8 +150,8 @@ void expect_reproducible(Make make, cpu::Frame& f, cpu::Context& ctx) {
 } // namespace
 
 TEST(ForceDeterminism, PairLoopStyleIsBitReproduciblePerThreadCount) {
-    // 900 atoms, all pairs inside the cutoff: 404,550 pairs, enough for a
-    // team of eight (PairRowPartition::kMinPairsPerThread).
+    // 900 atoms, all pairs inside the cutoff: 404,550 pairs, enough to
+    // thread (PairRowPartition::team_for).
     constexpr int kAtoms = 900;
     cpu::Frame f = chain(kAtoms, 1.1, 500.0);
     const auto pairs = all_pairs(kAtoms);
@@ -162,7 +162,7 @@ TEST(ForceDeterminism, PairLoopStyleIsBitReproduciblePerThreadCount) {
 }
 
 TEST(ForceDeterminism, BondedStyleIsBitReproduciblePerThreadCount) {
-    // 40,000 bonds: enough for a team of eight (ForcePass::kMinTermsPerThread).
+    // 40,000 bonds: enough to thread (ForcePass::kMinTermsPerThread).
     constexpr int kAtoms = 40001;
     cpu::Frame f = chain(kAtoms, 1.0, 500.0);
     cpu::Context ctx;

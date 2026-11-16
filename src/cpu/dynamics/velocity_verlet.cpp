@@ -7,6 +7,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/device/team.h"
 
 #include <algorithm>
 
@@ -31,10 +32,10 @@ void VelocityVerlet::launch(const cpu::LaunchContext& ctx) {
     const AccReal* __restrict sp_fz = f.span(kAtom_fz);
     const double dt = dt_;
     const double dtf = 0.5 * dt * ctx.runtime.units.ftm2v;
-    // Give each worker enough owned rows to amortize team overhead.
+    // The team only once two workers each get enough owned rows to
+    // amortize its overhead (`device::team_for`).
     constexpr int kRowsPerThread = 4096;
-    [[maybe_unused]] const int team =
-        std::max(1, std::min(ctx.runtime.n_threads, n / kRowsPerThread));
+    [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
 
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
         StorageReal* __restrict sp_x = f.span(kAtom_x);

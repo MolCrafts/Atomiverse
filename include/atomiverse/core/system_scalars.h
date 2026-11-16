@@ -83,14 +83,11 @@ struct SystemScalars {
 
     /// @brief Kinetic stress tensor Σ m·v·v [eV], Voigt order xx yy zz xy xz yz.
     ///
-    /// Written by `Virial` at `post_force` using the velocities
-    /// at that point. Time-dependent: integrators like
-    /// `NoseHooverNPT` that update velocities between `post_force`
-    /// and pressure evaluation recompute the kinetic stress fresh
-    /// from the post-update velocities rather than reusing this
-    /// stored value, so this field is *informational* for any
-    /// downstream observer/recorder that wants the post-force
-    /// pressure snapshot.
+    /// Written with the kinetic energy by MD's `KineticEnergy` at
+    /// `end_of_step`, from the velocities of the state the step leaves
+    /// (trace = 2·kinetic), on both devices. Integrators like
+    /// `NoseHooverNPT` that need the pressure mid-step recompute the
+    /// kinetic part from the velocities of that moment instead.
     double stress_kinetic[6] = {};
 };
 

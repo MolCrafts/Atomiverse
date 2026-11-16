@@ -14,7 +14,9 @@
 ///     Row row(int i) const;                     // per-i state hoisted once
 ///     md::PairTerm operator()(const Row& ri, const md::PairSite& p,
 ///                             const md::PairChunk& chunk) const;
-///     // optional, once per survivor chunk of row i:
+///     // optional, once per survivor chunk of row i (or the same with the
+///     // survivors' partner rows `j[0..n)` before `n`, for per-pair
+///     // coefficients):
 ///     void prepare(const Row& ri, const double* r2, int n,
 ///                  md::PairChunk& chunk) const;
 ///     // optional: rows that contribute nothing (e.g. q_i = 0)
@@ -48,12 +50,20 @@
 /// the same kernel runs over all owned pairs with minimum-image separations.
 ///
 /// **Threads and determinism.** The rows are cut into chunks of balanced pair
-/// count (`PairRowPartition`, rebuilt when the walked list changes); the team
-/// follows the pair count, so a small system runs the single-thread direct
-/// path. Chunks are handed out dynamically, but every chunk scatters into its
-/// own `md::ForcePass` slot and stores its own energy / virial partials, all
-/// combined in chunk order: for a given thread count the result is
-/// bit-identical run to run, whichever thread ran which chunk.
+/// count (`PairRowPartition`, rebuilt when the walked list changes); a list
+/// whose pair count does not repay the team runs the single-thread direct
+/// path, any other opens every thread (`device::team_for`). With one chunk
+/// per thread, thread c runs chunk c; more chunks are handed out
+/// dynamically. Either way every chunk scatters into its own `md::ForcePass`
+/// slot and stores its own energy / virial partials, all combined in chunk
+/// order: for a given thread count the result is bit-identical run to run,
+/// whichever thread ran which chunk.
+///
+/// **Ghost partners.** Under a single-process halo every ghost row is a
+/// periodic image of an owned row (`Context::md.image_owner`); the generic
+/// walk then adds a ghost partner's force to its owner directly, so the
+/// chunk buffers, their zeroing and the flush span the owned rows only and
+/// the reverse halo pass has nothing left to fold for these styles.
 #pragma once
 
 #include <algorithm>
@@ -70,6 +80,10 @@
 #include "atomiverse/cpu/neighbor/pair_list.h"
 #include "atomiverse/cpu/potentials/force_scratch.h"
 #include "atomiverse/cpu/potentials/pair_partition.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace ATV {
 namespace cpu {
@@ -213,6 +227,10 @@ class PairLoop {
         requires(const K& k, const row_t_<K>& r, const double* p,
                  PairChunk& c) { k.prepare(r, p, 0, c); };
     template <class K>
+    static constexpr bool has_prepare_rows_ =
+        requires(const K& k, const row_t_<K>& r, const double* p, const int* j,
+                 PairChunk& c) { k.prepare(r, p, j, 0, c); };
+    template <class K>
     static constexpr bool has_skip_ =
         requires(const K& k, const row_t_<K>& r) { bool(k.skip(r)); };
     template <class K>
@@ -256,12 +274,27 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
         version_ = L.version;
     }
     ForcePass forces(ctx);
-    const int team = partition_.team(forces.team());
-    const int n_chunks = partition_.chunks(team);
+    // A single-process halo makes every ghost an image of an owned row: a
+    // partner's force then goes straight to its owner, and the chunk
+    // buffers span the owned rows only instead of every listed ghost (a
+    // small box with a long cutoff has several ghosts per atom). A kernel
+    // that walks its rows itself scatters to the listed rows.
+    const int* __restrict owner = nullptr;
+    if constexpr (!has_walk_<Kernel>)
+        if (ctx.runtime.md.image_owner != nullptr
+            && ctx.runtime.md.image_owner_rows == f.n_total())
+            owner = ctx.runtime.md.image_owner;
     // Rows past the list's highest reference receive nothing.
-    forces.open(team, n_chunks,
-                std::min(partition_.n_touch(), force_count(ctx)));
+    const int n_rows = owner != nullptr
+                           ? f.nlocal()
+                           : std::min(partition_.n_touch(), force_count(ctx));
+    const int team =
+        PairRowPartition::team_for(partition_.total(), n_rows, forces.team());
+    const int n_chunks =
+        PairRowPartition::chunks_for(partition_.total(), n_rows, team);
+    forces.open(team, n_chunks, n_rows);
     const PairRowPartition& part = partition_;
+    int next_chunk = 0; // dynamic pickup counter (more chunks than threads)
 
 #pragma omp parallel num_threads(team) if (team > 1)
     {
@@ -274,10 +307,29 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
         alignas(64) double r2b[kPairChunk];
         alignas(64) int surv[kPairChunk];
         alignas(64) double r2s[kPairChunk + 16];
+        alignas(64) int js[kPairChunk];
         PairChunk chunk;
 
-#pragma omp for schedule(dynamic, 1)
-        for (int c = 0; c < n_chunks; ++c) {
+        int rank = 0, size = 1;
+#ifdef _OPENMP
+        rank = omp_get_thread_num();
+        size = omp_get_num_threads();
+#endif
+        // One chunk per thread: thread c runs chunk c, so chunk c (and its
+        // force buffer) stays on thread c across styles and steps; dynamic
+        // pickup would only move buffers between cores, with no slack to
+        // balance. More chunks than threads are picked up dynamically. The
+        // body stays inline (no per-chunk closure), so the scratch arrays
+        // stay private locals the force stores cannot alias.
+        const bool own = n_chunks == size;
+        const auto pickup = [&next_chunk] {
+            int c;
+#pragma omp atomic capture
+            c = next_chunk++;
+            return c;
+        };
+        for (int c = own ? rank : pickup(); c < n_chunks;
+             c = own ? n_chunks : pickup()) {
             const ForceRows tf = forces.rows(c);
             double energy = 0.0, extra = 0.0;
             double v_xx = 0, v_yy = 0, v_zz = 0, v_xy = 0, v_xz = 0, v_yz = 0;
@@ -320,12 +372,19 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
                         r2s[ns] = r2;
                         ns += (r2 >= rc_sq || r2 == 0.0) ? 0 : 1;
                     }
-                    if constexpr (has_prepare_<Kernel>) {
+                    if constexpr (has_prepare_<Kernel>
+                                  || has_prepare_rows_<Kernel>) {
                         // Harmless padding for batch tails; never read back.
                         for (int p = ns; p < ns + 16; ++p)
                             r2s[p] = 1.0;
-                        if (ns > 0)
+                        if constexpr (has_prepare_rows_<Kernel>) {
+                            for (int k = 0; k < ns; ++k)
+                                js[k] = neighbors[off + base + surv[k]];
+                            if (ns > 0)
+                                kernel.prepare(ri, r2s, js, ns, chunk);
+                        } else if (ns > 0) {
                             kernel.prepare(ri, r2s, ns, chunk);
+                        }
                     }
                     for (int k = 0; k < ns; ++k) {
                         const int slot = surv[k];
@@ -353,9 +412,10 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
                         fi_y += fyp;
                         fi_z += fzp;
                         if (do_force) {
-                            tf.fx[j] -= fxp;
-                            tf.fy[j] -= fyp;
-                            tf.fz[j] -= fzp;
+                            const int js = owner != nullptr ? owner[j] : j;
+                            tf.fx[js] -= fxp;
+                            tf.fy[js] -= fyp;
+                            tf.fz[js] -= fzp;
                         }
                         energy += term.energy;
                         if (do_virial) {
@@ -375,9 +435,10 @@ PairTotals PairLoop::run(const LaunchContext& ctx, const PairRows& L,
                     }
                 }
                 if (do_force) {
-                    tf.fx[i] += fi_x;
-                    tf.fy[i] += fi_y;
-                    tf.fz[i] += fi_z;
+                    const int is = owner != nullptr ? owner[i] : i;
+                    tf.fx[is] += fi_x;
+                    tf.fy[is] += fi_y;
+                    tf.fz[is] += fi_z;
                 }
             }
             forces.store(c, energy,
@@ -405,10 +466,8 @@ PairTotals PairLoop::all_pairs_(const LaunchContext& ctx,
     const auto before = [n](std::int64_t i) { return i * n - i * (i + 1) / 2; };
     const std::int64_t total = before(n);
     ForcePass forces(ctx);
-    const int team = static_cast<int>(std::clamp<std::int64_t>(
-        total / PairRowPartition::kMinPairsPerThread, 1, forces.team()));
-    const int n_chunks =
-        team > 1 ? team * PairRowPartition::kChunksPerThread : 1;
+    const int team = PairRowPartition::team_for(total, n, forces.team());
+    const int n_chunks = PairRowPartition::chunks_for(total, n, team);
     forces.open(team, n_chunks, n);
     const auto cut = [&](int c) {
         if (c <= 0)
@@ -452,7 +511,10 @@ PairTotals PairLoop::all_pairs_(const LaunchContext& ctx,
                     const double r2 = dx * dx + dy * dy + dz * dz;
                     if (r2 >= rc_sq || r2 == 0.0)
                         continue;
-                    if constexpr (has_prepare_<Kernel>) {
+                    if constexpr (has_prepare_rows_<Kernel>) {
+                        r2one[0] = r2;
+                        kernel.prepare(ri, r2one, &j, 1, chunk);
+                    } else if constexpr (has_prepare_<Kernel>) {
                         r2one[0] = r2;
                         kernel.prepare(ri, r2one, 1, chunk);
                     }

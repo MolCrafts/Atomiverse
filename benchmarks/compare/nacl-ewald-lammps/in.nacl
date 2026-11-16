@@ -1,0 +1,18 @@
+# 512-ion molten NaCl, Born + coul/long + direct Ewald, beside
+# bench_nacl_ewald. PREFIX.data (the initial state) and PREFIX.lammps (pair,
+# kspace, neighbor, timestep and T) are written by
+#   bench_nacl_ewald STATE SETTING THREADS STEPS WARM --lammps PREFIX
+# so both engines run the same model, cell, Ewald α and reciprocal sphere.
+# LAMMPS has no Gear predictor-corrector or Gauss thermostat; fix nvt stands
+# in (its cost is in Modify, a small share either way).
+#   lmp -in in.nacl -var PREFIX P -var WARM 200 -var STEPS 1000
+units           metal
+atom_style      charge
+boundary        p p p
+read_data       ${PREFIX}.data
+include         ${PREFIX}.lammps
+fix             1 all nvt temp ${T} ${T} $(100.0*dt)
+thermo_style    custom step temp pe etotal
+thermo          ${STEPS}
+run             ${WARM}
+run             ${STEPS}

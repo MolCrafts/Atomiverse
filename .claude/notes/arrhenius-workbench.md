@@ -60,6 +60,29 @@ threads oversubscribes the node and produces false reds. Flags:
 -DATV_USE_MPI=ON -DBLA_VENDOR=OpenBLAS -DCMAKE_PREFIX_PATH=$OPENBLAS_ROOT`;
 set `ATV_MOLPY_PATH` to the molpy checkout for both trees.
 
+### Second build root next to a tree that jobs import
+
+`~/work/repro-petravic/` (NaCl NEMD reproduction, account
+`naiss2026-3-381-cpu`): `env.sh`, `.venv`, `src/`, `scratch/` are imported by
+running jobs and must not change under them. `v2/` is a complete second root
+(source copies, `src/Atomiverse/build/nemd`, a `.venv` copy whose `.pth` files
+point into `v2/src`, `env.sh`); a job switches by sourcing `v2/env.sh` and
+starting `v2/.venv/bin/python`. `v2/jobs/build.sbatch` brings the source to a
+`git archive` and builds it (steps `SOURCE= FRESH= OVERLAY= KEEP= TESTS=`,
+separated by `--`); `v2/base/<tag>/` keeps native modules of several
+revisions, selected with `PYTHONPATH=v2/base/<tag>`.
+
+- Copy a molpy checkout whole. The native module's frame capsules are named
+  by a digest of every file under `crates/molrs/src` and `crates/molrs-ffi/src`
+  (`molrs-ffi/build.rs`); an `rsync --exclude tests` dropped a source
+  directory called `tests`, the module imported and then refused every
+  `molpy.Frame` ("capsule is named ... but this build expects ..."). Run one
+  MD call after a build, not only `import`.
+- A job submitted with `sbatch --export=ALL,NAME=value` came up without the
+  NSC linker wrapper on PATH (`.../ssetools/<ver>/wrappers/ld`), and its
+  binaries lacked the baked RPATHs (`libfftw3.so.3` not found at import).
+  Pass options as script arguments and check `command -v ld` in the job.
+
 ## Mac (M4) workbench — machine-local, may vanish on reboot
 
 - ATV build `/tmp/atv-gaff-build` (MD, KSPACE, MOLPY, SEMIEMPIRICAL; HF/PW/GPW

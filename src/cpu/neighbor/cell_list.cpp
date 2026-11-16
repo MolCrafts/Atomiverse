@@ -17,9 +17,11 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/device/team.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <numeric>
 #include <stdexcept>
@@ -31,6 +33,14 @@
 namespace ATV {
 namespace cpu {
 namespace md {
+
+namespace {
+
+// Rows the binning pass gives a thread: a row is a few divisions, so a small
+// cell and its halo bin on the calling thread.
+constexpr int kBinRowsPerThread = 8192;
+
+} // namespace
 
 // ── CellList ─────────────────────────────────────────────────────
 
@@ -319,8 +329,9 @@ void CellList::bin_atoms(const cpu::Frame& frame, int n_active) {
         return static_cast<int>(x / size) - 1;
     };
 
-// Assign explicit Cartesian owner and image rows to their physical cells.
-#pragma omp parallel for schedule(static)
+    // Assign explicit Cartesian owner and image rows to their physical cells.
+    const int team = device::team_for(n, kBinRowsPerThread);
+#pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
     for (int i = 0; i < n; ++i) {
         double xi = sp_x[i];
         double yi = sp_y[i];
@@ -402,6 +413,24 @@ inline void ensure_at_least(std::vector<int>& arr, std::size_t n) {
         arr.resize(n);
 }
 
+// Distance checks (stencil candidates, ≈ 1–2 ns each) a thread of a list
+// build must get before a team pays for its fork and join.
+constexpr std::int64_t kCandidatesPerThread = 16384;
+
+// Team for `rows` centre rows that each scan `stencil_cells` cells of
+// `n_binned / n_cells` atoms on average: a long cutoff gives a few hundred
+// atoms enough candidates for the team, a short one leaves a small cell on
+// the calling thread.
+int list_team(int rows, std::size_t stencil_cells, int n_binned,
+              std::size_t n_cells) {
+    const std::int64_t per_row =
+        static_cast<std::int64_t>(stencil_cells) * std::max(n_binned, 1)
+        / static_cast<std::int64_t>(std::max<std::size_t>(n_cells, 1));
+    return device::team_for(std::int64_t{rows}
+                                * std::max<std::int64_t>(per_row, 1),
+                            kCandidatesPerThread);
+}
+
 } // namespace
 
 void CellList::refresh_half(const cpu::Frame& frame, int n_active,
@@ -430,11 +459,6 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
     result.inum = n_local;
     result.n_rows = n;
 
-    int n_threads = 1;
-#ifdef _OPENMP
-    n_threads = omp_get_max_threads();
-#endif
-
     const bool use_half = !triclinic_;
     const int* __restrict atom_cell_ptr = atom_cell_.data();
     const int* __restrict cell_count_ptr = cell_count_.data();
@@ -442,6 +466,8 @@ void CellList::refresh_half(const cpu::Frame& frame, int n_active,
     const int* __restrict binned_ptr = binned_atoms_.data();
     const auto& stencil = use_half ? half_stencil_ : full_stencil_;
     const int n_owned_rows = std::min(n_local, n);
+    const int n_threads =
+        list_team(n_owned_rows, stencil.size(), n, cell_count_.size());
 
     // One row traversal for serial CSR and thread-private buffers. The
     // LAMMPS half/Newton stencil selects forward cells; only the home cell
@@ -654,10 +680,8 @@ void CellList::refresh_full(const cpu::Frame& frame, int n_active,
     }
     result.inum = result.n_rows = centres;
 
-    int n_threads = 1;
-#ifdef _OPENMP
-    n_threads = omp_get_max_threads();
-#endif
+    const int n_threads =
+        list_team(centres, full_stencil_.size(), n, cell_count_.size());
 
     // Member-state scratch reuse — same contract as the `refresh_half`
     // version. See the long comment above for the "no allocation in
@@ -816,11 +840,11 @@ void CellList::derive_half(const cpu::Frame& frame, int n_active,
             append(k);
         }
     };
-    int n_threads = 1;
-#ifdef _OPENMP
-    n_threads = omp_get_max_threads();
-#endif
-    if (n_threads == 1 || owned < n_threads) {
+    // Every full-list entry of an owned row is one candidate.
+    const int n_threads =
+        std::min(device::team_for(full.total_pairs, kCandidatesPerThread),
+                 device::team_for(owned, 1));
+    if (n_threads == 1) {
         result.neighbors.clear();
         for (int i = 0; i < owned; ++i) {
             result.firstneigh[i] = static_cast<int>(result.neighbors.size());

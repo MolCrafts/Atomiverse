@@ -16,7 +16,8 @@ CUDA counterparts: Mulliken, RDF, stress only.
 | Electron density grid | `DensityGrid` | Via cube Recorder unit test |
 | Species density profile | `SpeciesDensityProfile` | Unit + EDL box regression |
 | Multipole / dipole | `MultipoleObserver` | PySCF-pinned |
-| Virial / kinetic stress | `Virial` | Indirect via NPT/NPH regressions |
+| Kinetic stress | `KineticEnergy` (every MD step, with the kinetic energy) | Recorded frames: Σ m v⊗v of their own velocities (`test_mrec_recorder.py`); pressure via NPT/NPH regressions |
+| Configurational temperature T_C1 / T_CONF | `ConfigurationalTemperature` (CPU and CUDA; Python `md.ConfigurationalTemperature(every, device="cpu"\|"cuda")`) | k_B T_C1 = Σ F² / Σ ∇²U of the interaction potential (Petravic & Delhommelle eq. 7; `ExternalDrive` terms such as `FixEfield` excluded) and the run's ⟨N⟩/(k_B⟨D⟩) (eq. 5). Every force term must be a `CurvatureSource` (PairBorn, CoulLong, KSpaceEwald) or an `ExternalDrive`, else the build is refused. Unit tests: each source's Hessian·F, Laplacian and Laplacian gradient against differences of its own forces; the Ewald Coulomb Laplacian equals the background constant −4π k_e Σq²/V; ∂T_C1/∂r against differences; CUDA: per-atom Hessian·F, Laplacian and Laplacian gradient of each source against the CPU (`test_cuda_nacl_terms`). **No standing T_conf = T_kin gate** |
 | Mulliken | CPU + CUDA | MOPAC / GPW DFT+U |
 | Löwdin / MK / CHELPG | CPU | PySCF `h2o_charges_pyscf` |
 | Widom μ_ex | `Widom` | Analytic HS free volume |

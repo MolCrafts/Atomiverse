@@ -20,7 +20,8 @@ Case: `ctest -R '^md/npt$'` — sources and oracle record in [`regressions/md/np
   arguments (plus chainable setters on `NoseHooverNPT`); there is no Config bag.
 - **Frame contract:** Frame is the sole I/O currency; box edges and velocities
   are updated in place; stress is read from Frame meta
-  (`requires_system_stress()`), so a `Virial` observer must be attached.
+  (`requires_system_stress()`); the kinetic part is written every step by
+  MD's `KineticEnergy`.
 - **Units:** eV, Å, fs, eV/Å³, eV/Å², K. Pressure sign follows LAMMPS
   (positive compressive).
 - **Backend:** CPU classical MD; MD-only build (`buildenv-gcc/2026.03-mpich`,
@@ -79,7 +80,7 @@ gates are therefore **structural** (lockstep, expansion, anisotropy, finite
 | \(\tau_P\) | 500 fs |
 | \(dt\) | 1 fs |
 | steps | 200 (regression); fair wall uses 5000 atom-steps |
-| Stress | `Virial` for barostat feedback |
+| Stress | `kStress` + `kStressKinetic` for barostat feedback |
 
 **Out of scope:** full equilibrium
 \(\langle\gamma\rangle=\gamma_{\mathrm{target}}\) production sampling;
@@ -106,7 +107,6 @@ sim.set_integrator(cpu::md::SurfaceTensionNPT{
     /*dt [fs]=*/1.0,
     /*n_surfaces=*/2});
 sim.set_observer(cpu::md::InitVelocity{100.0, /*seed=*/777u});
-sim.set_observer(cpu::md::Virial{});
 sim.build();
 sim.run(frame, /*nsteps=*/200);
 

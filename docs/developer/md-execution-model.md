@@ -176,6 +176,6 @@ genuinely new point in the step that no existing phase models.
 Component class names are one to two words, `UpperCamelCase`, with the `name()`
 string the `snake_case` echo (`NeighborList` → `"neighbor_list"`). Names avoid redundant
 filler ("Exchange", "Stress") and prefer the direct verb or noun (
-`Reduce`, `Rebalance`, `Virial`). Force-kernel names keep the
+`Reduce`, `Rebalance`, `Thermo`). Force-kernel names keep the
 functional form they implement (`BondHarmonic`, `DihedralMultiHarmonic`) because
 the form — not just "a bond" — is what distinguishes one style from the next.

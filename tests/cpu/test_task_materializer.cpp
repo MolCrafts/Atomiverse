@@ -832,7 +832,9 @@ TEST(TaskMaterializer, MdMorseBornDpdRunMatchesHandBuiltDriverBitwise) {
                                                       /*sigma=*/{kBornSigma},
                                                       /*C=*/{kBornC},
                                                       /*D=*/{kBornD},
-                                                      /*cutoff=*/kBornCutoff},
+                                                      /*cutoff=*/kBornCutoff,
+                                                      /*energy_shift=*/false,
+                                                      /*tail=*/true},
                                        std::nullopt});
     entries.push_back(MDComponentEntry{
         PairDpdParams{kDpdA, kDpdGamma, kTinit, kDpdCutoff, kDt, kDpdSeed},
@@ -852,10 +854,14 @@ TEST(TaskMaterializer, MdMorseBornDpdRunMatchesHandBuiltDriverBitwise) {
     // The parallel-vector mirror rebuilt into the coefficient-struct vector
     // the C++ constructor takes — the one place the wire layout and the
     // engine's `BornTypeCoeff` have to agree field for field.
+    // The non-default flags make the energy depend on both reaching the
+    // materialized component.
     sim.set_evaluator(cpu::PairBorn{
         std::vector<cpu::BornTypeCoeff>{{kBornType, kBornType, kBornA, kBornRho,
                                          kBornSigma, kBornC, kBornD}},
-        kBornCutoff});
+        kBornCutoff}
+                          .set_energy_shift(false)
+                          .set_tail_correction(true));
     sim.set_evaluator(
         cpu::PairDpd{kDpdA, kDpdGamma, kTinit, kDpdCutoff, kDt, kDpdSeed});
     sim.build();
@@ -1553,10 +1559,9 @@ TEST(TaskMaterializer, MdPwEvaluatorWithoutPwBuildThrows) {
     std::vector<MDComponentEntry> entries;
     entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
-    entries.push_back(
-        MDComponentEntry{PWParams{"", "GTH-PBE-q4", 14, 2.0, 1, 1e-4, 2, 0.7, 5,
-                                  0, false, 1, 0, 0.02, 1, 4},
-                         std::nullopt});
+    entries.push_back(MDComponentEntry{
+        PWParams{/*potentials=*/{{14, PWPotentialFormat::gth, "GTH-PBE-q4"}}},
+        std::nullopt});
     const TaskSpec spec(MDTask{std::move(entries), 1});
 
     try {

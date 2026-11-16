@@ -8,6 +8,7 @@
 
 #include "atomiverse/core/binding.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/velocity_create.h"
 #include "atomiverse/cpu/component/observer.h"
 #include "atomiverse/cpu/component/zero.h"
 
@@ -15,9 +16,13 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-/// @brief Compute kinetic energy at end_of_step phase.
+/// @brief Kinetic energy and kinetic stress at the end_of_step phase.
 ///
-/// KE = 0.5 * mvv2e * sum(m * v^2), with OpenMP reduction.
+/// From the owned velocities of the state the step leaves:
+/// `kStressKinetic` = mvv2e·Σ m v_α v_β (Voigt xx yy zz xy xz yz,
+/// extensive like `kStress`: not divided by V) and `kKinetic` = half its
+/// trace — LAMMPS `compute ke` and the kinetic part of `compute pressure`
+/// at thermo time. One reduction, OpenMP over rows.
 class KineticEnergy : public cpu::Observer {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
@@ -57,26 +62,6 @@ class ZeroMomentum : public cpu::Component {
     long long step_ = 0;
 };
 
-/// @brief Velocity-draw distribution for `InitVelocity` (LAMMPS `dist`).
-///
-/// Mirrors LAMMPS `velocity create ... dist` (`velocity.cpp:38`,
-/// `enum { UNIFORM, GAUSSIAN }`):
-///  - `uniform`  — each component drawn from `U(-0.5, 0.5)`
-///                 (`random->uniform() - 0.5`, velocity.cpp:276), then
-///                 scaled by `1/sqrt(m)`.
-///  - `gaussian` — each component drawn from `N(0, 1)`
-///                 (`random->gaussian()`, velocity.cpp:280), then scaled
-///                 by `1/sqrt(m)`.
-///
-/// After either draw, the velocities are COM-corrected and rescaled so the
-/// measured temperature exactly equals the requested `T`, so the choice of
-/// `dist` only affects the *shape* of the per-atom distribution, never the
-/// aggregate temperature.
-enum class VelocityDist {
-    uniform,  ///< U(-0.5, 0.5) per component (LAMMPS `dist uniform`).
-    gaussian, ///< N(0, 1) per component (LAMMPS `dist gaussian`).
-};
-
 /// @brief Maxwell-Boltzmann velocity initialization (build-time only).
 ///
 /// ## LAMMPS correspondence (`velocity create T seed`)
@@ -96,7 +81,11 @@ enum class VelocityDist {
 ///
 /// Generates velocities from the chosen `dist` scaled by `1/sqrt(m)`,
 /// removes the COM velocity, then rescales to the exact target
-/// temperature. No-op during launch().
+/// temperature. The draw is `ATV::md::velocity_create_draws` (by tag),
+/// the one `cuda::md::InitVelocity` makes, so a seed gives the same
+/// velocities on both devices. It happens at build, once per trajectory:
+/// a continued run and an input edit keep the velocities. No-op during
+/// launch().
 class InitVelocity : public cpu::Component {
   public:
     bool supports_input_changes(InputChange) const override { return true; }
@@ -106,7 +95,7 @@ class InitVelocity : public cpu::Component {
     ///        default `gaussian` — see the correspondence table for the
     ///        documented divergence from LAMMPS `dist uniform`).
     InitVelocity(double temperature, unsigned seed,
-                 VelocityDist dist = VelocityDist::gaussian);
+                 ATV::md::VelocityDist dist = ATV::md::VelocityDist::gaussian);
 
     std::string name() const override { return "init_velocity"; }
     /// @brief Write-set: seeds the Maxwell distribution into v (at build).
@@ -117,12 +106,12 @@ class InitVelocity : public cpu::Component {
     void launch(const cpu::LaunchContext& ctx) override {}
 
     /// @brief Velocity-draw distribution (LAMMPS `dist`).
-    VelocityDist dist() const { return dist_; }
+    ATV::md::VelocityDist dist() const { return dist_; }
 
   private:
     double temperature_;
     unsigned seed_;
-    VelocityDist dist_;
+    ATV::md::VelocityDist dist_;
 };
 
 } // namespace md

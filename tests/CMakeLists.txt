@@ -56,12 +56,17 @@ function(atv_add_test name)
     endforeach()
 endfunction()
 
-# Thread pins for every single-process unit test. The `;` must reach
-# gtest_discover_tests escaped: an unescaped list splits the PROPERTIES
-# key/value pairs and silently drops OPENBLAS_NUM_THREADS, leaving OpenBLAS
-# on every core in each concurrently running test.
-set(ATV_TEST_ENVIRONMENT
-    "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}\\;OPENBLAS_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
+# Thread pins for every single-process unit test, as gtest_discover_tests
+# PROPERTIES pairs with one variable per property. A two-entry ENVIRONMENT
+# list does not cross gtest_discover_tests on every CMake: unescaped, CMake
+# 4.2 splits it and drops OPENBLAS_NUM_THREADS; escaped (`\;`), CMake 4.4
+# keeps the escape and hands each test the one variable
+# OMP_NUM_THREADS="1;OPENBLAS_NUM_THREADS=1", which libgomp rejects and
+# ignores. (CMake < 3.22 ignores ENVIRONMENT_MODIFICATION, and OpenBLAS then
+# follows OMP_NUM_THREADS.)
+set(ATV_TEST_THREAD_PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}"
+    ENVIRONMENT_MODIFICATION "OPENBLAS_NUM_THREADS=set:${ATV_TEST_OMP_THREADS}")
 
 # A unit test that needs its own link line or compile definitions (stub
 # libraries, extra sources) keeps a dedicated executable.
@@ -80,7 +85,7 @@ function(atv_add_unit_exe name)
     endforeach()
     gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST
         PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS} LABELS ${labels}
-                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+                   ${ATV_TEST_THREAD_PROPERTIES})
 endfunction()
 
 # C++ test: compiled as .cpp, no CUDA required.
@@ -508,6 +513,15 @@ if(ATV_BUILD_MD)
         atv_add_cpp_test(test_cpu_md_nvt_sllod_flip_lj
             cpu/dynamics/test_nvt_sllod_flip_lj.cpp)
     endif()
+    atv_add_cpp_test(test_cpu_md_gear_pc      cpu/dynamics/test_gear_pc.cpp)
+    if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+        atv_add_cpp_test(test_cpu_md_gauss_thermostat
+            cpu/dynamics/test_gauss_thermostat.cpp)
+        if(ATV_BUILD_EVALUATE)
+            atv_add_cpp_test(test_cpu_md_configurational_temperature
+                cpu/dynamics/test_configurational_temperature.cpp)
+        endif()
+    endif()
     atv_add_cpp_test(test_cpu_md_npt_scalars cpu/dynamics/test_npt_scalars.cpp)
     atv_add_cpp_test(test_cpu_md_brownian     cpu/dynamics/test_brownian.cpp)
     atv_add_cpp_test(test_cuda_md_brownian cuda/dynamics/test_brownian.cpp)
@@ -621,12 +635,6 @@ endif()
 if(ATV_BUILD_MD)
     atv_add_cpp_test(test_cpu_md_set_api                      cpu/dynamics/test_md_set_api.cpp)
     atv_add_cpp_test(test_cpu_md_plan_equivalence             cpu/dynamics/test_md_plan_equivalence.cpp)
-endif()
-# `MD::run(molrs::FrameRef&, n)` independence contract: consecutive calls are
-# separate simulations (step index restarts at 0), NOT a continued trajectory —
-# the cpu::Frame& overload is the continuable one. 2 x 3 steps of 4-atom LJ, ms.
-if(ATV_BUILD_IO AND ATV_BUILD_MD AND ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
-    atv_add_cpp_test(test_cpu_md_molpy_run                cpu/dynamics/test_md_molpy_run.cpp)
 endif()
 # TimestepProvider/TimestepConsumer opt-in protocol + the MD build-time push
 # (esmm-cpmd-02-timestep-protocol): dt is single-sourced from the integrator,
@@ -1265,6 +1273,12 @@ if(ATV_BUILD_CUDA)
         if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
             atv_add_test(test_cuda_md_parity cuda/dynamics/test_md_parity.cu)
         endif()
+        # Molten-NaCl NEMD (Born + Ewald, Gear PC, Gaussian and
+        # configurational thermostats) against the CPU implementation.
+        if(ATV_BUILD_POTENTIALS AND ATV_BUILD_NEIGHBOR)
+            atv_add_test(test_cuda_nacl_terms cuda/dynamics/test_nacl_terms.cu)
+            atv_add_test(test_cuda_gear_pc cuda/dynamics/test_gear_pc.cu)
+        endif()
     endif()
     if(ATV_BUILD_MINIMIZER)
         atv_add_test(test_cuda_minimizer_image_flags
@@ -1587,14 +1601,14 @@ target_precompile_headers(atv_tests PRIVATE <gtest/gtest.h>
 gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
     TEST_FILTER "*-PwFrozenFunctionalVirial.*"
     PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
-               ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+               ${ATV_TEST_THREAD_PROPERTIES})
 if(ATV_BUILD_PW)
     # Each affine finite-difference audit fits the unit timeout on its own;
     # concurrent SCF tests otherwise consume its wall-time budget.
     gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
         TEST_FILTER "PwFrozenFunctionalVirial.*"
         PROPERTIES RUN_SERIAL TRUE TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
-                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+                   ${ATV_TEST_THREAD_PROPERTIES})
 endif()
 
 get_property(_atv_unit_cuda_sources GLOBAL PROPERTY ATV_UNIT_CUDA_SOURCES)
@@ -1606,7 +1620,7 @@ if(_atv_unit_cuda_sources)
                           CUDA_SEPARABLE_COMPILATION ON)
     gtest_discover_tests(atv_tests_cuda DISCOVERY_MODE PRE_TEST
         PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS} LABELS cuda
-                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+                   ${ATV_TEST_THREAD_PROPERTIES})
 endif()
 
 get_property(_atv_unit_mpi_sources GLOBAL PROPERTY ATV_UNIT_MPI_SOURCES)
@@ -1616,3 +1630,13 @@ if(_atv_unit_mpi_sources)
     target_include_directories(atv_tests_mpi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     set_target_properties(atv_tests_mpi PROPERTIES CXX_STANDARD 20)
 endif()
+
+# The source-revision stamp of the Python extension (cmake/AtvSourceStamp.cmake)
+# on a git checkout, a copy carrying .atv-source-commit, and a bare copy.
+add_test(NAME source_stamp
+    COMMAND ${CMAKE_COMMAND}
+            -DSTAMP=${CMAKE_SOURCE_DIR}/cmake/AtvSourceStamp.cmake
+            -DWORK=${CMAKE_CURRENT_BINARY_DIR}/source_stamp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_source_stamp.cmake)
+set_tests_properties(source_stamp PROPERTIES
+    LABELS unit TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS})

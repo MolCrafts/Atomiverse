@@ -49,7 +49,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/ewald.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/angle_cosine.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_fene.h"
@@ -74,7 +73,6 @@
 #include "atomiverse/cuda/dynamics/velocity_verlet.cuh"
 #include "atomiverse/cuda/longrange/ewald.cuh"
 #include "atomiverse/cuda/neighbor/neighbor_list.cuh"
-#include "atomiverse/cuda/observe/stress.cuh"
 #include "atomiverse/cuda/potentials/angle_cosine.cuh"
 #include "atomiverse/cuda/potentials/angle_harmonic.cuh"
 #include "atomiverse/cuda/potentials/bond_fene.cuh"
@@ -88,6 +86,7 @@
 #include "atomiverse/cpu/longrange/pme.h"
 #include "atomiverse/cuda/longrange/pme.cuh"
 #endif
+#include "virial_demand.cuh"
 
 using namespace ATV;
 
@@ -494,7 +493,6 @@ double cut_of(System s) {
 
 void mount_cpu_forces(cpu::md::MD& sim, System s) {
     sim.set_neighbor(cpu::md::NeighborList<>{cut_of(s), kLjSkin, 1, 0, true});
-    sim.on(md::Phase::post_force).add(cpu::md::Virial{}, -50);
     switch (s) {
     case System::lj:
         sim.set_evaluator(cpu::PairLJCut{kLjEps, kLjSigma, kLjCut});
@@ -523,7 +521,7 @@ void mount_cpu_forces(cpu::md::MD& sim, System s) {
 
 void mount_cuda_forces(cuda::md::MD& sim, System s) {
     sim.set_neighbor(cuda::NeighborList{cut_of(s), kLjSkin});
-    sim.on(md::Phase::post_force).add(cuda::Virial{}, -50);
+    sim.on(md::Phase::post_force).add(cuda_parity::VirialDemand{}, -50);
     switch (s) {
     case System::lj:
         sim.set_evaluator(cuda::PairLJCut{kLjEps, kLjSigma, kLjCut});

@@ -46,7 +46,7 @@ struct StepTiming {
             return Kspace;
         // Real-space coulomb and LJ (including fused lj/cut/coul/long).
         if (has("lj") || has("morse") || has("coul") || has("pair") || has("sw")
-            || has("eam"))
+            || has("eam") || has("born"))
             return Pair;
         if (has("bond") || has("angle") || has("dihedral") || has("improper"))
             return Bond;
@@ -62,7 +62,7 @@ struct StepTiming {
             || has("nve") || has("nvt") || has("npt") || has("barostat")
             || has("thermostat") || has("rattle") || has("shake")
             || has("deform") || has("momentum") || has("fix_")
-            || has("init_velocity") || has("kinetic"))
+            || has("init_velocity") || has("kinetic") || has("gear"))
             return Modify;
         return Other;
     }

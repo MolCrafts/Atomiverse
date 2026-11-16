@@ -35,7 +35,6 @@
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
 namespace {
@@ -107,14 +106,11 @@ TEST(MDPlanEquivalence, NVELJSetApiMatchesRawAddPath) {
                       << render(sr);
 }
 
-// ─── T10: Plan equivalence — NPT (auto-Virial vs explicit) ─────
+// ─── T10: Plan equivalence — NPT ─────────────────────────────────────
 
-TEST(MDPlanEquivalence, NPTSetApiMatchesRawAddPathWithExplicitVirialStress) {
+TEST(MDPlanEquivalence, NPTSetApiMatchesRawAddPath) {
     using namespace ATV;
 
-    // The set_api path triggers Case A: install_infra auto-injects
-    // Virial because NoseHooverNPT::reads()==Stress and no
-    // explicit Virial was registered.
     cpu::md::MD via_setters;
     via_setters.set_evaluator(cpu::PairLJCut{kEps, kSigma, kCutoff});
     via_setters.set_neighbor(cpu::md::NeighborList<>{kCutoff, kSkin});
@@ -122,9 +118,8 @@ TEST(MDPlanEquivalence, NPTSetApiMatchesRawAddPathWithExplicitVirialStress) {
         cpu::md::NoseHooverNPT{300.0, 100.0, 0.0, 1000.0, kDt});
     via_setters.build();
 
-    // The raw path adds Virial explicitly — what existing
-    // tests-mpi/* tests do today. Both multi-phase components are declared
-    // before the driver that borrows them.
+    // The multi-phase component is declared before the driver that
+    // borrows it.
     cpu::md::NoseHooverNPT npt{300.0, 100.0, 0.0, 1000.0, kDt};
 
     cpu::md::MD via_raw;
@@ -137,15 +132,12 @@ TEST(MDPlanEquivalence, NPTSetApiMatchesRawAddPathWithExplicitVirialStress) {
     via_raw.on(md::Phase::initial_integrate).add_ref(npt, 0);
     via_raw.on(md::Phase::final_integrate).add_ref(npt, 0);
     via_raw.on(md::Phase::end_of_step).add_ref(npt, -40);
-    // Virial::default_bindings() = {post_force @ -50} — the same slot
-    // install_defaults() auto-injects into on the setter path.
-    via_raw.on(md::Phase::post_force).add(cpu::md::Virial{}, -50);
     via_raw.build();
 
     const auto sa = signature_of(via_setters);
     const auto sr = signature_of(via_raw);
     EXPECT_EQ(sa, sr) << "categorical setters:\n"
-                      << render(sa) << "raw add() path with explicit Virial:\n"
+                      << render(sa) << "raw add() path:\n"
                       << render(sr);
 }
 

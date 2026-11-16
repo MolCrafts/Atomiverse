@@ -36,6 +36,9 @@ class NeighborProvider;
 class LongRangeParticipant;
 class TimestepProvider;
 class TimestepConsumer;
+class CurvatureSource;
+class ExternalDrive;
+class CurvatureConsumer;
 
 struct BuildContext {
     cpu::Context& runtime;
@@ -133,6 +136,18 @@ class Component {
     /// @brief This component must be handed the nuclear timestep [fs].
     /// @see component/timestep_protocol.h
     virtual TimestepConsumer* as_timestep_consumer() { return nullptr; }
+    /// @brief This force term supplies the second derivatives of its
+    ///        energy (configurational temperature).
+    /// @see component/curvature_protocol.h
+    virtual CurvatureSource* as_curvature_source() { return nullptr; }
+    /// @brief This force term is an applied drive outside the interaction
+    ///        potential (excluded from the configurational temperature).
+    /// @see component/curvature_protocol.h
+    virtual const ExternalDrive* as_external_drive() const { return nullptr; }
+    /// @brief This component must be handed every curvature source and
+    ///        drive of its run.
+    /// @see component/curvature_protocol.h
+    virtual CurvatureConsumer* as_curvature_consumer() { return nullptr; }
     /// @brief True for CommBrick / Neighbor engine ops the MD Verlet
     ///        coordinator calls by name. The Plan walk skips them.
     virtual bool verlet_engine() const { return false; }

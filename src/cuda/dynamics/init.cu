@@ -2,18 +2,21 @@
 /// @brief MD velocity initialization and momentum control.
 
 #include "atomiverse/core/units.h"
+#include "atomiverse/core/velocity_create.h"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
 #include "atomiverse/cuda/frame/precision.cuh"
+#include <cstdint>
 #include <cublas_v2.h>
 #include <memory>
+#include <random>
 #include <type_traits>
+#include <vector>
 
 #include "atomiverse/cuda/frame/types.cuh"
 #include <cuda_runtime.h>
-#include <curand_kernel.h>
 
 namespace ATV {
 
@@ -24,29 +27,20 @@ namespace md {
 
 namespace {
 
-/// @brief Generate Gaussian-distributed velocities at target temperature.
-///
-/// v_i ~ N(0, sigma) where sigma = sqrt(kB*T / (mvv2e * m_i)).
-/// Uses cuRAND device API (per-thread state, Philox generator).
+/// @brief v = draw · sigma, sigma = sqrt(kB*T / (mvv2e * m)), from the
+///        host draw (`ATV::md::velocity_create_draws`, the CPU one).
 __global__ void
-generate_velocities(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
-                    mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
-                    const std::int64_t* __restrict__ tag,
-                    mixed_t kbt_over_mvv2e, unsigned long long seed,
-                    const int* __restrict__ n_ptr) {
-
+scale_velocities(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
+                 mixed_t* __restrict__ vz, const mixed_t* __restrict__ mass,
+                 const double* __restrict__ draws, mixed_t kbt_over_mvv2e,
+                 const int* __restrict__ n_ptr) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= *n_ptr)
         return;
-
-    curandStatePhilox4_32_10_t state;
-    curand_init(seed, static_cast<unsigned long long>(tag[i]), 0, &state);
-    const double2 xy = curand_normal2_double(&state);
-    const double2 zw = curand_normal2_double(&state);
     const mixed_t sigma = sqrt(kbt_over_mvv2e / mass[i]);
-    vx[i] = mixed_t(xy.x) * sigma;
-    vy[i] = mixed_t(xy.y) * sigma;
-    vz[i] = mixed_t(zw.x) * sigma;
+    vx[i] = mixed_t(draws[3 * i]) * sigma;
+    vy[i] = mixed_t(draws[3 * i + 1]) * sigma;
+    vz[i] = mixed_t(draws[3 * i + 2]) * sigma;
 }
 
 /// @brief CUB block sum of momentum/mass, one atomic per component/block.
@@ -141,10 +135,25 @@ void InitVelocity::build(const BuildContext& ctx) {
     const mixed_t kbt_over_mvv2e = static_cast<mixed_t>(
         ctx.runtime.units.boltz * temperature_ / ctx.runtime.units.mvv2e);
 
-    // 1. Generate Gaussian velocities
-    generate_velocities<<<grid, block, 0, stream>>>(
+    // 1. The CPU draw (Gaussian, by tag) on the host, scaled on the device.
+    std::vector<std::int64_t> tags(static_cast<std::size_t>(n));
+    ATV_CUDA_CHECK(cudaMemcpyAsync(tags.data(), frame.atoms.tag,
+                                   tags.size() * sizeof(std::int64_t),
+                                   cudaMemcpyDeviceToHost, stream));
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
+    std::mt19937 rng(seed_);
+    const std::vector<double> draws = ATV::md::velocity_create_draws(
+        rng, ATV::md::VelocityDist::gaussian, tags.data(), n);
+    double* d_draws = nullptr;
+    ATV_CUDA_CHECK(cudaMalloc(&d_draws, draws.size() * sizeof(double)));
+    std::unique_ptr<double, decltype(&cudaFree)> draws_guard(d_draws, cudaFree);
+    ATV_CUDA_CHECK(cudaMemcpyAsync(d_draws, draws.data(),
+                                   draws.size() * sizeof(double),
+                                   cudaMemcpyHostToDevice, stream));
+    scale_velocities<<<grid, block, 0, stream>>>(
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.mass,
-        frame.atoms.tag, kbt_over_mvv2e, seed_, frame.atoms.d_size);
+        d_draws, kbt_over_mvv2e, frame.atoms.d_size);
+    ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
 
     // 2. Compute total momentum + total mass
     acc_t* d_px;

@@ -8,10 +8,12 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/device/team.h"
 
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -29,26 +31,41 @@ namespace md {
 void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx); // owned only -- ghosts duplicate owners' KE
-    double ke = 0;
+    double s_xx = 0, s_yy = 0, s_zz = 0, s_xy = 0, s_xz = 0, s_yz = 0;
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     const StorageReal* __restrict sp_vx = f.span(kAtom_vx);
     const StorageReal* __restrict sp_vy = f.span(kAtom_vy);
     const StorageReal* __restrict sp_vz = f.span(kAtom_vz);
     // A rank-local sum is cheap enough to vectorize on the calling thread
-    // until there are enough owned rows to amortize a team join.
+    // until there are enough owned rows to amortize a team join
+    // (`device::team_for`).
     constexpr int kRowsPerThread = 16384;
-    [[maybe_unused]] const int team =
-        std::max(1, std::min(ctx.runtime.n_threads, n / kRowsPerThread));
+    [[maybe_unused]] const int team = device::team_for(n, kRowsPerThread);
 #pragma omp parallel for simd schedule(static) num_threads(team)               \
-    reduction(+ : ke) if (parallel : team > 1)
+    reduction(+ : s_xx, s_yy, s_zz, s_xy, s_xz, s_yz) if (parallel : team > 1)
     for (int i = 0; i < n; ++i) {
-        double v2 =
-            sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
-        ke += sp_mass[i] * v2;
+        const double m = sp_mass[i];
+        const double vx = sp_vx[i], vy = sp_vy[i], vz = sp_vz[i];
+        s_xx += m * vx * vx;
+        s_yy += m * vy * vy;
+        s_zz += m * vz * vz;
+        s_xy += m * vx * vy;
+        s_xz += m * vx * vz;
+        s_yz += m * vy * vz;
     }
 
-    f.meta.get(kKinetic) = double(0.5) * ctx.runtime.units.mvv2e * ke;
+    // mass·v² times the run's mvv2e is energy (LAMMPS compute ke and the
+    // kinetic part of compute pressure, both from the current velocities).
+    const double mvv2e = ctx.runtime.units.mvv2e;
+    f.meta.get(kKinetic) = 0.5 * mvv2e * (s_xx + s_yy + s_zz);
+    auto& stress = f.meta.get(kStressKinetic);
+    stress[0] = mvv2e * s_xx;
+    stress[1] = mvv2e * s_yy;
+    stress[2] = mvv2e * s_zz;
+    stress[3] = mvv2e * s_xy;
+    stress[4] = mvv2e * s_xz;
+    stress[5] = mvv2e * s_yz;
 }
 
 // ── ZeroMomentum ─────────────────────────────────────────────────
@@ -107,7 +124,8 @@ void ZeroMomentum::launch(const cpu::LaunchContext& ctx) {
 
 // ── InitVelocity ─────────────────────────────────────────────────
 
-InitVelocity::InitVelocity(double temperature, unsigned seed, VelocityDist dist)
+InitVelocity::InitVelocity(double temperature, unsigned seed,
+                           ATV::md::VelocityDist dist)
     : temperature_(temperature), seed_(seed), dist_(dist) {}
 
 void InitVelocity::build(const cpu::BuildContext& ctx) {
@@ -124,8 +142,7 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     const int n = owned_count(ctx);
 
     // Hoisted once for the whole function -- every step below (draw,
-    // COM removal, rescale) reads/writes the same mass/v columns, and
-    // both the gaussian and uniform branches need them.
+    // COM removal, rescale) reads/writes the same mass/v columns.
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);
     StorageReal* __restrict sp_vy = f.span(kAtom_vy);
@@ -135,29 +152,20 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     // LAMMPS scales the raw draw by `1/sqrt(m)` (velocity.cpp:287-291);
     // the absolute scale is then fixed by the temperature rescale in
     // step 3, so the per-component prefactor only needs to be consistent.
+    // Keyed by tag (ATV::md::velocity_create_draws), the CUDA draw.
     std::mt19937 rng(seed_);
     if (multi_rank_dd(ctx.runtime)) {
         std::seed_seq sequence{seed_,
                                static_cast<unsigned>(ctx.runtime.mpi_rank)};
         rng.seed(sequence);
     }
-    if (dist_ == VelocityDist::gaussian) {
-        std::normal_distribution<double> draw(0.0, 1.0); // N(0,1)
-        for (int i = 0; i < n; ++i) {
-            const double s = 1.0 / std::sqrt(sp_mass[i]);
-            sp_vx[i] = draw(rng) * s;
-            sp_vy[i] = draw(rng) * s;
-            sp_vz[i] = draw(rng) * s;
-        }
-    } else { // VelocityDist::uniform
-        // LAMMPS draws `random->uniform() - 0.5` → U(-0.5, 0.5).
-        std::uniform_real_distribution<double> draw(-0.5, 0.5);
-        for (int i = 0; i < n; ++i) {
-            const double s = 1.0 / std::sqrt(sp_mass[i]);
-            sp_vx[i] = draw(rng) * s;
-            sp_vy[i] = draw(rng) * s;
-            sp_vz[i] = draw(rng) * s;
-        }
+    const std::vector<double> draws =
+        ATV::md::velocity_create_draws(rng, dist_, f.span(kAtom_tag).data(), n);
+    for (int i = 0; i < n; ++i) {
+        const double s = 1.0 / std::sqrt(sp_mass[i]);
+        sp_vx[i] = draws[3 * i] * s;
+        sp_vy[i] = draws[3 * i + 1] * s;
+        sp_vz[i] = draws[3 * i + 2] * s;
     }
 
     // ── 2. global COM velocity removal (LAMMPS `mom yes` default) ─────

@@ -284,7 +284,6 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/multiscale/internal/qm_subsystem.cpp
         src/cpu/multiscale/internal/qm_mm_vdw.cpp
         src/cpu/asynchronous/async_consumer.cpp
-        src/cpu/observe/virial_stress.cpp
         src/cpu/observe/widom.cpp
         src/cpu/observe/electrode_charge.cpp
         src/cpu/observe/classical_polarization.cpp
@@ -310,6 +309,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/communication/gather_for_io.cpp
         src/cpu/communication/rebalance.cpp
         # Direct Ewald always (no external deps); PME gated by ATV_BUILD_KSPACE below
+        src/cpu/longrange/ewald_sum.cpp
         src/cpu/longrange/ewald.cpp
     )
 
@@ -446,6 +446,9 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/barostat.cpp
             src/cpu/dynamics/deform.cpp
             src/cpu/dynamics/nvt_sllod.cpp
+            src/cpu/dynamics/gauss_constraint.cpp
+            src/cpu/dynamics/configurational_temperature.cpp
+            src/cpu/dynamics/gear_pc.cpp
             # Electrochemical electrode bookkeeping (MetalWalls E1/E2 map)
             src/cpu/electrodes/charging_work.cpp
             src/cpu/electrodes/charge_aspc.cpp
@@ -568,7 +571,6 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
             src/cuda/component/zero.cu
-            src/cuda/observe/stress.cu
             src/cuda/scf/hamiltonian.cu
             src/cuda/scf/eigen_solver.cu
             src/cuda/scf/density_builder.cu
@@ -591,6 +593,8 @@ if(NOT ATV_DOCS_ONLY)
                 src/cuda/dynamics/fix_rattle.cu
                 src/cuda/dynamics/fix_settle.cu
                 src/cuda/dynamics/fix_efield.cu
+                src/cuda/dynamics/configurational_temperature.cu
+                src/cuda/dynamics/gear_pc.cu
                 src/cuda/dynamics/brownian.cu
                 src/cuda/dynamics/nose_hoover_npt.cu
                 src/cuda/dynamics/init.cu
@@ -1364,6 +1368,19 @@ if(NOT ATV_DOCS_ONLY)
         endif()
         target_link_libraries(_atomiverse PRIVATE atomiverse)
         target_include_directories(_atomiverse PRIVATE include python/src/bindings)
+        # The source revision the extension is built from (git checkout, or
+        # the `.atv-source-commit` a copy without .git carries), re-read on
+        # every build: `_atomiverse.__git_commit__` / `__git_dirty__`.
+        set(_atv_stamp_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/stamp")
+        add_custom_target(atv_source_stamp
+            COMMAND "${CMAKE_COMMAND}" -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -DOUTPUT=${_atv_stamp_dir}/atv_source_stamp.h
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AtvSourceStamp.cmake"
+            BYPRODUCTS "${_atv_stamp_dir}/atv_source_stamp.h"
+            COMMENT "Stamping the source revision"
+            VERBATIM)
+        add_dependencies(_atomiverse atv_source_stamp)
+        target_include_directories(_atomiverse PRIVATE "${_atv_stamp_dir}")
 
         # ── Pin the extension to the BLAS it was linked against ────────
         #

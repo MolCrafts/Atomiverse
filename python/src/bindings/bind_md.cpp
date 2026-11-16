@@ -40,8 +40,10 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/dynamics/barostat.h"
+#include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/gear_pc.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -49,6 +51,7 @@
 #include "atomiverse/cpu/dynamics/nvt_sllod.h"
 #include "atomiverse/cpu/dynamics/parrinello_rahman_npt.h"
 #include "atomiverse/cpu/dynamics/velocity_verlet.h"
+#include "atomiverse/cpu/frame/input_snapshot.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "units_binding.h"
@@ -91,6 +94,18 @@ struct MdHandle {
     // component outlives the driver that references it.
     std::optional<cpu::md::NoseHooverNPT> npt_owned;
     std::vector<std::unique_ptr<cpu::md::FixLangevin>> langevin_owned;
+#ifdef ATV_HAS_IO
+    // Borrowed by the driver so `run()` can commit them: after a run returns
+    // the store holds every frame so far, although the run stays live.
+    std::vector<std::unique_ptr<cpu::MrecRecorder>> mrec_owned;
+#endif
+    // The trajectory: the molpy.Frame it runs on and the engine frame that
+    // carries it across `run()` calls (engine row order). Declared before
+    // the driver, which keeps the engine frame's address.
+    nb::object frame_owner;
+    std::unique_ptr<cpu::Frame> work;
+    std::vector<TagInt> import_tags;      ///< molpy row order, by tag
+    cpu::FrameInputSnapshot written_back; ///< the molpy.Frame as run() left it
 
     cpu::md::MD driver;
     std::vector<MDComponentEntry> mirror;
@@ -145,6 +160,22 @@ struct MdHandle {
         require_configurable_("set_integrator");
         unmirrored_.push_back("nvt_sllod");
         driver.set_integrator(std::move(integrator));
+    }
+
+    /// @brief Borrow a live `GearPC`: its diagnostics (constraint drift,
+    ///        ξ, T_C1) stay readable on the Python object.
+    void set_gear_pc_(cpu::md::GearPC& integrator) {
+        require_configurable_("set_integrator");
+        unmirrored_.push_back("gear_pc");
+        driver.set_integrator_ref(integrator);
+    }
+
+    /// @brief Borrow a live `ConfigurationalTemperature` observer.
+    void set_configurational_temperature_(
+        cpu::ConfigurationalTemperature& observer) {
+        require_configurable_("set_observer");
+        unmirrored_.push_back("configurational_temperature");
+        driver.set_observer_ref(observer);
     }
 
     template <typename Params, typename Component>
@@ -204,11 +235,11 @@ struct MdHandle {
             driver.set_integrator(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::NoseHooverNptParams>) {
             // Borrowed, not transferred: `run()` re-installs the `[0,
-            // n_steps]` span before every launch. A second NPT keeps the first
-            // (the singular slot is idempotent on the same component name),
-            // so the borrowed storage is never rebuilt underneath the driver.
-            if (!npt_owned)
-                npt_owned.emplace(std::move(comp));
+            // n_steps]` span before every launch. A second NPT replaces the
+            // first in place (setters are refused once the driver has run,
+            // so nothing is built from the old one yet); the slot then
+            // already holds this address.
+            npt_owned.emplace(std::move(comp));
             driver.set_integrator_ref(*npt_owned);
         } else if constexpr (std::is_same_v<P, cpu::task::NoseHooverParams>
                              || std::is_same_v<P, cpu::task::FixCsvrParams>)
@@ -227,8 +258,15 @@ struct MdHandle {
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
                 static_cast<const cpu::task::ThermoParams&>(p).freq);
-        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>
-                           || std::is_same_v<P, cpu::task::MrecRecorderParams>)
+#ifdef ATV_HAS_IO
+        else if constexpr (std::is_same_v<P, cpu::task::MrecRecorderParams>) {
+            // Borrowed: `run()` commits it before returning.
+            mrec_owned.push_back(
+                std::make_unique<cpu::MrecRecorder>(std::move(comp)));
+            driver.set_record_ref(*mrec_owned.back());
+        }
+#endif
+        else if constexpr (std::is_same_v<P, cpu::task::XyzRecorderParams>)
             // The trajectory sinks own their file handle and their own
             // stride gate, so they go in whole through the recorder slot
             // (plural) rather than through a driver-level cadence like
@@ -286,26 +324,7 @@ struct MdHandle {
     void run(nb::object frame_obj, std::int64_t n_steps) {
         const cpu::task::LauncherGate gate;
         if (!gate.active()) {
-            // Every ramping component gets THIS run's span `[0, n_steps]`,
-            // identical to what `TaskMaterializer` installs on the launcher
-            // path. Each `run()` is an independent simulation — the molpy
-            // overload of `cpu::md::MD::run` tears its run down before
-            // returning, so the next call's `LaunchContext::step` restarts at
-            // 0 and a span carried over from an earlier call would put the
-            // ramp fraction permanently past 1. One continuous temperature
-            // ramp is therefore ONE `run()` with the full step budget, not a
-            // chunked sequence of them.
-            const std::int64_t nlast = n_steps;
-            if (npt_owned)
-                npt_owned->set_run_span(0, nlast);
-            for (auto& langevin : langevin_owned)
-                langevin->set_run_span(0, nlast);
-            auto frame = borrow_molpy_frame(frame_obj);
-            require_charge_column(*frame);
-            {
-                nb::gil_scoped_release release;
-                driver.run(*frame, n_steps);
-            }
+            run_local_(frame_obj, n_steps);
             // Armed only on a COMPLETED run: a run that threw (missing
             // integrator, chargeless frame, ...) left no compiled plan behind,
             // so the caller must still be able to finish configuring.
@@ -341,7 +360,101 @@ struct MdHandle {
 #endif
     }
 
+    /// @brief Fix the ramp span of the Langevin thermostats and the NPT
+    ///        `T_stop` ramp to `[nfirst, nlast]` for every trajectory.
+    void set_run_span(std::int64_t nfirst, std::int64_t nlast) {
+        require_configurable_("set_run_span");
+        if (!npt_owned && langevin_owned.empty())
+            throw std::runtime_error("set_run_span requires a Langevin "
+                                     "thermostat or a NoseHooverNPT "
+                                     "integrator");
+        if (nlast <= nfirst)
+            throw std::invalid_argument(
+                "run span nlast must be greater than nfirst");
+        if (npt_owned)
+            npt_owned->set_run_span(nfirst, nlast);
+        for (auto& langevin : langevin_owned)
+            langevin->set_run_span(nfirst, nlast);
+        span_fixed = true;
+    }
+
   private:
+    bool span_fixed = false; ///< `set_run_span` chose the ramp span
+
+    /// @brief One `run()` without the launcher.
+    ///
+    /// Consecutive calls on the molpy.Frame the previous one returned,
+    /// unedited, extend ONE trajectory (`cpu::md::MD::run` continuation,
+    /// LAMMPS `run N pre no`): the integrator history and thermostat
+    /// variables, the step count and the recorders' step axis carry over,
+    /// as on CUDA. An edit to that frame (positions, velocities, charges,
+    /// cell, population) reaches the engine frame as an input change, and
+    /// the components that depend on it restart (`invalidate_inputs`).
+    /// Another molpy.Frame is an independent simulation. A ramp span is
+    /// `set_run_span`'s, else that of the run that starts a trajectory; a
+    /// later chunk continues it (the CUDA handle's rule).
+    void run_local_(nb::object frame_obj, std::int64_t n_steps) {
+        auto frame = borrow_molpy_frame(frame_obj);
+        require_charge_column(*frame);
+        cpu::Frame incoming = cpu::from_molpy(*frame);
+        const bool continued = work && frame_owner.is(frame_obj);
+        std::unique_ptr<cpu::Frame> fresh;
+        if (!continued) {
+            // A new address: the driver tears the previous run down (it
+            // compares the frame it was given), so the old engine frame
+            // stays alive until this run has started.
+            fresh = std::make_unique<cpu::Frame>(std::move(incoming));
+            if (!span_fixed) {
+                if (npt_owned)
+                    npt_owned->set_run_span(0, n_steps);
+                for (auto& langevin : langevin_owned)
+                    langevin->set_run_span(0, n_steps);
+            }
+        } else if (written_back.changes(incoming,
+                                        cpu::FrameInputSnapshot::state_input)
+                   != InputChange::None) {
+            // The engine's row order, so the edit reads as the edit (a
+            // velocity edit is a velocity change, not a new population).
+            const std::vector<TagInt> engine(work->span(kAtom_tag).data(),
+                                             work->span(kAtom_tag).data()
+                                                 + work->nlocal());
+            const bool same_atoms = incoming.restore_import_order(
+                engine.data(), static_cast<int>(engine.size()));
+            *work = std::move(incoming);
+            if (!same_atoms)
+                remember_import_order_(*work);
+        }
+        cpu::Frame& target = fresh ? *fresh : *work;
+        if (fresh)
+            remember_import_order_(target);
+        {
+            nb::gil_scoped_release release;
+            driver.run(target, n_steps);
+        }
+        if (fresh) {
+            work = std::move(fresh);
+            frame_owner = frame_obj;
+        }
+        // Owned rows may have been sorted spatially: write each atom back
+        // to the row it came from, from a copy, so the engine keeps its
+        // order (and its neighbor list) for the next chunk.
+        cpu::Frame out(*work);
+        out.restore_import_order(import_tags.data(),
+                                 static_cast<int>(import_tags.size()));
+        cpu::to_molpy(out, *frame);
+        written_back.capture(cpu::from_molpy(*frame),
+                             cpu::FrameInputSnapshot::state_input);
+#ifdef ATV_HAS_IO
+        for (auto& rec : mrec_owned)
+            rec->flush();
+#endif
+    }
+
+    void remember_import_order_(const cpu::Frame& f) {
+        import_tags.assign(f.span(kAtom_tag).data(),
+                           f.span(kAtom_tag).data() + f.nlocal());
+    }
+
     /// True once a `run()` has completed; see `require_configurable_`.
     bool ran_ = false;
     std::vector<std::string> unmirrored_;
@@ -423,6 +536,170 @@ void bind_md(nb::module_& m) {
         .def_ro("Ex", &cpu::task::FixEfieldParams::Ex, "Field x [V/A].")
         .def_ro("Ey", &cpu::task::FixEfieldParams::Ey, "Field y [V/A].")
         .def_ro("Ez", &cpu::task::FixEfieldParams::Ez, "Field z [V/A].");
+
+    nb::class_<cpu::md::GaussThermostat>(
+        m, "GaussThermostat",
+        "Gauss least-constraint kinetic thermostat for GearPC (Petravic & "
+        "Delhommelle, J. Chem. Phys. 118, 7477 (2003)): v' = F/m - alpha w "
+        "with alpha = sum m w.a / sum m w^2, w the peculiar velocity of the "
+        "constrained components and a the total acceleration (an applied "
+        "field included). The constrained kinetic energy stays exactly at "
+        "dof k_B T / 2.\n\n"
+        "  kind 'kinetic'    eq. (9): every axis relative to the centre of "
+        "mass, 3N-3 dof.\n"
+        "  kind 'flow'       eqs. (3), (4), (10): along `axis` relative to "
+        "each species' mean velocity (the frame's type column; the species "
+        "flows are not thermostatted), barycentric on the other axes, "
+        "3N-2-n_species dof.\n"
+        "  kind 'transverse' eq. (11): `axis` free, the other two axes "
+        "barycentric, 2N-2 dof.\n\n"
+        "The paper normalises temperatures by 3N instead of these dof.")
+        .def(
+            "__init__",
+            [](cpu::md::GaussThermostat* p, const std::string& kind,
+               double temperature, int axis) {
+                cpu::md::GaussKind k;
+                if (kind == "kinetic")
+                    k = cpu::md::GaussKind::Kinetic;
+                else if (kind == "flow")
+                    k = cpu::md::GaussKind::Flow;
+                else if (kind == "transverse")
+                    k = cpu::md::GaussKind::Transverse;
+                else
+                    throw nb::value_error(
+                        ("GaussThermostat: kind must be 'kinetic', 'flow' or "
+                         "'transverse', got '"
+                         + kind + "'")
+                            .c_str());
+                if (axis < 0 || axis > 2)
+                    throw nb::value_error(
+                        "GaussThermostat: axis must be 0, 1 or 2");
+                new (p) cpu::md::GaussThermostat{k, temperature, axis};
+            },
+            nb::arg("kind"), nb::arg("temperature"), nb::arg("axis") = 0,
+            "kind 'kinetic' | 'flow' | 'transverse', target temperature "
+            "[temperature], field axis 0..2 (flow / transverse).")
+        .def_ro("temperature", &cpu::md::GaussThermostat::temperature,
+                "Target temperature [temperature].")
+        .def_ro("axis", &cpu::md::GaussThermostat::axis, "Field axis.");
+
+    nb::class_<cpu::md::ConfigurationalThermostat>(
+        m, "ConfigurationalThermostat",
+        "Configurational Nose-Hoover thermostat for GearPC, Petravic & "
+        "Delhommelle eqs. (12a-c): r' = v + (xi/T0) dT_C1/dr, "
+        "xi' = -Q (T_C1 - T0)/T0, with the first-order configurational "
+        "temperature k_B T_C1 = sum F^2 / sum lap U (eq. 7) of the "
+        "interaction potential (FixEfield excluded). Every force term must "
+        "supply its curvature: PairBorn, CoulLong and KSpaceEwald do; "
+        "KSpacePME and KSpacePPPM do not and are refused.")
+        .def(
+            "__init__",
+            [](cpu::md::ConfigurationalThermostat* p, double temperature,
+               double Q) {
+                new (p) cpu::md::ConfigurationalThermostat{temperature, Q};
+            },
+            nb::arg("temperature"), nb::arg("Q"),
+            "Target T0 [temperature] and feedback constant Q "
+            "[length^2/time^2]; xi carries length^2/time.")
+        .def_ro("temperature", &cpu::md::ConfigurationalThermostat::temperature,
+                "Target temperature [temperature].")
+        .def_ro("Q", &cpu::md::ConfigurationalThermostat::Q,
+                "Feedback constant [length^2/time^2].");
+
+    nb::class_<cpu::md::GearPC, cpu::Component>(
+        m, "GearPC",
+        "Fifth-order Gear predictor-corrector integrator on the first-order "
+        "equations of motion (r, v), Gear's first-order corrector "
+        "(95/288, 1, 25/24, 35/72, 5/48, 1/120). Replaces VelocityVerlet; "
+        "without a thermostat the motion is adiabatic, with GaussThermostat "
+        "or ConfigurationalThermostat the thermostat is inside the step, so "
+        "do not add another thermostat. One force evaluation per step, at "
+        "the predicted positions. The higher derivatives start at zero (a "
+        "one-time start-up transient). Stable only for omega*dt < 0.114 on a "
+        "mode of angular frequency omega: 1 fs for molten NaCl, not 2 fs. "
+        "CPU only; spatial decomposition and constraints are refused. The "
+        "MD driver borrows this object, so its "
+        "diagnostics stay readable here. Not carried by the MPI task "
+        "payload.")
+        .def(nb::init<double>(), nb::arg("dt"),
+             "Adiabatic, timestep dt [time].")
+        .def(nb::init<double, cpu::md::GaussThermostat>(), nb::arg("dt"),
+             nb::arg("thermostat"),
+             "Timestep dt [time] with a Gauss thermostat.")
+        .def(nb::init<double, cpu::md::ConfigurationalThermostat>(),
+             nb::arg("dt"), nb::arg("thermostat"),
+             "Timestep dt [time] with the configurational thermostat.")
+        .def_prop_ro("dt", &cpu::md::GearPC::timestep, "Timestep [time].")
+        .def_prop_ro("constraint_drift", &cpu::md::GearPC::constraint_drift,
+                     "Relative constrained kinetic energy |K/K0 - 1| the last "
+                     "Gauss projection removed (truncation diagnostic).")
+        .def_prop_ro("gauss_multiplier", &cpu::md::GearPC::gauss_multiplier,
+                     "Gauss multiplier alpha [1/time] at the last step.")
+        .def_prop_ro("xi", &cpu::md::GearPC::xi,
+                     "Configurational thermostat variable xi "
+                     "[length^2/time].")
+        .def_prop_ro("configurational_temperature",
+                     &cpu::md::GearPC::configurational_temperature,
+                     "T_C1 [temperature] at the last predicted state "
+                     "(configurational thermostat only).");
+
+    nb::class_<cpu::ConfigurationalTemperature, cpu::Component>(
+        m, "ConfigurationalTemperature",
+        "Observer of the first-order configurational temperature "
+        "k_B T_C1 = N / D, N = sum_i |F_i|^2 of the interaction force (an "
+        "applied FixEfield excluded), D = sum_i lap_i U (Petravic & "
+        "Delhommelle eq. 7), evaluated at post_force every `every` steps. "
+        "The run averages <N> and <D> give T_CONF = <N>/(k_B <D>) of eq. (5) "
+        "(mean_temperature); each run() is a new run and starts a new "
+        "average. Every force "
+        "term must supply its curvature (PairBorn, CoulLong, KSpaceEwald). "
+        "Under Ewald the Coulomb Laplacian is the background constant "
+        "-4 pi k_e sum q^2 / V, which this observer includes. CPU only.")
+        .def(nb::init<int>(), nb::arg("every") = 1,
+             "Evaluate every `every` steps (>= 1).")
+        .def_prop_ro(
+            "temperature",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.last().temperature;
+            },
+            "T_C1 [temperature] of the last evaluation.")
+        .def_prop_ro(
+            "force_sq",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.last().force_sq;
+            },
+            "N = sum |F|^2 [force^2] of the last evaluation.")
+        .def_prop_ro(
+            "laplacian",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.last().laplacian;
+            },
+            "D = sum lap U [energy/length^2] of the last evaluation.")
+        .def_prop_ro(
+            "samples",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.samples();
+            },
+            "Evaluations averaged since the last run() began.")
+        .def_prop_ro(
+            "mean_temperature",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.mean().temperature;
+            },
+            "T_CONF = <N>/(k_B <D>) [temperature] over the last run() "
+            "(eq. 5; not the mean of T_C1).")
+        .def_prop_ro(
+            "mean_force_sq",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.mean().force_sq;
+            },
+            "<N> [force^2] over the last run().")
+        .def_prop_ro(
+            "mean_laplacian",
+            [](const cpu::ConfigurationalTemperature& o) {
+                return o.mean().laplacian;
+            },
+            "<D> [energy/length^2] over the last run().");
 
     nb::class_<cpu::task::InitVelocityParams>(
         m, "InitVelocity", "Maxwell-Boltzmann velocity initialization.")
@@ -530,10 +807,9 @@ void bind_md(nb::module_& m) {
             "ramp "
             "across the run span, as in LAMMPS. Any value >= 0 is taken as "
             "the ramp end (equal to T_target means a constant setpoint); "
-            "< 0 folds to T_target. The run span itself is wired "
-            "automatically by run(), which ramps over [0, n_steps]: every "
-            "run() is an independent simulation, so one continuous ramp is "
-            "one run() with the full step budget.");
+            "< 0 folds to T_target. The run span is MD.set_run_span's "
+            "window, else the first run()'s [0, n_steps]; continued run() "
+            "calls continue it.");
 
     nb::class_<cpu::task::ParrinelloRahmanNptParams>(
         m, "ParrinelloRahmanNPT",
@@ -687,12 +963,10 @@ void bind_md(nb::module_& m) {
         "accounting of the driver's capture buffer (`budget_bytes`, "
         "`frame_bytes`, `peak_bytes`, `blocked_episodes`, "
         "`blocked_seconds`).\n\n"
-        "The first frame replaces any store at the path. A recorder records "
-        "one run: on the CPU driver each run() is an independent simulation "
-        "(steps restart at 0), so give a second run() a new MD and "
-        "recorder; on the CUDA driver continued run() calls on the same "
-        "frame extend the same trajectory, the step axis continuing and the "
-        "boundary step written once. Under the MPI launcher every rank "
+        "The first frame replaces any store at the path. Continued run() "
+        "calls on the same frame extend the same trajectory on both "
+        "devices, the step axis continuing and the boundary step written "
+        "once. Under the MPI launcher every rank "
         "gathers its atoms to rank 0, which alone writes.\n\n"
         "CUDA recording is asynchronous but lossless: frames travel through "
         "the driver's one shared capture buffer (MD(capture_buffer_bytes=…)) "
@@ -835,6 +1109,22 @@ void bind_md(nb::module_& m) {
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (CSVR).")
         .def(
+            "set_integrator",
+            [](MdHandle& self, cpu::md::GearPC& integrator) {
+                self.set_gear_pc_(integrator);
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>(),
+            "Fifth-order Gear predictor-corrector, borrowed. Not mirrored "
+            "into the MPI task payload.")
+        .def(
+            "set_observer",
+            [](MdHandle& self, cpu::ConfigurationalTemperature& observer) {
+                self.set_configurational_temperature_(observer);
+            },
+            nb::arg("comp"), nb::keep_alive<1, 2>(),
+            "ConfigurationalTemperature observer, borrowed. Not mirrored "
+            "into the MPI task payload.")
+        .def(
             "set_observer",
             [](MdHandle& self, const cpu::task::InitVelocityParams& p) {
                 self.set_categorical(
@@ -935,14 +1225,25 @@ void bind_md(nb::module_& m) {
         .def(
             "build", [](MdHandle& self) { self.driver.build(); },
             "Compile the execution plan.")
+        .def("set_run_span", &MdHandle::set_run_span, nb::arg("nfirst"),
+             nb::arg("nlast"),
+             "Fix the Langevin / NoseHooverNPT T_stop ramp to [nfirst, "
+             "nlast] completed steps for a trajectory of several run() "
+             "calls.")
         .def("run", &MdHandle::run, nb::arg("frame"), nb::arg("n_steps"),
              "Run MD on a molpy.Frame for n_steps. GIL released during "
              "compute; under the MPI launcher this dispatches ONE task to "
              "every rank and writes the gathered result back.\n\n"
-             "Each call is an INDEPENDENT simulation starting from the "
-             "frame's current state: the step index restarts at 0 and any "
-             "temperature ramp is re-installed over [0, n_steps]. A single "
-             "continuous ramp is one run() with the full step budget.\n\n"
+             "A run() on the molpy.Frame the previous one returned, "
+             "unedited, continues that trajectory (LAMMPS `run N pre no`): "
+             "integrator history, thermostat variables, the step count and "
+             "the recorders' step axis carry over, as on CUDA. An edit to "
+             "that frame restarts what depends on the edited input (e.g. the "
+             "Gear history after a velocity edit). Another molpy.Frame starts "
+             "an independent simulation. A temperature ramp spans "
+             "set_run_span's window, else the first run's [0, n_steps]; "
+             "later chunks continue it. Without the launcher only: under it "
+             "each call is one task.\n\n"
              "A completed run() freezes the configuration: the plan is "
              "compiled once, so every setter and on(phase) raises "
              "RuntimeError from here on. Running again is still allowed and "

@@ -12,7 +12,6 @@
 #include "atomiverse/cpu/dynamics/nph_integrator.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 #include "harness/registry.h"
 
@@ -31,8 +30,9 @@ int run() {
     const int n_cells = 3; // 108 atoms
     const double T_init = 100.0;
     const double P_target = 0.0;
-    const double dt = 1.0;
-    const double tau_P = 1000.0;
+    // LAMMPS `units metal`: time in ps.
+    const double dt = 0.001;  // [ps]
+    const double tau_P = 1.0; // [ps]
     const int n_warm = 100;
     const int n_prod = 600;
     const int n_chunks = 20;
@@ -57,11 +57,11 @@ int run() {
     const double V0 = frame.box.volume();
 
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
     sim.set_integrator(cpu::md::NphIntegrator{P_target, tau_P, dt});
     sim.set_observer(cpu::md::InitVelocity{T_init, 99u});
-    sim.set_observer(cpu::md::Virial{});
     sim.enable_timing(false);
     sim.build();
 
@@ -90,8 +90,8 @@ int run() {
     const double rel_bound = 1.5e-1;
     const double V1 = frame.box.volume();
 
-    std::printf("NPH LJ FCC, N=%d, P_target=%.2e, dt=%.1f fs, tau_P=%.0f\n", n,
-                P_target, dt, tau_P);
+    std::printf("NPH LJ FCC, N=%d, P_target=%.2e, dt=%.3f ps, tau_P=%.1f ps\n",
+                n, P_target, dt, tau_P);
     std::printf("  H0              = %.6f eV\n", H0);
     std::printf("  worst |dH|/max(1,|H0|) = %.3e   want <= %.1e\n", worst_rel,
                 rel_bound);

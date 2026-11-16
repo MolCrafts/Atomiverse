@@ -86,6 +86,9 @@ class CommBrick : public Comm {
     bool setup_done_ = false;
 
     Halo swaps_;
+    /// Row -> owned row it images, for a single-process halo (published on
+    /// `Context::md.image_owner`); empty when some swap crosses ranks.
+    std::vector<int> image_owner_;
     std::unique_ptr<detail::CommBuffers> bufs_;
     double ghost_cutoff_ = 0.0;
     md::mpi::DomainDecomposition* dd_ = nullptr;

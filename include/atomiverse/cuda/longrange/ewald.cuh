@@ -18,13 +18,14 @@
 #include <vector>
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/cuda/component/curvature_protocol.cuh"
 #include "atomiverse/cuda/longrange/kspace.cuh"
 
 namespace ATV {
 namespace cuda {
 
 /// @brief Reciprocal-space Ewald summation for periodic electrostatics (CUDA).
-class KSpaceEwald : public KSpace {
+class KSpaceEwald : public KSpace, public CurvatureSource {
   public:
     /// @param alpha    Ewald splitting parameter α [1/Å] (match CoulLong).
     /// @param accuracy Relative accuracy target (sets the k-vector cutoff).
@@ -48,6 +49,12 @@ class KSpaceEwald : public KSpace {
         return !has_input_change(changes, InputChange::Identity)
                && !has_input_change(changes, InputChange::Charge);
     }
+    CurvatureSource* as_curvature_source() override { return this; }
+    /// @brief Reciprocal-space \(H u\), Laplacian and Laplacian gradient
+    ///        from the structure factor of the step's force launch.
+    void add_curvature(const LaunchContext& ctx,
+                       const CurvatureRows& rows) override;
+
     void build(const BuildContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
@@ -71,6 +78,8 @@ class KSpaceEwald : public KSpace {
     double* d_kw_ = nullptr; ///< exp(-k²/4α²)/k².
     double* d_sr_ = nullptr; ///< Re S(k).
     double* d_si_ = nullptr; ///< Im S(k).
+    double* d_tr_ = nullptr; ///< Re T(k) = Σ q_j (k·u_j) cos(k·r_j).
+    double* d_ti_ = nullptr; ///< Im T(k).
 };
 
 } // namespace cuda

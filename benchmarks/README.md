@@ -12,6 +12,7 @@ benchmarks/
   forcefield/   bench_gaff.py
   perf/         CMakeLists.txt  md/  scf/  pw/  semiempirical/{nddo_energy,nddo_forces}/
   compare/      lj-lammps/  gaff-liquid/  gaff-peo-openmm/  gaff-peo-lammps/  am1-sqm/
+                nacl-ewald-lammps/
 ```
 
 - **Framework spine** (`__main__.py`, `framework/`, `roadmap.toml`): the

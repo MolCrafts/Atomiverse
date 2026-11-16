@@ -19,8 +19,7 @@
 /// post-NPT values.
 ///
 /// Single-GPU scope (`msu-pe-validation` fixed-scope #1). Pressure-sign
-/// is LAMMPS-standard (same as `cuda::Virial` /
-/// `frame.scalars->stress` and Berendsen). Trotter ordering across the three
+/// is LAMMPS-standard (same as `frame.scalars->stress` and Berendsen). Trotter ordering across the three
 /// MD phases mirrors `cpu::md::NoseHooverNPT::launch`:
 ///
 /// - `initial_integrate` (P1–P6): nhc_baro_half → nhc_atoms_half →
@@ -90,9 +89,6 @@ class NoseHooverNPT : public cuda::Integrator, public cuda::TimestepProvider {
     /* role via Integrator base */
     /// @brief Write-set: MTK: propagates x and v, and scales the cell.
     /// @brief Reads — consumes `Stress` to drive ε̇ via `update_eps_dot_`.
-    ///        Triggers `cuda::md::MD::install_infra_` to auto-inject
-    ///        `cuda::Virial` if none is registered. The Integrator
-    ///        role alone could not express this dependency.
 
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::initial_integrate, 0),

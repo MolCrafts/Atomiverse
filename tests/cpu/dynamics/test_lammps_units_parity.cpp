@@ -36,7 +36,6 @@
 #include "atomiverse/cpu/io/lammps_coeffs.h"
 #include "atomiverse/cpu/io/lammps_data.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/angle_harmonic.h"
 #include "atomiverse/cpu/potentials/bond_harmonic.h"
 #include "atomiverse/cpu/potentials/dihedral_charmm.h"
@@ -167,8 +166,6 @@ void mount_forces(cpu::md::MD& md, const System& s,
     const double cutoff = ff.pair_cut_lj;
     // neigh_modify every 1 delay 0 check no
     md.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, false});
-    // Kinetic stress from the end-of-step velocities, as LAMMPS thermo.
-    md.on(ATV::md::Phase::end_of_step).add(cpu::md::Virial{}, 50);
     const double* sl = ff.special_lj;
     const double* sc = ff.special_coul;
     if (ff.pair_style == "lj/cut/coul/long") {

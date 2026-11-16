@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
@@ -32,7 +33,6 @@
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/longrange/pme.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
-#include "atomiverse/cpu/observe/virial_stress.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut_coul_long.h"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
@@ -106,6 +106,7 @@ bool madelung_virial() {
     for (int i = 0; i < f.nlocal(); ++i)
         f.span(kAtom_type)[i] = 0;
     cuda::Evaluate eval;
+    eval.set_units("metal");
     eval.set_neighbor(cuda::NeighborList{kCut});
     eval.set_evaluator(cuda::CoulLong{kAlpha, kCut});
     eval.on(evaluate::Phase::evaluate)
@@ -113,8 +114,9 @@ bool madelung_virial() {
     eval.build();
     eval.run(f);
     const int n = f.nlocal();
-    const double expected =
-        -0.5 * n * kMadelung * units::UnitSystem::lj().qqrd2e() / kD;
+    const double expected = -0.5 * n * kMadelung
+                            * units::from_style(units::Style::metal).qqrd2e()
+                            / kD;
     const double e = f.meta.get(kEnergy);
     const auto& w = f.meta.get(kStress);
     double diag = 0, off = 0;
@@ -135,8 +137,9 @@ struct NptOut {
     double volume = 0, H0 = 0, H = 0;
 };
 
-constexpr double kT = 300.0, kTauT = 100.0, kTauP = 1000.0, kDt = 1.0;
-const double kPressure = units::bar_to_ev_per_a3; // 1 bar
+// LAMMPS `units metal`: K, ps, bar.
+constexpr double kT = 300.0, kTauT = 0.1, kTauP = 1.0, kDt = 0.001;
+const double kPressure = 1.0; // [bar]
 
 std::vector<LJTypeCoeff> lb_coeffs() {
     std::vector<LJTypeCoeff> coeffs;
@@ -152,6 +155,7 @@ NptOut npt_cpu(int steps) {
     {
         cpu::Frame g = rocksalt(kD);
         cpu::Evaluate eval;
+        eval.set_units("metal");
         eval.set_neighbor(cpu::md::NeighborList<>{kCut, 1.0});
         eval.set_evaluator(cpu::PairLJCutCoulLong{lb_coeffs(), kAlpha, kCut});
         eval.on(evaluate::Phase::evaluate)
@@ -164,12 +168,12 @@ NptOut npt_cpu(int steps) {
     }
     cpu::Frame g = rocksalt(kD);
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_neighbor(cpu::md::NeighborList<>{kCut, 1.0});
     sim.set_evaluator(cpu::PairLJCutCoulLong{lb_coeffs(), kAlpha, kCut});
     sim.on(md::Phase::force).add(cpu::KSpacePME{kAlpha, kSpacing, kOrder}, 100);
     sim.set_integrator(
         cpu::md::NoseHooverNPT{kT, kTauT, kPressure, kTauP, kDt});
-    sim.set_observer(cpu::md::Virial{});
     sim.enable_timing(false);
     sim.build();
     sim.run(g, 1);
@@ -185,6 +189,7 @@ NptOut npt_cuda(int steps) {
     {
         cpu::Frame g = rocksalt(kD);
         cuda::Evaluate eval;
+        eval.set_units("metal");
         eval.set_neighbor(cuda::NeighborList{kCut, 1.0});
         eval.set_evaluator(cuda::PairLJCutCoulLong{lb_coeffs(), kAlpha, kCut});
         eval.on(evaluate::Phase::evaluate)
@@ -197,6 +202,7 @@ NptOut npt_cuda(int steps) {
     }
     cpu::Frame g = rocksalt(kD);
     cuda::md::MD sim;
+    sim.set_units("metal");
     sim.set_neighbor(cuda::NeighborList{kCut, 1.0});
     sim.set_evaluator(cuda::PairLJCutCoulLong{lb_coeffs(), kAlpha, kCut});
     sim.on(md::Phase::force)
@@ -245,6 +251,7 @@ struct Snapshot {
 template <typename KSpace>
 Snapshot evaluate(cpu::Frame f, KSpace&& kspace) {
     cuda::Evaluate eval;
+    eval.set_units("metal");
     eval.set_neighbor(cuda::NeighborList{kCut});
     eval.set_evaluator(cuda::CoulLong{kAlpha, kCut});
     eval.on(evaluate::Phase::evaluate).add(std::forward<KSpace>(kspace), 100);

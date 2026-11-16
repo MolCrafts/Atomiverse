@@ -394,6 +394,8 @@ void write(Writer& w, const PairBornParams& p) {
     w.vec(p.C);
     w.vec(p.D);
     w.f64(p.cutoff);
+    w.u8(p.energy_shift ? 1 : 0);
+    w.u8(p.tail ? 1 : 0);
 }
 void write(Writer& w, const PairYukawaParams& p) {
     w.f64(p.A);
@@ -732,6 +734,8 @@ PairBornParams read_born(Reader& r) {
     p.C = r.vec();
     p.D = r.vec();
     p.cutoff = r.f64();
+    p.energy_shift = r.u8() != 0;
+    p.tail = r.u8() != 0;
     return p;
 }
 

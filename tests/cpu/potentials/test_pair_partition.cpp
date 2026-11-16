@@ -26,6 +26,7 @@
 #include "atomiverse/cpu/potentials/force_scratch.h"
 #include "atomiverse/cpu/potentials/pair_coul_cut.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
+#include "atomiverse/cpu/potentials/pair_morse.h"
 #include "atomiverse/cpu/potentials/pair_partition.h"
 
 using namespace ATV;
@@ -83,21 +84,44 @@ TEST(PairRowPartition, RangesTileTheRowsAndBalanceThePairs) {
     }
 }
 
-TEST(PairRowPartition, TeamFollowsThePairCount) {
+TEST(PairRowPartition, TeamIsEveryThreadOrOne) {
+    // A list opens every thread or runs serially, never a count in between:
+    // libgomp ends the surplus threads of a smaller team and starts new ones
+    // for the next larger one (`device::team_for`).
+    using Part = cpu::md::PairRowPartition;
     cpu::md::PairRowPartition part;
     const auto small = all_pairs(40); // 780 pairs
     part.rebuild(small.inum, small.ilist.data(), small.numneigh.data(),
                  small.firstneigh.data(), small.neighbors.data());
     EXPECT_EQ(part.team(10), 1) << "a small list runs on one thread";
 
-    const auto big = all_pairs(700); // 244,650 pairs
+    auto big = all_pairs(700); // 244,650 pairs over 700 rows
     part.rebuild(big.inum, big.ilist.data(), big.numneigh.data(),
                  big.firstneigh.data(), big.neighbors.data());
-    const int by_work = static_cast<int>(
-        part.total() / cpu::md::PairRowPartition::kMinPairsPerThread);
-    EXPECT_EQ(part.team(64), by_work);
-    EXPECT_EQ(part.team(2), 2) << "never more than the threads available";
+    for (int threads : {2, 3, 16, 64, 1000})
+        EXPECT_EQ(part.team(threads), threads)
+            << "the whole team, however few pairs each thread gets";
     EXPECT_EQ(part.team(0), 1);
+    EXPECT_EQ(part.chunks(1), 1);
+    EXPECT_EQ(part.chunks(4) % 4, 0) << "whole chunks per thread";
+
+    // The same pairs scattering into far more rows (one partner moved to a
+    // distant ghost) cost every thread a larger buffer: one chunk each, and
+    // once two threads' buffers outweigh the pairs, one thread.
+    big.neighbors[big.firstneigh[0]] = 60000;
+    part.rebuild(big.inum, big.ilist.data(), big.numneigh.data(),
+                 big.firstneigh.data(), big.neighbors.data());
+    ASSERT_EQ(part.n_touch(), 60001);
+    ASSERT_GE(part.total(),
+              2 * (Part::kForkEntries + 60001 * Part::kEntriesPerBufferRow));
+    EXPECT_EQ(part.team(64), 64);
+    EXPECT_EQ(part.chunks(4), 4);
+    big.neighbors[big.firstneigh[0]] = 130000;
+    part.rebuild(big.inum, big.ilist.data(), big.numneigh.data(),
+                 big.firstneigh.data(), big.neighbors.data());
+    ASSERT_LT(part.total(),
+              2 * (Part::kForkEntries + 130001 * Part::kEntriesPerBufferRow));
+    EXPECT_EQ(part.team(64), 1);
 }
 
 TEST(PairRowPartition, TouchBoundIsTheHighestNamedRow) {
@@ -194,7 +218,7 @@ void expect_close(const Result& a, const Result& b) {
     }
 }
 
-constexpr int kAtoms = 560;   // 156,520 all-pairs: a team of 3
+constexpr int kAtoms = 560;   // 156,520 all-pairs: threaded
 constexpr int kGhosts = 2000; // rows no pair names
 
 } // namespace
@@ -209,6 +233,27 @@ TEST(PairRowPartition, ThreadedLJTableWithSpecialsMatchesOneThread) {
     const auto many = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
     expect_close(many, one);
     // And the threaded run is reproducible bit for bit.
+    const auto again = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
+    EXPECT_EQ(again.energy, many.energy);
+    EXPECT_EQ(again.fx, many.fx);
+}
+
+TEST(PairRowPartition, OneChunkPerThreadMatchesOneThread) {
+    // A partner far out in the ghost rows makes every chunk buffer span the
+    // whole frame, so each of the four threads runs exactly one chunk (the
+    // fixed chunk-per-thread path, not dynamic pickup).
+    auto pairs = all_pairs(kAtoms);
+    pairs.neighbors[static_cast<std::size_t>(pairs.firstneigh[0])] =
+        kAtoms + kGhosts - 1;
+    cpu::md::PairRowPartition part;
+    part.rebuild(pairs.inum, pairs.ilist.data(), pairs.numneigh.data(),
+                 pairs.firstneigh.data(), pairs.neighbors.data());
+    ASSERT_EQ(part.team(4), 4);
+    ASSERT_EQ(part.chunks(4), 4);
+    auto make = [] { return cpu::PairMorse(0.3, 1.2, 1.1, 60.0); };
+    const auto one = run_kernel(make, 1, molecule(kAtoms, kGhosts), pairs);
+    const auto many = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
+    expect_close(many, one);
     const auto again = run_kernel(make, 4, molecule(kAtoms, kGhosts), pairs);
     EXPECT_EQ(again.energy, many.energy);
     EXPECT_EQ(again.fx, many.fx);

@@ -20,10 +20,20 @@
 /// #reciprocal_energy_virial (consume global S(k)) — Allreduce stays in the
 /// backend wrapper.
 ///
+/// **Phase factors.** Every k is an integer combination
+/// k = m₀b₀ + m₁b₁ + m₂b₂ of the reciprocal basis, so
+/// exp(ik·r) = Π_a exp(i m_a b_a·r). #phases evaluates exp(i b_a·r_j) once
+/// per atom and axis and builds the powers by complex recurrence (LAMMPS
+/// `Ewald::eik_dot_r`); the kernels then take products of table entries
+/// instead of a sine and a cosine per (k, atom) pair. The vectors are stored
+/// in columns of fixed (m₀, m₁) with consecutive m₂, so the in-plane factor is
+/// formed once per column.
+///
 /// Units: α [1/Å], k [Å⁻¹], r [Å], V [Å³], energy / virial [eV], force [eV/Å].
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
@@ -37,12 +47,55 @@
 namespace ATV {
 namespace longrange {
 
+/// @brief Per-atom powers exp(i m b_a·r_j) of the three reciprocal basis
+///        vectors, m = 0..`mmax[a]` (`EwaldSum::phases` fills them). A
+///        negative m is the complex conjugate.
+struct EwaldPhases {
+    int n = 0;                                 ///< atoms
+    std::array<int, 3> mmax{0, 0, 0};          ///< highest power per axis
+    std::array<std::vector<double>, 3> re, im; ///< [m · n + j]
+
+    /// @return Re exp(i m b_a·r_j) for j = 0..n−1 (m ≥ 0).
+    const double* cos_row(int a, int m) const {
+        return re[a].data() + static_cast<std::size_t>(m) * n;
+    }
+    /// @return Im exp(i m b_a·r_j) for j = 0..n−1 (m ≥ 0).
+    const double* sin_row(int a, int m) const {
+        return im[a].data() + static_cast<std::size_t>(m) * n;
+    }
+    /// @return Bytes of reserved table storage.
+    std::size_t memory_bytes() const noexcept {
+        std::size_t doubles = 0;
+        for (int a = 0; a < 3; ++a)
+            doubles += re[a].capacity() + im[a].capacity();
+        return doubles * sizeof(double);
+    }
+};
+
 /// @brief Reciprocal-space Ewald summation kernels over bare arrays.
 ///
 /// Constructed with validated (α, accuracy); rebuilds its k-vector tables from
 /// an inverse cell matrix. No Frame / Component / MPI / FFT.
+///
+/// Each kernel opens the whole OpenMP team or runs on the calling thread
+/// (`cpu::device::team_for`, which explains why never a count in between):
+/// it goes threaded once two threads would each get #kPairsPerThread
+/// (k-vector, atom) pairs and an atom block (atom-split kernels) or enough
+/// columns (column-split kernels) to fill their SIMD lanes and balance, so a
+/// small cell runs serially instead of paying a team's fork and join for
+/// microseconds of work. Each S(k) and each atom's force is summed in the
+/// same order whatever the team, and an atom-split thread takes whole atom
+/// blocks fixed by the atom count, so the results do not depend on the
+/// thread count.
 class EwaldSum {
   public:
+    /// @brief (k-vector, atom) pairs a thread must get to be worth waking:
+    ///        ≈ 15 µs of vectorized work at ≈ 0.2 ns per pair, several times
+    ///        a bound team's fork, barrier and join (EPYC 9755). An unbound
+    ///        team on a shared node can stall far longer at its barriers;
+    ///        bind classical MD (`OMP_PROC_BIND=close`).
+    static constexpr std::size_t kPairsPerThread = std::size_t{1} << 16;
+
     /// @param alpha    Ewald splitting parameter α [1/Å]; must be > 0.
     /// @param accuracy Relative accuracy target in (0, 1); sets |k| cutoff.
     ///                 Default 1e-5.
@@ -67,82 +120,7 @@ class EwaldSum {
     /// @param inv_cell Inverse of the real-space cell matrix [1/Å]
     ///                 (Mat3 indexing: inv_cell(row, col); real cell columns are lattice vectors).
     /// @return true if any internal table capacity grew (reserve).
-    bool rebuild(const Mat3& inv_cell) {
-        // Reciprocal basis b_i = 2π · (row i of cell⁻¹); g = Σ m_i b_i.
-        const double tp = 2.0 * ATV::units::pi;
-        double b[3][3];
-        for (int i = 0; i < 3; ++i) {
-            b[i][0] = tp * inv_cell(i, 0);
-            b[i][1] = tp * inv_cell(i, 1);
-            b[i][2] = tp * inv_cell(i, 2);
-        }
-        const Mat3 cell = inv_cell.inverse();
-        const double gcut = 2.0 * alpha_ * std::sqrt(-std::log(accuracy_));
-        const double gcut2 = gcut * gcut;
-        int kmax[3];
-        for (int i = 0; i < 3; ++i) {
-            // m_i = a_i dot G / (2*pi): reciprocal vector norms alone
-            // underestimate the integer range when basis vectors cancel.
-            const double a_norm =
-                std::sqrt(cell(0, i) * cell(0, i) + cell(1, i) * cell(1, i)
-                          + cell(2, i) * cell(2, i));
-            kmax[i] =
-                std::max(1, static_cast<int>(std::ceil(gcut * a_norm / tp)));
-        }
-
-        const std::size_t max_vectors =
-            static_cast<std::size_t>(2 * kmax[0] + 1)
-                * static_cast<std::size_t>(2 * kmax[1] + 1)
-                * static_cast<std::size_t>(2 * kmax[2] + 1)
-            - 1;
-        const bool capacity_grows =
-            kx_.capacity() < max_vectors || ky_.capacity() < max_vectors
-            || kz_.capacity() < max_vectors || kw_.capacity() < max_vectors
-            || kvterm_.capacity() < max_vectors;
-        if (capacity_grows) {
-            kx_.reserve(max_vectors);
-            ky_.reserve(max_vectors);
-            kz_.reserve(max_vectors);
-            kw_.reserve(max_vectors);
-            kvterm_.reserve(max_vectors);
-        }
-
-        const double inv4a2 = 1.0 / (4.0 * alpha_ * alpha_);
-        kx_.clear();
-        ky_.clear();
-        kz_.clear();
-        kw_.clear();
-        kvterm_.clear();
-        // Positive hemisphere only (LAMMPS Ewald convention). Paired with
-        // prefactor 4π/V in energy/forces (not 2π/V over the full sphere).
-        for (int mx = -kmax[0]; mx <= kmax[0]; ++mx)
-            for (int my = -kmax[1]; my <= kmax[1]; ++my)
-                for (int mz = -kmax[2]; mz <= kmax[2]; ++mz) {
-                    if (mx == 0 && my == 0 && mz == 0)
-                        continue;
-                    if (mz < 0)
-                        continue;
-                    if (mz == 0 && my < 0)
-                        continue;
-                    if (mz == 0 && my == 0 && mx < 0)
-                        continue;
-                    const double gx =
-                        mx * b[0][0] + my * b[1][0] + mz * b[2][0];
-                    const double gy =
-                        mx * b[0][1] + my * b[1][1] + mz * b[2][1];
-                    const double gz =
-                        mx * b[0][2] + my * b[1][2] + mz * b[2][2];
-                    const double g2 = gx * gx + gy * gy + gz * gz;
-                    if (g2 > gcut2)
-                        continue;
-                    kx_.push_back(gx);
-                    ky_.push_back(gy);
-                    kz_.push_back(gz);
-                    kw_.push_back(std::exp(-g2 * inv4a2) / g2);
-                    kvterm_.push_back(-2.0 * (1.0 / g2 + inv4a2));
-                }
-        return capacity_grows;
-    }
+    bool rebuild(const Mat3& inv_cell);
 
     /// @return Number of retained reciprocal vectors.
     std::size_t size() const noexcept { return kx_.size(); }
@@ -158,71 +136,65 @@ class EwaldSum {
     /// @return Per-k virial geometric factor vterm = −2(1/k² + 1/4α²) [Å²].
     const double* kvterm() const noexcept { return kvterm_.data(); }
 
-    /// @brief Partial structure factor S(k) over @p n atoms into @p sr / @p si.
+    /// @brief Phase tables of @p n atoms for the current reciprocal basis.
     /// @param x,y,z Atom coordinates [Å], length @p n.
+    /// @param n     Atom count.
+    /// @param[out] out Tables, resized to the basis' highest powers.
+    void phases(const StorageReal* x, const StorageReal* y,
+                const StorageReal* z, int n, EwaldPhases& out) const;
+
+    /// @brief Partial structure factor S(k) over @p n atoms into @p sr / @p si.
+    /// @param ph    Phase tables of the atoms (#phases).
     /// @param q     Charges [e], length @p n.
     /// @param n     Atom count.
     /// @param[out] sr Real part of S(k), length #size().
     /// @param[out] si Imag part of S(k), length #size().
-    void structure_factor(const StorageReal* x, const StorageReal* y,
-                          const StorageReal* z, const StorageReal* q, int n,
-                          double* sr, double* si) const {
-        const int ng = static_cast<int>(kx_.size());
-        const double* __restrict kx = kx_.data();
-        const double* __restrict ky = ky_.data();
-        const double* __restrict kz = kz_.data();
-#pragma omp parallel for schedule(static)
-        for (int k = 0; k < ng; ++k) {
-            double sre = 0, sim = 0;
-            const double kxk = kx[k], kyk = ky[k], kzk = kz[k];
-            for (int i = 0; i < n; ++i) {
-                const double phase = kxk * x[i] + kyk * y[i] + kzk * z[i];
-                sre += q[i] * std::cos(phase);
-                sim += q[i] * std::sin(phase);
-            }
-            sr[k] = sre;
-            si[k] = sim;
-        }
-    }
+    void structure_factor(const EwaldPhases& ph, const StorageReal* q, int n,
+                          double* sr, double* si) const;
 
     /// @brief Add reciprocal forces on @p n atoms from global S(k).
-    /// @param x,y,z Atom coordinates [Å], length @p n.
+    /// @param ph    Phase tables of the atoms (#phases).
     /// @param q     Charges [e], length @p n.
     /// @param n     Atom count.
     /// @param volume Cell volume [Å³].
     /// @param sr,si Global structure factor, length #size().
     /// @param[in,out] fx,fy,fz Force accumulators [eV/Å], length @p n.
-    void add_forces(const StorageReal* x, const StorageReal* y,
-                    const StorageReal* z, const StorageReal* q, int n,
+    void add_forces(const EwaldPhases& ph, const StorageReal* q, int n,
                     double volume, const double* sr, const double* si,
-                    AccReal* fx, AccReal* fy, AccReal* fz) const {
-        const int ng = static_cast<int>(kx_.size());
-        // Half-sphere: energy prefactor is 4π k_e / V; force factor uses 2·ug.
-        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
-        const double* __restrict kx = kx_.data();
-        const double* __restrict ky = ky_.data();
-        const double* __restrict kz = kz_.data();
-        const double* __restrict kw = kw_.data();
-#pragma omp parallel for schedule(static)
-        for (int i = 0; i < n; ++i) {
-            const double xi = x[i], yi = y[i], zi = z[i], qi = q[i];
-            if (qi == 0.0)
-                continue;
-            double fxi = 0, fyi = 0, fzi = 0;
-            for (int k = 0; k < ng; ++k) {
-                const double phase = kx[k] * xi + ky[k] * yi + kz[k] * zi;
-                const double c = std::cos(phase), s = std::sin(phase);
-                const double fac =
-                    2.0 * K * kw[k] * qi * (s * sr[k] - c * si[k]);
-                fxi += fac * kx[k];
-                fyi += fac * ky[k];
-                fzi += fac * kz[k];
-            }
-            fx[i] += fxi;
-            fy[i] += fyi;
-            fz[i] += fzi;
-        }
-    }
+                    AccReal* fx, AccReal* fy, AccReal* fz) const;
+
+    /// @brief Directional structure factor
+    ///        \(T(k) = \sum_j q_j (k\cdot u_j)\, e^{i k\cdot r_j}\) of a
+    ///        per-atom vector field \(u\) (the Hessian product needs it).
+    /// @param ph       Phase tables of the atoms (#phases).
+    /// @param q        Charges [e], length @p n.
+    /// @param ux,uy,uz Vector field, length @p n.
+    /// @param n        Atom count.
+    /// @param[out] tr,ti Real / imaginary part of T(k), length #size().
+    void directional_factor(const EwaldPhases& ph, const StorageReal* q,
+                            const double* ux, const double* uy,
+                            const double* uz, int n, double* tr,
+                            double* ti) const;
+
+    /// @brief Second derivatives of the reciprocal energy
+    ///        \(E = K\sum_{k\in\frac12} A_k |S_k|^2\),
+    ///        \(K = 4\pi k_e/V\), added to @p n atoms.
+    ///
+    /// With \(c_i = \cos k\cdot r_i\), \(s_i = \sin k\cdot r_i\):
+    ///  - \((Hu)_i = 2K\sum A\,q_i\,k\,[c_iT_r + s_iT_i
+    ///    - (k\cdot u_i)(c_iS_r + s_iS_i)]\);
+    ///  - \(\nabla_i^2 E = 2K\sum A\,k^2 q_i\,[q_i - (c_iS_r + s_iS_i)]\);
+    ///  - \(\nabla_i\sum_j\nabla_j^2 E
+    ///    = 4K\sum A\,k^2 q_i\,k\,(s_iS_r - c_iS_i)\)
+    ///    (from \(\sum_j\nabla_j^2 E = 2K\sum A k^2(\sum q^2 - |S|^2)\)).
+    /// @param ph    Phase tables of the atoms (#phases).
+    /// @param sr,si Global S(k); @p tr,ti global T(k) of the same @p u.
+    void add_curvature(const EwaldPhases& ph, const StorageReal* q,
+                       const double* ux, const double* uy, const double* uz,
+                       int n, double volume, const double* sr, const double* si,
+                       const double* tr, const double* ti, double* hx,
+                       double* hy, double* hz, double* lap, double* gx,
+                       double* gy, double* gz) const;
 
     /// @brief Self-energy correction [eV] for Σ q_i² over owned atoms.
     /// @param qsq_sum Σ_i q_i² [e²].
@@ -246,36 +218,7 @@ class EwaldSum {
     /// @param[out] stress  Virial in Voigt order xx,yy,zz,xy,xz,yz [eV].
     void reciprocal_energy_virial(const double* sr, const double* si,
                                   double volume, double& e_recip,
-                                  double stress[6]) const {
-        const int ng = static_cast<int>(kx_.size());
-        // Half-sphere prefactor 4π k_e / V (see rebuild() hemisphere filter).
-        const double K = qqrd2e_ * 4.0 * ATV::units::pi / volume;
-        const double* __restrict kx = kx_.data();
-        const double* __restrict ky = ky_.data();
-        const double* __restrict kz = kz_.data();
-        const double* __restrict kw = kw_.data();
-        const double* __restrict kvt = kvterm_.data();
-        e_recip = 0;
-        double s_xx = 0, s_yy = 0, s_zz = 0, s_xy = 0, s_xz = 0, s_yz = 0;
-        for (int k = 0; k < ng; ++k) {
-            const double sk2 = sr[k] * sr[k] + si[k] * si[k];
-            const double ug = K * kw[k] * sk2;
-            e_recip += ug;
-            const double vt = kvt[k];
-            s_xx += ug * (1.0 + vt * kx[k] * kx[k]);
-            s_yy += ug * (1.0 + vt * ky[k] * ky[k]);
-            s_zz += ug * (1.0 + vt * kz[k] * kz[k]);
-            s_xy += ug * (vt * kx[k] * ky[k]);
-            s_xz += ug * (vt * kx[k] * kz[k]);
-            s_yz += ug * (vt * ky[k] * kz[k]);
-        }
-        stress[0] = s_xx;
-        stress[1] = s_yy;
-        stress[2] = s_zz;
-        stress[3] = s_xy;
-        stress[4] = s_xz;
-        stress[5] = s_yz;
-    }
+                                  double stress[6]) const;
 
     /// @return α [1/Å].
     double alpha() const noexcept { return alpha_; }
@@ -283,30 +226,37 @@ class EwaldSum {
     double accuracy() const noexcept { return accuracy_; }
 
     /// @brief Drop k-vector storage.
-    void clear() noexcept {
-        std::vector<double>().swap(kx_);
-        std::vector<double>().swap(ky_);
-        std::vector<double>().swap(kz_);
-        std::vector<double>().swap(kw_);
-        std::vector<double>().swap(kvterm_);
-    }
+    void clear() noexcept;
 
     /// @return Bytes of reserved k-vector storage.
-    std::size_t memory_bytes() const noexcept {
-        return (kx_.capacity() + ky_.capacity() + kz_.capacity()
-                + kw_.capacity() + kvterm_.capacity())
-               * sizeof(double);
-    }
+    std::size_t memory_bytes() const noexcept;
 
     /// @brief The run's Coulomb constant (LAMMPS `force->qqrd2e`); the
     ///        owning solver sets it at build from `ctx.runtime.units`.
     void set_qqrd2e(double qqrd2e) { qqrd2e_ = qqrd2e; }
 
   private:
+    /// Reciprocal vectors k = m₀b₀ + m₁b₁ + m₂b₂ with m₂ = `mz0`, `mz0` + 1,
+    /// … for k in [`begin`, `end`) of the tables.
+    struct Column {
+        int mx, my, mz0;
+        int begin, end;
+    };
+
+    /// Team of the atom-split kernels (phases, forces, curvature) over `n`
+    /// atoms; one block split, so each thread reuses its own atoms' tables.
+    int atom_team_(int n) const;
+    /// Team of the column-split kernels (S(k), T(k)) over `n` atoms: every
+    /// thread reads all phase tables, so the pull gates it too.
+    int column_team_(int n) const;
+
     double qqrd2e_ = 1.0;
     double alpha_;
     double accuracy_;
     std::vector<double> kx_, ky_, kz_, kw_, kvterm_;
+    std::vector<Column> columns_;
+    double b_[3][3] = {}; ///< reciprocal basis, b_[a] = 2π · row a of cell⁻¹
+    std::array<int, 3> mmax_{0, 0, 0}; ///< highest |m_a| of a kept vector
 };
 
 } // namespace longrange

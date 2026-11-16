@@ -55,6 +55,26 @@ _RECORDER_TYPES: tuple[type, ...] = (_cpp.Thermo, _cpp.XYZ, _cpp.MrecRecorder)
 # The CUDA driver records `*.mrec` only (its Thermo is `set_thermo`).
 _CUDA_RECORDER_TYPES: tuple[type, ...] = (_cpp.MrecRecorder,)
 
+
+def _device_types(cpu_name: str, cuda_name: str) -> dict[type, str]:
+    """Bound class -> device of a component that exists once per device.
+
+    The CUDA class is absent from a CPU-only extension; ``backend_type``
+    reports that when the component is constructed for ``device="cuda"``.
+    """
+    types = {getattr(_cpp, cpu_name): "cpu"}
+    cuda = getattr(_cpp, cuda_name, None)
+    if cuda is not None:
+        types[cuda] = "cuda"
+    return types
+
+
+#: The live (borrowed) components of thermostatted NEMD, by device.
+_GEAR_PC_TYPES = _device_types("GearPC", "_CudaGearPC")
+_CONFIGURATIONAL_TEMPERATURE_TYPES = _device_types(
+    "ConfigurationalTemperature", "_CudaConfigurationalTemperature"
+)
+
 # Escape-hatch phase builder dispatch
 _PHASE_DISPATCH: dict[type, str] = {
     _cpp.PairLJCut: "add_pair_lj_cut",
@@ -104,7 +124,8 @@ class MD:
         NoseHoover, Berendsen and NoseHooverNPT (orthorhombic cells)
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One
         angle style per CUDA run (singular slot). Continuation stays on one
-        molpy.Frame.
+        molpy.Frame; another frame starts an independent simulation (both
+        devices).
     units : str, optional
         LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
         ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
@@ -192,15 +213,25 @@ class MD:
         ``NvtSllod`` likewise replaces the plain integrator and already
         thermostats peculiar velocities. Do not add a thermostat beside it.
         It runs on CPU and CUDA. The MPI launcher cannot carry it.
+        ``GearPC`` (fifth-order Gear predictor-corrector) replaces it too,
+        with its thermostat — none, ``GaussThermostat`` or
+        ``ConfigurationalThermostat`` — inside the step, so no thermostat is
+        added beside it either. The driver borrows the ``GearPC`` object, so
+        its diagnostics (``constraint_drift``, ``xi``,
+        ``configurational_temperature``) stay readable on it. It is built
+        for one device (``GearPC(dt, thermostat, device=...)``), which must
+        be this driver's. The MPI launcher cannot carry it.
 
         On ``device="cuda"`` the integrators are ``VelocityVerlet``,
-        ``NvtSllod`` and ``NoseHooverNPT`` (the same constructor arguments
+        ``NvtSllod``, ``NoseHooverNPT`` (the same constructor arguments
         as on CPU; the cell must be orthorhombic, a triclinic cell is
-        refused when the run is built). ``ParrinelloRahmanNPT`` is CPU only.
+        refused when the run is built) and ``GearPC(..., device="cuda")``.
+        ``ParrinelloRahmanNPT`` is CPU only.
         Both devices refuse a thermostat or barostat beside an NPT
         integrator, in either call order.
         """
-        if type(component) not in (
+        gear_pc = type(component) in _GEAR_PC_TYPES
+        if not gear_pc and type(component) not in (
             _cpp.VelocityVerlet,
             _cpp.NoseHooverNPT,
             _cpp.ParrinelloRahmanNPT,
@@ -208,8 +239,11 @@ class MD:
         ):
             raise TypeError(
                 f"set_integrator expects VelocityVerlet, NoseHooverNPT, "
-                f"ParrinelloRahmanNPT, or NvtSllod, got {type(component).__name__}"
+                f"ParrinelloRahmanNPT, NvtSllod, or GearPC, got "
+                f"{type(component).__name__}"
             )
+        if gear_pc:
+            self._require_same_device("GearPC", _GEAR_PC_TYPES[type(component)])
         if self.device == "cuda" and type(component) is _cpp.ParrinelloRahmanNPT:
             raise ValueError(
                 "CUDA MD has no ParrinelloRahmanNPT (full-cell MTK). Use "
@@ -219,6 +253,11 @@ class MD:
         if type(component) is _cpp.NvtSllod and getattr(self, "_thermostatted", False):
             raise ValueError(
                 "NvtSllod already thermostats; do not also set a thermostat"
+            )
+        if gear_pc and getattr(self, "_thermostatted", False):
+            raise ValueError(
+                "GearPC carries its own thermostat (GaussThermostat or "
+                "ConfigurationalThermostat); do not also set a thermostat"
             )
         npt = type(component) in (_cpp.NoseHooverNPT, _cpp.ParrinelloRahmanNPT)
         if npt and (
@@ -235,8 +274,18 @@ class MD:
         self._cpp.set_integrator(component)
         self._npt = npt
         self._nvt_sllod = type(component) is _cpp.NvtSllod
+        self._gear_pc = gear_pc
         self._built = False
         return self
+
+    def _require_same_device(self, name: str, built_for: str) -> None:
+        """Refuse a live component constructed for the other device."""
+        if built_for != self.device:
+            raise ValueError(
+                f"this {name} was constructed for device={built_for!r} and "
+                f"the MD runs on device={self.device!r}; construct it with "
+                f"{name}(..., device={self.device!r})"
+            )
 
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``).
@@ -250,6 +299,11 @@ class MD:
         if getattr(self, "_nvt_sllod", False):
             raise ValueError(
                 "NvtSllod already thermostats; do not also set a thermostat"
+            )
+        if getattr(self, "_gear_pc", False):
+            raise ValueError(
+                "GearPC carries its own thermostat (GaussThermostat or "
+                "ConfigurationalThermostat); do not also set a thermostat"
             )
         if getattr(self, "_npt", False):
             raise ValueError(
@@ -276,17 +330,12 @@ class MD:
         """Fix the temperature ramp to ``[nfirst, nlast]`` before the first chunk.
 
         Applies to the ``Langevin`` thermostat and the ``NoseHooverNPT``
-        ``T_stop`` ramp. CUDA continuation keeps the step counter, so one
-        cool is many ``run(chunk)`` calls on one driver and the span is the
-        whole cool. Without it the first ``run(n)`` sets ``[0, n]``. Call
-        this after ``set_thermostat`` / ``set_integrator`` and before
-        ``run``.
+        ``T_stop`` ramp. Continuation keeps the step counter (both
+        devices), so one cool is many ``run(chunk)`` calls on one driver and
+        the span is the whole cool. Without it the first ``run(n)`` sets
+        ``[0, n]``. Call this after ``set_thermostat`` / ``set_integrator``
+        and before ``run``.
         """
-        if self.device != "cuda":
-            raise ValueError(
-                "set_run_span is the CUDA continuation ramp; CPU MD takes "
-                "the span from each run()"
-            )
         if int(nlast) <= int(nfirst):
             raise ValueError(f"run span [{nfirst}, {nlast}] is empty")
         self._cpp.set_run_span(int(nfirst), int(nlast))
@@ -325,12 +374,25 @@ class MD:
     def set_observer(self, component: object) -> MD:
         """Install an observer (``Driver::set_observer``).
 
-        v1 supports ``InitVelocity`` (Maxwell–Boltzmann seeding, net
-        momentum removed) on both devices.
+        ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed)
+        runs on both devices. ``ConfigurationalTemperature`` (borrowed,
+        built for this driver's device with
+        ``ConfigurationalTemperature(every, device=...)``) evaluates the
+        first-order configurational temperature; after ``run`` read the
+        last evaluation (``temperature``, ``force_sq``, ``laplacian``) and
+        the run's ``T_CONF`` (``mean_temperature``) on the object. Every
+        force term must then supply its curvature.
         """
-        if type(component) is not _cpp.InitVelocity:
+        configurational = type(component) in _CONFIGURATIONAL_TEMPERATURE_TYPES
+        if not configurational and type(component) is not _cpp.InitVelocity:
             raise TypeError(
-                f"set_observer expects InitVelocity, got {type(component).__name__}"
+                f"set_observer expects InitVelocity or ConfigurationalTemperature, "
+                f"got {type(component).__name__}"
+            )
+        if configurational:
+            self._require_same_device(
+                "ConfigurationalTemperature",
+                _CONFIGURATIONAL_TEMPERATURE_TYPES[type(component)],
             )
         self._cpp.set_observer(component)
         self._built = False
@@ -463,11 +525,10 @@ class MD:
           written by a worker thread through the driver's shared capture
           buffer (``MD(capture_buffer_bytes=...)``) — the step loop waits
           only when that buffer is full, never drops a frame, and a writer
-          failure stops the run with ``RuntimeError`` naming the store. On CPU each ``run()``
-          restarts at step 0, so one recorder records one ``run()``; CUDA
-          ``run()`` calls on the same frame continue its trajectory (the
-          boundary step is written once: ``run(f, 4); run(f, 4)`` at
-          ``every=2`` records steps 0, 2, 4, 6, 8).
+          failure stops the run with ``RuntimeError`` naming the store.
+          ``run()`` calls on the same frame continue its trajectory on both
+          devices (the boundary step is written once: ``run(f, 4);
+          run(f, 4)`` at ``every=2`` records steps 0, 2, 4, 6, 8).
           Carried by the MPI launcher (rank 0 gathers and writes).
 
         An unsupported component raises ``TypeError`` naming the
@@ -533,8 +594,15 @@ class MD:
 
         The plan is compiled on the FIRST call only. A completed run freezes
         the configuration (every setter refuses afterwards), so calling
-        ``run`` again re-runs that same compiled plan on the frame's current
-        state — it never recompiles.
+        ``run`` again re-runs that same compiled plan — it never recompiles.
+
+        On both devices a ``run`` on the frame the previous one returned,
+        unedited, continues that trajectory (LAMMPS ``run N pre no``): the
+        integrator's history and thermostat variables (Gear history, ξ,
+        Nosé–Hoover chains), the step count and the recorders' step axis
+        carry over. Editing that frame between runs restarts what depends
+        on the edited input (e.g. the Gear history and ξ after a position or
+        velocity edit).
         """
         if not self._built:
             self.build()
@@ -580,4 +648,25 @@ InitVelocity = _cpp.InitVelocity
 #: −Σ q E·r^u on unwrapped coordinates and no virial is added.
 FixEfield = _cpp.FixEfield
 
-__all__ = ["MD", "InitVelocity", "FixEfield", "PhaseBuilder"]
+def ConfigurationalTemperature(every: int = 1, *, device: str = "cpu"):
+    """First-order configurational temperature observer.
+
+    ``cpu::ConfigurationalTemperature(every)`` or, with ``device="cuda"``,
+    ``cuda::ConfigurationalTemperature(every)``: install it on an ``MD`` of
+    the same device with :meth:`MD.set_observer`, then read the last
+    evaluation (``temperature`` / ``force_sq`` / ``laplacian``) and the run
+    average ``mean_temperature`` = <N>/(k_B <D>) on it. The CUDA observer
+    keeps its sums on the device and publishes them when ``run`` returns.
+    """
+    return backend_type(
+        device, "ConfigurationalTemperature", "_CudaConfigurationalTemperature"
+    )(every)
+
+
+__all__ = [
+    "MD",
+    "InitVelocity",
+    "FixEfield",
+    "ConfigurationalTemperature",
+    "PhaseBuilder",
+]

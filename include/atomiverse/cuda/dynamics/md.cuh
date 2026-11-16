@@ -40,8 +40,8 @@
 /// `MD` exposes the same 11-method categorical surface as
 /// `cpu::md::MD` (chain link `msu-pe-cuda-components-02`, Phase G.4):
 /// `set_evaluator / set_evaluator / set_angle / set_dihedral / set_neighbor`
-/// (singular, idempotent on same-class re-call, throw on
-/// different-class re-call), `set_integrator` (singular via the
+/// (singular: a same-name re-call replaces the first, a
+/// different-name re-call throws), `set_integrator` (singular via the
 /// component's own `default_bindings()`), `set_thermostat /
 /// set_barostat / set_observer / set_record` (plural — each call
 /// appends, insertion order preserved), and `set_thermo(int every)`
@@ -52,12 +52,9 @@
 ///
 /// `MD::install_defaults()` runs *before* `validate_components()` (the order
 /// `Driver::build()` fixes), so auto-injected components count toward validation.
-/// Single-GPU subset of the CPU rules, keyed on `requires_system_stress` /
-/// `provides_system_stress` and the neighbor protocol accessors:
+/// Single-GPU subset of the CPU rules, keyed on the neighbor protocol
+/// accessors:
 ///
-/// - **Virial** — if any pending component `requires_system_stress()` and
-///   none `provides_system_stress()`, a fresh `cuda::Virial{}` is added at
-///   `post_force @ -50`.
 /// - **NeighborList missing** — if any pending component reports
 ///   itself as a `NeighborConsumer` (pair-style evaluators do, via
 ///   `cuda::Pair`) without a registered `cuda::NeighborList`,
@@ -103,7 +100,6 @@
 #include "atomiverse/cuda/driver/driver.cuh"
 #include "atomiverse/cuda/dynamics/init.cuh"
 #include "atomiverse/cuda/dynamics/kinetic_energy.cuh"
-#include "atomiverse/cuda/observe/stress.cuh"
 #include "atomiverse/cuda/record/thermo.cuh"
 
 namespace ATV {
@@ -284,16 +280,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// @param integ Integrator; must outlive this driver.
     template <typename I>
     MD& set_integrator_ref(I& integ) {
-        const std::string n = integ.name();
-        if (integrator_set_) {
-            if (*integrator_set_ == n)
-                return *this;
-            throw std::invalid_argument(
-                "set_integrator already configured with '" + *integrator_set_
-                + "', rejected re-call with '" + n + "'");
-        }
-        integrator_set_ = n;
-        this->bind_defaults_ref(integ);
+        this->mount_singular_(integrator_set_, integ.name(), "set_integrator",
+                              &integ, [&] { this->bind_defaults_ref(integ); });
         return *this;
     }
 
@@ -315,9 +303,8 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     }
 
     /// @brief Add a barostat (LAMMPS `fix … press/berendsen`). Plural.
-    /// `install_infra_()` auto-injects a `cuda::Virial{}` if a
-    /// Barostat-role component is present and no `virial_stress` is
-    /// already registered.
+    /// Its `requires_system_stress()` demands the virial every step;
+    /// `KineticEnergy` writes the kinetic stress every step regardless.
     template <typename Bs>
     MD& set_barostat(Bs&& b) {
         this->bind_defaults(std::forward<Bs>(b));
@@ -358,31 +345,19 @@ class MD : public cuda::Driver<ATV::md::Phase> {
 
     /// @brief Auto-injection pass — single-GPU subset of the CPU rules.
     ///
-    /// Runs before `validate_components()` (see `Driver::build()`). Two checks,
-    /// both keyed on `requires_system_stress` / `provides_system_stress` and
-    /// the `as_neighbor_consumer()` / `as_neighbor_provider()` protocol
-    /// accessors — no `name()` string matching, no family type list:
-    ///   1. If any pending component `requires_system_stress()` and none
-    ///      `provides_system_stress()`, add a fresh `cuda::Virial{}` at
-    ///      `post_force @ -50`.
-    ///   2. If any pending component is a `NeighborConsumer` without any
-    ///      pending component being a `NeighborProvider`, throw naming
-    ///      the first offender.
+    /// Runs before `validate_components()` (see `Driver::build()`). Keyed
+    /// on the `as_neighbor_consumer()` / `as_neighbor_provider()` protocol
+    /// accessors — no `name()` string matching, no family type list: if
+    /// any pending component is a `NeighborConsumer` without any pending
+    /// component being a `NeighborProvider`, throw naming the first
+    /// offender. The stress needs no component: force kernels add the
+    /// virial on demand and `KineticEnergy` the kinetic stress every step,
+    /// into scalars `ZeroScalars` clears at pre_force.
     ///
     /// **No default handler.** A time budget is not a policy — MD stops when the steps
     /// run out, and anything else the user wants is a `Criterion` they attach.
     void install_defaults() override {
         const auto s = this->scan_pending_infra_();
-
-        if (s.needs_stress && !s.has_virial_stress) {
-            // `cuda::Virial` has no default_bindings(); bind it
-            // explicitly to `post_force @ -50` — the slot the CPU
-            // sibling `cpu::md::Virial::default_bindings()` uses,
-            // where pair / bonded virials are already accumulated and
-            // the velocities are post-integrator-kick so Σ m·v·v
-            // reflects the appropriate time-slice.
-            this->on(ATV::md::Phase::post_force).add(cuda::Virial{}, -50);
-        }
 
         // Energy and virial are evaluated per step on demand (each
         // component's `demand()`, LAMMPS ev_set); no build-time gating.
@@ -482,15 +457,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
                           const char* setter_name, ATV::md::Phase phase,
                           int order) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->on(phase).add(std::forward<C>(comp), order);
+        this->mount_singular_(slot, n, setter_name, nullptr, [&] {
+            this->on(phase).add(std::forward<C>(comp), order);
+        });
     }
 
     /// @brief Singular setter using the component's `default_bindings()`.
@@ -498,15 +467,9 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     void set_singular_default_(C&& comp, std::optional<std::string>& slot,
                                const char* setter_name) {
         const std::string n = comp.name();
-        if (slot) {
-            if (*slot == n)
-                return;
-            throw std::invalid_argument(
-                std::string(setter_name) + " already configured with '" + *slot
-                + "', rejected re-call with '" + n + "'");
-        }
-        slot = n;
-        this->bind_defaults(std::forward<C>(comp));
+        this->mount_singular_(slot, n, setter_name, nullptr, [&] {
+            this->bind_defaults(std::forward<C>(comp));
+        });
     }
 
   private:

@@ -208,3 +208,6 @@ logs/
 
 # Benchmark output never lives in git (campaigns write under build/ or out of tree)
 benchmarks/**/results/
+
+# Source revision a copy without .git carries (cmake/AtvSourceStamp.cmake).
+.atv-source-commit

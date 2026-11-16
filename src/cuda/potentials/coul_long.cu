@@ -77,5 +77,10 @@ void CoulLong::compute(const LaunchContext& ctx) {
         run(F{}, F{});
 }
 
+void CoulLong::add_curvature(const LaunchContext& ctx,
+                             const CurvatureRows& rows) {
+    state_->tiles.curvature(ctx, force_t(cutoff_) * force_t(cutoff_), rows);
+}
+
 } // namespace cuda
 } // namespace ATV

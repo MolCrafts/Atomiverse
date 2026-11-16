@@ -343,11 +343,10 @@ sim.set_thermostat(cpu::md::NoseHoover{100.0, 200.0, 4.0});
 sim.set_barostat  (cpu::md::Barostat{/*P=*/6.2415e-7, /*tau_P=*/2000.0, /*dt=*/4.0});
 ```
 
-`Barostat` reads `frame.meta.get(kStress)` to compute the internal pressure,
-which is why it declares `reads() == Capability::Stress` — and that
-declaration makes `cpu::md::MD` **auto-inject a `Virial` stress observer** at
-build time so the pressure is actually available (you do not add `Virial`
-yourself). It rescales the box edges and all owned atoms by the Berendsen
+`Barostat` reads `frame.meta.get(kStress)` and
+`frame.meta.get(kStressKinetic)` to compute the internal pressure; it declares
+`requires_system_stress()`, so the force styles accumulate the virial, and the
+kinetic part is written every step by MD's `KineticEnergy`. It rescales the box edges and all owned atoms by the Berendsen
 dilation factor each `end_of_step`. Berendsen relaxes pressure smoothly but
 does *not* produce a rigorous NPT distribution — for production NPT
 statistics, prefer the MTK integrator below.
@@ -376,7 +375,7 @@ The first five constructor arguments (`T_target`, `tau_T`, `P_target`, `tau_P`,
 `dt`) are required; the rest default sensibly (`drag = 0`, `mtchain = mpchain =
 3`, `couple_axis = {true,true,true}` for isotropic coupling, `T_stop` folds to
 `T_target` for no ramp). Like the Berendsen barostat it declares
-`reads() == Stress`, so `Virial` is auto-injected. It writes the full MTK
+`requires_system_stress()`. It writes the full MTK
 extended Hamiltonian to `frame.meta.get(kConserved)` — the flat trace of *that*
 quantity is the rigorous correctness check for an NPT run. Pass `couple_axis`
 to barostat individual axes (e.g. `{false,false,true}` for uniaxial), and use
@@ -475,8 +474,7 @@ drift), `npt_lj_mtk` (diagonal
 MTK NPT), `pr_npt_lj`
 (full-cell Parrinello-Rahman) and
 `nph_lj` (thermostat-free NPH) and the categorical
-setter wiring — including the automatic `Virial` injection triggered by a
-barostat's `reads() == Stress` — in
+setter wiring in
 [`tests/cpu/dynamics/test_md_set_api.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/cpu/dynamics/test_md_set_api.cpp).
 Multi-rank NPT correctness (box consistency across ranks) is covered by
 [`tests/mpi/test_nose_hoover_npt_multirank.cpp`](https://github.com/MolCrafts/Atomiverse/blob/master/tests/mpi/test_nose_hoover_npt_multirank.cpp).

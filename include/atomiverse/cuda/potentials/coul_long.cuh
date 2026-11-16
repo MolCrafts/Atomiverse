@@ -10,6 +10,7 @@
 #include <string>
 
 #include "atomiverse/core/precision.h"
+#include "atomiverse/cuda/component/curvature_protocol.cuh"
 #include "atomiverse/cuda/component/long_range_protocol.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/potentials/pair.cuh"
@@ -18,7 +19,9 @@ namespace ATV {
 namespace cuda {
 
 /// @brief Real-space screened Coulomb force/energy (Ewald/PME real part).
-class CoulLong : public Pair, public LongRangeParticipant {
+class CoulLong : public Pair,
+                 public LongRangeParticipant,
+                 public CurvatureSource {
   public:
     /// @param alpha  Ewald splitting parameter α [1/Å]. Must match reciprocal.
     /// @param cutoff Real-space cutoff [Å] (≤ the neighbor-list cutoff).
@@ -36,6 +39,10 @@ class CoulLong : public Pair, public LongRangeParticipant {
         return {LongRangeRole::RealSpace, AccReal(alpha_),
                 AccReal(pair_cutoff()), AccReal(0)};
     }
+
+    CurvatureSource* as_curvature_source() override { return this; }
+    void add_curvature(const LaunchContext& ctx,
+                       const CurvatureRows& rows) override;
 
     bool supports_force_rows() const override {
         // Cluster force currently covers all cluster slots; multi-GPU row

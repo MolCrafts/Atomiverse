@@ -34,6 +34,7 @@ pytestmark = pytest.mark.skipif(not _HAS_MREC, reason="needs ATV_BUILD_MD")
 if _HAS_MREC:
     import atomiverse as av
     from atomiverse.md import MD
+    from atomiverse.md.barostat import BerendsenBarostat
     from atomiverse.md.integrator import VelocityVerlet
     from atomiverse.neighbor import NeighborList
     from atomiverse.potentials.pair import LJCut
@@ -194,6 +195,68 @@ class TestMrecRecorderCpu:
         assert "error" not in status
 
 
+#: HARD-CODED GOLDEN — LAMMPS ``units metal`` (src/update.cpp): m·v² →
+#: energy [eV per g/mol·Å²/ps²].
+_MVV2E_METAL: float = 1.0364269e-4
+
+
+@pytest.mark.parametrize("barostat", [False, True], ids=["nve", "berendsen"])
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_recorded_kinetic_stress_is_that_of_the_recorded_velocities(
+    tmp_path: Path, device: str, barostat: bool
+) -> None:
+    """Every recorded frame's ``stress_kinetic`` is mvv2e·Σ m v⊗v (Voigt xx
+    yy zz xy xz yz, extensive: not divided by V, the ``frame.stress``
+    convention) of that frame's own velocities, and half its trace is the
+    frame's ``kinetic``. The velocities are those of the recorded state,
+    after the step's last kick (LAMMPS ``compute pressure`` at thermo),
+    with or without a barostat reading the stress."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+    path = tmp_path / f"{device}.mrec"
+    frame = _argon_frame()
+    atoms = frame["atoms"]
+    atoms["vx"] = 2.0 * np.sin(3.0 * np.arange(64.0))  # [Å/ps], ~300 K
+    atoms["vy"] = 2.0 * np.cos(5.0 * np.arange(64.0))
+    sim = MD(device=device, units="metal")
+    sim.set_integrator(VelocityVerlet(0.002))
+    sim.set_neighbor(NeighborList(_CUTOFF, _SKIN))
+    sim.set_evaluator(LJCut(0.0104, 3.4, _CUTOFF))
+    if barostat:
+        sim.set_barostat(BerendsenBarostat(0.0, 0.5, 0.002, bulk_modulus=1.0e4))
+    sim.set_record(MrecRecorder(str(path), 1))
+    sim.run(frame, 3)
+
+    steps, _, frames = _read_all(path)
+    assert steps == [0, 1, 2, 3]
+    for fr in frames:
+        a = fr["atoms"]
+        m = np.asarray(a["mass"], dtype=np.float64)
+        v = np.stack([np.asarray(a[c], dtype=np.float64) for c in ("vx", "vy", "vz")])
+        want = _MVV2E_METAL * np.array(
+            [np.sum(m * v[i] * v[j]) for i, j in ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))]
+        )
+        got = np.asarray(fr.meta["stress_kinetic"], dtype=np.float64)
+        np.testing.assert_allclose(got, want, rtol=0, atol=1e-12 * np.abs(want).max())
+        assert 0.5 * got[:3].sum() == pytest.approx(float(fr.meta["kinetic"]), rel=1e-12)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_continuation_extends_one_trajectory(tmp_path: Path, device: str) -> None:
+    """Two run() calls on one frame continue the step axis, the boundary
+    step is written once, and each run() returns with its frames in the
+    store."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+    path = tmp_path / f"{device}.mrec"
+    frame = _argon_frame()
+    sim = _lj_md(device, MrecRecorder(str(path), 2))
+    sim.run(frame, 4)  # steps 0, 2, 4
+    assert _read_all(path)[0] == [0, 2, 4]
+    sim.run(frame, 4)  # (4 already written), 6, 8
+    assert _read_all(path)[0] == [0, 2, 4, 6, 8]
+
+
 @pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA")
 class TestMrecRecorderCuda:
     def test_cuda_frames_match_cpu(self, tmp_path: Path) -> None:
@@ -226,18 +289,6 @@ class TestMrecRecorderCuda:
                     atol=atol,
                     err_msg=key,
                 )
-
-    def test_cuda_continuation_extends_one_trajectory(self, tmp_path: Path) -> None:
-        """On CUDA two run() calls on one frame continue the step axis, the
-        boundary step is written once, and each run() returns with its
-        frames in the store."""
-        path = tmp_path / "gpu.mrec"
-        frame = _argon_frame()
-        sim = _lj_md("cuda", MrecRecorder(str(path), 2))
-        sim.run(frame, 4)  # steps 0, 2, 4
-        assert _read_all(path)[0] == [0, 2, 4]
-        sim.run(frame, 4)  # (4 already written), 6, 8
-        assert _read_all(path)[0] == [0, 2, 4, 6, 8]
 
     @pytest.mark.parametrize("which", ["type", "species", "both"])
     def test_cuda_identity_columns_follow_the_frame(

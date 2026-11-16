@@ -6,16 +6,13 @@
 /// Auto-binds to end_of_step (order -100, before user observers).
 /// Accumulates into `frame.scalars->kinetic` AND
 /// `frame.scalars->stress_kinetic[6]` (the Σ m·vα·vβ·mvv2e kinetic
-/// stress tensor — `cuda::Virial` zeroes the buffer at
-/// post_force then this kernel atomic-adds into it). Reduction is a
-/// CUB BlockReduce over the seven independent components.
+/// stress tensor), every step, as `cpu::md::KineticEnergy` does. Reduction
+/// is a CUB BlockReduce over the seven independent components.
 ///
-/// Requires ZeroScalars (MD pre_force, order -999) and Virial
-/// (auto-injected at post_force @ -50) to clear the accumulators
-/// before this kernel atomic-adds.
+/// Requires ZeroScalars (MD pre_force, order -999) to clear the
+/// accumulators before this kernel atomic-adds.
 ///
 /// @see ZeroScalars for the per-step scalar zeroing
-/// @see Virial for the stress_kinetic[] zeroing
 /// @see Thermo for the component that reads frame.scalars->kinetic
 #pragma once
 #include "atomiverse/core/role.h"

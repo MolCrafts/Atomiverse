@@ -63,6 +63,43 @@ TEST(TestCommBrick, SerialCutoffSixBuildsPeriodicImages) { run_cutoff(6.0); }
 
 TEST(TestCommBrick, SerialCutoffZeroHasNoGhosts) { run_cutoff(0.0); }
 
+TEST(TestCommBrick, SelfImageOwnersAreTheOwnedRowsGhostsCopy) {
+    // Corner ghosts are copies of earlier swaps' ghosts: the owner map must
+    // resolve those chains to the owned row with the same tag, at a lattice
+    // vector from it.
+    auto frame = make_8_atom_cube();
+    for (int i = 0; i < 8; ++i)
+        frame.span(kAtom_tag)[i] = 101 + i;
+    cpu::Runtime backend;
+    backend.init();
+    backend.set_frame(frame);
+    cpu::Comm* comm = backend.context().md.comm;
+    comm->set_ghost_cutoff(6.0);
+    cpu::LaunchContext lctx{backend.context(), frame, 0, 0};
+    comm->setup(lctx);
+    comm->borders(lctx);
+    const auto& md = backend.context().md;
+    ASSERT_EQ(frame.nghost(), 56);
+    ASSERT_NE(md.image_owner, nullptr);
+    ASSERT_EQ(md.image_owner_rows, frame.n_total());
+    for (int r = 0; r < frame.n_total(); ++r) {
+        const int o = md.image_owner[r];
+        ASSERT_GE(o, 0);
+        ASSERT_LT(o, frame.nlocal()) << "row " << r;
+        if (r < frame.nlocal())
+            EXPECT_EQ(o, r);
+        EXPECT_EQ(frame.span(kAtom_tag)[r], frame.span(kAtom_tag)[o]);
+        for (const auto axis : {kAtom_x, kAtom_y, kAtom_z}) {
+            const double d = (frame.span(axis)[r] - frame.span(axis)[o]) / 20.0;
+            EXPECT_NEAR(d, std::nearbyint(d), 1e-12) << "row " << r;
+        }
+    }
+    comm->set_ghost_cutoff(0.0);
+    comm->borders(lctx);
+    EXPECT_EQ(md.image_owner, nullptr) << "no halo, no map";
+    backend.shutdown();
+}
+
 TEST(TestCommBrick, PackerOverloadIsNoOp) {
     auto frame = make_8_atom_cube();
     cpu::Runtime backend;

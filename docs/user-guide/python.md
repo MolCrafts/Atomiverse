@@ -108,6 +108,22 @@ real_storage = "double"
 **`--hf`** is the flag spelling of the `hf` module: it configures Gaussian
 SCF (`ATV_BUILD_HF=ON`) exactly like every other product module.
 
+**Which source a build came from:** `atomiverse.__git_commit__` is the
+commit the extension was compiled from and `atomiverse.__git_dirty__`
+whether tracked files differed from it, read at every build of the tree. A
+copy without `.git` (rsync, `git archive`) carries them in a one-line file
+`.atv-source-commit` at its root, `<40-hex commit> clean|dirty`, written by
+whoever made the copy:
+
+```bash
+printf '%s %s\n' "$(git rev-parse HEAD)" \
+  "$(git status --porcelain --untracked-files=no | grep -q . \
+     && echo dirty || echo clean)" > /path/to/copy/.atv-source-commit
+```
+
+Without either the commit is `"unknown"` and `__git_dirty__` is `None`; a
+malformed file fails the build.
+
 **Version lock:** the checkout's `__version__` must equal the installed
 package version — `config` refuses otherwise, so a native build never
 silently swaps the release you installed for a different tree.
@@ -1120,7 +1136,9 @@ Components register through **categorical setters**, mirroring the C++
 - `sim.set_thermostat(NoseHoover(T, tau_T, dt))`
 - `sim.set_barostat(BerendsenBarostat(P, tau_P, dt))` — rides alongside the
   integrator (see *Constant pressure: NPT* below)
-- `sim.set_observer(InitVelocity(T, seed))`
+- `sim.set_observer(InitVelocity(T, seed))` — draws once when a trajectory
+  starts; a seed gives the same velocities on the CPU and on CUDA (the draw
+  follows the atom tags, not the row order)
 - `sim.set_neighbor(NeighborList(cutoff, skin=-1))`
 - `sim.set_evaluator(PairLJCut / BondHarmonic / …)` — plural energy sources
 - `sim.set_thermo(N)` — LAMMPS-style print cadence
@@ -1225,13 +1243,11 @@ with MrecReader(Path("traj.mrec")) as traj:
 - **After `run()` returns, the store holds every frame of that run** on both
   devices; open it with `MrecReader(Path(path))` (a plain `str` is refused
   as ambiguous by molpy).
-- **CPU:** each `run()` is an independent simulation that restarts at step
-  0, so one recorder records one `run()` — use a new `MD` and recorder for
-  another run.
-- **CUDA:** `run()` calls on the same frame continue one trajectory, and the
-  recorder keeps appending to it; the step axis continues and the boundary
-  step is written once (`run(f, 4); run(f, 4)` at `every=2` gives steps
-  0, 2, 4, 6, 8). Frames are frozen on the device at
+- `run()` calls on the same frame continue one trajectory on both devices,
+  and the recorder keeps appending to it; the step axis continues and the
+  boundary step is written once (`run(f, 4); run(f, 4)` at `every=2` gives
+  steps 0, 2, 4, 6, 8).
+- **CUDA:** Frames are frozen on the device at
   end_of_step, copied to the host asynchronously and written by worker
   threads; the MD loop never waits for the disk. A few frames can queue on
   the device and on the host; if the writer falls further behind (a very slow

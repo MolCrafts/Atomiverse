@@ -483,7 +483,7 @@ rhf.run(frame);        // Frame in / Frame out; workspace private
 | `Potential` | required | PairLJCut, BondHarmonic, CoulLong, KSpace |
 | `HF` (tag on the Driver node) / `Semiempirical` / `PlaneWave` / `GPW` | required | concrete methods |
 | `Bias` / `PathCoupling` | required | HarmonicBias, NebCoupling |
-| `Observer` | FrameImmutable\|Deferred | RDF, MSD, Virial, KineticEnergy |
+| `Observer` | FrameImmutable\|Deferred | RDF, MSD, KineticEnergy |
 | `Recorder` | +ExternalIO | Thermo, XYZ |
 | `Integrator` / `Thermostat` / `Barostat` / `Optimizer` / `Constraint` / `Mover` | required | VelocityVerlet, LBFGS |
 

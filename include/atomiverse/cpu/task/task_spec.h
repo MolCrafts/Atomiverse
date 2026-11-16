@@ -560,6 +560,21 @@ inline bool operator==(const KSpacePppmParams& a, const KSpacePppmParams& b) {
            && a.order == b.order && a.mesh == b.mesh;
 }
 
+/// @brief Constructor parameters of `cpu::KSpaceEwald(alpha, accuracy)` —
+///        the direct reciprocal-space Ewald sum.
+///
+/// Registered beside the task wire like `KSpacePppmParams`: a launcher
+/// payload cannot name it. Needs no FFT, so it exists in every build.
+struct KSpaceEwaldParams {
+    /// Ewald splitting parameter α [1/Å]. Must equal the paired `CoulLong`.
+    double alpha;
+    /// Relative accuracy target in (0, 1); sets the reciprocal-vector cutoff.
+    double accuracy = 1e-5;
+};
+inline bool operator==(const KSpaceEwaldParams& a, const KSpaceEwaldParams& b) {
+    return a.alpha == b.alpha && a.accuracy == b.accuracy;
+}
+
 /// @brief Constructor parameters of `cpu::ImproperCvff(K, d, n)` — the
 ///        Amber/GAFF improper V = K (1 + d cos(n φ)), d = ±1.
 ///
@@ -748,9 +763,11 @@ inline bool operator==(const PairBuckParams& a, const PairBuckParams& b) {
 }
 
 /// @brief Wire mirror of the MULTI-TYPE `cpu::PairBorn(coeffs, cutoff)`
-///        constructor — Born-Mayer-Huggins / Fumi-Tosi.
+///        constructor — Born-Mayer-Huggins / Fumi-Tosi — with its
+///        `set_energy_shift` / `set_tail_correction` flags.
 ///
-/// \(U(r)=A e^{(\sigma-r)/\rho}-C/r^{6}+D/r^{8}\), shifted at the cutoff.
+/// \(U(r)=A e^{(\sigma-r)/\rho}-C/r^{6}+D/r^{8}\), shifted at the cutoff
+/// unless `energy_shift` is false.
 ///
 /// The C++ constructor takes a `std::vector<cpu::BornTypeCoeff>`, i.e. a
 /// vector of STRUCTS, which the codec's variable-length primitive cannot
@@ -789,11 +806,18 @@ struct PairBornParams {
     std::vector<double> D;
     /// @brief Interaction cutoff [Å] (> 0), shared by every row.
     double cutoff = 0.0;
+    /// @brief LAMMPS `pair_modify shift` (`set_energy_shift`): subtract
+    ///        U(r_c) per pair. Default on.
+    bool energy_shift = true;
+    /// @brief LAMMPS `pair_modify tail yes` (`set_tail_correction`). Default
+    ///        off.
+    bool tail = false;
 };
 inline bool operator==(const PairBornParams& a, const PairBornParams& b) {
     return a.type_i == b.type_i && a.type_j == b.type_j && a.A == b.A
            && a.rho == b.rho && a.sigma == b.sigma && a.C == b.C && a.D == b.D
-           && a.cutoff == b.cutoff;
+           && a.cutoff == b.cutoff && a.energy_shift == b.energy_shift
+           && a.tail == b.tail;
 }
 
 /// @brief Wire mirror of `cpu::PairYukawa(A, kappa, cutoff)`.

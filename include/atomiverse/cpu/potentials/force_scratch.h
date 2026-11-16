@@ -12,6 +12,7 @@
 
 #include "atomiverse/core/log.h"
 #include "atomiverse/cpu/component/component.h"
+#include "atomiverse/cpu/device/team.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 #ifdef _OPENMP
@@ -109,6 +110,13 @@ struct ForceRows {
 /// case, so kernels keep gating their own writes on the request.
 class ChunkForces {
   public:
+    /// Slot rows (one row of one live slot: three loads and adds) a thread
+    /// of the flush must get; below two threads' worth the team's fork and
+    /// join cost more than the sum (`device::team_for`). The work is rows x
+    /// live slots, not rows: a small system walked by a wide pair team has
+    /// few rows but many slots.
+    static constexpr std::int64_t kFlushSlotRowsPerThread = 8192;
+
     /// Partial sums per chunk: energy + Voigt virial + one style extra.
     /// Eight doubles, one cache line per chunk.
     static constexpr int kSums = 8;
@@ -207,8 +215,11 @@ class ChunkForces {
             const int rows = rows_;
             const Buffer* bufs = bufs_.data();
             // Row-parallel; each row sums its slots in slot order, so the
-            // thread count of the flush itself never changes the result.
-#pragma omp parallel for schedule(static) if (rows > 4096)
+            // thread count of the flush itself never changes the result. A
+            // small, few-slot flush stays on the calling thread.
+            const int team = device::team_for(std::int64_t{rows} * n_live,
+                                              kFlushSlotRowsPerThread);
+#pragma omp parallel for schedule(static) num_threads(team) if (team > 1)
             for (int i = 0; i < rows; ++i) {
                 double sx = 0.0, sy = 0.0, sz = 0.0;
                 for (int k = 0; k < n_live; ++k) {
@@ -319,15 +330,15 @@ class ForcePass {
     /// @brief Threads available to the kernel's parallel region.
     int team() const noexcept { return max_team_; }
 
-    /// Terms below which one more thread costs more (wake-up, barrier, and
-    /// its buffer's zero + reduce sweep) than it saves.
+    /// Terms a thread must get to repay its wake-up, barrier, and its
+    /// buffer's zero + reduce sweep.
     static constexpr int kMinTermsPerThread = 2048;
 
-    /// @brief Threads worth opening for `n_terms` terms, at most `team()`. A
-    ///        team of one writes the frame directly, so a small topology
-    ///        does not wake the whole team every evaluation.
+    /// @brief Team for `n_terms` terms: `team()` or one
+    ///        (`device::team_for`). A team of one writes the frame directly,
+    ///        so a small topology does not wake the team every evaluation.
     int team(int n_terms) const noexcept {
-        return std::clamp(n_terms / kMinTermsPerThread, 1, max_team_);
+        return device::team_for(n_terms, kMinTermsPerThread, max_team_);
     }
 
     /// @brief Fix this launch's partition: `n_chunks` chunks for a team of

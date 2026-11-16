@@ -188,7 +188,8 @@ TaskSpec make_md_spec() {
     // each other AND row to row, so a codec that swapped the two integer
     // vectors, or wrote one row twice, cannot survive the roundtrip. Five
     // parallel double vectors on top of that is the widest parallel-vector
-    // payload on the wire.
+    // payload on the wire. Both flags carry their NON-default values, so a
+    // codec that dropped either byte decodes the defaults and fails.
     entries.push_back(MDComponentEntry{PairBornParams{/*type_i=*/{11, 17},
                                                       /*type_j=*/{17, 17},
                                                       /*A=*/{0.2637, 1.6},
@@ -196,7 +197,9 @@ TaskSpec make_md_spec() {
                                                       /*sigma=*/{2.755, 3.170},
                                                       /*C=*/{1.05, 72.4},
                                                       /*D=*/{0.499, 145.4},
-                                                      /*cutoff=*/9.0},
+                                                      /*cutoff=*/9.0,
+                                                      /*energy_shift=*/false,
+                                                      /*tail=*/true},
                                        std::nullopt});
     // `PairYukawaParams` — A [eV·Å], κ [Å⁻¹], cutoff [Å].
     entries.push_back(MDComponentEntry{

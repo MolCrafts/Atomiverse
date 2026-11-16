@@ -61,8 +61,7 @@ namespace md {
 /// uses the same sign convention as LAMMPS `fix npt iso`, so passing
 /// `P_target = 0` matches LAMMPS at the same setpoint. Since
 /// `lammps-api-align-04` this is the SAME sign convention used by
-/// `cpu::md::Barostat` (Berendsen) and `cpu::md::Virial` /
-/// `compute pressure`: a single positive-trace-is-compressive
+/// `cpu::md::Barostat` (Berendsen) and LAMMPS `compute pressure`: a single positive-trace-is-compressive
 /// convention holds across every Atomiverse pressure component.
 ///
 /// Phase distribution:
@@ -250,10 +249,9 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     /// load-bearing one for `cpu::md::MD::validate_components()`.
     /* role via Integrator base */
     /// @brief Write-set: MTK: propagates x and v, and scales the cell.
-    /// @brief Reads the kinetic-stress component of `frame.stress` to
-    /// compute the internal pressure feedback. Triggers auto-injection
-    /// of `Virial` in `MD::install_defaults()` when no canonical
-    /// stress provider is otherwise registered.
+    /// @brief Reads the virial `frame.stress` to compute the internal
+    /// pressure feedback (the kinetic part is computed fresh from the
+    /// current velocities).
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::initial_integrate, 0),
                 ATV::make_binding(ATV::md::Phase::final_integrate, 0),

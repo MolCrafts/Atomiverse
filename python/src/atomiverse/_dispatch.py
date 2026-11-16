@@ -17,6 +17,9 @@ EVALUATOR_DISPATCH: dict[type, str] = {
     _cpp.PairLJCutCoulLong: "set_evaluator_pair_lj_cut_coul_long",
     _cpp.PairCoulCut: "set_evaluator_pair_coul_cut",
     _cpp.CoulLong: "set_evaluator_coul_long",
+    # Direct reciprocal Ewald needs no FFT: unconditional, beside the task
+    # wire like KSpacePPPM (local runs only).
+    _cpp.KSpaceEwald: "set_evaluator_kspace_ewald",
     _cpp.BondHarmonic: "set_evaluator_bond_harmonic",
     _cpp.AngleHarmonic: "set_evaluator_angle_harmonic",
     _cpp.DihedralMultiHarmonic: "set_evaluator_dihedral_multi_harmonic",

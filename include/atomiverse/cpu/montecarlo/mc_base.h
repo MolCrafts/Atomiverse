@@ -106,8 +106,8 @@ class McBase : public Driver<ATV::sampling::Phase> {
     }
 
     /// @brief Configure the trial-move generator (mirrors MD `set_integrator`).
-    /// Singular: re-call with the same Mover is idempotent, a different Mover
-    /// throws. Binds the Mover at its `default_bindings()` (`propose` phase).
+    /// Singular: a re-call with a Mover of the same name replaces the first,
+    /// a different Mover throws. Binds the Mover at its `default_bindings()` (`propose` phase).
     /// @param m Mover component (e.g. `TranslateMove`, `MoveSelector`).
     /// @return `*this` for chaining.
     template <typename M>

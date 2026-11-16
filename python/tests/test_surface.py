@@ -195,6 +195,15 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "FixEfield",
         # The Amber/GAFF improper of molpy force fields (atomiverse.forcefield).
         "ImproperCvff",
+        # Thermostatted NEMD of molten salts (spec nemd-thermostats, CPU):
+        # the Gear integrator, its two thermostat kinds, the
+        # configurational-temperature observer and the FFT-free Ewald
+        # reciprocal half that supplies its curvature.
+        "GearPC",
+        "GaussThermostat",
+        "ConfigurationalThermostat",
+        "ConfigurationalTemperature",
+        "KSpaceEwald",
     }
 )
 
@@ -314,7 +323,7 @@ class TestCanonicalSurface:
 
     def test_public_names_are_the_honest_surface(self) -> None:
         """The public candidate list is fixed; availability filters __all__."""
-        assert len(_CANONICAL_ALL) == 88
+        assert len(_CANONICAL_ALL) == 93
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:

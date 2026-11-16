@@ -109,6 +109,18 @@ struct DynamicsServices {
     /// kernels then run with a team of one (`md::ForcePass`).
     md::ChunkForces* chunk_forces = nullptr;
 
+    /// @brief Owned row that each frame row is a periodic image of, when the
+    ///        halo is single-process (every ghost a self image of an owned
+    ///        row): identity on owned rows, `image_owner_rows` entries.
+    ///
+    /// Published by `CommBrick::borders()` with every full halo rebuild,
+    /// null when a ghost may belong to another rank or no halo was built.
+    /// Pair kernels scatter a ghost partner's force straight into its owner,
+    /// so their per-chunk force buffers span the owned rows only. Valid while
+    /// `image_owner_rows == frame.n_total()`.
+    const int* image_owner = nullptr;
+    int image_owner_rows = 0;
+
     /// @brief LAMMPS `neighbor->skin` [Å]: the relative displacement the
     ///        active `NeighborProvider` tolerates between reneighbourings
     ///        (`NeighborProvider::validated_skin()`).

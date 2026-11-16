@@ -85,6 +85,21 @@ inline std::vector<cpu::BornTypeCoeff> born_table(const PairBornParams& p) {
     return table;
 }
 
+/// @brief The `cpu::PairBorn` a `PairBornParams` mirror describes.
+///
+/// One factory for every path that constructs the style (launcher replay and
+/// the Python setters), so the energy shift and the tail reach all of them.
+/// The multi-type constructor covers the single-type one as a one-row table.
+///
+/// @param p Typed Born mirror (`born_table` rows, cutoff [Å], flags).
+/// @return The configured component.
+/// @throws std::invalid_argument on mismatched columns or bad rows.
+inline cpu::PairBorn make_pair_born(const PairBornParams& p) {
+    return cpu::PairBorn{born_table(p), p.cutoff}
+        .set_energy_shift(p.energy_shift)
+        .set_tail_correction(p.tail);
+}
+
 /// @brief The `cpu::PairLJCut` a `PairLJCutParams` mirror describes.
 ///
 /// One factory for every path that constructs the style (launcher replay,
