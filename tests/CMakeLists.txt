@@ -56,12 +56,17 @@ function(atv_add_test name)
     endforeach()
 endfunction()
 
-# Thread pins for every single-process unit test. The `;` must reach
-# gtest_discover_tests escaped: an unescaped list splits the PROPERTIES
-# key/value pairs and silently drops OPENBLAS_NUM_THREADS, leaving OpenBLAS
-# on every core in each concurrently running test.
-set(ATV_TEST_ENVIRONMENT
-    "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}\\;OPENBLAS_NUM_THREADS=${ATV_TEST_OMP_THREADS}")
+# Thread pins for every single-process unit test, as gtest_discover_tests
+# PROPERTIES pairs with one variable per property. A two-entry ENVIRONMENT
+# list does not cross gtest_discover_tests on every CMake: unescaped, CMake
+# 4.2 splits it and drops OPENBLAS_NUM_THREADS; escaped (`\;`), CMake 4.4
+# keeps the escape and hands each test the one variable
+# OMP_NUM_THREADS="1;OPENBLAS_NUM_THREADS=1", which libgomp rejects and
+# ignores. (CMake < 3.22 ignores ENVIRONMENT_MODIFICATION, and OpenBLAS then
+# follows OMP_NUM_THREADS.)
+set(ATV_TEST_THREAD_PROPERTIES
+    ENVIRONMENT "OMP_NUM_THREADS=${ATV_TEST_OMP_THREADS}"
+    ENVIRONMENT_MODIFICATION "OPENBLAS_NUM_THREADS=set:${ATV_TEST_OMP_THREADS}")
 
 # A unit test that needs its own link line or compile definitions (stub
 # libraries, extra sources) keeps a dedicated executable.
@@ -80,7 +85,7 @@ function(atv_add_unit_exe name)
     endforeach()
     gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST
         PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS} LABELS ${labels}
-                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+                   ${ATV_TEST_THREAD_PROPERTIES})
 endfunction()
 
 # C++ test: compiled as .cpp, no CUDA required.
@@ -1596,14 +1601,14 @@ target_precompile_headers(atv_tests PRIVATE <gtest/gtest.h>
 gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
     TEST_FILTER "*-PwFrozenFunctionalVirial.*"
     PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
-               ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+               ${ATV_TEST_THREAD_PROPERTIES})
 if(ATV_BUILD_PW)
     # Each affine finite-difference audit fits the unit timeout on its own;
     # concurrent SCF tests otherwise consume its wall-time budget.
     gtest_discover_tests(atv_tests DISCOVERY_MODE PRE_TEST
         TEST_FILTER "PwFrozenFunctionalVirial.*"
         PROPERTIES RUN_SERIAL TRUE TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS}
-                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+                   ${ATV_TEST_THREAD_PROPERTIES})
 endif()
 
 get_property(_atv_unit_cuda_sources GLOBAL PROPERTY ATV_UNIT_CUDA_SOURCES)
@@ -1615,7 +1620,7 @@ if(_atv_unit_cuda_sources)
                           CUDA_SEPARABLE_COMPILATION ON)
     gtest_discover_tests(atv_tests_cuda DISCOVERY_MODE PRE_TEST
         PROPERTIES TIMEOUT ${ATV_TEST_TIMEOUT_SECONDS} LABELS cuda
-                   ENVIRONMENT "${ATV_TEST_ENVIRONMENT}")
+                   ${ATV_TEST_THREAD_PROPERTIES})
 endif()
 
 get_property(_atv_unit_mpi_sources GLOBAL PROPERTY ATV_UNIT_MPI_SOURCES)
