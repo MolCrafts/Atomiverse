@@ -290,11 +290,15 @@ class MD:
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``).
 
-        ``NoseHoover`` (single chain, LAMMPS ``fix nvt``) and ``Langevin``
-        run on both devices; ``CSVR`` is CPU only. A thermostat never joins
-        ``NvtSllod`` or an NPT integrator, which already thermostat. On
-        both devices ``NoseHoover`` takes the integrator's timestep in place
-        of its own ``dt``.
+        ``NoseHoover`` (single chain, LAMMPS ``fix nvt``), ``Langevin`` and
+        ``CSVR`` (Bussi, LAMMPS ``fix temp/csvr``) run on both devices. The
+        slot is plural: several ``CSVR(..., types=[...], bias="com")``
+        thermostats, each on its own type group with its own seed, may be
+        set on one driver (LAMMPS one ``fix temp/csvr`` per group with
+        ``fix_modify temp`` a ``compute temp/com``). A thermostat never
+        joins ``NvtSllod`` or an NPT integrator, which already thermostat.
+        On both devices ``NoseHoover`` and ``CSVR`` take the integrator's
+        timestep in place of their own ``dt``.
         """
         if getattr(self, "_nvt_sllod", False):
             raise ValueError(
@@ -315,11 +319,6 @@ class MD:
             raise TypeError(
                 f"set_thermostat expects NoseHoover, Langevin, or CSVR, got "
                 f"{type(component).__name__}"
-            )
-        if self.device == "cuda" and type(component) is _cpp.CSVR:
-            raise ValueError(
-                "CUDA MD has no CSVR thermostat. Use NoseHoover or Langevin "
-                "with device='cuda', or run CSVR with device='cpu'"
             )
         self._thermostatted = True
         self._cpp.set_thermostat(component)

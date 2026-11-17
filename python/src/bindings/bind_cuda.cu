@@ -26,6 +26,7 @@
 #include "atomiverse/cpu/task/internal/potential_builders.h"
 #include "atomiverse/cuda/dynamics/barostat.cuh"
 #include "atomiverse/cuda/dynamics/configurational_temperature.cuh"
+#include "atomiverse/cuda/dynamics/fix_csvr.cuh"
 #include "atomiverse/cuda/dynamics/fix_efield.cuh"
 #include "atomiverse/cuda/dynamics/fix_langevin.cuh"
 #include "atomiverse/cuda/dynamics/fix_rattle.cuh"
@@ -617,6 +618,18 @@ void bind_cuda(nb::module_& m) {
                 // replaces p.dt at build).
                 self.driver.set_thermostat(
                     cuda::md::NoseHoover{p.T_start, p.tau_T, p.dt});
+            },
+            nb::arg("thermostat"))
+        .def(
+            "set_thermostat",
+            [](CudaMdHandle& self, const cpu::task::FixCsvrParams& p) {
+                self.require_configurable();
+                // Bussi CSVR, the law, group, bias and random stream of
+                // cpu::md::FixCSVR. Plural: one per group, each with its
+                // own seed (the integrator's dt replaces p.dt at build).
+                self.driver.set_thermostat(
+                    cuda::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed, p.types,
+                                      cpu::task::csvr_bias(p.bias)});
             },
             nb::arg("thermostat"))
         .def(

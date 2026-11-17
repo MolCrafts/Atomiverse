@@ -16,8 +16,14 @@ NoseHoover = _cpp.NoseHoover
 #: ``cpu::md::FixLangevin(T_start [temperature], T_stop [temperature], damp [time], dt [time], seed)``.
 Langevin = _cpp.Langevin
 
-#: Bussi canonical-sampling velocity rescale (CP2K CSVR) —
-#: ``cpu::md::FixCSVR(T_start [temperature], tau [time], dt [time], seed)``.
+#: Bussi canonical-sampling velocity rescale (CP2K CSVR, LAMMPS
+#: ``fix temp/csvr``) on CPU and CUDA —
+#: ``CSVR(T_start [temperature], tau [time], dt [time], seed, types=[],
+#: bias="none")``. ``types`` lists the force-field types (molpy
+#: ``atoms.type_id``) of the thermostatted group (empty: every atom);
+#: ``bias="com"`` removes the group's centre-of-mass velocity before
+#: measuring and rescaling (LAMMPS ``compute temp/com``). Several may be
+#: set on one driver.
 CSVR = _cpp.CSVR
 
 #: Gauss least-constraint kinetic thermostat for ``GearPC`` —
