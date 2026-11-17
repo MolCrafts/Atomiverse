@@ -147,6 +147,19 @@ struct DynamicsServices {
     /// the wrong setpoint. Rigid water would run ~33 % cold.
     int n_dof_global = 0;
 
+    /// @brief Global constraint count per owning-atom type
+    ///        (`ConstraintProvider::count_constraints_by_type`, summed over
+    ///        ranks), published with `n_dof_global`. A group thermostat's
+    ///        `Ndof = 3 N_g − 3 − Σ_{t∈g} n_constraints_by_type[t]`.
+    ///        Valid only when `constraints_by_type_known`: a frame without a
+    ///        `type` column cannot attribute constraints to types.
+    ///        A type id past `n_constraint_types` owns no constraint.
+    /// Non-owning (the Driver owns the storage); `n_constraint_types`
+    /// entries, indexed by type id; null when nothing is constrained.
+    const BigInt* n_constraints_by_type = nullptr;
+    int n_constraint_types = 0;
+    bool constraints_by_type_known = false;
+
     /// @brief True only while the final step of the current `run(n_steps)`
     /// call is executing. Set by the Dynamics driver loop before the last
     /// `step_once`, cleared otherwise. Lets cadence-gated end-of-step

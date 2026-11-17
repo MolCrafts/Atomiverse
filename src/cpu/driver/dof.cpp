@@ -52,5 +52,34 @@ void publish_global_dof(Context& ctx, const Frame& frame, int n_constraints) {
     ctx.md.n_dof_global = static_cast<int>(ndof > 0 ? ndof : 0);
 }
 
+void publish_constraints_by_type(Context& ctx, std::vector<BigInt>& tallies,
+                                 bool known) {
+#ifdef ATV_HAS_MPI
+    if (ctx.mpi_size > 1 && ctx.md.dd != nullptr
+        && ctx.md.dd->cart_comm != MPI_COMM_NULL) {
+        int known_local = known ? 1 : 0;
+        int known_all = 0;
+        MPI_Allreduce(&known_local, &known_all, 1, MPI_INT, MPI_MIN,
+                      ctx.md.dd->cart_comm);
+        known = known_all != 0;
+        long long size_local = static_cast<long long>(tallies.size());
+        long long size_all = 0;
+        MPI_Allreduce(&size_local, &size_all, 1, MPI_LONG_LONG, MPI_MAX,
+                      ctx.md.dd->cart_comm);
+        tallies.resize(static_cast<std::size_t>(size_all), 0);
+        std::vector<long long> send(tallies.begin(), tallies.end());
+        std::vector<long long> recv(send.size(), 0);
+        if (!send.empty())
+            MPI_Allreduce(send.data(), recv.data(),
+                          static_cast<int>(send.size()), MPI_LONG_LONG, MPI_SUM,
+                          ctx.md.dd->cart_comm);
+        tallies.assign(recv.begin(), recv.end());
+    }
+#endif
+    ctx.md.n_constraints_by_type = tallies.empty() ? nullptr : tallies.data();
+    ctx.md.n_constraint_types = static_cast<int>(tallies.size());
+    ctx.md.constraints_by_type_known = known;
+}
+
 } // namespace cpu
 } // namespace ATV

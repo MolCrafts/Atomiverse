@@ -14,6 +14,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cuda/device/error.cuh"
 #include "atomiverse/cuda/device/launch.cuh"
 #include "atomiverse/cuda/frame/box.cuh"
@@ -327,6 +329,19 @@ void FixSettle::add_water(TagInt tag_O, TagInt tag_H1, TagInt tag_H2) {
         throw std::invalid_argument(
             "cuda::md::FixSettle: water tags must be distinct");
     waters_.push_back({tag_O, tag_H1, tag_H2});
+}
+
+void FixSettle::count_constraints_by_type(const cpu::Frame& frame,
+                                          std::vector<BigInt>& by_type) const {
+    std::unordered_set<TagInt> oxygens;
+    oxygens.reserve(waters_.size());
+    for (const Water& w : waters_)
+        oxygens.insert(w.o);
+    const auto tag = frame.span(kAtom_tag);
+    const auto type = frame.span(kAtom_type);
+    for (int i = 0; i < frame.nlocal(); ++i)
+        if (oxygens.count(tag[i]) != 0)
+            cpu::tally_constraints(by_type, static_cast<int>(type[i]), 3);
 }
 
 void FixSettle::build(const BuildContext& ctx) {

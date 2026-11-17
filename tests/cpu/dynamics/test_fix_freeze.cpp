@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <gtest/gtest.h>
+#include <vector>
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/stage.h"
@@ -105,4 +106,15 @@ TEST(FixFreeze, ReportsThreeConstraintsPerFrozenAtom) {
     cpu::md::FixFreeze freeze(2);
     cpu::Context ctx;
     EXPECT_EQ(freeze.n_constraints(ctx, f), 3);
+}
+
+TEST(FixFreeze, AttributesItsConstraintsToTheFrozenType) {
+    auto f = wall_fluid_pair();
+    cpu::md::FixFreeze freeze(2);
+    cpu::Context ctx;
+    std::vector<BigInt> by_type;
+    freeze.count_constraints_by_type(ctx, f, by_type);
+    ASSERT_EQ(by_type.size(), 3u);
+    EXPECT_EQ(by_type[2], 3);
+    EXPECT_EQ(by_type[1], 0);
 }

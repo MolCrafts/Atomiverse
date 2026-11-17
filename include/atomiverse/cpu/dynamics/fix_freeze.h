@@ -69,6 +69,9 @@ class FixFreeze : public cpu::Constraint, public cpu::ConstraintProvider {
     }
 
     /// @brief Three scalar constraints per frozen atom (\(v_x=v_y=v_z=0\)).
+    void count_constraints_by_type(const cpu::Context& ctx,
+                                   const cpu::Frame& frame,
+                                   std::vector<BigInt>& by_type) const override;
     int n_constraints(const cpu::Context& ctx,
                       const cpu::Frame& frame) const override;
 

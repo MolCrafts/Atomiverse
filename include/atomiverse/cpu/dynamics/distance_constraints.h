@@ -183,6 +183,12 @@ class DistanceConstraints : public cpu::Constraint,
     int n_constraints(const cpu::Context& ctx,
                       const cpu::Frame& frame) const override;
 
+    /// @brief One constraint per held distance, on the type of the row that
+    ///        owns it (the bond's owner, the angle's centre).
+    void count_constraints_by_type(const cpu::Context& ctx,
+                                   const cpu::Frame& frame,
+                                   std::vector<BigInt>& by_type) const override;
+
     std::vector<DefaultBinding> default_bindings() const override {
         std::vector<DefaultBinding> bindings = {
             ATV::make_binding(ATV::md::Phase::initial_integrate, -500),

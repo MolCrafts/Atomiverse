@@ -78,6 +78,21 @@ void FixSettle::add_water(TagInt tag_O, TagInt tag_H1, TagInt tag_H2) {
     waters_.push_back({tag_O, tag_H1, tag_H2, -1, -1, -1});
 }
 
+void FixSettle::count_constraints_by_type(const cpu::Context& /*ctx*/,
+                                          const cpu::Frame& frame,
+                                          std::vector<BigInt>& by_type) const {
+    std::unordered_set<TagInt> oxygens;
+    oxygens.reserve(waters_.size());
+    for (const Water& w : waters_)
+        oxygens.insert(w.o);
+    const int n_own = frame.nlocal();
+    const auto tag = frame.span(kAtom_tag);
+    const auto type = frame.span(kAtom_type);
+    for (int i = 0; i < n_own; ++i)
+        if (oxygens.count(tag[i]) != 0)
+            cpu::tally_constraints(by_type, static_cast<int>(type[i]), 3);
+}
+
 bool FixSettle::try_resolve_rows_(const Frame& f) {
     // Tags are the identity, rows are not: `atom_modify sort` spatially
     // reorders owned atoms at reneighbour, so a row cached at build() points

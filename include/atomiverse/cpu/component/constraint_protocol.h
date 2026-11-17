@@ -8,11 +8,31 @@
 /// no `dynamic_cast`, no `name()` matching.
 #pragma once
 
+#include "atomiverse/core/precision.h"
+
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 namespace ATV {
 namespace cpu {
 
 class Frame;
 struct Context;
+
+/// @brief Add `n` constraints owned by an atom of type `type` to a per-type
+///        tally (the `count_constraints_by_type` accumulator), growing it.
+/// @throws std::invalid_argument for a negative type id.
+inline void tally_constraints(std::vector<BigInt>& by_type, int type,
+                              BigInt n) {
+    if (type < 0)
+        throw std::invalid_argument(
+            "count_constraints_by_type: negative atom type id "
+            + std::to_string(type));
+    if (by_type.size() <= static_cast<std::size_t>(type))
+        by_type.resize(static_cast<std::size_t>(type) + 1, 0);
+    by_type[static_cast<std::size_t>(type)] += n;
+}
 
 /// @brief A component that constrains the system, and therefore removes degrees
 ///        of freedom from it.
@@ -46,6 +66,24 @@ class ConstraintProvider {
     /// @return Count of independent scalar constraints (e.g. 3 per rigid water).
     virtual int n_constraints(const cpu::Context& ctx,
                               const cpu::Frame& frame) const = 0;
+
+    /// @brief Add this rank's constraints to `by_type`, keyed by the
+    ///        force-field type (`kAtom_type`) of the atom that owns each
+    ///        constraint — the row holding the bond, the angle centre, the
+    ///        water oxygen, the frozen atom.
+    ///
+    /// A group thermostat counts its degrees of freedom as LAMMPS
+    /// `FixShake::dof(igroup)` does: a constraint belongs to a group when
+    /// its owning (central) atom does. Only OWNED rows are scanned and
+    /// `by_type` is grown as needed; the driver sums the ranks once
+    /// (`ctx.md.n_constraints_by_type`), so the per-type total equals
+    /// `n_constraints` summed over the types.
+    /// @param ctx Execution context.
+    /// @param frame The bound system state.
+    /// @param by_type Per-type counts, indexed by type id; accumulated into.
+    virtual void
+    count_constraints_by_type(const cpu::Context& ctx, const cpu::Frame& frame,
+                              std::vector<BigInt>& by_type) const = 0;
 };
 
 } // namespace cpu

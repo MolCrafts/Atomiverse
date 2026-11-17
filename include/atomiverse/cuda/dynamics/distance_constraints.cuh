@@ -94,6 +94,10 @@ class DistanceConstraints : public cuda::Constraint,
         return this;
     }
     BigInt n_constraints(const cpu::Frame& frame) const override;
+    /// @brief One per held distance, on the owner row's type (bond owner,
+    ///        angle centre).
+    void count_constraints_by_type(const cpu::Frame& frame,
+                                   std::vector<BigInt>& by_type) const override;
 
     cuda::TimestepConsumer* as_timestep_consumer() override { return this; }
     bool timestep_required() const override { return false; }

@@ -1,5 +1,6 @@
 /// @file tests/cpu/md/test_fix_settle.cpp
 #include <gtest/gtest.h>
+#include <vector>
 
 #include <array>
 #include <cmath>
@@ -362,4 +363,16 @@ TEST(FixSettle, ForwardShiftFollowsTheTriclinicLattice) {
     const int up[3] = {0, 1, 0};
     settle.pack_forward_comm(1, list, buf, 1, up);
     EXPECT_DOUBLE_EQ(buf[0], f.span(kAtom_x)[0] + 3.0);
+}
+
+TEST(FixSettle, AttributesThreeConstraintsToTheOxygenType) {
+    auto f = tip3p_ideal();
+    cpu::md::FixSettle settle(2.0, kDOH, kDHH);
+    settle.add_water(1, 2, 3);
+    cpu::Context ctx;
+    std::vector<BigInt> by_type;
+    settle.count_constraints_by_type(ctx, f, by_type);
+    ASSERT_GE(by_type.size(), 2u);
+    EXPECT_EQ(by_type[1], 3);
+    EXPECT_EQ(by_type[2], 0);
 }

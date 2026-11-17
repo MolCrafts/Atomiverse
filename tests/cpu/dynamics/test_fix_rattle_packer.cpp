@@ -56,6 +56,8 @@ class StubConstraint : public cpu::Constraint, public cpu::ConstraintProvider {
     int n_constraints(const cpu::Context&, const cpu::Frame&) const override {
         return 0;
     }
+    void count_constraints_by_type(const cpu::Context&, const cpu::Frame&,
+                                   std::vector<BigInt>&) const override {}
     void launch(const cpu::LaunchContext&) override {}
 };
 

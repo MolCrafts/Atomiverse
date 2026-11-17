@@ -206,6 +206,11 @@ TEST(TestDriverUnfix, FailedRefreshRetriesConstraintPublication) {
                           const ATV::cpu::Frame&) const override {
             return 1;
         }
+        void count_constraints_by_type(
+            const ATV::cpu::Context&, const ATV::cpu::Frame&,
+            std::vector<ATV::BigInt>& by_type) const override {
+            ATV::cpu::tally_constraints(by_type, 0, 1);
+        }
         std::span<const ATV::GhostField> declare_ghosts() const override {
             static constexpr ATV::GhostField invalid[] = {
                 ATV::GhostField::read_stable("missing", ATV::ColDType::Storage,
