@@ -7,6 +7,7 @@
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/potentials/angle_harmonic.cuh"
+#include "internal/topology_types.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 
@@ -148,8 +149,10 @@ __global__ __launch_bounds__(ATV::cuda::kDefaultBlock, 4) void harmonic_angle_k(
 
 } // anonymous namespace
 
-void AngleHarmonic::build(const BuildContext& /*ctx*/) {
+void AngleHarmonic::build(const BuildContext& ctx) {
     int nt = static_cast<int>(K_.size());
+    internal::require_topology_types(name().c_str(), ctx.frame.angles.type,
+                                     ctx.frame.n_angles(), nt);
     state_->n_types = nt;
 
     // theta0_ is already in RADIANS by API contract (matches the CPU

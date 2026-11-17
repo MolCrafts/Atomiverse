@@ -119,7 +119,8 @@ class MD:
         Timestep in the run's time unit. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
     device : str, optional
         Execution backend: ``"cpu"`` or ``"cuda"``. CUDA binds the same
-        pair, FENE, harmonic and cosine angle, Coulomb/PME/PPPM, uniform
+        pair, FENE and harmonic bond, harmonic and cosine angle,
+        multi-harmonic and CHARMM dihedral, Coulomb/PME/PPPM, uniform
         electric field (``FixEfield``), neighbor list, Langevin,
         NoseHoover, Berendsen and NoseHooverNPT (orthorhombic cells)
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One

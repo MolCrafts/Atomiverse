@@ -14,6 +14,7 @@
 #include "atomiverse/cuda/semiempirical/rm1_solver.cuh"
 #include "nddo_bindings.h"
 #endif
+#include <array>
 #include <memory>
 #include <nanobind/stl/string.h>
 #include <optional>
@@ -42,10 +43,13 @@
 #include "atomiverse/cuda/potentials/angle_cosine.cuh"
 #include "atomiverse/cuda/potentials/angle_harmonic.cuh"
 #include "atomiverse/cuda/potentials/bond_fene.cuh"
+#include "atomiverse/cuda/potentials/bond_harmonic.cuh"
 #include "atomiverse/cuda/potentials/coul_long.cuh"
+#include "atomiverse/cuda/potentials/dihedral_multi_harmonic.cuh"
 #include "atomiverse/cuda/potentials/pair_born.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut.cuh"
 #include "atomiverse/cuda/potentials/pair_lj_cut_coul_long.cuh"
+#include "atomiverse/cuda/potentials/periodic_torsion.cuh"
 #include "atomiverse/cuda/record/pressure_series.cuh"
 #include "units_binding.h"
 #ifdef ATV_HAS_IO
@@ -223,6 +227,30 @@ void bind_cuda_classical(nb::class_<Handle>& cls) {
             self.driver.set_neighbor(cuda::NeighborList{p.cutoff, p.skin});
         },
         nb::arg("neighbor"));
+}
+#endif
+#ifdef ATV_HAS_MD
+/// @brief `DihedralMultiHarmonicParams::Cn` (one sequence per type, k-th
+///        entry multiplying cos^k φ) as the CUDA kernel's five-coefficient
+///        rows (LAMMPS `dihedral_style multi/harmonic`: C1..C5 ↔ cos^0..4).
+///        Shorter rows are zero-padded; a cos^5 or higher term has no CUDA
+///        kernel and is refused.
+/// @throws std::invalid_argument for a row longer than five.
+std::vector<std::array<double, 5>>
+cuda_multi_harmonic_rows(const cpu::task::DihedralMultiHarmonicParams& p) {
+    std::vector<std::array<double, 5>> rows(p.Cn.size());
+    for (std::size_t t = 0; t < p.Cn.size(); ++t) {
+        if (p.Cn[t].size() > 5)
+            throw std::invalid_argument(
+                "CUDA DihedralMultiHarmonic: dihedral type " + std::to_string(t)
+                + " has " + std::to_string(p.Cn[t].size())
+                + " coefficients; the CUDA kernel takes cos^0..cos^4 (five, "
+                  "LAMMPS multi/harmonic)");
+        rows[t].fill(0.0);
+        for (std::size_t k = 0; k < p.Cn[t].size(); ++k)
+            rows[t][k] = p.Cn[t][k];
+    }
+    return rows;
 }
 #endif
 #ifdef ATV_HAS_MD
@@ -458,6 +486,29 @@ void bind_cuda(nb::module_& m) {
             self.driver.set_evaluator(cuda::AngleCosine{p.K});
         },
         nb::arg("evaluator"));
+    eval.def(
+        "set_evaluator",
+        [](CudaEvaluateHandle& self, const cpu::task::BondHarmonicParams& p) {
+            self.require_configurable();
+            self.driver.set_evaluator(cuda::BondHarmonic{p.K, p.r0});
+        },
+        nb::arg("evaluator"));
+    eval.def(
+        "set_evaluator",
+        [](CudaEvaluateHandle& self,
+           const cpu::task::DihedralMultiHarmonicParams& p) {
+            self.require_configurable();
+            self.driver.set_evaluator(
+                cuda::DihedralMultiHarmonic{cuda_multi_harmonic_rows(p)});
+        },
+        nb::arg("evaluator"));
+    eval.def(
+        "set_evaluator",
+        [](CudaEvaluateHandle& self, const cpu::task::DihedralCharmmParams& p) {
+            self.require_configurable();
+            self.driver.set_evaluator(cuda::DihedralCharmm{p.K, p.n, p.delta});
+        },
+        nb::arg("evaluator"));
     bind_cuda_nemd(m);
     nb::class_<CudaMdHandle> md(m, "_CudaMD");
     ATV::python::bind_units(
@@ -577,6 +628,37 @@ void bind_cuda(nb::module_& m) {
                 self.require_configurable();
                 // The angle slot is singular: one angle style per run.
                 self.driver.set_angle(cuda::AngleCosine{p.K});
+            },
+            nb::arg("evaluator"))
+        .def(
+            "set_evaluator",
+            [](CudaMdHandle& self, const cpu::task::BondHarmonicParams& p) {
+                self.require_configurable();
+                // Same table convention as cpu::BondHarmonic: K[t], r0[t]
+                // indexed by the raw bond type_id (entry 0 unused for
+                // 1-based LAMMPS/molpy types).
+                self.driver.set_bond(cuda::BondHarmonic{p.K, p.r0});
+            },
+            nb::arg("evaluator"))
+        .def(
+            "set_evaluator",
+            [](CudaMdHandle& self,
+               const cpu::task::DihedralMultiHarmonicParams& p) {
+                self.require_configurable();
+                // The dihedral slot is singular: one Dihedral style per run.
+                self.driver.set_dihedral(
+                    cuda::DihedralMultiHarmonic{cuda_multi_harmonic_rows(p)});
+            },
+            nb::arg("evaluator"))
+        .def(
+            "set_evaluator",
+            [](CudaMdHandle& self, const cpu::task::DihedralCharmmParams& p) {
+                self.require_configurable();
+                // A periodic-torsion force term on the plural evaluator slot
+                // (it is a Potential, not the Dihedral slot), so it may
+                // join a DihedralMultiHarmonic.
+                self.driver.set_evaluator(
+                    cuda::DihedralCharmm{p.K, p.n, p.delta});
             },
             nb::arg("evaluator"))
         .def(

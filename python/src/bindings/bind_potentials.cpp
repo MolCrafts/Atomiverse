@@ -494,7 +494,9 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("K"), nb::arg("n"), nb::arg("delta"),
             "Construct with force constants K [energy], multiplicities n "
-            "(integers >= 1) and phase shifts delta [rad] per dihedral type. "
+            "(integers >= 1) and phase shifts delta [rad] per dihedral type, "
+            "entry t for `type_id` t (raw id; 1-based ids need a placeholder "
+            "entry 0 with n >= 1). "
             "n is the number of minima per full turn, so n = 3 is the "
             "threefold barrier of an sp3-sp3 bond; delta shifts where those "
             "minima sit.");
@@ -789,10 +791,10 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("K"), nb::arg("r0"),
             "Construct with force constants K [energy/length^2] and "
-            "equilibrium "
-            "distances r0 [length], one entry per bond type. The bond type is "
-            "the "
-            "frame's `bonds` block `type_id` column.");
+            "equilibrium distances r0 [length]. Entry t is used for bonds "
+            "whose `bonds` block `type_id` equals t (the raw id, no offset): "
+            "1-based ids (LAMMPS data, molpy readers) leave entry 0 unused "
+            "but it must be present. CPU and CUDA alike.");
 
     nb::class_<cpu::task::AngleHarmonicParams>(
         m, "AngleHarmonic", "Harmonic angle potential V = K(theta - theta0)^2.")
@@ -805,8 +807,9 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("K"), nb::arg("theta0"),
             "Construct with force constants K [energy/rad^2] and equilibrium "
-            "angles theta0 [rad], one entry per angle type (the frame's "
-            "`angles` block `type_id` column).");
+            "angles theta0 [rad]. Entry t is used for angles whose `angles` "
+            "block `type_id` equals t (the raw id, no offset): 1-based ids "
+            "leave entry 0 unused but it must be present. CPU and CUDA.");
 
     nb::class_<cpu::task::AngleCosineParams>(
         m, "AngleCosine",
@@ -837,6 +840,9 @@ void bind_potentials(nb::module_& m) {
             },
             nb::arg("Cn"),
             "Construct with the coefficients Cn [energy] — one inner sequence "
-            "per "
-            "dihedral type, its k-th entry multiplying cos^k(phi).");
+            "per dihedral type, its k-th entry multiplying cos^k(phi). Row t "
+            "is used for dihedrals whose `dihedrals` block `type_id` equals t "
+            "(the raw id, no offset): 1-based ids leave row 0 unused but it "
+            "must be present. The CUDA kernel takes at most five entries "
+            "(cos^0..cos^4, LAMMPS multi/harmonic).");
 }
