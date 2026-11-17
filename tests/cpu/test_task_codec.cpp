@@ -58,6 +58,10 @@ TaskSpec make_md_spec() {
         FixLangevinParams{300.0, 250.0, 100.0, 0.5, 97u}, std::nullopt});
     entries.push_back(
         MDComponentEntry{FixCsvrParams{300.0, 50.0, 0.5, 13u}, std::nullopt});
+    // A group thermostat with the COM bias: the type run and the bias byte
+    // must survive the roundtrip.
+    entries.push_back(MDComponentEntry{
+        FixCsvrParams{420.0, 100.0, 1.0, 21u, {2, 7, 9}, 1}, std::nullopt});
     // Every NPT knob is spelled with a NON-default value so the roundtrip
     // cannot pass by accident on a codec that drops the tail fields.
     entries.push_back(MDComponentEntry{NoseHooverNptParams{300.0,

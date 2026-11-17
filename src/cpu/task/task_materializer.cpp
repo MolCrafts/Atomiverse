@@ -430,7 +430,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 else if constexpr (std::is_same_v<P, FixLangevinParams>)
                     bind(ramped_fix_langevin(p, n_steps));
                 else if constexpr (std::is_same_v<P, FixCsvrParams>)
-                    bind(cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+                    bind(cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed,
+                                          p.types, csvr_bias(p.bias)});
                 else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
                     bind(ramped_nose_hoover_npt(p, n_steps));
                 else if constexpr (std::is_same_v<P, ParrinelloRahmanNptParams>)
@@ -537,8 +538,9 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
             else if constexpr (std::is_same_v<P, FixLangevinParams>)
                 driver.set_thermostat(ramped_fix_langevin(p, n_steps));
             else if constexpr (std::is_same_v<P, FixCsvrParams>)
-                driver.set_thermostat(
-                    cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+                driver.set_thermostat(cpu::md::FixCSVR{p.T_start, p.tau, p.dt,
+                                                       p.seed, p.types,
+                                                       csvr_bias(p.bias)});
             else if constexpr (std::is_same_v<P, NoseHooverNptParams>)
                 driver.set_integrator(ramped_nose_hoover_npt(p, n_steps));
             else if constexpr (std::is_same_v<P, ParrinelloRahmanNptParams>)

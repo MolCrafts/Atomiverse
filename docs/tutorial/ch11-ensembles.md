@@ -301,6 +301,23 @@ sim.set_thermostat(cpu::md::FixCSVR{/*T=*/100.0, /*tau=*/100.0,
                                     /*dt=*/4.0, /*seed=*/12345u});
 ```
 
+**Groups and streaming velocity.** `FixCSVR(T, tau, dt, seed, types, bias)`
+thermostats only the atoms whose force-field type is listed, with
+`N_f = 3 N_g − 3 −` the constraints those atoms own (LAMMPS `fix temp/csvr`
+on a group). With `ATV::md::TemperatureBias::Com` the temperature is measured
+relative to the group's centre-of-mass velocity and only that peculiar part is
+rescaled (LAMMPS `fix_modify temp` with a `compute temp/com`): a field-driven
+species keeps its drift. Several instances, one per species and each with its
+own seed, may be registered on one driver; they share the frame's
+`kThermostatEnergy` bookkeeping. The same class exists as `cuda::md::FixCSVR`
+and draws the same random numbers.
+
+```cpp
+using ATV::md::TemperatureBias;
+sim.set_thermostat(cpu::md::FixCSVR{420.0, 100.0, 1.0, 11u, {19}, TemperatureBias::Com});
+sim.set_thermostat(cpu::md::FixCSVR{420.0, 100.0, 1.0, 12u, {13, 14, 15, 16, 17}, TemperatureBias::Com});
+```
+
 CSVR provides a canonical velocity-rescaling scheme. Even if the rescaling
 random numbers depend only on `(seed, step)`, trajectories need not be
 bitwise identical across MPI decompositions: force reductions and other

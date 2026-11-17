@@ -574,6 +574,7 @@ Frame::Frame(int n_atoms) {
     meta.insert(kEnergyElectronic, 0.0);
     meta.insert(kKinetic, 0.0);
     meta.insert(kConserved, 0.0);
+    meta.insert(kThermostatEnergy, 0.0);
     meta.insert(kStress, MetaF64x6{});
     meta.insert(kStressKinetic, MetaF64x6{});
     meta.insert(kTagIndex, TagIndex{});

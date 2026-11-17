@@ -16,8 +16,9 @@
 /// phase-agnostic (`cuda/md/init.cuh`); `MD` binds them explicitly to
 /// `md::Phase` via `on(phase).add()`:
 /// - ZeroForces at pre_force (order -1000) -- zeros fx, fy, fz.
-/// - ZeroScalars at pre_force (order -999) -- zeros every system scalar
-///   (energies, kinetic energy and stress, virial) in one memset.
+/// - ZeroScalars at pre_force (order -999) -- zeros every per-step system
+///   scalar (energies, kinetic energy and stress, virial) in one memset;
+///   the persistent thermostat bath energy is kept.
 /// - KineticEnergy at end_of_step (order -100) -- accumulates KE.
 ///
 /// ## Execution model (shared with the CPU backend)

@@ -302,6 +302,13 @@ inline constexpr MetaKey<double> kEnergyChargingWork{"energy_charging_work",
 inline constexpr MetaKey<double> kEnergyElectronic{"energy_electronic", true};
 inline constexpr MetaKey<double> kKinetic{"kinetic", true};
 inline constexpr MetaKey<double> kConserved{"conserved", true};
+/// @brief Accumulated heat-bath energy of the stochastic rescaling
+///        thermostats, \(\tilde H = -\sum \Delta K\) [eV] (Bussi Eq. 15,
+///        LAMMPS `fix temp/csvr` `compute_scalar`). Every `FixCSVR` instance
+///        adds its own transfer, so several group thermostats share one
+///        bookkeeping term and `kConserved = kEnergy + K + kThermostatEnergy`.
+///        Persistent across steps and runs of one Frame.
+inline constexpr MetaKey<double> kThermostatEnergy{"thermostat_energy", true};
 /// Fictitious CP electronic kinetic energy \(T_e\) [eV] (CPMD evaluators;
 /// adiabaticity monitor).
 inline constexpr MetaKey<double> kEnergyElectronKinetic{

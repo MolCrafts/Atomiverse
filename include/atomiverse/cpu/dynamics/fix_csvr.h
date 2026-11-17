@@ -1,5 +1,12 @@
 /// @file cpu/dynamics/fix_csvr.h
-/// @brief CPU CSVR (Bussi) stochastic-velocity-rescaling thermostat.
+/// @brief CPU CSVR (Bussi) stochastic-velocity-rescaling thermostat —
+///        LAMMPS `fix temp/csvr`, optionally on a type group and with the
+///        `temp/com` bias.
+///
+/// Port reference: LAMMPS `src/EXTRA-FIX/fix_temp_csvr.cpp` and
+/// `src/compute_temp_com.cpp`, e8c4c278a8.
+/// Copyright (2003) Sandia Corporation. Under Contract DE-AC04-94AL85000,
+/// the U.S. Government retains certain rights. GPL-2.0-only.
 #pragma once
 
 #include "atomiverse/cpu/component/timestep_protocol.h"
@@ -11,6 +18,7 @@
 #include <vector>
 
 #include "atomiverse/core/binding.h"
+#include "atomiverse/core/csvr.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/component/thermostat.h"
 
@@ -22,29 +30,39 @@ namespace md {
 ///
 /// Bussi, Donadio, Parrinello, "Canonical sampling through velocity
 /// rescaling", J. Chem. Phys. **126**, 014101 (2007), DOI 10.1063/1.2408420.
-/// CP2K's `&THERMOSTAT TYPE CSVR`.
+/// CP2K's `&THERMOSTAT TYPE CSVR`; LAMMPS `fix temp/csvr`.
 ///
-/// Once per MD step the global kinetic energy `K` is stochastically driven
-/// toward the canonical target `K̄ = ½ N_f k_B T` and every velocity is
-/// rescaled by a single factor `α` (Bussi Eq. A7):
+/// Once per MD step (end_of_step) the kinetic energy `K` of the thermostat
+/// group is stochastically driven toward `K̄ = ½ N_f k_B T` and the group's
+/// velocities are rescaled by one factor `α` (Bussi Eq. A7, `core/csvr.h`).
+/// The two per-step randoms come from the counter-keyed stream of
+/// `core/csvr.h`, seeded from `(seed, step)` only — identical on every MPI
+/// rank and to `cuda::md::FixCSVR`.
 ///
-///     α² = e^{−Δt/τ}
-///        + (K̄/(N_f K)) (1 − e^{−Δt/τ}) (R₁² + Σ_{i=2}^{N_f} R_i²)
-///        + 2 e^{−Δt/2τ} √((K̄/(N_f K))(1 − e^{−Δt/τ})) R₁
+/// **Group.** `types` selects the atoms whose force-field type
+/// (`kAtom_type`) is listed; empty = every atom. `N_f = 3 N_g − 3 −
+/// constraints owned by group atoms` (LAMMPS `compute temp` /
+/// `compute temp/com` `dof_compute` with `extra_dof = 3` and
+/// `FixShake::dof(igroup)`); for the whole system this is the driver's
+/// `n_dof_global`.
 ///
-/// with `R₁ ~ N(0,1)` and `Σ_{i=2}^{N_f} R_i²` drawn directly from a
-/// `χ²(N_f−1) = Gamma((N_f−1)/2, scale 2)` deviate (not a sum of N_f−1
-/// gaussians). Unlike Berendsen, CSVR injects the correct canonical
-/// fluctuations and carries a conserved quantity: the running thermostat
-/// energy `H̃_therm = −Σ ΔK` (Eq. 15), accumulated so that `E_pot + E_kin +
-/// H̃_therm` (published to `frame.meta.get(kConserved)` [eV]) is drift-free.
+/// **Bias.** `TemperatureBias::Com` measures `K` from velocities relative
+/// to the group's centre-of-mass velocity and rescales only that peculiar
+/// part, `v ← v_cm + α (v − v_cm)`, so the group's momentum is untouched
+/// (LAMMPS `fix_modify <fix> temp <compute temp/com>`: `remove_bias`, scale,
+/// `restore_bias`). Several instances (e.g. one per species, each with its
+/// own seed) may be registered on one driver.
 ///
-/// Reproducibility: the two per-step randoms are GLOBAL (seeded only from
-/// `(seed, step)`), so the trajectory is identical across MPI rank counts.
+/// **Bookkeeping.** Each step adds `−ΔK` of its rescale to the Frame's
+/// persistent `kThermostatEnergy` (Bussi Eq. 15) and publishes
+/// `kConserved = kEnergy + K_total + kThermostatEnergy`, `K_total` the whole
+/// system's kinetic energy after this rescale; with several instances the
+/// last one writes the final value. `kKinetic` stays the
+/// `KineticEnergy` (end_of_step −100) value, as for every end-of-step
+/// thermostat.
 ///
-/// `N_f = 3N − 3` (COM removed), cached at `build()`. `τ` is the coupling
-/// time [fs] (CP2K `TIMECON`). Supports the same `T_start`→`T_stop` linear
-/// ramp as `cpu::md::NoseHoover` via `set_T_stop` + `set_run_span`.
+/// Supports the `T_start`→`T_stop` linear ramp of `cpu::md::NoseHoover`
+/// via `set_T_stop` + `set_run_span`.
 class FixCSVR : public cpu::Thermostat, public cpu::TimestepConsumer {
   public:
     cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
@@ -56,15 +74,24 @@ class FixCSVR : public cpu::Thermostat, public cpu::TimestepConsumer {
         dt_ = dt;
     }
 
+    /// @brief Whole-system thermostat, no bias.
     /// @param T_start Target / ramp-start temperature [K].
-    /// @param tau     Coupling time constant [fs] (CP2K `TIMECON`).
+    /// @param tau     Coupling time constant [fs] (CP2K `TIMECON`, LAMMPS
+    ///                `Tdamp`).
     /// @param dt      Timestep [fs].
     /// @param seed    RNG seed; reproducible across rank counts.
     FixCSVR(double T_start, double tau, double dt, std::uint32_t seed);
 
+    /// @brief Group thermostat.
+    /// @param types Force-field types of the group (`kAtom_type`); empty =
+    ///              every atom.
+    /// @param bias  Velocity bias removed before measuring/rescaling.
+    /// @throws std::invalid_argument for a negative type, a non-finite or
+    ///         non-positive T_start / tau / dt.
+    FixCSVR(double T_start, double tau, double dt, std::uint32_t seed,
+            std::vector<int> types, ATV::md::TemperatureBias bias);
+
     std::string name() const override { return "fix_csvr"; }
-    /* role via Thermostat base */
-    /// @brief Write-set: stochastic velocity rescale.
     /// @brief Applied once per step, after the velocity-Verlet step.
     std::vector<DefaultBinding> default_bindings() const override {
         return {ATV::make_binding(ATV::md::Phase::end_of_step, +100)};
@@ -88,22 +115,32 @@ class FixCSVR : public cpu::Thermostat, public cpu::TimestepConsumer {
     }
     /// @return Live thermostat setpoint [K] — for diagnostics / observers.
     double T_target() const noexcept { return T_live_; }
-    /// @brief Accumulated thermostat energy `H̃_therm = −Σ ΔK` [eV]; the
-    ///        Bussi conserved-quantity bookkeeping term (Eq. 15).
+    /// @brief This instance's accumulated bath energy `−Σ ΔK` [eV].
     double thermostat_energy() const noexcept { return thermostat_energy_; }
+    /// @return Group degrees of freedom `N_f` (after `build`).
+    std::int64_t n_dof() const noexcept { return n_dof_; }
+    /// @return Group force-field types (empty = every atom).
+    const std::vector<int>& types() const noexcept { return types_; }
+    /// @return Velocity bias.
+    ATV::md::TemperatureBias bias() const noexcept { return bias_; }
 
   private:
-    /// @brief Interpolate the live setpoint for `step` (no-ramp default
-    ///        returns `T_start_`), mirroring `NoseHoover::compute_temp_target`.
-    double compute_temp_target(std::int64_t step) const;
+    bool in_group_(int type) const {
+        return types_.empty()
+               || (type >= 0 && static_cast<std::size_t>(type) < member_.size()
+                   && member_[static_cast<std::size_t>(type)] != 0);
+    }
 
-    double T_start_;       ///< Ramp start / target temperature [K].
-    double T_stop_;        ///< Ramp end temperature [K].
-    double tau_;           ///< Coupling time constant [fs] (CP2K `TIMECON`).
-    double dt_;            ///< Timestep [fs].
-    std::uint32_t seed_;   ///< RNG seed (rank-count invariant).
-    int n_dof_global_ = 0; ///< 3N − 3, cached at build().
-    double thermostat_energy_ = 0; ///< Accumulated −Σ ΔK [eV] (Eq. 15).
+    double T_start_;     ///< Ramp start / target temperature [K].
+    double T_stop_;      ///< Ramp end temperature [K].
+    double tau_;         ///< Coupling time constant [fs].
+    double dt_;          ///< Timestep [fs].
+    std::uint32_t seed_; ///< RNG seed (rank-count invariant).
+    std::vector<int> types_;
+    std::vector<char> member_; ///< member_[type] != 0 ⇔ type in group.
+    ATV::md::TemperatureBias bias_ = ATV::md::TemperatureBias::None;
+    std::int64_t n_dof_ = 0;       ///< Group N_f, fixed at build().
+    double thermostat_energy_ = 0; ///< This instance's −Σ ΔK [eV].
 
     std::int64_t nfirst_ = 0; ///< First MD step of the run (ramp span).
     std::int64_t nlast_ = 0;  ///< Last MD step of the run (ramp span).

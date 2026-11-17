@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "atomiverse/core/capture_buffer.h"
+#include "atomiverse/core/csvr.h"
 #include "atomiverse/core/lj_type_coeff.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/unit_system.h"
@@ -294,16 +295,31 @@ inline bool operator==(const FixLangevinParams& a, const FixLangevinParams& b) {
            && a.dt == b.dt && a.seed == b.seed;
 }
 
-/// @brief Mirrors `cpu::md::FixCSVR(T_start, tau, dt, seed)`.
+/// @brief Mirrors `cpu::md::FixCSVR(T_start, tau, dt, seed, types, bias)`.
+///
+/// `types` empty = every atom; `bias` is `ATV::md::TemperatureBias`
+/// (0 none, 1 com).
 struct FixCsvrParams {
     double T_start;
     double tau;
     double dt;
     std::uint32_t seed;
+    std::vector<int> types = {};
+    std::uint8_t bias = 0;
 };
 inline bool operator==(const FixCsvrParams& a, const FixCsvrParams& b) {
     return a.T_start == b.T_start && a.tau == b.tau && a.dt == b.dt
-           && a.seed == b.seed;
+           && a.seed == b.seed && a.types == b.types && a.bias == b.bias;
+}
+
+/// @brief The `TemperatureBias` a wire byte names.
+/// @throws std::invalid_argument for a value outside the enum.
+inline ATV::md::TemperatureBias csvr_bias(std::uint8_t value) {
+    if (value > static_cast<std::uint8_t>(ATV::md::TemperatureBias::Com))
+        throw std::invalid_argument(
+            "FixCsvrParams: bias must be 0 (none) or 1 (com), got "
+            + std::to_string(value));
+    return static_cast<ATV::md::TemperatureBias>(value);
 }
 
 /// @brief Wire mirror of the ten-argument `cpu::md::NoseHooverNPT`
