@@ -40,6 +40,7 @@
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/fix_settle.h"
+#include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
 #include "atomiverse/cpu/dynamics/nose_hoover_npt.h"
@@ -65,6 +66,7 @@
 #include "atomiverse/cuda/dynamics/fix_langevin.cuh"
 #include "atomiverse/cuda/dynamics/fix_rattle.cuh"
 #include "atomiverse/cuda/dynamics/fix_settle.cuh"
+#include "atomiverse/cuda/dynamics/fix_shake.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover_npt.cuh"
@@ -769,9 +771,89 @@ std::vector<Case> cases() {
              s.set_integrator(
                  cuda::md::Brownian{u.time(kDt), u.rate(1e-4), u.T(kT), 11u});
          }});
+    constexpr double kDt2fs = 2.0 * kFs;
+    out.push_back(
+        {"ShakeXH", System::ethane,
+         [](cpu::md::MD& s, const Style& u) {
+             s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
+             cpu::md::FixShake c{u.time(kDt2fs)};
+             c.constrain_bond(1, kCH);
+             s.set_observer(std::move(c));
+         },
+         [](cuda::md::MD& s, const Style& u) {
+             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
+             cuda::md::FixShake c{u.time(kDt2fs)};
+             c.constrain_bond(1, kCH);
+             s.set_observer(std::move(c));
+         }});
+    out.push_back(
+        {"ShakeXHAngles", System::ethane,
+         [](cpu::md::MD& s, const Style& u) {
+             s.set_integrator(cpu::md::VelocityVerlet{u.time(kDt2fs)});
+             cpu::md::FixShake c{u.time(kDt2fs)};
+             c.constrain_bond(1, kCH);
+             c.constrain_angle(1, ethane_hh());
+             s.set_observer(std::move(c));
+         },
+         [](cuda::md::MD& s, const Style& u) {
+             s.set_integrator(cuda::md::VelocityVerlet{u.time(kDt2fs)});
+             cuda::md::FixShake c{u.time(kDt2fs)};
+             c.constrain_bond(1, kCH);
+             c.constrain_angle(1, ethane_hh());
+             s.set_observer(std::move(c));
+         }});
+    for (bool rattle : {false, true}) {
+        out.push_back({rattle ? "RattleNPTRamp" : "ShakeNPTRamp",
+                       System::ethane,
+                       [rattle](cpu::md::MD& s, const Style& u) {
+                           cpu::md::NoseHooverNPT npt{u.T(kT),
+                                                      u.time(40 * kDt2fs),
+                                                      0.0,
+                                                      u.time(200 * kDt2fs),
+                                                      u.time(kDt2fs),
+                                                      0,
+                                                      3,
+                                                      3,
+                                                      {true, true, true},
+                                                      u.T(kT / 2)};
+                           npt.set_run_span(0, kTrajectorySteps);
+                           s.set_integrator(std::move(npt));
+                           if (rattle) {
+                               cpu::md::FixRattle c{u.time(kDt2fs)};
+                               c.constrain_bond(1, kCH);
+                               s.set_observer(std::move(c));
+                           } else {
+                               cpu::md::FixShake c{u.time(kDt2fs)};
+                               c.constrain_bond(1, kCH);
+                               s.set_observer(std::move(c));
+                           }
+                       },
+                       [rattle](cuda::md::MD& s, const Style& u) {
+                           cuda::md::NoseHooverNPT npt{u.T(kT),
+                                                       u.time(40 * kDt2fs),
+                                                       0.0,
+                                                       u.time(200 * kDt2fs),
+                                                       u.time(kDt2fs),
+                                                       0,
+                                                       3,
+                                                       3,
+                                                       {true, true, true},
+                                                       u.T(kT / 2)};
+                           npt.set_run_span(0, kTrajectorySteps);
+                           s.set_integrator(std::move(npt));
+                           if (rattle) {
+                               cuda::md::FixRattle c{u.time(kDt2fs)};
+                               c.constrain_bond(1, kCH);
+                               s.set_observer(std::move(c));
+                           } else {
+                               cuda::md::FixShake c{u.time(kDt2fs)};
+                               c.constrain_bond(1, kCH);
+                               s.set_observer(std::move(c));
+                           }
+                       }});
+    }
     // Constraints at a 2 fs step: rigid TIP3P through SETTLE, X-H bonds
     // (and, separately, rigid H-C-H angles) through RATTLE clusters.
-    constexpr double kDt2fs = 2.0 * kFs;
     out.push_back(
         {"SettleWater", System::water,
          [](cpu::md::MD& s, const Style& u) {
@@ -1115,6 +1197,26 @@ TEST(CudaMdConstraints, RattleKeepsEveryXHBond) {
     EXPECT_LT(worst_hh, kDouble ? 1e-8 : 1e-3);
 }
 
+TEST(CudaMdConstraints, ShakeKeepsEveryXHBondAndAngle) {
+    const cpu::Frame f =
+        run_cuda(case_named("ShakeXHAngles"), kTrajectorySteps, false);
+    double worst_bond = 0.0, worst_hh = 0.0;
+    for (int m = 0; m < 27; ++m) {
+        const int b = 8 * m;
+        for (int h = 0; h < 3; ++h) {
+            worst_bond =
+                std::max(worst_bond, std::abs(distance(f, b, b + 2 + h) - kCH));
+            worst_bond = std::max(
+                worst_bond, std::abs(distance(f, b + 1, b + 5 + h) - kCH));
+            worst_hh = std::max(
+                worst_hh, std::abs(distance(f, b + 2 + h, b + 2 + (h + 1) % 3)
+                                   - ethane_hh()));
+        }
+    }
+    EXPECT_LT(worst_bond, kDouble ? 1e-8 : 1e-3);
+    EXPECT_LT(worst_hh, kDouble ? 1e-8 : 1e-3);
+}
+
 TEST(CudaMdConstraints, SettleOutOfPlaneOxygenFaultsLikeTheCpuThrows) {
     // One oxygen leaves its molecular plane by far more than the
     // molecule's own size in one step (1.6 Å against the 0.066 Å oxygen
@@ -1154,6 +1256,38 @@ TEST(CudaMdConstraints, RattleUnconvergedClusterFaultsLikeTheCpuThrows) {
     auto cuda_setup = [](cuda::md::MD& s, const Style& u) {
         s.set_integrator(cuda::md::VelocityVerlet{2.0 * kFs});
         cuda::md::FixRattle rattle{2.0 * kFs, 1e-10, 1};
+        rattle.constrain_bond(1, kCH);
+        s.set_observer(std::move(rattle));
+    };
+    {
+        cpu::Frame f = ethane();
+        EXPECT_THROW(run_on<cpu::md::MD>(f, System::ethane, mount_cpu_forces,
+                                         cpu_setup, 2),
+                     std::runtime_error);
+    }
+    cpu::Frame f = ethane();
+    try {
+        run_on<cuda::md::MD>(f, System::ethane, mount_cuda_forces, cuda_setup,
+                             2);
+        ADD_FAILURE() << "the CUDA run did not fault";
+    } catch (const std::runtime_error& e) {
+        EXPECT_NE(std::string(e.what()).find("constraint"), std::string::npos)
+            << e.what();
+    }
+}
+
+TEST(CudaMdConstraints, ShakeUnconvergedClusterFaultsLikeTheCpuThrows) {
+    // One sweep cannot converge a CH3 cluster (three bonds through one
+    // carbon) to 1e-10: the CPU twin throws, the device faults.
+    auto cpu_setup = [](cpu::md::MD& s, const Style& u) {
+        s.set_integrator(cpu::md::VelocityVerlet{2.0 * kFs});
+        cpu::md::FixShake rattle{2.0 * kFs, 1e-10, 1};
+        rattle.constrain_bond(1, kCH);
+        s.set_observer(std::move(rattle));
+    };
+    auto cuda_setup = [](cuda::md::MD& s, const Style& u) {
+        s.set_integrator(cuda::md::VelocityVerlet{2.0 * kFs});
+        cuda::md::FixShake rattle{2.0 * kFs, 1e-10, 1};
         rattle.constrain_bond(1, kCH);
         s.set_observer(std::move(rattle));
     };

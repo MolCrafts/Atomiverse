@@ -1,8 +1,8 @@
 /// @file cpu/dynamics/fix_rattle.cpp
 /// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
 
-#include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/component/owned_range.h"
+#include "atomiverse/cpu/dynamics/distance_constraints.h"
 
 #include <algorithm>
 #include <cmath>
@@ -51,38 +51,51 @@ allgatherv_native(const std::vector<T>& local, MPI_Datatype dtype,
 
 } // namespace
 
-FixRattle::FixRattle(double dt, double tolerance, int max_iter)
-    : dt_(dt), tol_(tolerance), max_iter_(max_iter) {
-    if (dt <= 0.0)
-        throw std::invalid_argument("FixRattle: dt must be positive");
-    if (tolerance <= 0.0)
-        throw std::invalid_argument("FixRattle: tolerance must be positive");
+DistanceConstraints::DistanceConstraints(double dt, double tolerance,
+                                         int max_iter, bool velocity_projection)
+    : velocity_projection_(velocity_projection), dt_(dt), tol_(tolerance),
+      max_iter_(max_iter) {
+    if (!std::isfinite(dt) || dt <= 0.0)
+        throw std::invalid_argument("DistanceConstraints: dt must be positive");
+    if (!std::isfinite(tolerance) || tolerance <= 0.0)
+        throw std::invalid_argument(
+            "DistanceConstraints: tolerance must be positive");
     if (tolerance < storage_tolerance_floor())
-        throw std::invalid_argument("FixRattle: tolerance is below the "
-                                    "configured Frame storage precision "
-                                    "floor");
+        throw std::invalid_argument(
+            "DistanceConstraints: tolerance is below the "
+            "configured Frame storage precision "
+            "floor");
     if (max_iter < 1)
-        throw std::invalid_argument("FixRattle: max_iter must be >= 1");
+        throw std::invalid_argument(
+            "DistanceConstraints: max_iter must be >= 1");
 }
 
-void FixRattle::constrain_bond(int bond_type, double length) {
-    if (length <= 0.0)
+void DistanceConstraints::constrain_bond(int bond_type, double length) {
+    if (bond_type < 0 || !std::isfinite(length) || length <= 0.0)
         throw std::invalid_argument(
-            "FixRattle: constrained length must be positive");
+            "DistanceConstraints: constrained length must be positive");
+    for (const auto& rule : bond_rules_)
+        if (rule.type == bond_type)
+            throw std::invalid_argument(
+                "distance constraints: duplicate bond type rule");
     bond_rules_.push_back({bond_type, length});
 }
 
-void FixRattle::constrain_angle(int angle_type, double distance_13) {
-    if (distance_13 <= 0.0)
+void DistanceConstraints::constrain_angle(int angle_type, double distance_13) {
+    if (angle_type < 0 || !std::isfinite(distance_13) || distance_13 <= 0.0)
         throw std::invalid_argument(
-            "FixRattle: constrained 1-3 distance must be "
+            "DistanceConstraints: constrained 1-3 distance must be "
             "positive");
+    for (const auto& rule : angle_rules_)
+        if (rule.type == angle_type)
+            throw std::invalid_argument(
+                "distance constraints: duplicate angle type rule");
     angle_rules_.push_back({angle_type, distance_13});
 }
 
-std::vector<FixRattle::Spec>
-FixRattle::discover_local_(const cpu::Context& ctx,
-                           const cpu::Frame& frame) const {
+std::vector<DistanceConstraints::Spec>
+DistanceConstraints::discover_local_(const cpu::Context& ctx,
+                                     const cpu::Frame& frame) const {
     std::vector<Spec> out;
     const int n_own = frame.nlocal();
     const auto num_bond = frame.span(kAtom_num_bond);
@@ -114,8 +127,8 @@ FixRattle::discover_local_(const cpu::Context& ctx,
     return out;
 }
 
-int FixRattle::n_constraints(const cpu::Context& ctx,
-                             const cpu::Frame& frame) const {
+int DistanceConstraints::n_constraints(const cpu::Context& ctx,
+                                       const cpu::Frame& frame) const {
     int n = static_cast<int>(discover_local_(ctx, frame).size());
 #ifdef ATV_HAS_MPI
     // Ndof is GLOBAL, so the count must be too. Each constraint is discovered on
@@ -129,7 +142,7 @@ int FixRattle::n_constraints(const cpu::Context& ctx,
     return n;
 }
 
-void FixRattle::build(const cpu::BuildContext& ctx) {
+void DistanceConstraints::build(const cpu::BuildContext& ctx) {
     const cpu::Context& rt = ctx.runtime;
     const cpu::Frame& frame = ctx.frame;
     const int n_own = frame.nlocal();
@@ -227,7 +240,8 @@ void FixRattle::build(const cpu::BuildContext& ctx) {
 
     if (global.empty())
         throw std::runtime_error(
-            "FixRattle: no constraints matched the topology. Did you call "
+            "DistanceConstraints: no constraints matched the topology. Did you "
+            "call "
             "constrain_bond()/constrain_angle() with the right type indices?");
 
     std::vector<Constraint> table;
@@ -237,7 +251,8 @@ void FixRattle::build(const cpu::BuildContext& ctx) {
         const auto mj = mass_of.find(s.tj);
         if (mi == mass_of.end() || mj == mass_of.end())
             throw std::runtime_error(
-                "FixRattle: a constrained atom has no mass in the global table "
+                "DistanceConstraints: a constrained atom has no mass in the "
+                "global table "
                 "— the "
                 "topology references a tag that no rank owns");
         Constraint c;
@@ -305,7 +320,7 @@ void FixRattle::build(const cpu::BuildContext& ctx) {
     rows_cache_.clear();
 }
 
-void FixRattle::refresh_local_(const cpu::LaunchContext& ctx) {
+void DistanceConstraints::refresh_local_(const cpu::LaunchContext& ctx) {
     if (!rows_cache_.stale(ctx))
         return;
     const cpu::Frame& f = ctx.frame;
@@ -358,7 +373,8 @@ void FixRattle::refresh_local_(const cpu::LaunchContext& ctx) {
             // approximate.
             if (i < 0 || j < 0)
                 throw std::runtime_error(
-                    "FixRattle: a constrained pair spans ranks but its "
+                    "DistanceConstraints: a constrained pair spans ranks but "
+                    "its "
                     "partner is not even a ghost here. The halo must cover "
                     "the whole constrained cluster — widen the cutoff/skin, "
                     "use fewer ranks, or use a bigger box.");
@@ -377,8 +393,8 @@ void FixRattle::refresh_local_(const cpu::LaunchContext& ctx) {
     rows_cache_.mark_built(ctx);
 }
 
-int FixRattle::pack_forward_comm(int n, const int* list, double* buf,
-                                 int pbc_flag, const int* pbc) {
+int DistanceConstraints::pack_forward_comm(int n, const int* list, double* buf,
+                                           int pbc_flag, const int* pbc) {
     if (!frame_ || n <= 0)
         return 0;
     // Columns were resolved once in launch(); a forward pass calls this per
@@ -404,18 +420,33 @@ int FixRattle::pack_forward_comm(int n, const int* list, double* buf,
         }
         return m;
     }
+    if (comm_mode_ == CommMode::F) {
+        for (int i = 0; i < n; ++i)
+            for (int d = 0; d < 3; ++d)
+                buf[m++] = force_col_[d][list[i]];
+        return m;
+    }
+    const int base = 3;
     for (int i = 0; i < n; ++i) {
         const int j = list[i];
-        buf[m++] = static_cast<double>(col_[3][j]);
-        buf[m++] = static_cast<double>(col_[4][j]);
-        buf[m++] = static_cast<double>(col_[5][j]);
+        buf[m++] = static_cast<double>(col_[base][j]);
+        buf[m++] = static_cast<double>(col_[base + 1][j]);
+        buf[m++] = static_cast<double>(col_[base + 2][j]);
     }
     return m;
 }
 
-void FixRattle::unpack_forward_comm(int n, int first, const double* buf) {
+void DistanceConstraints::unpack_forward_comm(int n, int first,
+                                              const double* buf) {
     if (!frame_ || n <= 0)
         return;
+    if (comm_mode_ == CommMode::F) {
+        int m = 0;
+        for (int i = first; i < first + n; ++i)
+            for (int d = 0; d < 3; ++d)
+                force_col_[d][i] = buf[m++];
+        return;
+    }
     const int base = comm_mode_ == CommMode::XSHAKE ? 0 : 3;
     int m = 0;
     for (int i = first; i < first + n; ++i) {
@@ -425,7 +456,7 @@ void FixRattle::unpack_forward_comm(int n, int first, const double* buf) {
     }
 }
 
-void FixRattle::snapshot_(const cpu::LaunchContext& ctx) {
+void DistanceConstraints::snapshot_(const cpu::LaunchContext& ctx) {
     const cpu::Frame& f = ctx.frame;
     const auto x = f.span(kAtom_x);
     const auto y = f.span(kAtom_y);
@@ -444,7 +475,7 @@ void FixRattle::snapshot_(const cpu::LaunchContext& ctx) {
     }
 }
 
-void FixRattle::solve_positions_(const cpu::LaunchContext& ctx) {
+void DistanceConstraints::solve_positions_(const cpu::LaunchContext& ctx) {
     cpu::Frame& f = ctx.frame;
     auto x = f.span(kAtom_x);
     auto y = f.span(kAtom_y);
@@ -457,11 +488,16 @@ void FixRattle::solve_positions_(const cpu::LaunchContext& ctx) {
     const double tol = tol_;
     const int max_iter = max_iter_;
     const int n_clusters = static_cast<int>(local_offset_.size()) - 1;
+    const double virial_factor = (velocity_projection_ ? 2.0 : 1.0)
+                                 / (dt_ * dt_ * ctx.runtime.units.ftm2v);
+    const int n_owned = f.nlocal();
+    double w0 = 0, w1 = 0, w2 = 0, w3 = 0, w4 = 0, w5 = 0;
     int most_iters = 0;
     double failed_residual = 0.0;
 
 #pragma omp parallel for schedule(dynamic, 64)                                 \
-    reduction(max : most_iters, failed_residual)
+    reduction(max : most_iters, failed_residual)                               \
+    reduction(+ : w0, w1, w2, w3, w4, w5)
     for (int c = 0; c < n_clusters; ++c) {
         const int k0 = local_offset_[static_cast<std::size_t>(c)];
         const int k1 = local_offset_[static_cast<std::size_t>(c) + 1];
@@ -485,6 +521,16 @@ void FixRattle::solve_positions_(const cpu::LaunchContext& ctx) {
                 if (std::fabs(denom) < 1e-12)
                     continue;
                 const double g = -sigma / denom;
+                const double owner_weight =
+                    0.5 * (int(i < n_owned) + int(j < n_owned));
+                const double lambda = owner_weight * virial_factor * g;
+                const double sx = ref_sx_[q], sy = ref_sy_[q], sz = ref_sz_[q];
+                w0 += lambda * sx * sx;
+                w1 += lambda * sy * sy;
+                w2 += lambda * sz * sz;
+                w3 += lambda * sx * sy;
+                w4 += lambda * sx * sz;
+                w5 += lambda * sy * sz;
                 const double gi = g * local_imi_[q], gj = g * local_imj_[q];
                 x[i] += gi * ref_sx_[q];
                 y[i] += gi * ref_sy_[q];
@@ -492,13 +538,15 @@ void FixRattle::solve_positions_(const cpu::LaunchContext& ctx) {
                 x[j] -= gj * ref_sx_[q];
                 y[j] -= gj * ref_sy_[q];
                 z[j] -= gj * ref_sz_[q];
-                // The constraint force also changed the momentum.
-                vx[i] += gi * ref_sx_[q] * inv_dt;
-                vy[i] += gi * ref_sy_[q] * inv_dt;
-                vz[i] += gi * ref_sz_[q] * inv_dt;
-                vx[j] -= gj * ref_sx_[q] * inv_dt;
-                vy[j] -= gj * ref_sy_[q] * inv_dt;
-                vz[j] -= gj * ref_sz_[q] * inv_dt;
+                if (velocity_projection_) {
+                    // The constraint force also changed the momentum.
+                    vx[i] += gi * ref_sx_[q] * inv_dt;
+                    vy[i] += gi * ref_sy_[q] * inv_dt;
+                    vz[i] += gi * ref_sz_[q] * inv_dt;
+                    vx[j] -= gj * ref_sx_[q] * inv_dt;
+                    vy[j] -= gj * ref_sy_[q] * inv_dt;
+                    vz[j] -= gj * ref_sz_[q] * inv_dt;
+                }
             }
             if (worst <= tol)
                 break;
@@ -509,15 +557,16 @@ void FixRattle::solve_positions_(const cpu::LaunchContext& ctx) {
     }
     if (failed_residual > 0.0)
         throw std::runtime_error(
-            "FixRattle: the position stage did not converge in "
+            "DistanceConstraints: the position stage did not converge in "
             + std::to_string(max_iter_) + " iterations (last relative residual "
             + std::to_string(failed_residual)
             + "). An unconverged constraint is a corrupted molecule, not an "
               "approximation.");
+    constraint_virial_ = {w0, w1, w2, w3, w4, w5};
     last_pos_iters_ = most_iters;
 }
 
-void FixRattle::solve_velocities_(const cpu::LaunchContext& ctx) {
+void DistanceConstraints::solve_velocities_(const cpu::LaunchContext& ctx) {
     cpu::Frame& f = ctx.frame;
     const auto x = f.span(kAtom_x);
     const auto y = f.span(kAtom_y);
@@ -572,13 +621,200 @@ void FixRattle::solve_velocities_(const cpu::LaunchContext& ctx) {
     }
     if (failed_residual > 0.0)
         throw std::runtime_error(
-            "FixRattle: the velocity stage did not converge in "
+            "DistanceConstraints: the velocity stage did not converge in "
             + std::to_string(max_iter_) + " iterations (last relative residual "
             + std::to_string(failed_residual) + ").");
     last_vel_iters_ = most_iters;
 }
 
-void FixRattle::launch(const cpu::LaunchContext& ctx) {
+void DistanceConstraints::initial_virial_(const cpu::LaunchContext& ctx) {
+    // At run(0) there is no position impulse yet. Solve the differentiated
+    // constraints r.a_rel + v_rel² = 0 without changing x, v or the force.
+    // This supplies the step-zero barostat with the reaction virial too.
+    const int n = ctx.frame.n_total(), own = ctx.frame.nlocal();
+    std::vector<std::array<double, 3>> acceleration(n);
+    std::vector<double> lambda(local_i_.size(), 0.0);
+    for (std::size_t k = 0; k < local_i_.size(); ++k) {
+        for (auto [i, im] : {std::pair{local_i_[k], local_imi_[k]},
+                             std::pair{local_j_[k], local_imj_[k]}})
+            for (int d = 0; d < 3; ++d)
+                acceleration[i][d] = force_col_[d][i] * im;
+    }
+    constraint_virial_.fill(0.0);
+    for (std::size_t c = 0; c + 1 < local_offset_.size(); ++c) {
+        const int begin = local_offset_[c], end = local_offset_[c + 1];
+        int iteration = 0;
+        for (; iteration < max_iter_; ++iteration) {
+            double worst = 0;
+            for (int k = begin; k < end; ++k) {
+                const int i = local_i_[k], j = local_j_[k];
+                double r[3] = {col_[0][i] - col_[0][j], col_[1][i] - col_[1][j],
+                               col_[2][i] - col_[2][j]};
+                ctx.frame.box.min_image(r[0], r[1], r[2]);
+                double rv2 = 0, ra = 0, r2 = 0;
+                for (int d = 0; d < 3; ++d) {
+                    const double dv = col_[3 + d][i] - col_[3 + d][j];
+                    rv2 += dv * dv;
+                    ra += r[d] * (acceleration[i][d] - acceleration[j][d]);
+                    r2 += r[d] * r[d];
+                }
+                if (!(r2 > 0))
+                    throw std::runtime_error(
+                        "distance constraints: coincident constrained atoms");
+                const double target = rv2 / ctx.runtime.units.ftm2v;
+                const double residual = ra + target;
+                worst = std::max(worst, std::abs(residual)
+                                            / std::max(1.0, std::abs(target)));
+                const double dl =
+                    -residual / ((local_imi_[k] + local_imj_[k]) * r2);
+                lambda[k] += dl;
+                for (int d = 0; d < 3; ++d) {
+                    acceleration[i][d] += dl * local_imi_[k] * r[d];
+                    acceleration[j][d] -= dl * local_imj_[k] * r[d];
+                }
+            }
+            if (worst <= tol_)
+                break;
+        }
+        if (iteration == max_iter_)
+            throw std::runtime_error("distance constraints: initial reaction "
+                                     "solve did not converge");
+        for (int k = begin; k < end; ++k) {
+            const int i = local_i_[k], j = local_j_[k];
+            double x = col_[0][i] - col_[0][j], y = col_[1][i] - col_[1][j],
+                   z = col_[2][i] - col_[2][j];
+            ctx.frame.box.min_image(x, y, z);
+            const double l = lambda[k] * 0.5 * (int(i < own) + int(j < own));
+            const double w[6] = {x * x, y * y, z * z, x * y, x * z, y * z};
+            for (int d = 0; d < 6; ++d)
+                constraint_virial_[d] += l * w[d];
+        }
+    }
+}
+
+void DistanceConstraints::solve_shake_forces_(const cpu::LaunchContext& ctx,
+                                              bool initial) {
+    auto& f = ctx.frame;
+    const ColKey<StorageReal> keys[6] = {kAtom_x,  kAtom_y,  kAtom_z,
+                                         kAtom_vx, kAtom_vy, kAtom_vz};
+    for (int d = 0; d < 6; ++d)
+        col_[d] = f.span(keys[d]).data();
+    force_col_[0] = f.span(kAtom_fx).data();
+    force_col_[1] = f.span(kAtom_fy).data();
+    force_col_[2] = f.span(kAtom_fz).data();
+    refresh_local_(ctx);
+    if (cpu::Comm* comm = ctx.runtime.md.comm)
+        for (auto mode : {CommMode::XSHAKE, CommMode::VP, CommMode::F}) {
+            comm_mode_ = mode;
+            comm->forward_comm(*this);
+        }
+    snapshot_(ctx);
+    // At startup v is a full-step velocity; during post_force it is the
+    // half-step velocity. Predict the next drift, as LAMMPS fix shake does.
+    const double dtfsq =
+        (initial ? 0.5 : 1.0) * dt_ * dt_ * ctx.runtime.units.ftm2v;
+    std::vector<std::array<double, 3>> predicted(f.n_total());
+    std::vector<double> lambda(local_i_.size(), 0.0);
+    for (std::size_t k = 0; k < local_i_.size(); ++k)
+        for (auto [i, im] : {std::pair{local_i_[k], local_imi_[k]},
+                             std::pair{local_j_[k], local_imj_[k]}})
+            for (int d = 0; d < 3; ++d)
+                predicted[i][d] = col_[d][i] + dt_ * col_[3 + d][i]
+                                  + dtfsq * im * force_col_[d][i];
+    for (std::size_t c = 0; c + 1 < local_offset_.size(); ++c) {
+        const int begin = local_offset_[c], end = local_offset_[c + 1];
+        int iteration = 0;
+        for (; iteration < max_iter_; ++iteration) {
+            double worst = 0;
+            for (int k = begin; k < end; ++k) {
+                const int i = local_i_[k], j = local_j_[k];
+                double r[3] = {predicted[i][0] - predicted[j][0],
+                               predicted[i][1] - predicted[j][1],
+                               predicted[i][2] - predicted[j][2]};
+                f.box.min_image(r[0], r[1], r[2]);
+                const double sigma =
+                    r[0] * r[0] + r[1] * r[1] + r[2] * r[2] - local_d2_[k];
+                const double error = std::abs(sigma) / local_d2_[k];
+                worst = std::max(worst, error);
+                if (error <= tol_)
+                    continue;
+                const double ref[3] = {ref_sx_[k], ref_sy_[k], ref_sz_[k]};
+                const double dot =
+                    r[0] * ref[0] + r[1] * ref[1] + r[2] * ref[2];
+                const double denom = 2 * (local_imi_[k] + local_imj_[k]) * dot;
+                if (std::abs(denom) < 1e-12)
+                    continue;
+                const double g = -sigma / denom;
+                lambda[k] += g;
+                for (int d = 0; d < 3; ++d) {
+                    predicted[i][d] += g * local_imi_[k] * ref[d];
+                    predicted[j][d] -= g * local_imj_[k] * ref[d];
+                }
+            }
+            if (worst <= tol_)
+                break;
+        }
+        if (iteration == max_iter_)
+            throw std::runtime_error(
+                "SHAKE: next-position force solve did not converge");
+    }
+    constraint_virial_.fill(0);
+    const int own = f.nlocal();
+    for (std::size_t k = 0; k < local_i_.size(); ++k) {
+        const int i = local_i_[k], j = local_j_[k];
+        const double l = lambda[k] / dtfsq;
+        const double r[3] = {ref_sx_[k], ref_sy_[k], ref_sz_[k]};
+        for (int d = 0; d < 3; ++d) {
+            if (i < own)
+                force_col_[d][i] += l * r[d];
+            if (j < own)
+                force_col_[d][j] -= l * r[d];
+        }
+        const double weight = 0.5 * (int(i < own) + int(j < own));
+        const double w[6] = {r[0] * r[0], r[1] * r[1], r[2] * r[2],
+                             r[0] * r[1], r[0] * r[2], r[1] * r[2]};
+        for (int d = 0; d < 6; ++d)
+            constraint_virial_[d] += weight * l * w[d];
+    }
+}
+
+void DistanceConstraints::initialize_forces(const cpu::LaunchContext& ctx) {
+    if (!ctx.at(ATV::md::Phase::post_force))
+        return;
+    if (!velocity_projection_) {
+        frame_ = &ctx.frame;
+        solve_shake_forces_(ctx, true);
+        if (ctx.stress_requested) {
+            auto& stress = ctx.frame.meta.get(kStress);
+            for (int d = 0; d < 6; ++d)
+                stress[d] += constraint_virial_[d];
+        }
+        return;
+    }
+    if (!ctx.stress_requested)
+        return;
+    frame_ = &ctx.frame;
+    const ColKey<StorageReal> keys[6] = {kAtom_x,  kAtom_y,  kAtom_z,
+                                         kAtom_vx, kAtom_vy, kAtom_vz};
+    for (int d = 0; d < 6; ++d)
+        col_[d] = ctx.frame.span(keys[d]).data();
+    force_col_[0] = ctx.frame.span(kAtom_fx).data();
+    force_col_[1] = ctx.frame.span(kAtom_fy).data();
+    force_col_[2] = ctx.frame.span(kAtom_fz).data();
+    refresh_local_(ctx);
+    if (cpu::Comm* comm = ctx.runtime.md.comm) {
+        for (auto mode : {CommMode::XSHAKE, CommMode::VP, CommMode::F}) {
+            comm_mode_ = mode;
+            comm->forward_comm(*this);
+        }
+    }
+    initial_virial_(ctx);
+    auto& stress = ctx.frame.meta.get(kStress);
+    for (int d = 0; d < 6; ++d)
+        stress[d] += constraint_virial_[d];
+}
+
+void DistanceConstraints::launch(const cpu::LaunchContext& ctx) {
     frame_ = &ctx.frame;
     {
         const ColKey<StorageReal> keys[6] = {kAtom_x,  kAtom_y,  kAtom_z,
@@ -594,6 +830,7 @@ void FixRattle::launch(const cpu::LaunchContext& ctx) {
     if (ctx.at(ATV::md::Phase::initial_integrate)) {
         refresh_local_(ctx);
         snapshot_(ctx);
+        constraint_virial_.fill(0.0);
         return;
     }
 
@@ -608,6 +845,17 @@ void FixRattle::launch(const cpu::LaunchContext& ctx) {
         if (cpu::Comm* comm = ctx.runtime.md.comm)
             comm->forward_comm(*this);
         solve_positions_(ctx);
+        return;
+    }
+
+    if (ctx.at(ATV::md::Phase::post_force)) {
+        if (!velocity_projection_)
+            solve_shake_forces_(ctx, false);
+        if (ctx.stress_requested) {
+            auto& stress = ctx.frame.meta.get(kStress);
+            for (int a = 0; a < 6; ++a)
+                stress[a] += constraint_virial_[a];
+        }
         return;
     }
 

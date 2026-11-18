@@ -28,6 +28,8 @@
 #include "atomiverse/cuda/dynamics/configurational_temperature.cuh"
 #include "atomiverse/cuda/dynamics/fix_efield.cuh"
 #include "atomiverse/cuda/dynamics/fix_langevin.cuh"
+#include "atomiverse/cuda/dynamics/fix_rattle.cuh"
+#include "atomiverse/cuda/dynamics/fix_shake.cuh"
 #include "atomiverse/cuda/dynamics/gear_pc.cuh"
 #include "atomiverse/cuda/dynamics/md.cuh"
 #include "atomiverse/cuda/dynamics/nose_hoover.cuh"
@@ -625,6 +627,20 @@ void bind_cuda(nb::module_& m) {
                 // (cuda::md::InitVelocity, the CPU InitVelocity's sibling).
                 self.driver.set_observer(
                     cuda::md::InitVelocity{p.temperature, p.seed});
+            },
+            nb::arg("observer"))
+        .def(
+            "set_observer",
+            [](CudaMdHandle& self, const cpu::task::FixShakeParams& p) {
+                self.require_configurable();
+                self.driver.set_observer(p.component<cuda::md::FixShake>());
+            },
+            nb::arg("observer"))
+        .def(
+            "set_observer",
+            [](CudaMdHandle& self, const cpu::task::FixRattleParams& p) {
+                self.require_configurable();
+                self.driver.set_observer(p.component<cuda::md::FixRattle>());
             },
             nb::arg("observer"))
         .def(

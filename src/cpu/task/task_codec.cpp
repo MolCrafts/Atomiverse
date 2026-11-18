@@ -242,6 +242,40 @@ void write(Writer& w, const DihedralMultiHarmonicParams& p) {
         w.vec(values);
 }
 void write(Writer& w, const VelocityVerletParams& p) { w.f64(p.dt); }
+template <bool V>
+void write(Writer& w, const DistanceConstraintParams<V>& p) {
+    w.f64(p.dt);
+    w.f64(p.tolerance);
+    w.i32(p.max_iter);
+    for (const auto* rules : {&p.bonds, &p.angles}) {
+        w.u64(rules->size());
+        for (auto [type, length] : *rules) {
+            w.i32(type);
+            w.f64(length);
+        }
+    }
+}
+template <bool V>
+DistanceConstraintParams<V> read_constraint(Reader& r) {
+    const double dt = r.f64(), tolerance = r.f64();
+    const int max_iter = r.i32();
+    DistanceConstraintParams<V> p(dt, tolerance, max_iter);
+    for (int kind = 0; kind < 2; ++kind) {
+        const auto count = r.u64();
+        if (count > (r.size - r.at) / 12)
+            throw std::runtime_error(
+                "task_codec: invalid constraint rule count");
+        for (std::uint64_t i = 0; i < count; ++i) {
+            const int type = r.i32();
+            const double length = r.f64();
+            if (kind == 0)
+                p.constrain_bond(type, length);
+            else
+                p.constrain_angle(type, length);
+        }
+    }
+    return p;
+}
 void write(Writer& w, const InitVelocityParams& p) {
     w.f64(p.temperature);
     w.u32(p.seed);
@@ -621,6 +655,10 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::MrecRecorder;
     case 40:
         return ComponentId::PW;
+    case 41:
+        return ComponentId::FixShake;
+    case 42:
+        return ComponentId::FixRattle;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -783,6 +821,10 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
         return VelocityVerletParams{r.f64()};
     case ComponentId::InitVelocity:
         return InitVelocityParams{r.f64(), r.u32()};
+    case ComponentId::FixShake:
+        return read_constraint<false>(r);
+    case ComponentId::FixRattle:
+        return read_constraint<true>(r);
     case ComponentId::NoseHoover:
         return NoseHooverParams{r.f64(), r.f64(), r.f64()};
     case ComponentId::Thermo:
