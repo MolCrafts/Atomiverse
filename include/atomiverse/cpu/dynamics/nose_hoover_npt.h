@@ -219,7 +219,9 @@ class NoseHooverNPT : public cpu::Integrator, public cpu::TimestepProvider {
     }
 
     /// @brief Constant surface-tension target (implies couple xy).
-    /// @param gamma Surface tension \(\gamma\) [eV/Å²].
+    /// @param gamma Surface tension \(\gamma\) [energy/length², style units:
+    ///              eV/Å² metal, kcal/mol/Å² real]; P_⊥ = P_n − n γ/L_z with
+    ///              P_n/nktv2p in energy/volume.
     /// @param n_surfaces Number of interfaces (default 2 for a PBC slab).
     /// @return `*this` for chaining.
     NoseHooverNPT& set_surface_tension(double gamma, int n_surfaces = 2) {

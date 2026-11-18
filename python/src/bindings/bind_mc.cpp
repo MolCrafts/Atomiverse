@@ -662,12 +662,14 @@ void bind_mc(nb::module_& m) {
         "the contract the three presets share.");
     mc.def(
         "__init__",
-        [](McHandle<cpu::mc::MC>* self, double temperature,
-           std::uint64_t seed) {
+        [](McHandle<cpu::mc::MC>* self, double temperature, std::uint64_t seed,
+           std::optional<std::string> units) {
+            const std::string style = ATV::python::resolve_units(units);
             new (self)
                 McHandle<cpu::mc::MC>(static_cast<AccReal>(temperature), seed);
+            self->driver.set_units(style);
         },
-        nb::arg("temperature"), nb::arg("seed"),
+        nb::arg("temperature"), nb::arg("seed"), nb::arg("units") = nb::none(),
         "Construct with the ensemble temperature [temperature] (> 0) and the "
         "seed of "
         "the single RNG stream shared by the movers and the acceptance test "
@@ -700,12 +702,15 @@ void bind_mc(nb::module_& m) {
     npt.def(
         "__init__",
         [](McHandle<cpu::mc::NptMc>* self, double temperature, double pressure,
-           std::uint64_t seed) {
+           std::uint64_t seed, std::optional<std::string> units) {
+            const std::string style = ATV::python::resolve_units(units);
             new (self)
                 McHandle<cpu::mc::NptMc>(static_cast<AccReal>(temperature),
                                          static_cast<AccReal>(pressure), seed);
+            self->driver.set_units(style);
         },
         nb::arg("temperature"), nb::arg("pressure"), nb::arg("seed"),
+        nb::arg("units") = nb::none(),
         "Construct with the ensemble temperature [temperature] (> 0), the "
         "external "
         "pressure [pressure] (LAMMPS sign, positive = compressive; in the "
@@ -743,12 +748,15 @@ void bind_mc(nb::module_& m) {
     gcmc.def(
         "__init__",
         [](McHandle<cpu::mc::Gcmc>* self, double temperature, double mu,
-           double mass, std::uint64_t seed) {
+           double mass, std::uint64_t seed, std::optional<std::string> units) {
+            const std::string style = ATV::python::resolve_units(units);
             new (self)
                 McHandle<cpu::mc::Gcmc>(static_cast<AccReal>(temperature),
                                         static_cast<AccReal>(mu), mass, seed);
+            self->driver.set_units(style);
         },
         nb::arg("temperature"), nb::arg("mu"), nb::arg("mass"), nb::arg("seed"),
+        nb::arg("units") = nb::none(),
         "Construct with the ensemble temperature [temperature] (> 0), the "
         "chemical "
         "potential mu [energy] of the single insertable species, its mass "

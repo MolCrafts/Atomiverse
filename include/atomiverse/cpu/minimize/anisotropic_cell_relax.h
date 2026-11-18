@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/component/optimizer.h"
 
 namespace ATV {
@@ -30,10 +31,13 @@ class AnisotropicCellRelax : public Optimizer {
     double P_target = 0.0;   ///< Target pressure [style pressure].
     double alpha0 = 0.05;    ///< Scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per axis.
-    double bulk_mod = 1.0;   ///< Soft bulk modulus [style pressure].
-    bool relax_x = true;     ///< Relax the x box edge.
-    bool relax_y = true;     ///< Relax the y box edge.
-    bool relax_z = true;     ///< Relax the z box edge.
+    double bulk_mod = units::
+        kStyleDefault; ///< Soft bulk modulus [style pressure]; `units::kStyleDefault`
+    ///< (the default) is 1 eV/Å³ in the run's style (1.6e6 bar, 1.58e6 atm;
+    ///< 1 in lj).
+    bool relax_x = true; ///< Relax the x box edge.
+    bool relax_y = true; ///< Relax the y box edge.
+    bool relax_z = true; ///< Relax the z box edge.
 
     AnisotropicCellRelax() = default;
     explicit AnisotropicCellRelax(double P_target_ev_a3, double alpha = 0.05);

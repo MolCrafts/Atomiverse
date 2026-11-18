@@ -47,6 +47,7 @@
 #include <string>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/verdict.h"
 #include "atomiverse/cpu/component/criterion.h"
 
@@ -116,15 +117,17 @@ class ForceConverged : public Criterion {
 /// while it computes forces; the Frame carries it on `kStress` in **Voigt
 /// order** — the six independent components of a symmetric 3×3 tensor listed
 /// as (xx, yy, zz, xy, xz, yz). That key is **extensive**: it holds a
-/// whole-cell energy \(W_{ab}\) in eV, not a stress, for every producer
-/// (`core/frame_schema.h`). The pressure is therefore its trace over three
-/// times the cell volume \(V\) [Å³],
+/// whole-cell energy \(W_{ab}\) in the style's energy unit, not a stress, for
+/// every producer (`core/frame_schema.h`). The pressure is therefore its trace
+/// over three times the cell volume \(V\), in the run's pressure unit
+/// (LAMMPS `compute pressure`: × nktv2p; real atm, metal bar),
 ///
-/// \[ P = \frac{W_{xx}+W_{yy}+W_{zz}}{3V} \quad [\mathrm{eV/Å^3}], \]
+/// \[ P = \frac{W_{xx}+W_{yy}+W_{zz}}{3V}\,\texttt{nktv2p}, \]
 ///
 /// and this criterion returns `Converged` once \(|P - P_{\mathrm{target}}|\)
-/// drops below `ptol`. Sign convention is LAMMPS's, compression-positive;
-/// 1 bar ≈ 6.2415e-7 eV/Å³.
+/// drops below `ptol`. Sign convention is LAMMPS's, compression-positive.
+/// The default `ptol` is 1e-5 eV/Å³ (16 bar, 15.8 atm) in the run's style
+/// (`units::kStyleDefault`, resolved per run; 1e-5 in lj).
 ///
 /// The kinetic (ideal-gas) term is deliberately not included — it lives on
 /// its own key `kStressKinetic` — which is what makes this the right test for
@@ -146,12 +149,16 @@ class PressureConverged : public Criterion {
     /// @brief Construct the isotropic-pressure test.
     /// @param P_target Target pressure [run's pressure unit]; 0 is a relaxed cell, negative
     ///                 is a tensile setpoint.
-    /// @param ptol Absolute pressure tolerance [run's pressure unit]; > 0.
+    /// @param ptol Absolute pressure tolerance [run's pressure unit]; > 0,
+    ///             or `units::kStyleDefault` for 1e-5 eV/Å³ in the run's
+    ///             style.
     /// @throws std::invalid_argument for a nonfinite target or a nonpositive
     ///         or nonfinite tolerance.
-    explicit PressureConverged(double P_target = 0.0, double ptol = 1e-5)
+    explicit PressureConverged(double P_target = 0.0,
+                               double ptol = units::kStyleDefault)
         : P_target_(P_target), ptol_(ptol) {
-        if (!std::isfinite(P_target) || !std::isfinite(ptol) || !(ptol > 0.0))
+        if (!std::isfinite(P_target) || !std::isfinite(ptol)
+            || !(ptol > 0.0 || ptol == units::kStyleDefault))
             throw std::invalid_argument("PressureConverged: finite target and "
                                         "positive finite ptol required");
     }
@@ -165,7 +172,7 @@ class PressureConverged : public Criterion {
 
     /// @brief Judge the isotropic virial pressure of the current Frame.
     /// @param s Iteration index, frame, context, metrics.
-    /// @return `Converged` when |P − P_target| < ptol [eV/Å³]; `Stop` when the
+    /// @return `Converged` when |P − P_target| < ptol; `Stop` when the
     ///         volume is nonpositive/nonfinite or pressure is nonfinite;
     ///         otherwise `Continue`.
     Verdict verdict(const LoopState& s) override {
@@ -178,8 +185,10 @@ class PressureConverged : public Criterion {
             (st[0] / V + st[1] / V + st[2] / V) / 3.0 * s.runtime.units.nktv2p;
         if (!std::isfinite(P))
             return Verdict::Stop;
-        return (std::fabs(P - P_target_) < ptol_) ? Verdict::Converged
-                                                  : Verdict::Continue;
+        const double ptol = units::resolve_style_default(
+            ptol_, 1e-5 * s.runtime.units.ev_per_cubic_angstrom());
+        return (std::fabs(P - P_target_) < ptol) ? Verdict::Converged
+                                                 : Verdict::Continue;
     }
 
   private:
@@ -190,15 +199,17 @@ class PressureConverged : public Criterion {
 /// @brief Converged when every relaxed diagonal stress is at its target.
 ///
 /// Same input as `PressureConverged` — the **extensive** Voigt virial
-/// \(W_{ab}\) [eV] on `kStress`, for every producer (`core/frame_schema.h`) —
-/// and the same divide by the cell volume \(V\) [Å³]. What differs is the
-/// *shape* of the test: instead of the mean \(\mathrm{tr}(W)/(3V)\), this one
-/// judges each diagonal component separately as the intensive stress
+/// \(W_{ab}\) [style energy] on `kStress`, for every producer
+/// (`core/frame_schema.h`) — and the same divide by the cell volume \(V\).
+/// What differs is the *shape* of the test: instead of the mean
+/// \(\mathrm{tr}(W)/(3V)\), this one judges each diagonal component
+/// separately as the intensive stress in the run's pressure unit
 ///
-/// \[ \sigma_{dd} = W_{dd}/V \quad [\mathrm{eV/Å^3}],\qquad d \in \{x,y,z\}, \]
+/// \[ \sigma_{dd} = W_{dd}/V\,\texttt{nktv2p},\qquad d \in \{x,y,z\}, \]
 ///
 /// and returns `Converged` once \(\max_d |\sigma_{dd} -
-/// \sigma_{\mathrm{target}}|\) over the **unmasked** axes falls below `stol`.
+/// \sigma_{\mathrm{target}}|\) over the **unmasked** axes falls below `stol`
+/// (default 1e-4 eV/Å³ in the run's style, `units::kStyleDefault`).
 /// Producers that naturally compute an intensive stress (a nested `PW`
 /// when the plan reads stress, GPW `GPWEvaluator::compute_stress`) multiply by
 /// the volume at the Frame write, so they land on the same convention as the
@@ -220,19 +231,21 @@ class StressConverged : public Criterion {
     /// @brief Construct the per-axis diagonal-stress test.
     /// @param sigma_target Target diagonal stress [run's pressure unit]
     ///        (0 = relaxed cell).
-    /// @param stol Absolute stress tolerance [run's pressure unit]; > 0.
+    /// @param stol Absolute stress tolerance [run's pressure unit]; > 0, or
+    ///             `units::kStyleDefault` for 1e-4 eV/Å³ in the run's style.
     /// @param check_x Judge σ_xx.
     /// @param check_y Judge σ_yy.
     /// @param check_z Judge σ_zz.
     /// @throws std::invalid_argument for a nonfinite target, a nonpositive
     ///         or nonfinite tolerance, or when every axis is masked.
-    explicit StressConverged(double sigma_target = 0.0, double stol = 1e-4,
+    explicit StressConverged(double sigma_target = 0.0,
+                             double stol = units::kStyleDefault,
                              bool check_x = true, bool check_y = true,
                              bool check_z = true)
         : sigma_target_(sigma_target), stol_(stol),
           check_{check_x, check_y, check_z} {
         if (!std::isfinite(sigma_target) || !std::isfinite(stol)
-            || !(stol > 0.0))
+            || !(stol > 0.0 || stol == units::kStyleDefault))
             throw std::invalid_argument("StressConverged: finite target and "
                                         "positive finite stol required");
         if (!check_x && !check_y && !check_z)
@@ -249,14 +262,14 @@ class StressConverged : public Criterion {
     /// @brief Judge every unmasked diagonal stress of the current Frame.
     /// @param s Iteration index, frame, context, metrics.
     /// @return `Converged` when the largest unmasked |σ_dd − sigma_target| is
-    ///         below `stol` [eV/Å³], else `Continue`.
+    ///         below `stol` [run's pressure unit], else `Continue`.
     /// Invalid volume or nonfinite stress on a selected axis returns `Stop`.
     Verdict verdict(const LoopState& s) override {
         // kStress is the extensive Voigt virial [eV] (core/frame_schema.h), so
         // the intensive stress this criterion judges is st[d]/V. Comparing
-        // st[d] itself against `stol` would put an eV number against an
-        // eV/Å³ tolerance — off by the cell volume (~10³ Å³), which fires on
-        // the first iteration and reports an unrelaxed cell as converged.
+        // st[d] itself against `stol` would put an energy against a pressure
+        // tolerance — off by the cell volume (~10³ Å³), which fires on the
+        // first iteration and reports an unrelaxed cell as converged.
         const double V = s.frame.box.volume();
         if (!std::isfinite(V) || !(V > 0.0))
             return Verdict::Stop;
@@ -270,7 +283,9 @@ class StressConverged : public Criterion {
                     return Verdict::Stop;
                 r = std::max(r, residual);
             }
-        return (r < stol_) ? Verdict::Converged : Verdict::Continue;
+        const double stol = units::resolve_style_default(
+            stol_, 1e-4 * s.runtime.units.ev_per_cubic_angstrom());
+        return (r < stol) ? Verdict::Converged : Verdict::Continue;
     }
 
   private:

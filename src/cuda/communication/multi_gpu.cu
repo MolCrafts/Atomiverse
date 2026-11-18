@@ -962,14 +962,14 @@ vv_first(pos_t* __restrict__ x, pos_t* __restrict__ y, pos_t* __restrict__ z,
          const fixed_t* __restrict__ fy, const fixed_t* __restrict__ fz,
          const mixed_t* __restrict__ mass, ForceFault* fault,
          const std::int64_t* __restrict__ tag, long long step, int n_local,
-         mixed_t dt) {
+         mixed_t dt, mixed_t ftm2v) {
     if (!forces_consumable(fault, tag, step))
         return;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_local)
         return;
     mixed_t inv_m = mixed_t(1) / mass[i];
-    mixed_t h = mixed_t(0.5) * dt * inv_m;
+    mixed_t h = mixed_t(0.5) * dt * ftm2v * inv_m;
     const mixed_t ux = vx[i] + h * decode_force<mixed_t>(fx[i]);
     const mixed_t uy = vy[i] + h * decode_force<mixed_t>(fy[i]);
     const mixed_t uz = vz[i] + h * decode_force<mixed_t>(fz[i]);
@@ -988,13 +988,13 @@ __global__ void vv_second(mixed_t* __restrict__ vx, mixed_t* __restrict__ vy,
                           const fixed_t* __restrict__ fz,
                           const mixed_t* __restrict__ mass, ForceFault* fault,
                           const std::int64_t* __restrict__ tag, long long step,
-                          int n_local, mixed_t dt) {
+                          int n_local, mixed_t dt, mixed_t ftm2v) {
     if (!forces_consumable(fault, tag, step))
         return;
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_local)
         return;
-    mixed_t h = mixed_t(0.5) * dt / mass[i];
+    mixed_t h = mixed_t(0.5) * dt * ftm2v / mass[i];
     vx[i] += h * decode_force<mixed_t>(fx[i]);
     vy[i] += h * decode_force<mixed_t>(fy[i]);
     vz[i] += h * decode_force<mixed_t>(fz[i]);
@@ -1006,6 +1006,7 @@ void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
     build_halo(cutoff);
     compute_lj_bruteforce(cutoff, epsilon, sigma);
     const mixed_t dtr = static_cast<mixed_t>(dt);
+    const mixed_t ftm2v = static_cast<mixed_t>(units_.ftm2v);
     for (int step = 0; step < steps; ++step) {
         for (int s = 0; s < count(); ++s) {
             const int nl = frames_[s].n_local_;
@@ -1017,7 +1018,7 @@ void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
             vv_first<<<grid, block>>>(a.x, a.y, a.z, a.x_corr, a.y_corr,
                                       a.z_corr, a.vx, a.vy, a.vz, a.fx, a.fy,
                                       a.fz, a.mass, frames_[s].force_fault,
-                                      a.tag, step, nl, dtr);
+                                      a.tag, step, nl, dtr, ftm2v);
             CKM(cudaGetLastError());
         }
         build_halo(cutoff);
@@ -1031,7 +1032,7 @@ void MultiGpu::run_nve(int steps, double dt, double cutoff, double epsilon,
             int block = 256, grid = (nl + block - 1) / block;
             vv_second<<<grid, block>>>(a.vx, a.vy, a.vz, a.fx, a.fy, a.fz,
                                        a.mass, frames_[s].force_fault, a.tag,
-                                       step, nl, dtr);
+                                       step, nl, dtr, ftm2v);
             CKM(cudaGetLastError());
         }
     }
@@ -1130,6 +1131,8 @@ void MultiGpu::setup_force_engine(double cutoff, double epsilon, double sigma,
     force_skin_ = (skin < 0) ? 0.3 * cutoff : skin;
     const cuda::Box box = make_ortho_box(box_L_);
     ctx_.resize(N);
+    for (auto& c : ctx_)
+        c.units = units_; // the engine's LAMMPS style (set_units)
     nlist_.resize(N);
     pair_.resize(N);
     kspace_.resize(N); // optional reciprocal-space family (set_kspace fills it)
@@ -1957,7 +1960,8 @@ void MultiGpu::run_nve_nlist(int steps, double dt, double cutoff,
                 vv_first<<<grid, block, 0, st>>>(
                     a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy,
                     a.vz, a.fx, a.fy, a.fz, a.mass, frames_[s].force_fault,
-                    a.tag, step, nl, dtr);
+                    a.tag, step, nl, dtr,
+                    static_cast<mixed_t>(ctx_[s].units.ftm2v));
                 CKM(cudaGetLastError());
                 if (count() > 1)
                     CKM(cudaEventRecord(ev_pos_[s], st));
@@ -1979,7 +1983,8 @@ void MultiGpu::run_nve_nlist(int steps, double dt, double cutoff,
                 int block = 256, grid = (nl + block - 1) / block;
                 vv_second<<<grid, block, 0, st>>>(
                     a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass,
-                    frames_[s].force_fault, a.tag, step, nl, dtr);
+                    frames_[s].force_fault, a.tag, step, nl, dtr,
+                    static_cast<mixed_t>(ctx_[s].units.ftm2v));
                 CKM(cudaGetLastError());
             }
         });

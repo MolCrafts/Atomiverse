@@ -145,6 +145,7 @@ int run() {
     coul.set_special_bonds(0.0, 0.0, 0.0);
 
     cpu::Evaluate eval;
+    eval.set_units("metal"); // eV / Å inputs and pins (LAMMPS units metal)
     eval.on(evaluate::Phase::prepare).add_ref(place, +100);
     eval.set_neighbor(cpu::md::NeighborList<>{cut, 0.3, 1, 0, true});
     eval.set_evaluator(std::move(lj));

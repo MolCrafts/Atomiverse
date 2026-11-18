@@ -50,9 +50,10 @@ namespace md {
 /// Parameters are constructor arguments and public members — no Config bag.
 ///
 /// @code
-/// cpu::md::PistonElectrode piston(/*type=*/3, /*P [style pressure]=*/1e-4,
+/// // units real: 1 atm on the upper plate.
+/// cpu::md::PistonElectrode piston(/*type=*/3, /*P [style pressure]=*/1.0,
 ///                                 cpu::md::PistonElectrode::Side::Upper);
-/// piston.tau_damp = 50.0; // optional COM friction [fs]
+/// piston.tau_damp = 50.0; // optional COM friction [style time]
 /// sim.set_observer(std::move(piston));
 /// @endcode
 class PistonElectrode : public cpu::Component {

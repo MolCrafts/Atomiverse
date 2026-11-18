@@ -32,13 +32,16 @@ stack. Three work at fixed cell:
 ``FIRE(dt0, dt_max, …)``
     Damped dynamics with no line search — a fictitious unit-mass trajectory
     whose velocity is steered towards the force. Cheap per step and robust far
-    from the minimum. Its defaults are ASE's and assume forces of order
-    1 eV/Å; on a soft system (an argon Lennard-Jones dimer sits at ~10⁻²
+    from the minimum. Its defaults are ASE's and assume forces of order 1 in
+    the run's force unit (they were tuned for eV/Å; in ``units real`` the
+    same physical force is 23× larger in kcal/mol/Å, and ``max_step`` caps
+    the move); on a soft system (an argon Lennard-Jones dimer sits at ~10⁻²
     eV/Å) grow the pseudo-time scale — ``FIRE(dt0=1.0, dt_max=20.0)``, the
     retune ``regressions/minimizer/geometry`` uses.
 
-Note ``alpha0`` means a step size in Å²/eV for ``LBFGS`` and ``CG``, but a
-dimensionless velocity-mixing fraction for ``FIRE``.
+Note ``alpha0`` means a step size in length²/energy (Å²/eV in metal,
+Å²·mol/kcal in real) for ``LBFGS`` and ``CG``, but a dimensionless
+velocity-mixing fraction for ``FIRE``.
 
 The other four move the periodic **box**: ``IsotropicCellRelax`` (one scale
 factor, volume only), ``AnisotropicCellRelax`` (three box edges independently,
@@ -63,9 +66,11 @@ What a variable-cell run needs (the honest gates)
 A relaxer follows the virial — the configurational stress an evaluator
 accumulates while it computes forces, carried on the frame as the ``stress``
 entry in Voigt order (xx, yy, zz, xy, xz, yz) and **extensive**, i.e. a
-whole-cell energy in eV rather than a stress. Both criteria divide it by the
-cell volume, so targets and tolerances are pressures in eV/Å³
-(1 bar ≈ 6.2415×10⁻⁷ eV/Å³, positive = compressive).
+whole-cell energy rather than a stress. Both criteria divide it by the
+cell volume and multiply by LAMMPS ``nktv2p``, so targets and tolerances are
+pressures in the run's pressure unit (``real`` atm, ``metal`` bar,
+positive = compressive). Left at ``None``, ``bulk_mod``, ``ptol`` and
+``stol`` are 1, 1e-5 and 1e-4 eV/Å³ expressed in the run's style.
 
 Three things follow, none of which the API can check for you:
 
@@ -84,8 +89,8 @@ Three things follow, none of which the API can check for you:
   factor exactly 1, so the cell starts moving on iteration 1.
 * **Match the criterion to the algorithm.** A relaxer publishes its pressure
   residual into the metric slot ``ForceConverged`` reads as a force, so that
-  pairing does not fail loudly — it silently compares eV/Å³ against a
-  tolerance meant for eV/Å.
+  pairing does not fail loudly — it silently compares a pressure against a
+  tolerance meant for a force.
 
 Evaluators, and running under the MPI launcher
 ----------------------------------------------
@@ -201,6 +206,8 @@ class Minimize:
     def set_units(self, style: str) -> Minimize:
         """LAMMPS ``units <style>`` of this run (before the first ``run``)."""
         self._cpp.set_units(style)
+        # The style's defaults (neighbor skin, …) are applied at build.
+        self._built = False
         return self
 
     @property

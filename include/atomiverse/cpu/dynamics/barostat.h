@@ -44,25 +44,17 @@ namespace md {
 ///   | Aspect            | LAMMPS `fix press/berendsen`               | `Barostat` (this class)                        | Verdict   |
 ///   |-------------------|--------------------------------------------|------------------------------------------------|-----------|
 ///   | Pressure sign     | `P = +trace(σ)/(3V)` (`compute pressure`)  | `P = +trace(σ)/(3V)` — LAMMPS-standard         | aligned   |
-///   | `Pdamp`           | barostat coupling time constant [time]     | `tau_P` [fs]                                   | aligned   |
-///   | `bulkmodulus` (β) | `modulus` keyword, default `10.0` (P units)| `bulk_modulus` keyword; default `1.0` — see [†]| divergence (default) |
+///   | `Pdamp`           | barostat coupling time constant [time]     | `tau_P` [style time]                           | aligned   |
+///   | `bulkmodulus` (β) | `modulus` keyword, default `10.0` (P units)| `bulk_modulus`, default `10.0` [style pressure]| aligned   |
 ///   | Dilation formula  | `μ = (1 − dt/Pdamp·(P_t − P)/β)^(1/3)`     | identical                                      | aligned   |
 ///   | Box+atom remap    | `remap()` rescales boxlo/hi + coords       | `box.scale_isotropic(μ)` + affine atom rescale | aligned   |
 ///   | Parameter order   | `fix press/berendsen iso P P Pdamp`        | ctor `(P_target, tau_P, dt, bulk_modulus)`     | aligned   |
 ///
-/// [†] **Source-justified divergence — `bulk_modulus` default.** LAMMPS
-/// `fix_press_berendsen.cpp:52` initialises `bulkmodulus = 10.0`. The
-/// `bulkmodulus` keyword and the `1/β` division in the dilation formula
-/// are reproduced verbatim, but the Atomiverse *default* is `1.0`, not
-/// `10.0`. Rationale: the pre-`lammps-api-align-04` `Barostat` folded
-/// `β` to `1` (no modulus term at all). The link's mandate is that the
-/// pressure-sign flip be a *representation change only* — `μ`
-/// numerically unchanged for the same physical state. A `β = 10`
-/// default would silently change `μ` for every existing 3-argument
-/// caller (10× slower relaxation), which is a behaviour change the link
-/// explicitly forbids. Defaulting `β = 1` keeps the flip purely
-/// representational; callers that want LAMMPS-identical relaxation pass
-/// `bulk_modulus = 10.0` explicitly (`fix press/berendsen ... modulus 10`).
+/// `bulk_modulus` defaults to LAMMPS's `bulkmodulus = 10.0`
+/// (`fix_press_berendsen.cpp:52`), in the run's pressure unit like the
+/// target (real: atm, metal: bar). The earlier default of 1.0 dated from
+/// pressures in eV/Å³, where it meant ~1.6 Mbar; read in bar or atm it made
+/// the dilation ~10⁶ times more aggressive than intended.
 ///
 /// Sign-convention note: this `P = +trace/(3V)` matches `NoseHooverNPT`
 /// and LAMMPS `compute pressure`. The link `lammps-api-align-04` flipped
@@ -72,7 +64,7 @@ namespace md {
 /// state — a representation change, not a behaviour change.
 class Barostat : public cpu::Barostat, public cpu::TimestepConsumer {
   public:
-    /// @brief Consume the enclosing integrator's timestep [fs].
+    /// @brief Consume the enclosing integrator's timestep [style time].
     cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
     bool timestep_required() const override { return false; }
     void set_timestep(double timestep) override {
@@ -86,19 +78,15 @@ class Barostat : public cpu::Barostat, public cpu::TimestepConsumer {
     /// @param P_target     Target pressure [style pressure], LAMMPS-standard sign
     ///                     (`+trace(σ)/(3V)`, positive ⇔ compressive).
     ///                     Like LAMMPS, the run's pressure unit (metal: bar, real: atm).
-    /// @param tau_P        Barostat coupling time constant [fs]
+    /// @param tau_P        Barostat coupling time constant [style time]
     ///                     (LAMMPS `Pdamp`).
-    /// @param dt           MD step size [fs].
+    /// @param dt           MD step size [style time].
     /// @param bulk_modulus Tunable modulus `β` [style pressure] (LAMMPS
-    ///                     `bulkmodulus`). Larger ⇒ smaller per-step
-    ///                     rescale ⇒ slower relaxation. Default `1.0`
-    ///                     — a documented divergence from LAMMPS's
-    ///                     `10.0` so the `lammps-api-align-04` sign
-    ///                     flip stays representation-only (see the
-    ///                     class-level `[†]` note); pass `10.0` for
-    ///                     LAMMPS-identical relaxation.
+    ///                     `modulus`). Larger ⇒ smaller per-step
+    ///                     rescale ⇒ slower relaxation. Default `10.0`,
+    ///                     the LAMMPS default.
     Barostat(double P_target, double tau_P, double dt,
-             double bulk_modulus = 1.0);
+             double bulk_modulus = 10.0);
 
     std::string name() const override { return "barostat"; }
     /* role via Barostat base */

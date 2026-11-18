@@ -12,13 +12,13 @@ flat. It travels in its own ``impropers`` block of the frame, separate from
 from atomiverse._binding import _cpp
 
 #: Harmonic improper V = K(chi - chi0)^2 —
-#: ``cpu::ImproperHarmonic(K [eV/rad²] per type, chi0 [rad] per type)``,
+#: ``cpu::ImproperHarmonic(K [energy/rad²] per type, chi0 [rad] per type)``,
 #: where chi is the angle between the two planes of the 4-tuple (LAMMPS
 #: ``improper_style harmonic``).
 Harmonic = _cpp.ImproperHarmonic
 
 #: Amber/GAFF improper V = K(1 + d cos(n phi)), d = ±1 —
-#: ``cpu::ImproperCvff(K [eV] per type, d per type, n per type)`` (LAMMPS
+#: ``cpu::ImproperCvff(K [energy] per type, d per type, n per type)`` (LAMMPS
 #: ``improper_style cvff``). phi is the torsion angle of the improper 4-tuple
 #: in its frame order; Amber puts the central atom third. Local runs only —
 #: not carried by the MPI task wire.

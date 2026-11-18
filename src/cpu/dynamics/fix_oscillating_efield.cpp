@@ -13,18 +13,21 @@ namespace md {
 void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
     if (!(period > 0.0) || !(dt > 0.0)) {
         throw std::runtime_error(
-            "FixOscillatingEfield: period and dt must be > 0 [fs]");
+            "FixOscillatingEfield: period and dt must be > 0 [style time]");
     }
 
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
 
-    const double ex = field_x(ctx.step);
-    const double ey = field_y(ctx.step);
-    const double ez = field_z(ctx.step);
-    last_Ex_ = ex;
-    last_Ey_ = ey;
-    last_Ez_ = ez;
+    last_Ex_ = field_x(ctx.step);
+    last_Ey_ = field_y(ctx.step);
+    last_Ez_ = field_z(ctx.step);
+    // E in the style's LAMMPS field unit; qe2f makes q E a force in the
+    // run's force unit (LAMMPS FixEfield, real: 23.060549, metal: 1).
+    const double qe2f = ctx.runtime.units.qe2f;
+    const double ex = qe2f * last_Ex_;
+    const double ey = qe2f * last_Ey_;
+    const double ez = qe2f * last_Ez_;
 
     // Unwrapped energy needs orthorhombic image · L (LAMMPS domain->unmap).
     if (!f.box.is_orthorhombic()) {

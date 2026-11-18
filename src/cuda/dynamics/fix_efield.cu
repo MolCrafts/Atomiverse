@@ -2,7 +2,7 @@
 /// @brief CUDA constant uniform electric field (LAMMPS `fix efield`).
 ///
 /// Port of the constant-field charge term of LAMMPS `src/fix_efield.cpp`
-/// (`FixEfield::post_force`: `f += q E`, `fsum[0] -= F · unwrap`), checkout
+/// (`FixEfield::post_force`: `f += q E qe2f`, `fsum[0] -= F · unwrap`), checkout
 /// SHA e8c4c278a8. LAMMPS: Copyright (2003) Sandia Corporation, GNU GPL.
 
 #include "atomiverse/cuda/dynamics/fix_efield.cuh"
@@ -22,7 +22,8 @@ namespace md {
 namespace {
 
 // One thread per owned atom. The force is an owned (non-atomic) fixed-point
-// add; the energy is reduced in FP64 only when the step asks for it.
+// add; the energy is reduced in FP64 only when the step asks for it. The
+// field (ex, ey, ez) arrives already scaled by the run's qe2f.
 __global__ void
 efield_k(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
          const pos_t* __restrict__ z, const pos_t* __restrict__ xc,
@@ -73,7 +74,8 @@ efield_k(const pos_t* __restrict__ x, const pos_t* __restrict__ y,
     }
 }
 
-// One thread per owned atom: remove q E from a decoded force row.
+// One thread per owned atom: remove q E qe2f from a decoded force row (the
+// caller passes the field already scaled by qe2f).
 __global__ void efield_subtract_k(const force_t* __restrict__ charge,
                                   double* __restrict__ fx,
                                   double* __restrict__ fy,
@@ -111,20 +113,25 @@ void FixEfield::launch(const LaunchContext& ctx) {
         return;
     const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     const auto& a = f.atoms;
+    // LAMMPS FixEfield::init: E in the style's field unit, scaled by qe2f
+    // into force per charge (real: 23.060549 kcal/mol/Å per e·V/Å).
+    const double qe2f = ctx.runtime.units.qe2f;
     efield_k<<<grid_size(n), kDefaultBlock, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.charge, a.image, a.fx,
         a.fy, a.fz, f.force_fault,
         ctx.energy_requested ? &f.scalars->energy : nullptr,
-        ctx.runtime.host_box, Ex, Ey, Ez, ctx.forces_requested, n);
+        ctx.runtime.host_box, qe2f * Ex, qe2f * Ey, qe2f * Ez,
+        ctx.forces_requested, n);
 }
 
 void FixEfield::subtract_drive_force(const LaunchContext& ctx, int n,
                                      double* fx, double* fy, double* fz) const {
     if (n == 0)
         return;
+    const double qe2f = ctx.runtime.units.qe2f;
     efield_subtract_k<<<grid_size(n), kDefaultBlock, 0,
                         static_cast<cudaStream_t>(ctx.runtime.stream)>>>(
-        ctx.frame.atoms.charge, fx, fy, fz, Ex, Ey, Ez, n);
+        ctx.frame.atoms.charge, fx, fy, fz, qe2f * Ex, qe2f * Ey, qe2f * Ez, n);
 }
 
 } // namespace md

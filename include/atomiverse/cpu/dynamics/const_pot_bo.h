@@ -260,6 +260,7 @@ class ConstPotBO : public cpu::Component {
 
   private:
     double qqrd2e_ = 1.0; ///< The run's qqrd2e, cached at build().
+    double v2e_ = 1.0; ///< The run's qe2f (1 e·V in style energy), at build().
     /// `ConstPotMaZe` (mass-zero constrained dynamics) reuses the elastance
     /// build / RHS / write-back internals instead of duplicating them.
     friend class ConstPotMaZe;

@@ -7,7 +7,7 @@
 /// `freq` steps to a `cpu::MrecWriter`. Where XYZ is text and geometry-only,
 /// the mrec frame is the whole exchange frame (positions, velocities, forces,
 /// charges, images, tags, species, masses, box, serializable meta) with a
-/// `step` axis and, when the run has an integrator, a `time` axis [fs].
+/// `step` axis and, when the run has an integrator, a `time` axis [style time].
 ///
 /// Usage:
 /// @code
@@ -61,7 +61,7 @@ namespace cpu {
 /// convention.)
 ///
 /// **Time axis.** The recorder is a `TimestepConsumer`: `cpu::md::MD` pushes
-/// the integrator's dt [fs] before `build()`, and every frame is then stamped
+/// the integrator's dt [style time] before `build()`, and every frame is then stamped
 /// `time = step * dt`. A loop with no `TimestepProvider` (Minimize) records
 /// steps only. Whether frames carry a time is fixed by the first append.
 /// `cpu::minimizer::Minimize` follows the same convention per iteration
@@ -121,7 +121,7 @@ class MrecRecorder : public cpu::Recorder, public cpu::TimestepConsumer {
     TimestepConsumer* as_timestep_consumer() override { return this; }
     /// @brief A run without an integrator still records (steps only).
     bool timestep_required() const override { return false; }
-    /// @brief Receive the nuclear MD timestep [fs].
+    /// @brief Receive the nuclear MD timestep [style time].
     /// @throws std::invalid_argument when `dt_fs` is not finite and > 0.
     void set_timestep(double dt_fs) override;
 
@@ -174,7 +174,8 @@ class MrecRecorder : public cpu::Recorder, public cpu::TimestepConsumer {
     ///        `cpu::MrecWriter::append`.
     /// @param frame    The state after `step` steps, rows in tag order.
     /// @param step     Completed MD steps [steps].
-    /// @param time     `step * dt` [fs]; meaningful only when `has_time`.
+    /// @param time     `step * dt` [style time]; meaningful only when
+    ///                 `has_time`.
     /// @param has_time Whether an integrator published a dt.
     virtual void append_frame(const cpu::Frame& frame, std::int64_t step,
                               double time, bool has_time) {
@@ -184,7 +185,7 @@ class MrecRecorder : public cpu::Recorder, public cpu::TimestepConsumer {
   private:
     std::string filename_;
     int freq_;
-    double dt_fs_ = 0.0;     ///< integrator dt [fs]; 0 ⇒ steps only
+    double dt_fs_ = 0.0;     ///< integrator dt [style time]; 0 ⇒ steps only
     MrecWriter writer_;      ///< molpy-backed writer (reused every launch)
     cpu::Frame gathered_{0}; ///< multi-rank gather scratch (rank 0 only)
     cpu::Frame ordered_{0};  ///< single-rank tag-ordered copy (scratch)

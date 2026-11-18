@@ -101,8 +101,10 @@ if has_domain("kspace"):
     #: ik PPPM reciprocal half —
     #: ``cpu::KSpacePPPM(alpha [1/Å], grid_spacing [Å] = 1.0, order = 6,
     #: mesh = None)``; ``KSpacePPPM.from_accuracy(frame, accuracy, cutoff,
-    #: order=6, alpha=None, mesh=None)`` is LAMMPS ``kspace_style pppm
-    #: <accuracy>`` (alpha and mesh for this frame's cell and charges).
+    #: order=6, alpha=None, mesh=None, units=None)`` is LAMMPS ``kspace_style
+    #: pppm <accuracy>`` (alpha and mesh for this frame's cell and charges;
+    #: ``units`` is the run's LAMMPS style, default
+    #: :func:`atomiverse.units_style`).
     KSpacePPPM = _cpp.KSpacePPPM
     __all__ = ["CoulLong", "KSpaceEwald", "KSpacePME", "KSpacePPPM"]
 else:

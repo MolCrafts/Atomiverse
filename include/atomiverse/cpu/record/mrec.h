@@ -102,9 +102,11 @@ class MrecWriter {
 
     /// @brief Buffer one frame.
     /// @param frame    Host-resident frame; owned rows `[0, nlocal)` are
-    ///                 written [Angstrom, Angstrom/fs, eV/Angstrom, e].
+    ///                 written in the run's LAMMPS units, unconverted
+    ///                 (real: Å, Å/fs, kcal/mol/Å, e; metal: Å, Å/ps,
+    ///                 eV/Å, e).
     /// @param step     Frame's step index; must exceed the previous one.
-    /// @param time     Frame's time [fs]; read only when `has_time`.
+    /// @param time     Frame's time [style time]; read only when `has_time`.
     /// @param has_time Whether this run carries a time axis (fixed by the
     ///                 first append).
     /// @throws std::logic_error   after `close()`.

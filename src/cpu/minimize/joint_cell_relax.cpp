@@ -42,18 +42,21 @@ void JointIsotropicRelax::build(const BuildContext&) {
 }
 
 void JointIsotropicRelax::launch(const LaunchContext& ctx) {
+    // 1 eV/Å³ in the run's style unless the caller chose a modulus.
+    const double bulk = units::resolve_style_default(
+        bulk_mod, ctx.runtime.units.ev_per_cubic_angstrom());
     require_finite_forces(ctx);
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
 
     // Public parameters may change after build. Validate before any state or
     // geometry writes, and reduce the error flag before throwing on any rank.
-    double invalid =
-        !std::isfinite(P_target) || !(atom_step > 0.0)
-        || !std::isfinite(atom_step) || !(alpha0 >= 0.0)
-        || !std::isfinite(alpha0) || !(max_scale >= 0.0 && max_scale < 1.0)
-        || !(bulk_mod > 0.0) || !std::isfinite(bulk_mod)
-        || !(f.box.volume() > 0.0) || !std::isfinite(f.box.volume());
+    double invalid = !std::isfinite(P_target) || !(atom_step > 0.0)
+                     || !std::isfinite(atom_step) || !(alpha0 >= 0.0)
+                     || !std::isfinite(alpha0)
+                     || !(max_scale >= 0.0 && max_scale < 1.0) || !(bulk > 0.0)
+                     || !std::isfinite(bulk) || !(f.box.volume() > 0.0)
+                     || !std::isfinite(f.box.volume());
     for (double stress : f.meta.get(kStress))
         if (!std::isfinite(stress))
             invalid = 1;
@@ -61,7 +64,7 @@ void JointIsotropicRelax::launch(const LaunchContext& ctx) {
     const double pressure =
         invalid ? 0.0 : pressure_from_frame_(f) * ctx.runtime.units.nktv2p;
     const double residual = pressure - P_target;
-    const double ds_unclamped = invalid ? 0.0 : alpha0 * residual / bulk_mod;
+    const double ds_unclamped = invalid ? 0.0 : alpha0 * residual / bulk;
     if (!std::isfinite(pressure) || !std::isfinite(residual)
         || !std::isfinite(ds_unclamped))
         invalid = 1;

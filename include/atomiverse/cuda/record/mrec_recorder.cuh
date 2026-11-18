@@ -76,10 +76,12 @@ namespace cuda {
 ///        `freq` steps; frames cross to the host asynchronously, never
 ///        dropped.
 ///
-/// **Columns** (identical to `cpu::MrecRecorder`): positions [Å] (primary +
-/// correction reconstructed in FP64), velocities [Å/fs], forces [eV/Å]
-/// (fixed point decoded), charges [e], images (int32 per component, so
-/// unwrapped coordinates are `x + ix·a + iy·b + iz·c`), tags, mass [amu],
+/// **Columns** (identical to `cpu::MrecRecorder`), all in the run's LAMMPS
+/// units and never converted (real: Å, Å/fs, kcal/mol/Å, g/mol, kcal/mol;
+/// metal: Å, Å/ps, eV/Å, g/mol, eV): positions (primary + correction
+/// reconstructed in FP64), velocities, forces (fixed point decoded), charges,
+/// images (int32 per component, so unwrapped coordinates are
+/// `x + ix·a + iy·b + iz·c`), tags, mass,
 /// the cell, the serializable system scalars (energies, kinetic, conserved,
 /// virial tensors) and `step`, plus each identity column the device frame
 /// carries — force-field type as `type_id`, species Z as `atomic_number`
@@ -87,7 +89,7 @@ namespace cuda {
 /// absent column is absent from the store, never zero-filled, and a type is
 /// never written as a species. Both are static for the run and copied once
 /// when the buffer is allocated. Rows are written in ascending tag order on
-/// both backends. `time = step · dt` [fs] when an integrator published a dt;
+/// both backends. `time = step · dt` [style time] when an integrator published a dt;
 /// a run without one records steps only.
 ///
 /// **Step convention (LAMMPS `dump`)**, exactly as on CPU: a frame's `step`
@@ -156,7 +158,7 @@ class MrecRecorder : public AsyncRecorder, public TimestepConsumer {
     TimestepConsumer* as_timestep_consumer() override { return this; }
     /// @brief A run without an integrator still records (steps only).
     bool timestep_required() const override { return false; }
-    /// @brief Receive the nuclear MD timestep [fs].
+    /// @brief Receive the nuclear MD timestep [style time].
     /// @throws std::invalid_argument when `dt_fs` is not finite and > 0.
     void set_timestep(double dt_fs) override;
 
@@ -204,7 +206,7 @@ class MrecRecorder : public AsyncRecorder, public TimestepConsumer {
 
     std::string filename_;
     int freq_;
-    double dt_fs_ = 0.0; ///< integrator dt [fs]; 0 ⇒ steps only
+    double dt_fs_ = 0.0; ///< integrator dt [style time]; 0 ⇒ steps only
     std::unique_ptr<Impl> impl_;
 };
 

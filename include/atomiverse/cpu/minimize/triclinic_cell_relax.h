@@ -7,6 +7,7 @@
 
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/component/optimizer.h"
 
 namespace ATV {
@@ -21,10 +22,14 @@ class TriclinicCellRelax : public Optimizer {
   public:
     double alpha0 = 0.02;     ///< Strain gain (dimensionless).
     double max_strain = 0.05; ///< Cap on |ε_αβ| per step.
-    double bulk_mod = 1.0;    ///< Soft modulus [style pressure].
+    double bulk_mod = units::
+        kStyleDefault; ///< Soft modulus [style pressure]; `units::kStyleDefault`
+    ///< (the default) is 1 eV/Å³ in the run's style (1.6e6 bar, 1.58e6 atm;
+    ///< 1 in lj).
 
     TriclinicCellRelax() = default;
-    explicit TriclinicCellRelax(double alpha, double bulk = 1.0);
+    explicit TriclinicCellRelax(double alpha,
+                                double bulk = units::kStyleDefault);
 
     std::string name() const override { return "triclinic_cell_relax"; }
     /// @brief Reads the system stress (kStress) every iteration.

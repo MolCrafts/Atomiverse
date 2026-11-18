@@ -14,8 +14,8 @@ namespace ATV {
 namespace cpu {
 namespace minimizer {
 
-IsotropicCellRelax::IsotropicCellRelax(double P_target_ev_a3, double alpha)
-    : P_target(P_target_ev_a3), alpha0(alpha) {
+IsotropicCellRelax::IsotropicCellRelax(double target, double alpha)
+    : P_target(target), alpha0(alpha) {
     if (!(alpha > 0.0) || !std::isfinite(alpha) || !std::isfinite(P_target))
         throw std::invalid_argument(
             "IsotropicCellRelax: finite target pressure and positive finite "
@@ -43,15 +43,18 @@ void IsotropicCellRelax::build(const BuildContext&) {
 }
 
 void IsotropicCellRelax::launch(const LaunchContext& ctx) {
+    // 1 eV/Å³ in the run's style unless the caller chose a modulus.
+    const double bulk = units::resolve_style_default(
+        bulk_mod, ctx.runtime.units.ev_per_cubic_angstrom());
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
     // Reject bad input collectively before changing the cell or any private
     // history. In particular, min/max must never hide a NaN pressure as a cap.
-    double invalid =
-        !std::isfinite(P_target) || !(alpha0 > 0.0) || !std::isfinite(alpha0)
-        || !(max_scale >= 0.0 && max_scale < 1.0) || !(bulk_mod > 0.0)
-        || !std::isfinite(bulk_mod) || !(f.box.volume() > 0.0)
-        || !std::isfinite(f.box.volume());
+    double invalid = !std::isfinite(P_target) || !(alpha0 > 0.0)
+                     || !std::isfinite(alpha0)
+                     || !(max_scale >= 0.0 && max_scale < 1.0) || !(bulk > 0.0)
+                     || !std::isfinite(bulk) || !(f.box.volume() > 0.0)
+                     || !std::isfinite(f.box.volume());
     for (double stress : f.meta.get(kStress))
         if (!std::isfinite(stress))
             invalid = 1;
@@ -59,7 +62,7 @@ void IsotropicCellRelax::launch(const LaunchContext& ctx) {
     const double pressure =
         invalid ? 0.0 : pressure_from_frame_(f) * ctx.runtime.units.nktv2p;
     const double residual = pressure - P_target;
-    const double ds_unclamped = invalid ? 0.0 : alpha0 * residual / bulk_mod;
+    const double ds_unclamped = invalid ? 0.0 : alpha0 * residual / bulk;
     if (!std::isfinite(pressure) || !std::isfinite(residual)
         || !std::isfinite(ds_unclamped))
         invalid = 1;

@@ -22,8 +22,8 @@ Case: `ctest -R '^md/npt$'` — sources and oracle record in [`regressions/md/np
   are updated in place; stress is read from Frame meta
   (`requires_system_stress()`); the kinetic part is written every step by
   MD's `KineticEnergy`.
-- **Units:** eV, Å, fs, eV/Å³, eV/Å², K. Pressure sign follows LAMMPS
-  (positive compressive).
+- **Units:** the run's LAMMPS style (these cases set `units metal`: eV, Å,
+  ps, bar, eV/Å², K). Pressure sign follows LAMMPS (positive compressive).
 - **Backend:** CPU classical MD; MD-only build (`buildenv-gcc/2026.03-mpich`,
   `ATV_BUILD_MD=ON`).
 
@@ -56,7 +56,7 @@ and NPγT barostat targets are
 P_\perp(t)=P_n-\frac{n_{\mathrm{surf}}\,\gamma}{L_z(t)},\qquad P_z=P_n,
 \]
 
-with \(P\) in eV/Å³, \(\gamma\) in eV/Å², \(L_z\) in Å. **Couple \(xy\)**
+with \(P\) in energy/volume (the bar target divided by `nktv2p`), \(\gamma\) in eV/Å², \(L_z\) in Å. **Couple \(xy\)**
 averages the lateral stresses \((P_{xx}+P_{yy})/2\), forces
 \(\dot\varepsilon_x=\dot\varepsilon_y\) so \(L_x=L_y\) remains exact, and
 leaves \(z\) independent (no three-axis isotropic pressure average).
@@ -74,7 +74,7 @@ gates are therefore **structural** (lockstep, expansion, anisotropy, finite
 | Lattice | \(a=5.1\) Å; \(L_0=15.3\) Å cubic start (compressed) |
 | Pair | LJ \(\varepsilon=0.0104\) eV, \(\sigma=3.4\) Å, \(r_c=8.5\) Å, skin \(0.5\) Å |
 | \(T\) | 100 K; \(\tau_T=50\) fs; InitVelocity seed 777 |
-| \(P_n\) | 0 eV/Å³ (normal target) |
+| \(P_n\) | 0 bar (normal target) |
 | \(\gamma\) | 0.001 eV/Å²; \(n_{\mathrm{surf}}=2\) |
 | \(P_\perp(0)\) | \(-1.30719\times 10^{-4}\) eV/Å³ (\(= -209.434\) bar in metal units) |
 | \(\tau_P\) | 500 fs |
@@ -101,7 +101,7 @@ sim.set_neighbor(cpu::md::NeighborList<>{8.5, 0.5});
 sim.set_integrator(cpu::md::SurfaceTensionNPT{
     /*T [K]=*/100.0,
     /*tau_T [fs]=*/50.0,
-    /*P_n [eV/Å³]=*/0.0,
+    /*P_n [bar]=*/0.0,
     /*gamma [eV/Å²]=*/0.001,
     /*tau_P [fs]=*/500.0,
     /*dt [fs]=*/1.0,

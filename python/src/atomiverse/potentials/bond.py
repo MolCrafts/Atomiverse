@@ -3,11 +3,11 @@
 from atomiverse._binding import _cpp
 
 #: Harmonic bond V = K(r - r0)^2 —
-#: ``cpu::BondHarmonic(K [eV/Å²] per type, r0 [Å] per type)``.
+#: ``cpu::BondHarmonic(K [energy/length²] per type, r0 [length] per type)``.
 Harmonic = _cpp.BondHarmonic
 
 #: Kremer-Grest FENE bond U = −½KR₀²ln(1 − (r/R₀)²) —
-#: ``cpu::BondFene(K [eV/Å²] per type, R0 [Å] per type)``. Finitely
+#: ``cpu::BondFene(K [energy/length²] per type, R0 [length] per type)``. Finitely
 #: extensible and loud about it: a bond at or beyond R₀ raises
 #: ``RuntimeError`` from ``run()`` rather than reporting an infinite energy.
 #: Normally paired with :data:`atomiverse.potentials.pair.WCA`, which is what

@@ -119,6 +119,7 @@ int run() {
     }
 
     cpu::Evaluate eval;
+    eval.set_units("metal"); // eV / Å inputs and pins (LAMMPS units metal)
     eval.set_neighbor(
         cpu::md::NeighborList<>{tip4p.neighbor_cutoff(), 0.3, 1, 0, true});
     eval.set_evaluator(std::move(tip4p));

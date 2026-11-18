@@ -114,7 +114,7 @@ void PistonElectrode::apply_forces_(cpu::Frame& f) {
     const double F_ext = sign * P_target / nktv2p_ * A;
 
     // Optional COM friction: a_damp = -v/tau ⇒
-    // F_damp = -M * v_com / (tau * force_to_accel)  [eV/Å].
+    // F_damp = -M * v_com / (tau * ftm2v)  [style force].
     double F_damp = 0.0;
     if (tau_damp > 0.0) {
         F_damp = -M * vz_com / (tau_damp * ftm2v_);

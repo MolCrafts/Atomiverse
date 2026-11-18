@@ -98,11 +98,14 @@ TaskSpec::TaskSpec(MinimizeTask task) : payload_(std::move(task)) {
                 // Only the tolerance: `PressureConverged` throws on
                 // `ptol <= 0` and on nothing else, so a negative target
                 // (a tensile setpoint) stays a legal payload.
-                require_positive_finite("Minimize", "PressureConverged ptol",
-                                        c.ptol);
+                // `units::kStyleDefault` = the style's own default.
+                if (c.ptol != units::kStyleDefault)
+                    require_positive_finite("Minimize",
+                                            "PressureConverged ptol", c.ptol);
             } else {
-                require_positive_finite("Minimize", "StressConverged stol",
-                                        c.stol);
+                if (c.stol != units::kStyleDefault)
+                    require_positive_finite("Minimize", "StressConverged stol",
+                                            c.stol);
                 if (!c.check_x && !c.check_y && !c.check_z)
                     throw std::invalid_argument(
                         "task_spec: Minimize StressConverged has every axis "

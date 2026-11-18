@@ -23,10 +23,11 @@ from atomiverse._binding import _cpp
 
 #: Berendsen isotropic barostat (LAMMPS ``fix press/berendsen iso``) —
 #: ``cpu::md::Barostat(P_target [pressure], tau_P [time], dt [time],
-#: bulk_modulus [pressure] = 1.0)``. ``tau_P`` is the coupling time (how fast
+#: bulk_modulus [pressure] = 10.0)``. ``tau_P`` is the coupling time (how fast
 #: the pressure is driven to its target) and ``bulk_modulus`` is the
-#: tunable modulus β that divides the per-step rescale; the default 1.0 is
-#: deliberately not LAMMPS's 10.0 (see ``cpu/dynamics/barostat.h``).
+#: tunable modulus β that divides the per-step rescale; the default 10.0 is
+#: LAMMPS's ``modulus`` default, in the run's pressure unit (real atm, metal
+#: bar).
 BerendsenBarostat = _cpp.BerendsenBarostat
 
 __all__ = ["BerendsenBarostat"]

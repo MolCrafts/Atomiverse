@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/component/optimizer.h"
 
 namespace ATV {
@@ -30,15 +31,17 @@ class IsotropicCellRelax : public Optimizer {
         0.0; ///< Target pressure [style pressure] (0 = vacuum/zero stress).
     double alpha0 = 0.05;    ///< Relative scale step gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per step (dimensionless).
-    double bulk_mod =
-        1.0; ///< Soft bulk modulus scale [style pressure] for step size.
+    double bulk_mod = units::
+        kStyleDefault; ///< Soft bulk modulus [style pressure]; `units::kStyleDefault`
+    ///< (the default) is 1 eV/Å³ in the run's style (1.6e6 bar, 1.58e6 atm;
+    ///< 1 in lj).
 
     /// @brief Construct with zero target pressure and default step gains.
     IsotropicCellRelax() = default;
 
-    /// @param P_target_ev_a3 Target pressure [style pressure].
+    /// @param P_target Target pressure [style pressure].
     /// @param alpha Relative scale gain (dimensionless).
-    explicit IsotropicCellRelax(double P_target_ev_a3, double alpha = 0.05);
+    explicit IsotropicCellRelax(double P_target, double alpha = 0.05);
 
     std::string name() const override { return "isotropic_cell_relax"; }
     /// @brief Reads the system stress (kStress) every iteration.

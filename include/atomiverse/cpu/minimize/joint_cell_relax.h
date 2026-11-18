@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "atomiverse/core/stage.h"
+#include "atomiverse/core/unit_system.h"
 #include "atomiverse/cpu/component/optimizer.h"
 
 namespace ATV {
@@ -23,7 +24,10 @@ class JointIsotropicRelax : public Optimizer {
     double atom_step = 0.01; ///< Atom step along unit force [Å].
     double alpha0 = 0.05;    ///< Relative scale gain (dimensionless).
     double max_scale = 0.05; ///< Cap on |s−1| per step.
-    double bulk_mod = 1.0;   ///< Soft bulk modulus [style pressure].
+    double bulk_mod = units::
+        kStyleDefault; ///< Soft bulk modulus [style pressure]; `units::kStyleDefault`
+    ///< (the default) is 1 eV/Å³ in the run's style (1.6e6 bar, 1.58e6 atm;
+    ///< 1 in lj).
 
     JointIsotropicRelax() = default;
 

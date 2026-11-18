@@ -14,7 +14,8 @@ namespace minimizer {
 
 TriclinicCellRelax::TriclinicCellRelax(double alpha, double bulk)
     : alpha0(alpha), bulk_mod(bulk) {
-    if (!(alpha0 > 0.0) || !(bulk_mod > 0.0) || !(max_strain > 0.0))
+    if (!(alpha0 > 0.0) || !(bulk_mod > 0.0 || bulk_mod == units::kStyleDefault)
+        || !(max_strain > 0.0))
         throw std::invalid_argument("TriclinicCellRelax: invalid parameters");
 }
 
@@ -41,7 +42,9 @@ void TriclinicCellRelax::launch(const LaunchContext& ctx) {
     if (ctx.at(ATV::minimizer::Phase::search_direction)) {
         // ε_αβ = α σ_αβ / B  with σ = s/V · nktv2p (the run's pressure
         // unit, like B).
-        const double invVB = alpha0 * ctx.runtime.units.nktv2p / (bulk_mod * V);
+        const double B = units::resolve_style_default(
+            bulk_mod, ctx.runtime.units.ev_per_cubic_angstrom());
+        const double invVB = alpha0 * ctx.runtime.units.nktv2p / (B * V);
         // Full symmetric strain from Voigt
         eps_(0, 0) = clamp(invVB * s[0]);
         eps_(1, 1) = clamp(invVB * s[1]);

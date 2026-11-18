@@ -551,25 +551,31 @@ void bind_md(nb::module_& m) {
 
     nb::class_<cpu::task::FixEfieldParams>(
         m, "FixEfield",
-        "Constant uniform electric field (LAMMPS `fix efield Ex Ey Ez`, "
-        "metal units).\n\n"
-        "A force source for MD.set_evaluator on CPU and CUDA: F_i += q_i E. "
-        "The energy U = -sum_i q_i E . r_i^u uses unwrapped coordinates "
+        "Constant uniform electric field (LAMMPS `fix efield Ex Ey Ez`).\n\n"
+        "A force source for MD.set_evaluator on CPU and CUDA: "
+        "F_i += q_i E qe2f, with E in the run's LAMMPS field unit (V/A for "
+        "units real and metal) and qe2f the run's LAMMPS factor (real: "
+        "23.060549 kcal/mol/A per e V/A; metal: 1 eV/A per e V/A). "
+        "The energy U = -sum_i q_i qe2f E . r_i^u uses unwrapped coordinates "
         "r^u = r + H n through the frame's image flags (LAMMPS fsum[0]); it "
         "drifts by the work the field does on migrating ions and is not a "
         "bounded potential under PBC. No virial is added (LAMMPS "
         "`fix_modify virial` is off by default). Needs a per-atom 'charge' "
-        "column [e].")
+        "column [charge].")
         .def(
             "__init__",
             [](cpu::task::FixEfieldParams* p, double Ex, double Ey, double Ez) {
                 new (p) cpu::task::FixEfieldParams{Ex, Ey, Ez};
             },
             nb::arg("Ex"), nb::arg("Ey"), nb::arg("Ez"),
-            "Construct with the field components Ex, Ey, Ez [V/A].")
-        .def_ro("Ex", &cpu::task::FixEfieldParams::Ex, "Field x [V/A].")
-        .def_ro("Ey", &cpu::task::FixEfieldParams::Ey, "Field y [V/A].")
-        .def_ro("Ez", &cpu::task::FixEfieldParams::Ez, "Field z [V/A].");
+            "Construct with the field components Ex, Ey, Ez [field unit of "
+            "the run's style; V/A for real and metal].")
+        .def_ro("Ex", &cpu::task::FixEfieldParams::Ex,
+                "Field x [style field unit].")
+        .def_ro("Ey", &cpu::task::FixEfieldParams::Ey,
+                "Field y [style field unit].")
+        .def_ro("Ez", &cpu::task::FixEfieldParams::Ez,
+                "Field z [style field unit].");
 
     nb::class_<cpu::md::GaussThermostat>(
         m, "GaussThermostat",
@@ -927,7 +933,7 @@ void bind_md(nb::module_& m) {
                                                            bulk_modulus};
             },
             nb::arg("P_target"), nb::arg("tau_P"), nb::arg("dt"),
-            nb::arg("bulk_modulus") = double(1),
+            nb::arg("bulk_modulus") = double(10),
             "Construct with target pressure P_target [pressure] (LAMMPS sign, "
             "positive compressive; metal bar, real atm), barostat "
             "coupling time tau_P [time] (LAMMPS `Pdamp`), and timestep dt "
@@ -935,9 +941,7 @@ void bind_md(nb::module_& m) {
             "bulk_modulus is the tunable modulus beta [pressure] (LAMMPS "
             "`modulus`). It divides the per-step rescale, so a larger value "
             "means a gentler box change and slower pressure relaxation. The "
-            "default is 1.0, deliberately NOT LAMMPS's 10.0 — see "
-            "cpu/dynamics/barostat.h; pass 10.0 for LAMMPS-identical "
-            "relaxation.");
+            "default 10.0 is LAMMPS's, in the run's pressure unit.");
 
     nb::class_<cpu::task::ThermoParams>(
         m, "Thermo",
@@ -1005,8 +1009,11 @@ void bind_md(nb::module_& m) {
         m, "MrecRecorder",
         "molrec (`*.mrec`) trajectory output at end_of_step, on the CPU and "
         "the CUDA MD driver alike, and under the MPI launcher.\n\n"
-        "Every `every` steps one frame is appended to the store: positions "
-        "[length], velocities [A/fs], forces [force], charges [e], images "
+        "Every `every` steps one frame is appended to the store, every value "
+        "in the run's LAMMPS units and never converted (real: A, A/fs, "
+        "kcal/mol/A, kcal/mol; metal: A, A/ps, eV/A, eV): positions "
+        "[length], velocities [velocity], forces [force], charges [charge], "
+        "images "
         "(int32 "
         "ix/iy/iz, so unwrapped = x + ix*a + iy*b + iz*c), tags, mass "
         "[mass], the identity columns the frame carries (force-field type as "

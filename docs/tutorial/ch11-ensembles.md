@@ -351,13 +351,15 @@ exclusive; attach exactly one.
 ### NPT — thermostat plus barostat
 
 For NPT, combine a thermostat with the Berendsen `Barostat(P_target, tau_P,
-dt, bulk_modulus=1.0)`. Pressure is in eV/Å³ (LAMMPS-standard sign, positive
-⇔ compressive); **1 bar ≈ 6.2415e-7 eV/Å³**.
+dt, bulk_modulus=10.0)`. Pressure is in the run's LAMMPS pressure unit
+(`units real`: atm, `units metal`: bar; LAMMPS-standard sign, positive ⇔
+compressive), and so is `bulk_modulus` (LAMMPS `modulus`, default 10).
 
 ```cpp
+sim.set_units("real");                       // fs, K, atm
 sim.set_integrator(cpu::md::VelocityVerlet{4.0});
 sim.set_thermostat(cpu::md::NoseHoover{100.0, 200.0, 4.0});
-sim.set_barostat  (cpu::md::Barostat{/*P=*/6.2415e-7, /*tau_P=*/2000.0, /*dt=*/4.0});
+sim.set_barostat  (cpu::md::Barostat{/*P [atm]=*/1.0, /*tau_P=*/2000.0, /*dt=*/4.0});
 ```
 
 `Barostat` reads `frame.meta.get(kStress)` and
@@ -377,12 +379,13 @@ symplectic Trotter step. It **replaces** `VelocityVerlet` / `NoseHoover` /
 constructor arguments — there is no `Config` bag:
 
 ```cpp
-sim.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 6.8});
+sim.set_units("real");                    // kcal/mol, Å, fs, K, atm
+sim.set_evaluator(cpu::PairLJCut{0.2381, 3.4, 6.8});
 sim.set_neighbor(cpu::md::NeighborList<>{6.8, 0.3});
 sim.set_integrator(cpu::md::NoseHooverNPT{
     /*T_target*/ 100.0,
     /*tau_T*/ 200.0,
-    /*P_target*/ 6.2415e-7, // eV/Å³
+    /*P_target*/ 1.0, // atm
     /*tau_P*/ 2000.0,
     /*dt*/ 4.0});
 sim.set_thermo(100);

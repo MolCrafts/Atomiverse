@@ -23,7 +23,7 @@ within ATV; the gate is **finite energy + bonded contribution present + |E|<50 e
 | cutoff | 10 Å (LJ and Coulomb) |
 | special_bonds | 0, 0, 0.5 (lj and coul) |
 | box | cubic 30 Å |
-| units | Atomiverse eV / Å |
+| units | LAMMPS `units metal` (eV / Å), set on the driver |
 
 ### How to regenerate a tight pin
 

@@ -5,6 +5,10 @@ LAMMPS-style split: ``pair`` / ``bond`` / ``angle`` / ``dihedral`` /
 (``potentials.pair.LJCut`` is the C++ ``cpu::PairLJCut``). The top-level
 convenience names keep the LAMMPS compound spelling
 (``atomiverse.PairLJCut``) and are the same classes.
+
+Every parameter is in the run's LAMMPS ``units`` style (``[energy]`` is
+kcal/mol under ``real``, eV under ``metal``; ``[length]`` Å); nothing is
+converted.
 """
 
 from atomiverse._binding import require_domain
