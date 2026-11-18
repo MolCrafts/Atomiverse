@@ -9,7 +9,7 @@ back from the engine:
   1 eV/Å), U = −Σ q qe2f E·r, and the velocity a lone ion gains,
   v = F t / (m mvv2e);
 * the Coulomb energy of one pair, qqr2e q_i q_j / r (``PairCoulCut``) and
-  qqr2e q_i q_j erfc(α r) / r (the real-space ``PairLJCutCoulLong``);
+  qqr2e times its Ewald sum (``PairLJCutCoulLong`` + ``KSpacePPPM``);
 * ``InitVelocity``: Σ m v² mvv2e / (N_f boltz) is the requested temperature;
 * CSVR (global and ``types`` + ``bias="com"``), Langevin and Nosé–Hoover hold
   an LJ liquid at the setpoint, measured from the velocities;
@@ -207,17 +207,44 @@ def test_coul_cut_pair_energy_is_qqr2e_qq_over_r(style: str) -> None:
     want = LAMMPS[style]["qqr2e"] * q[0] * q[1] / r
     assert float(frame.meta["energy"]) == pytest.approx(want, rel=1e-12)
     fx = _cols(frame, ("fx",))[:, 0]
-    assert fx[1] == pytest.approx(-want / r, rel=1e-12)  # attraction toward atom 0
+    # F_1 = -dU/dx_1 = qqr2e q_0 q_1 / r²: toward atom 0 (attraction).
+    assert fx[1] == pytest.approx(want / r, rel=1e-12)
+    assert fx[0] == pytest.approx(-want / r, rel=1e-12)
+
+
+def _ewald(pos, q, box: float, alpha: float, cutoff: float) -> float:
+    """Ewald sum of point charges in a cube, in units of qqr2e: real space
+    erfc(αr)/r inside the cutoff (minimum image), reciprocal
+    (2π/V) Σ_k exp(−k²/4α²)/k² |S(k)|², self −α/√π Σq²."""
+    pos = np.asarray(pos, dtype=np.float64)
+    q = np.asarray(q, dtype=np.float64)
+    real = 0.0
+    for i in range(len(q)):
+        for j in range(i + 1, len(q)):
+            d = pos[i] - pos[j]
+            d -= box * np.round(d / box)
+            r = float(np.linalg.norm(d))
+            if r < cutoff:
+                real += q[i] * q[j] * math.erfc(alpha * r) / r
+    n = np.arange(-12, 13)
+    kx, ky, kz = np.meshgrid(n, n, n, indexing="ij")
+    k = 2.0 * np.pi / box * np.stack([kx.ravel(), ky.ravel(), kz.ravel()], axis=1)
+    k = k[np.any(k != 0.0, axis=1)]
+    k2 = np.sum(k * k, axis=1)
+    s = np.exp(1j * (k @ pos.T)) @ q
+    recip = 2.0 * np.pi / box**3 * float(np.sum(np.exp(-k2 / (4 * alpha**2)) / k2 * np.abs(s) ** 2))
+    self_ = -alpha / math.sqrt(math.pi) * float(np.sum(q * q))
+    return real + recip + self_
 
 
 @needs_kspace
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("style", STYLES)
-def test_lj_cut_coul_long_real_space_pair_is_qqr2e_erfc(device: str, style: str) -> None:
-    """LJ switched off (ε = 0): the fused pair style's real-space energy of
-    one pair is qqr2e q_i q_j erfc(α r)/r, and PPPM adds the reciprocal
-    part, which is also proportional to qqr2e: the total over qqr2e is
-    the same number in real and metal."""
+def test_lj_cut_coul_long_pppm_pair_is_qqr2e_ewald(device: str, style: str) -> None:
+    """LJ switched off (ε = 0): fused lj/cut/coul/long + PPPM on one ±1 e
+    pair is qqr2e times the Ewald sum (real + reciprocal + self) of the
+    pair, 332.06371 × −0.334 kcal/mol in real, 14.399645 × −0.334 eV in
+    metal."""
     r, alpha, cut, box = 3.0, 0.3, 9.0, 30.0
     q = [1.0, -1.0]
     pos = [[10.0, 10.0, 10.0], [10.0 + r, 10.0, 10.0]]
@@ -228,19 +255,8 @@ def test_lj_cut_coul_long_real_space_pair_is_qqr2e_erfc(device: str, style: str)
     sim.set_evaluator(av.PairLJCutCoulLong([av.LJTypeCoeff(1, 1, 0.0, 3.0)], alpha, cut))
     sim.set_evaluator(av.KSpacePPPM(alpha, 0.5, 5))
     sim.run(frame, 0)
-    want_pair = LAMMPS[style]["qqr2e"] * q[0] * q[1] * math.erfc(alpha * r) / r
-    assert float(frame.meta["energy_pair"]) == pytest.approx(want_pair, rel=1e-9)
-    # The whole Ewald sum scales with qqr2e alone.
-    total = float(frame.meta["energy"]) / LAMMPS[style]["qqr2e"]
-    other = "metal" if style == "real" else "real"
-    f2 = _atoms_frame(pos, 10.0, box, charge=q)
-    sim = MD(device=device, units=other)
-    sim.set_neighbor(NeighborList(cut, 1.0))
-    sim.set_integrator(VelocityVerlet(SCALE[other]["time"]))
-    sim.set_evaluator(av.PairLJCutCoulLong([av.LJTypeCoeff(1, 1, 0.0, 3.0)], alpha, cut))
-    sim.set_evaluator(av.KSpacePPPM(alpha, 0.5, 5))
-    sim.run(f2, 0)
-    assert float(f2.meta["energy"]) / LAMMPS[other]["qqr2e"] == pytest.approx(total, rel=1e-9)
+    want = LAMMPS[style]["qqr2e"] * _ewald(pos, q, box, alpha, cut)
+    assert float(frame.meta["energy"]) == pytest.approx(want, rel=1e-5)
 
 
 # ── LJ liquid: InitVelocity and the thermostats ──────────────────────────
