@@ -70,6 +70,7 @@ int run() {
     const double sig_c3 = 3.3977, sig_oh = 3.2429, sig_h = 2.4714;
 
     cpu::Evaluate eval;
+    eval.set_units("metal"); // eV / Å inputs and pins (LAMMPS units metal)
     eval.set_neighbor(cpu::md::NeighborList<>{10.0, 0.5});
     eval.set_evaluator(cpu::PairLJCut{
         {{0, 0, eps_c3, sig_c3}, {1, 1, eps_oh, sig_oh}, {2, 2, eps_h, sig_h}},

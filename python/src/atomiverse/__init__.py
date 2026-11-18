@@ -184,8 +184,8 @@ with, and ``from atomiverse import *`` must work on every such build.
 Drivers use the same **categorical setters** as C++ (not phase-only
 ``add`` as the primary path)::
 
-    sim = av.MD()
-    sim.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
+    sim = av.MD(units="real")  # LAMMPS units: kcal/mol, Å, fs, K, atm
+    sim.set_evaluator(av.PairLJCut(0.2381, 3.4, 8.5))  # argon
     sim.set_neighbor(av.NeighborList(8.5, 0.5))
     sim.set_integrator(av.VelocityVerlet(1.0))
     sim.set_thermo(200)

@@ -760,15 +760,18 @@ opt.set_evaluator(av.PairLJCut(epsilon, sigma, cutoff))
 
 opt.run(frame, max_iter=1000)
 length = float(np.asarray(frame.box.lengths)[0])       # relaxed cell edge [A]
-stress = np.asarray(frame.meta["stress"])              # extensive Voigt virial [eV]
+stress = np.asarray(frame.meta["stress"])              # extensive Voigt virial [energy]
+# × nktv2p (LAMMPS compute pressure); 1 in the default lj style used here.
 pressure = (stress[0] + stress[1] + stress[2]) / (3.0 * frame.box.volume())
 ```
 
 Read the units carefully: `frame.meta["stress"]` is the **extensive** Voigt
-virial in eV for every classical evaluator, which is why the pressure above
-divides by the cell volume — `PressureConverged` uses the same formula.
-Pressure targets are in eV/Å³, LAMMPS sign (positive is compressive);
-1 bar ≈ 6.2415×10⁻⁷ eV/Å³.
+virial in the run's energy unit for every classical evaluator, which is why
+the pressure above divides by the cell volume — `PressureConverged` uses the
+same formula times LAMMPS `nktv2p`. Pressure targets and tolerances are in the
+run's pressure unit (`units real` atm, `units metal` bar, reduced in `lj`),
+LAMMPS sign (positive is compressive). This example runs in the default `lj`
+style, where `nktv2p = 1` and the numbers below are energy/Å³ of the inputs.
 
 Set expectations from what the C++ regression actually measures. Two Ar atoms
 3.0 Å apart in a 6.0 Å cube — compressed well inside the Lennard-Jones
@@ -1184,7 +1187,7 @@ own.
 | `set_thermostat` | `NoseHoover(T, tau_T, dt)` | NVT thermostat |
 | `set_thermostat` | `Langevin(T_start, T_stop, damp, dt, seed)` | Langevin thermostat |
 | `set_thermostat` | `CSVR(T, tau, dt, seed, types=[], bias="none")` | Bussi velocity rescale (`fix temp/csvr`), CPU and CUDA; `types` = thermostatted force-field types (empty: all), `bias="com"` = `compute temp/com`; plural (one per group) |
-| `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
+| `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=10.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
 | `set_evaluator` | `PairLJCut(ε, σ, cutoff, s12=1, s13=1, s14=1, energy_shift=True)` or `PairLJCut([LJTypeCoeff(type_i, type_j, ε, σ, cutoff=None), …], cutoff, s12=1, s13=1, s14=1, energy_shift=True)` | Lennard-Jones 12-6, single-type or per-type table |
 | `set_evaluator` | `PairCoulCut(cutoff, s12=1, s13=1, s14=1, coulomb=1)` | Truncated Coulomb — complete on its own; needs a per-atom `charge` column [e] |
@@ -1200,7 +1203,7 @@ own.
 | `set_evaluator` | `BondFene(K, R0)` | Kremer-Grest FENE bond `−½KR₀²ln(1 − (r/R₀)²)`; `r ≥ R0` raises `RuntimeError` rather than reporting an infinite energy. `K` [eV/Å²], `R0` [Å], per bond type |
 | `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending `K(θ − θ₀)²`. `K` [eV/rad²], `θ0` [rad], per angle type |
 | `set_evaluator` | `AngleCosine(K)` | LAMMPS `angle_style cosine` `K(1 + cos θ)`, minimum at θ = π (Kremer–Grest bending). `K` [eV], per angle type. Also on `MD(device="cuda")`, where the angle slot holds one style |
-| `set_evaluator` | `FixEfield(Ex, Ey, Ez)` | Uniform electric field (LAMMPS `fix efield`): `F = qE`, `E` [V/Å], so `F` [eV/Å] for `charge` [e]. Energy `−Σ q E·r^u` on unwrapped coordinates (image flags); no virial. Needs a `charge` column; also on `MD(device="cuda")` |
+| `set_evaluator` | `FixEfield(Ex, Ey, Ez)` | Uniform electric field (LAMMPS `fix efield`): `F = q E qe2f`, `E` in the run's field unit (V/Å for `real` and `metal`), so 1 e in 1 V/Å is 23.060549 kcal/mol/Å in `real` and 1 eV/Å in `metal`. Energy `−Σ q qe2f E·r^u` on unwrapped coordinates (image flags); no virial. Needs a `charge` column; also on `MD(device="cuda")` |
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral `Σₙ Cₙ cosⁿφ`. `Cn` [eV], one coefficient list per dihedral type |
 | `set_evaluator` | `DihedralCharmm(K, n, delta)` | CHARMM periodic torsion `K(1 + cos(nφ − δ))`. `K` [eV], `n` an integer multiplicity ≥ 1 (minima per full turn), `delta` [rad], per dihedral type |
 | `set_evaluator` | `ImproperHarmonic(K, chi0)` | Harmonic out-of-plane torsion `K(χ − χ₀)²`; reads the frame's `impropers` block. `K` [eV/rad²], `chi0` [rad], per improper type |
@@ -1264,8 +1267,9 @@ to a notional heat bath so their mean kinetic energy tracks a target
 temperature `T` [K] — gives NVT. NPT goes one step further: the simulation
 cell is allowed to change size so that the internal pressure tracks a target
 `P`, and the component that rescales the cell is the *barostat*. Pressure is
-in eV/Å³ with the LAMMPS sign (positive ⇔ compressive), so **1 bar ≈
-6.2415e-7 eV/Å³**; pass `0.0` for a zero-pressure run. Every route below
+in the run's LAMMPS pressure unit — **atm under `units real`, bar under
+`units metal`** — with the LAMMPS sign (positive ⇔ compressive); pass `0.0`
+for a zero-pressure run. Every route below
 derives the pressure from the stress tensor, and the driver auto-installs the
 virial (stress) observer that supplies it — you never register that yourself.
 
@@ -1275,10 +1279,10 @@ There are two routes, and they are mutually exclusive.
 thermostat, then add `set_barostat(BerendsenBarostat(P, tau_P, dt))`. Once per
 step it rescales the cell edges and every atom position by one isotropic
 factor that drives the instantaneous pressure toward `P` with relaxation time
-`tau_P` [fs] (LAMMPS `Pdamp`). The optional `bulk_modulus` (β [eV/Å³], LAMMPS
-`modulus`) divides that factor, so a larger β means a smaller per-step rescale
-and slower relaxation. Its default is **1.0 eV/Å³**, deliberately *not*
-LAMMPS's `10.0`; pass `10.0` explicitly for LAMMPS-identical relaxation.
+`tau_P` [time] (LAMMPS `Pdamp`). The optional `bulk_modulus` (β [pressure],
+LAMMPS `modulus`) divides that factor, so a larger β means a smaller per-step
+rescale and slower relaxation. Its default is LAMMPS's **10.0**, in the run's
+pressure unit.
 Berendsen relaxes pressure smoothly and is a good equilibration tool, but it
 does not sample a rigorous NPT distribution.
 
@@ -1296,23 +1300,24 @@ both setpoints first. Keyword names are `T_target` / `P_target` (the table
 above abbreviates them).
 
 ```python
+# units real (sim = av.MD(units="real")): K, fs, atm
 # Rigorous NPT — one component covers integration, thermostat and barostat
 sim.set_integrator(av.NoseHooverNPT(
     300.0,        # T_target [K]
     100.0,        # tau_T    [fs]
-    6.2415e-7,    # P_target [eV/Å³] ≈ 1 bar
+    1.0,          # P_target [atm]
     1000.0,       # tau_P    [fs]
     0.5,          # dt       [fs]
 ))
 
 # Full-cell NPT — same physics, tilt factors free.
 # Argument order here is T, P, tau_T, tau_P, dt.
-sim.set_integrator(av.ParrinelloRahmanNPT(300.0, 6.2415e-7, 100.0, 1000.0, 0.5))
+sim.set_integrator(av.ParrinelloRahmanNPT(300.0, 1.0, 100.0, 1000.0, 0.5))
 
 # Berendsen equilibration — barostat rides alongside integrator + thermostat
 sim.set_integrator(av.VelocityVerlet(0.5))
 sim.set_thermostat(av.NoseHoover(300.0, 100.0, 0.5))
-sim.set_barostat(av.BerendsenBarostat(6.2415e-7, 1000.0, 0.5))
+sim.set_barostat(av.BerendsenBarostat(1.0, 1000.0, 0.5))
 ```
 
 `NoseHooverNPT` additionally exposes the LAMMPS `fix npt` knob tail, each

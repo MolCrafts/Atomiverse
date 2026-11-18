@@ -1,9 +1,12 @@
 /// @file cpu/io/lammps_real.h
-/// @brief LAMMPS `units real` → Atomiverse engineering unit converters.
+/// @brief Converters from LAMMPS `units real` coefficients to `units metal`.
 ///
-/// Real units: energy kcal/mol, length Å, angle degree (coeffs).
-/// Atomiverse: energy eV, length Å, angle rad for bonded angle/dihedral
-/// equilibrium values.
+/// Real units: energy kcal/mol, length Å, angle degree (coeffs). A run
+/// takes its parameters in its own LAMMPS style and converts nothing
+/// (`Driver::set_units`): coefficients read in real units feed a
+/// `units real` run directly. These helpers exist only for a driver that was
+/// set to `units metal` (eV, Å) and must take kcal/mol inputs; angles are
+/// always radians in the bonded styles.
 #pragma once
 
 #include <cmath>

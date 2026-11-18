@@ -129,7 +129,7 @@ class GaussianChargeKernel {
     ///
     /// \(U_{ij} = \texttt{coulomb}\, q_i q_j\, G_{ij}(r)\).
     ///
-    /// @param coulomb Prefactor [eV·Å/e²] (qqrd2e for ATV metal units).
+    /// @param coulomb Prefactor [energy·length/charge²]: the run's qqrd2e.
     /// @param q_i Charge on \(i\) [e].
     /// @param q_j Charge on \(j\) [e].
     /// @param r Separation [Å].

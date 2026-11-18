@@ -20,7 +20,7 @@ at ``every=2`` records steps 0, 2, 4, 6, 8).
 
 ``MrecRecorder(path, every)`` writes a molrec (``*.mrec``) trajectory —
 positions, velocities, forces, charges, int32 image flags, tags, mass, cell,
-energies (total and per term), ``step`` and ``time`` [fs], plus the identity
+energies (total and per term), ``step`` and ``time`` [time], plus the identity
 columns the frame carries: force-field type as ``type_id`` and species as
 ``atomic_number`` (a coarse-grained frame has the first only; an absent
 column stays absent, never zero-filled) — and is accepted by
