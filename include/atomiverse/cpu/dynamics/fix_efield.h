@@ -14,18 +14,22 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-/// @brief Apply a uniform electric field to charged atoms (metal units).
+/// @brief Apply a uniform electric field to charged atoms (any `units` style).
 ///
 /// Mirrors LAMMPS `fix efield Ex Ey Ez` for the **constant** field path
 /// (`lammps/src/fix_efield.cpp`, charge interactions only):
 ///
 ///   \[
-///     \mathbf{F}_i \mathrel{+}= q_i \mathbf{E},\qquad
-///     U \mathrel{+}= -q_i\,\mathbf{E}\cdot\mathbf{r}_i^{\mathrm{u}}
+///     \mathbf{F}_i \mathrel{+}= q_i \mathbf{E}\,\texttt{qe2f},\qquad
+///     U \mathrel{+}= -q_i\,\texttt{qe2f}\,\mathbf{E}\cdot\mathbf{r}_i^{\mathrm{u}}
 ///   \]
 ///
-/// with \(\mathbf{E}\) in V/Å, \(q\) in elementary charge, \(\mathbf{F}\) in
-/// eV/Å, \(U\) in eV. Metal-unit `qe2f = 1` (no extra scale). Unwrapped
+/// with \(\mathbf{E}\) in the run's LAMMPS field unit (V/Å for `real` and
+/// `metal`, V/m for `si`, statvolt/cm for `cgs`, V/cm for `electron`, V/µm
+/// for `micro`, V/nm for `nano`, reduced for `lj`), \(q\) in the style's
+/// charge unit, and `qe2f` the run's `ctx.runtime.units.qe2f` (LAMMPS
+/// `force->qe2f`: 23.060549 for real, 1 for metal), so \(\mathbf F\) is in
+/// the style's force unit and \(U\) in its energy unit. Unwrapped
 /// coordinates use the image flags on Frame,
 /// \(\mathbf{r}^{\mathrm{u}} = \mathbf{r} + H\mathbf{n}\) with the lattice
 /// vectors in the columns of \(H\) (LAMMPS `Domain::unmap`), so orthorhombic
@@ -55,13 +59,14 @@ namespace md {
 /// for minimization-only variable energy.
 class FixEfield : public cpu::Bias, public cpu::ExternalDrive {
   public:
-    /// @param Ex Electric field x-component [V/Å] (LAMMPS metal units).
-    /// @param Ey Electric field y-component [V/Å].
-    /// @param Ez Electric field z-component [V/Å].
+    /// @param Ex Electric field x-component [style field unit; V/Å for
+    ///           real and metal].
+    /// @param Ey Electric field y-component [style field unit].
+    /// @param Ez Electric field z-component [style field unit].
     FixEfield(double Ex, double Ey, double Ez) noexcept
         : Ex(Ex), Ey(Ey), Ez(Ez) {}
 
-    /// Field components [V/Å] — public members (no Config bag).
+    /// Field components [style field unit] — public members (no Config bag).
     double Ex = 0.0;
     double Ey = 0.0;
     double Ez = 0.0;
@@ -76,12 +81,13 @@ class FixEfield : public cpu::Bias, public cpu::ExternalDrive {
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
     const ExternalDrive* as_external_drive() const override { return this; }
-    /// @brief F −= q E on owned rows (the force `launch` adds).
+    /// @brief F −= q E qe2f on owned rows (the force `launch` adds).
     void subtract_drive_force(const LaunchContext& ctx, int n, double* fx,
                               double* fy, double* fz) const override;
     void launch(const cpu::LaunchContext& ctx) override;
 
-    /// @return Last field energy contribution written this launch [eV].
+    /// @return Last field energy contribution written this launch [style
+    ///         energy unit].
     double last_energy() const noexcept { return last_u_; }
 
   private:

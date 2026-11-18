@@ -215,8 +215,9 @@ void bind_cuda_classical(nb::class_<Handle>& cls) {
         "set_evaluator",
         [](Handle& self, const cpu::task::FixEfieldParams& p) {
             self.require_configurable();
-            // Force phase, like the CPU categorical path. F = qE [eV/A]
-            // with E in V/A; energy -sum q E.r^u, no virial.
+            // Force phase, like the CPU categorical path. F = q E qe2f in
+            // the run's force unit, E in the style's field unit (V/A for
+            // real and metal); energy -sum q qe2f E.r^u, no virial.
             self.driver.set_evaluator(cuda::md::FixEfield{p.Ex, p.Ey, p.Ez});
         },
         nb::arg("evaluator"));

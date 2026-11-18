@@ -10,9 +10,12 @@
 ///     pressure tensor;
 ///   - nve / langevin (T = 0, deterministic drag) / npt / nvt: the state
 ///     after 100 steps (positions, velocities, forces, pe, ke, pressure,
-///     volume).
+///     volume);
+///   - efield_single / efield: `fix efield Ex Ey Ez` + `fix_modify energy
+///     yes` (field in V/Å for real and metal) at `run 0` and after 100 NVE
+///     steps.
 /// The numbers only agree if every factor the engine multiplies (ftm2v,
-/// mvv2e, boltz, qqrd2e, nktv2p) is the selected style's.
+/// mvv2e, boltz, qqrd2e, nktv2p, qe2f) is the selected style's.
 #include <gtest/gtest.h>
 
 #include <array>
@@ -27,6 +30,7 @@
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/unit_system.h"
+#include "atomiverse/cpu/dynamics/fix_efield.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -224,6 +228,10 @@ cpu::Frame run_case(System& s, const std::string& name, int steps) {
                 std::stod(lang.at(6)), dt, 1u});
         }
     }
+    const auto efield = deck_line(deck, "fix", "2");
+    if (efield.size() == 7 && efield[3] == "efield")
+        md.set_evaluator(cpu::md::FixEfield{
+            std::stod(efield[4]), std::stod(efield[5]), std::stod(efield[6])});
     md.build();
     cpu::Frame f = s.frame; // fresh copy of the data-file state
     md.run(f, steps);
@@ -393,6 +401,92 @@ void expect_trajectory(const std::string& style, const std::string& name,
 TEST_P(LammpsUnitsParity, NveTrajectoryMatchesLammps) {
     expect_trajectory(GetParam(), "nve", {5e-6, 1e-6, 1e-5, 0});
 }
+
+/// LAMMPS `force->qe2f` of the charged styles (src/update.cpp), written
+/// out here rather than read back from the engine.
+double lammps_qe2f(const std::string& style) {
+    if (style == "real")
+        return 23.060549;
+    if (style == "metal" || style == "lj")
+        return 1.0;
+    throw std::invalid_argument("no efield deck for style " + style);
+}
+
+class LammpsUnitsEfield : public testing::TestWithParam<std::string> {};
+
+TEST_P(LammpsUnitsEfield, FieldForceIsChargeTimesFieldTimesQe2f) {
+    // Closed form: the field adds exactly q E qe2f to every atom's force
+    // (real: 23.060549 kcal/mol/Å per e·V/Å; metal: 1 eV/Å per e·V/Å).
+#ifndef ATV_HAS_KSPACE
+    GTEST_SKIP() << "PPPM needs ATV_BUILD_KSPACE";
+#endif
+    System s = load(GetParam());
+    const cpu::Frame plain = run_case(s, "single", 0);
+    const cpu::Frame field = run_case(s, "efield_single", 0);
+    const auto t =
+        deck_line(data_dir(s.style) / "in.efield_single.lmp", "fix", "2");
+    const double E[3] = {std::stod(t.at(4)), std::stod(t.at(5)),
+                         std::stod(t.at(6))};
+    const double qe2f = lammps_qe2f(s.style);
+    const auto q = field.span(kAtom_charge);
+    const AccReal* F1[3] = {field.span(kAtom_fx), field.span(kAtom_fy),
+                            field.span(kAtom_fz)};
+    const AccReal* F0[3] = {plain.span(kAtom_fx), plain.span(kAtom_fy),
+                            plain.span(kAtom_fz)};
+    // Same atom by tag in both frames.
+    std::map<long, int> row0;
+    for (int j = 0; j < plain.nlocal(); ++j)
+        row0[static_cast<long>(plain.span(kAtom_tag)[j])] = j;
+    ASSERT_EQ(plain.nlocal(), field.nlocal());
+    double worst = 0, scale = 0;
+    for (int i = 0; i < field.nlocal(); ++i)
+        for (int d = 0; d < 3; ++d) {
+            const int j = row0.at(static_cast<long>(field.span(kAtom_tag)[i]));
+            const double want = q[i] * E[d] * qe2f;
+            worst = std::max(worst, std::fabs((F1[d][i] - F0[d][j]) - want));
+            scale = std::max(scale, std::fabs(want));
+        }
+    ASSERT_GT(scale, 0.0);
+    EXPECT_LT(worst / scale, 1e-10) << s.style;
+}
+
+TEST_P(LammpsUnitsEfield, SinglePointMatchesLammpsFixEfield) {
+#ifndef ATV_HAS_KSPACE
+    GTEST_SKIP() << "PPPM needs ATV_BUILD_KSPACE";
+#endif
+    System s = load(GetParam());
+    const cpu::Frame f = run_case(s, "efield_single", 0);
+    const auto th =
+        read_thermo(data_dir(s.style) / "ref.efield_single.thermo").at(0);
+    const auto plain =
+        read_thermo(data_dir(s.style) / "ref.single.thermo").at(0);
+    const auto dump = read_dump(data_dir(s.style) / "ref.efield_single.dump");
+    const double escale =
+        std::fabs(th.at("PotEng")) + std::fabs(th.at("KinEng"));
+    EXPECT_LT(force_error(f, dump), 1e-6) << s.style;
+    // PotEng includes the fix energy (fix_modify energy yes) = f_2.
+    EXPECT_LT(rel(f.meta.get(kEnergy), th.at("PotEng"), escale), 1e-6)
+        << s.style;
+    EXPECT_NEAR(th.at("PotEng") - plain.at("PotEng"), th.at("f_2"),
+                1e-9 * escale);
+    // No virial from the field (fix_modify virial off): same pressure.
+    const auto p = pressure(f, s.u);
+    const char* key[6] = {"Pxx", "Pyy", "Pzz", "Pxy", "Pxz", "Pyz"};
+    double pscale = 0;
+    for (const char* k : key)
+        pscale = std::max(pscale, std::fabs(th.at(k)));
+    for (int a = 0; a < 6; ++a)
+        EXPECT_LT(rel(p[a], th.at(key[a]), pscale), 1e-6)
+            << s.style << " " << key[a];
+}
+
+TEST_P(LammpsUnitsEfield, NveTrajectoryMatchesLammpsFixEfield) {
+    expect_trajectory(GetParam(), "efield", {5e-6, 1e-6, 1e-5, 0});
+}
+
+INSTANTIATE_TEST_SUITE_P(Styles, LammpsUnitsEfield,
+                         testing::Values("lj", "real", "metal"),
+                         [](const auto& info) { return info.param; });
 
 INSTANTIATE_TEST_SUITE_P(Styles, LammpsUnitsParity,
                          testing::Values("lj", "real", "metal", "si",

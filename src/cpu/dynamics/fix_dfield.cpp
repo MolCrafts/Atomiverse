@@ -50,9 +50,15 @@ void FixDfield::launch(const cpu::LaunchContext& ctx) {
     const double Pz = (V > 0.0) ? Pz_sum / V : 0.0;
 
     // Maxwell field along z: foothold E ≡ D, feedback E = D - 4π k_e P.
-    // 4π k_e converts P [charge/area] into a field; k_e = the run's qqrd2e.
-    const double four_pi_k = 4.0 * units::pi * ctx.runtime.units.qqrd2e();
+    // D and E are in the style's LAMMPS field unit (V/Å for real/metal),
+    // like FixEfield; qe2f turns q·field into the style's force. 4π k_e P
+    // (k_e = qqrd2e) is a force per charge, so it is divided by qe2f to be
+    // a field.
+    const double qe2f = ctx.runtime.units.qe2f;
+    const double k_e = ctx.runtime.units.qqrd2e();
+    const double four_pi_k = 4.0 * units::pi * k_e / qe2f;
     const double Ez = polarization_feedback ? Dz - four_pi_k * Pz : Dz;
+    const double dx = qe2f * Dx, dy = qe2f * Dy, ez = qe2f * Ez, dz = qe2f * Dz;
 
     // Pass 2 — forces + field-coupling energy.
     double U = 0.0;
@@ -67,17 +73,18 @@ void FixDfield::launch(const cpu::LaunchContext& ctx) {
         const double rx = static_cast<double>(x[i]) + ix * Lx;
         const double ry = static_cast<double>(y[i]) + iy * Ly;
         const double rz = static_cast<double>(z[i]) + iz * Lz;
-        fx[i] += static_cast<AccReal>(qi * Dx);
-        fy[i] += static_cast<AccReal>(qi * Dy);
-        fz[i] += static_cast<AccReal>(qi * Ez);
-        U -= qi * (Dx * rx + Dy * ry);
+        fx[i] += static_cast<AccReal>(qi * dx);
+        fy[i] += static_cast<AccReal>(qi * dy);
+        fz[i] += static_cast<AccReal>(qi * ez);
+        U -= qi * (dx * rx + dy * ry);
         if (!polarization_feedback)
-            U -= qi * Dz * rz;
+            U -= qi * dz * rz;
     }
     if (polarization_feedback) {
-        // Constant-D electric enthalpy U_D = V (D_z - 4π k_e P_z)² / (8π k_e)
-        // so F_iz = -∂U_D/∂z_i = q_i E_z exactly (KE + U_D is conserved).
-        U += V * Ez * Ez / (8.0 * units::pi * ctx.runtime.units.qqrd2e());
+        // Constant-D electric enthalpy U_D = V (qe2f E_z)² / (8π k_e) with
+        // E_z = D_z - 4π k_e P_z / qe2f, so F_iz = -∂U_D/∂z_i = q_i qe2f E_z
+        // exactly (KE + U_D is conserved).
+        U += V * ez * ez / (8.0 * units::pi * k_e);
     }
     last_u_ = U;
     last_Pz_ = Pz;

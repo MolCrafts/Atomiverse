@@ -23,13 +23,17 @@ namespace md {
 /// @brief CUDA sibling of `cpu::md::FixEfield`: a uniform field on charges.
 ///
 ///   \[
-///     \mathbf{F}_i \mathrel{+}= q_i \mathbf{E},\qquad
-///     U \mathrel{+}= -\sum_i q_i\,\mathbf{E}\cdot\mathbf{r}_i^{\mathrm{u}},
+///     \mathbf{F}_i \mathrel{+}= q_i \mathbf{E}\,\texttt{qe2f},\qquad
+///     U \mathrel{+}= -\sum_i q_i\,\texttt{qe2f}\,\mathbf{E}\cdot
+///     \mathbf{r}_i^{\mathrm{u}},
 ///     \qquad \mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n
 ///   \]
 ///
-/// \(\mathbf E\) in V/Å, \(q\) in e, \(\mathbf F\) in eV/Å, \(U\) in eV
-/// (metal `qe2f = 1`). \(H\) is the current device cell (lattice vectors in
+/// \(\mathbf E\) in the run's LAMMPS field unit (V/Å for `real` and
+/// `metal`), \(q\) in the style's charge unit, `qe2f` the run's
+/// `ctx.runtime.units.qe2f` (23.060549 for real, 1 for metal), so
+/// \(\mathbf F\) and \(U\) are in the style's force and energy units.
+/// \(H\) is the current device cell (lattice vectors in
 /// columns, any shape) and \(\mathbf n\) the device image flags, which the
 /// CUDA integrators advance on every wrap. Same energy convention as the CPU
 /// class (LAMMPS `fsum[0]`, `fix_modify energy yes`): unbounded under PBC,
@@ -46,13 +50,14 @@ namespace md {
 /// `default_bindings()`, at `post_force @ +100` like the CPU class.
 class FixEfield : public cuda::Potential, public cuda::ExternalDrive {
   public:
-    /// @param Ex Field x-component [V/Å].
-    /// @param Ey Field y-component [V/Å].
-    /// @param Ez Field z-component [V/Å].
+    /// @param Ex Field x-component [style field unit; V/Å for real/metal].
+    /// @param Ey Field y-component [style field unit].
+    /// @param Ez Field z-component [style field unit].
     FixEfield(double Ex, double Ey, double Ez) noexcept
         : Ex(Ex), Ey(Ey), Ez(Ez) {}
 
-    /// Field components [V/Å] — public members, as on `cpu::md::FixEfield`.
+    /// Field components [style field unit] — public members, as on
+    /// `cpu::md::FixEfield`.
     double Ex = 0.0;
     double Ey = 0.0;
     double Ez = 0.0;
@@ -71,7 +76,7 @@ class FixEfield : public cuda::Potential, public cuda::ExternalDrive {
     const cuda::ExternalDrive* as_external_drive() const override {
         return this;
     }
-    /// @brief Enqueue f −= q E on rows [0, n): the field is applied work,
+    /// @brief Enqueue f −= q E qe2f on rows [0, n): the field is applied work,
     ///        not part of the interaction energy.
     void subtract_drive_force(const LaunchContext& ctx, int n, double* fx,
                               double* fy, double* fz) const override;
