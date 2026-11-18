@@ -87,7 +87,7 @@ cluster hardware.
 
 | Capability | CPU | CUDA | Notes |
 | ---------- | :-: | :--: | ----- |
-| RATTLE | ✓ | ✓ | Distance + 1–3; per-cluster solve (X–H clusters converge independently); MPI on CPU, one thread per cluster on CUDA (single GPU) |
+| SHAKE / RATTLE | ✓ | ✓ | Force-level SHAKE and position/velocity RATTLE; bond and 1–3 distance constraints, DOF removal and six-component constraint virial (including initialization); RATTLE adds tangent-velocity projection. MPI on CPU, graph capture on single-GPU CUDA. C++ and Python `MD.set_observer` |
 | SETTLE | ✓ | ✓ | Three-site rigid water; one thread per water on CUDA (single GPU) |
 | Virtual sites | ✓ | ○ | Weighted3 (TIP4P), OutOfPlane3 (TIP5P) |
 | LINCS / general rigid bodies | ○ | ○ | |

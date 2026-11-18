@@ -22,6 +22,7 @@
 #include "atomiverse/core/stage.h"
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/units.h"
+#include "atomiverse/cpu/task/constraint_params.h"
 
 namespace ATV::cpu::task {
 
@@ -1425,6 +1426,8 @@ enum class ComponentId : std::uint16_t {
     /// materialized only with the molpy streaming trajectory writer.
     MrecRecorder = 39,
     PW = 40, ///< CPU plane-wave DFT with one NC provider per element.
+    FixShake = 41,
+    FixRattle = 42,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -1443,6 +1446,10 @@ inline const char* component_name(ComponentId id) noexcept {
         return "VelocityVerlet";
     case ComponentId::InitVelocity:
         return "InitVelocity";
+    case ComponentId::FixShake:
+        return "FixShake";
+    case ComponentId::FixRattle:
+        return "FixRattle";
     case ComponentId::NoseHoover:
         return "NoseHoover";
     case ComponentId::Thermo:
@@ -1556,7 +1563,7 @@ using MDComponentParams = std::variant<
     PairMorseParams, PairBuckParams, PairBornParams, PairYukawaParams,
     PairWcaParams, PairDpdParams, BondFeneParams, DihedralCharmmParams,
     ImproperHarmonicParams, PairLJCutCoulLongParams, AngleCosineParams,
-    FixEfieldParams, MrecRecorderParams>;
+    FixEfieldParams, MrecRecorderParams, FixShakeParams, FixRattleParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams, CGParams,
@@ -1587,6 +1594,10 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::VelocityVerlet;
             else if constexpr (std::is_same_v<P, InitVelocityParams>)
                 return ComponentId::InitVelocity;
+            else if constexpr (std::is_same_v<P, FixShakeParams>)
+                return ComponentId::FixShake;
+            else if constexpr (std::is_same_v<P, FixRattleParams>)
+                return ComponentId::FixRattle;
             else if constexpr (std::is_same_v<P, NoseHooverParams>)
                 return ComponentId::NoseHoover;
             else if constexpr (std::is_same_v<P, ThermoParams>)

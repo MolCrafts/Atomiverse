@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -43,6 +44,8 @@
 #include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/fix_rattle.h"
+#include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/gear_pc.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
@@ -253,7 +256,9 @@ struct MdHandle {
         } else if constexpr (std::is_same_v<P,
                                             cpu::task::BerendsenBarostatParams>)
             driver.set_barostat(std::move(comp));
-        else if constexpr (std::is_same_v<P, cpu::task::InitVelocityParams>)
+        else if constexpr (std::is_same_v<P, cpu::task::InitVelocityParams>
+                           || std::is_same_v<P, cpu::task::FixShakeParams>
+                           || std::is_same_v<P, cpu::task::FixRattleParams>)
             driver.set_observer(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
@@ -471,6 +476,35 @@ struct MdPhaseBuilder {
 } // namespace
 
 void bind_md(nb::module_& m) {
+    double constraint_tolerance = cpu::md::FixRattle::default_tolerance();
+#ifdef ATV_CUDA_PRECISION_SINGLE
+    // One parameter object serves both backends; its default must be
+    // representable by either integration precision.
+    constraint_tolerance = std::max(
+        constraint_tolerance, 64.0 * std::numeric_limits<float>::epsilon());
+#endif
+    nb::class_<cpu::task::FixShakeParams>(
+        m, "FixShake",
+        "Force-level SHAKE distance constraints with constraint virial.")
+        .def(nb::init<double, double, int>(), nb::arg("dt"),
+             nb::arg("tolerance") = constraint_tolerance,
+             nb::arg("max_iter") = 500)
+        .def("constrain_bond", &cpu::task::FixShakeParams::constrain_bond,
+             nb::arg("bond_type"), nb::arg("length"))
+        .def("constrain_angle", &cpu::task::FixShakeParams::constrain_angle,
+             nb::arg("angle_type"), nb::arg("distance_13"));
+    nb::class_<cpu::task::FixRattleParams>(
+        m, "FixRattle",
+        "RATTLE distance constraints: positions, tangent velocities and "
+        "constraint virial.")
+        .def(nb::init<double, double, int>(), nb::arg("dt"),
+             nb::arg("tolerance") = constraint_tolerance,
+             nb::arg("max_iter") = 500)
+        .def("constrain_bond", &cpu::task::FixRattleParams::constrain_bond,
+             nb::arg("bond_type"), nb::arg("length"))
+        .def("constrain_angle", &cpu::task::FixRattleParams::constrain_angle,
+             nb::arg("angle_type"), nb::arg("distance_13"));
+
     nb::enum_<md::Phase>(m, "Phase", "MD phase sequence (LAMMPS-style).")
         .value("initial_integrate", md::Phase::initial_integrate)
         .value("pre_force", md::Phase::pre_force)
@@ -1132,6 +1166,21 @@ void bind_md(nb::module_& m) {
                     cpu::md::InitVelocity{p.temperature, p.seed});
             },
             nb::arg("comp"), "LAMMPS-style set_observer (e.g. InitVelocity).");
+
+    md.def(
+        "set_observer",
+        [](MdHandle& self, const cpu::task::FixShakeParams& p) {
+            self.set_categorical("set_observer", p,
+                                 p.component<cpu::md::FixShake>());
+        },
+        nb::arg("comp"));
+    md.def(
+        "set_observer",
+        [](MdHandle& self, const cpu::task::FixRattleParams& p) {
+            self.set_categorical("set_observer", p,
+                                 p.component<cpu::md::FixRattle>());
+        },
+        nb::arg("comp"));
 
     // The set_evaluator slot is plural: every call appends another
     // energy/force source and they are summed. The typed spellings are what

@@ -374,20 +374,25 @@ class MD:
     def set_observer(self, component: object) -> MD:
         """Install an observer (``Driver::set_observer``).
 
-        ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed)
-        runs on both devices. ``ConfigurationalTemperature`` (borrowed,
-        built for this driver's device with
-        ``ConfigurationalTemperature(every, device=...)``) evaluates the
-        first-order configurational temperature; after ``run`` read the
-        last evaluation (``temperature``, ``force_sq``, ``laplacian``) and
-        the run's ``T_CONF`` (``mean_temperature``) on the object. Every
-        force term must then supply its curvature.
+        ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed),
+        ``FixShake`` and ``FixRattle`` (distance constraints; their
+        bond/angle type indices are zero-based) run on both devices.
+        ``ConfigurationalTemperature`` (borrowed, built for this driver's
+        device with ``ConfigurationalTemperature(every, device=...)``)
+        evaluates the first-order configurational temperature; after ``run``
+        read the last evaluation (``temperature``, ``force_sq``,
+        ``laplacian``) and the run's ``T_CONF`` (``mean_temperature``) on the
+        object. Every force term must then supply its curvature.
         """
         configurational = type(component) in _CONFIGURATIONAL_TEMPERATURE_TYPES
-        if not configurational and type(component) is not _cpp.InitVelocity:
+        if not configurational and type(component) not in (
+            _cpp.InitVelocity,
+            _cpp.FixShake,
+            _cpp.FixRattle,
+        ):
             raise TypeError(
-                f"set_observer expects InitVelocity or ConfigurationalTemperature, "
-                f"got {type(component).__name__}"
+                f"set_observer expects InitVelocity, FixShake, FixRattle or "
+                f"ConfigurationalTemperature, got {type(component).__name__}"
             )
         if configurational:
             self._require_same_device(
@@ -641,6 +646,8 @@ class MD:
 # thermostats and barostats live in the sibling modules `md.integrator`,
 # `md.thermostat` and `md.barostat`.
 InitVelocity = _cpp.InitVelocity
+FixShake = _cpp.FixShake
+FixRattle = _cpp.FixRattle
 
 #: Constant uniform electric field (LAMMPS ``fix efield``) —
 #: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in V/Å;
@@ -669,4 +676,6 @@ __all__ = [
     "FixEfield",
     "ConfigurationalTemperature",
     "PhaseBuilder",
+    "FixShake",
+    "FixRattle",
 ]
