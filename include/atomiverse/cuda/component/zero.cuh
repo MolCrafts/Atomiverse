@@ -66,8 +66,10 @@ class ZeroStress : public Component {
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 };
 
-/// @brief Zeros every system scalar (energies, kinetic energy, conserved
-///        quantity, virial and kinetic stress) in one cudaMemsetAsync.
+/// @brief Zeros every per-step system scalar (energies, kinetic energy,
+///        conserved quantity, virial and kinetic stress) in one
+///        cudaMemsetAsync; the persistent `thermostat_energy` (the last
+///        member) accumulates across steps and is kept.
 ///
 /// MD binds it at pre_force (order -999): every accumulator a step fills is
 /// produced after it (forces at force, KE and kinetic stress at end_of_step),

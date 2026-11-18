@@ -119,7 +119,8 @@ class MD:
         Timestep in the run's time unit. If provided, calls ``set_integrator(VelocityVerlet(dt))``.
     device : str, optional
         Execution backend: ``"cpu"`` or ``"cuda"``. CUDA binds the same
-        pair, FENE, harmonic and cosine angle, Coulomb/PME/PPPM, uniform
+        pair, FENE and harmonic bond, harmonic and cosine angle,
+        multi-harmonic and CHARMM dihedral, Coulomb/PME/PPPM, uniform
         electric field (``FixEfield``), neighbor list, Langevin,
         NoseHoover, Berendsen and NoseHooverNPT (orthorhombic cells)
         parameter objects as the CPU driver, plus AM1/RM1/MNDO/PM3. One
@@ -290,11 +291,15 @@ class MD:
     def set_thermostat(self, component: object) -> MD:
         """Install a thermostat (``cpu::md::MD::set_thermostat``).
 
-        ``NoseHoover`` (single chain, LAMMPS ``fix nvt``) and ``Langevin``
-        run on both devices; ``CSVR`` is CPU only. A thermostat never joins
-        ``NvtSllod`` or an NPT integrator, which already thermostat. On
-        both devices ``NoseHoover`` takes the integrator's timestep in place
-        of its own ``dt``.
+        ``NoseHoover`` (single chain, LAMMPS ``fix nvt``), ``Langevin`` and
+        ``CSVR`` (Bussi, LAMMPS ``fix temp/csvr``) run on both devices. The
+        slot is plural: several ``CSVR(..., types=[...], bias="com")``
+        thermostats, each on its own type group with its own seed, may be
+        set on one driver (LAMMPS one ``fix temp/csvr`` per group with
+        ``fix_modify temp`` a ``compute temp/com``). A thermostat never
+        joins ``NvtSllod`` or an NPT integrator, which already thermostat.
+        On both devices ``NoseHoover`` and ``CSVR`` take the integrator's
+        timestep in place of their own ``dt``.
         """
         if getattr(self, "_nvt_sllod", False):
             raise ValueError(
@@ -315,11 +320,6 @@ class MD:
             raise TypeError(
                 f"set_thermostat expects NoseHoover, Langevin, or CSVR, got "
                 f"{type(component).__name__}"
-            )
-        if self.device == "cuda" and type(component) is _cpp.CSVR:
-            raise ValueError(
-                "CUDA MD has no CSVR thermostat. Use NoseHoover or Langevin "
-                "with device='cuda', or run CSVR with device='cpu'"
             )
         self._thermostatted = True
         self._cpp.set_thermostat(component)
@@ -375,8 +375,9 @@ class MD:
         """Install an observer (``Driver::set_observer``).
 
         ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed),
-        ``FixShake`` and ``FixRattle`` (distance constraints; their
-        bond/angle type indices are zero-based) run on both devices.
+        ``FixShake`` and ``FixRattle`` (distance constraints; a bond/angle
+        type is the value the Frame stores — a molpy ``type_id`` as is, the
+        same index the bonded tables use) run on both devices.
         ``ConfigurationalTemperature`` (borrowed, built for this driver's
         device with ``ConfigurationalTemperature(every, device=...)``)
         evaluates the first-order configurational temperature; after ``run``

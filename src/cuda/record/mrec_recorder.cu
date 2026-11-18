@@ -125,6 +125,7 @@ struct MrecRecorder::Impl {
         f.meta.set(kEnergyImproper, sc.energy_improper);
         f.meta.set(kKinetic, sc.kinetic);
         f.meta.set(kConserved, sc.conserved);
+        f.meta.set(kThermostatEnergy, sc.thermostat_energy);
         MetaF64x6 w{}, k{};
         for (int c = 0; c < 6; ++c) {
             w[static_cast<std::size_t>(c)] = sc.stress[c];

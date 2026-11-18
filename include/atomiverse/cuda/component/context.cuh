@@ -42,6 +42,15 @@ class CaptureBuffer;
 struct DynamicsServices {
     /// Global thermal DOF, published by the backend before component build.
     BigInt n_dof_global = 0;
+    /// @brief Constraints per owning-atom type, published with
+    ///        `n_dof_global` (mirrors `cpu::DynamicsServices`). Valid only
+    ///        when `constraints_by_type_known` (the host frame carries a
+    ///        `type` column, or nothing is constrained).
+    ///        Non-owning (the Backend owns the storage), indexed by type
+    ///        id, `n_constraint_types` entries.
+    const BigInt* n_constraints_by_type = nullptr;
+    int n_constraint_types = 0;
+    bool constraints_by_type_known = false;
     /// @brief Non-owning handle to the active neighbor pair list.
     ///
     /// Published by `NeighborList::build()` (and re-published on each

@@ -40,7 +40,10 @@ void ZeroStress::launch(const LaunchContext& ctx) {
 
 void ZeroScalars::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
-    cudaMemsetAsync(ctx.frame.scalars, 0, sizeof(SystemScalars), stream);
+    // Every per-step scalar; the persistent thermostat bath energy is the
+    // last member and is kept (it accumulates over the whole trajectory).
+    cudaMemsetAsync(ctx.frame.scalars, 0,
+                    offsetof(SystemScalars, thermostat_energy), stream);
 }
 
 } // namespace ATV::cuda

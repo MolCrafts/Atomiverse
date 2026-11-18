@@ -7,6 +7,7 @@
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/potentials/dihedral_multi_harmonic.cuh"
+#include "internal/topology_types.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 
@@ -256,8 +257,10 @@ __global__ __launch_bounds__(kDihedralBlock, 4) void multi_harmonic_dihedral_k(
 
 } // anonymous namespace
 
-void DihedralMultiHarmonic::build(const BuildContext& /*ctx*/) {
+void DihedralMultiHarmonic::build(const BuildContext& ctx) {
     int nt = static_cast<int>(C_.size());
+    internal::require_topology_types(name().c_str(), ctx.frame.dihedrals.type,
+                                     ctx.frame.n_dihedrals(), nt);
     state_->n_types = nt;
     // Flatten coefficients: [C0_0, C1_0, ..., C4_0, C0_1, ...]
     std::vector<force_t> flat(nt * 5);

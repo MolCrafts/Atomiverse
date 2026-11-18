@@ -2,6 +2,7 @@
 /// @brief FixRattle: per-cluster SHAKE position stage and RATTLE velocity
 ///        stage on GAFF-style X-H clusters (CH3 groups, an O-H bond).
 #include <gtest/gtest.h>
+#include <vector>
 
 #include <cmath>
 #include <stdexcept>
@@ -163,4 +164,23 @@ TEST(FixRattle, NonConvergenceThrows) {
     drift(f);
     EXPECT_THROW(rattle.launch({ctx, f, slot_of(md::Phase::post_integrate), 0}),
                  std::runtime_error);
+}
+
+TEST(FixRattle, AttributesEachConstraintToItsOwnerRowType) {
+    // Methyls typed 3, the hydroxyl O 5 and H 6: the C-H bonds live on the
+    // carbons, the O-H bond on the oxygen (the smaller tag owns a bond).
+    auto f = make_clusters();
+    for (int i = 0; i < 8; ++i)
+        f.span(kAtom_type)[i] = 3;
+    f.span(kAtom_type)[8] = 5;
+    f.span(kAtom_type)[9] = 6;
+    auto rattle = make_rattle();
+    cpu::Context ctx;
+    std::vector<BigInt> by_type;
+    rattle.count_constraints_by_type(ctx, f, by_type);
+    // Grown only as far as the highest owning type: the hydrogen type 6
+    // owns nothing.
+    ASSERT_EQ(by_type.size(), 6u);
+    EXPECT_EQ(by_type[3], 6);
+    EXPECT_EQ(by_type[5], 1);
 }

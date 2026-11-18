@@ -142,6 +142,30 @@ int DistanceConstraints::n_constraints(const cpu::Context& ctx,
     return n;
 }
 
+void DistanceConstraints::count_constraints_by_type(
+    const cpu::Context& /*ctx*/, const cpu::Frame& frame,
+    std::vector<BigInt>& by_type) const {
+    const int n_own = frame.nlocal();
+    const auto num_bond = frame.span(kAtom_num_bond);
+    const auto bond_type = frame.span(kAtom_bond_type);
+    const auto num_angle = frame.span(kAtom_num_angle);
+    const auto angle_type = frame.span(kAtom_angle_type);
+    const auto type = frame.span(kAtom_type);
+    // The same owned-row scan as `discover_local_`, so the per-type total
+    // equals `n_constraints` once the ranks are summed.
+    for (int i = 0; i < n_own; ++i) {
+        BigInt n = 0;
+        for (int m = 0; m < num_bond[i]; ++m)
+            for (const Rule& r : bond_rules_)
+                n += bond_type(i, m) == r.type;
+        for (int m = 0; m < num_angle[i]; ++m)
+            for (const Rule& r : angle_rules_)
+                n += angle_type(i, m) == r.type;
+        if (n > 0)
+            cpu::tally_constraints(by_type, static_cast<int>(type[i]), n);
+    }
+}
+
 void DistanceConstraints::build(const cpu::BuildContext& ctx) {
     const cpu::Context& rt = ctx.runtime;
     const cpu::Frame& frame = ctx.frame;

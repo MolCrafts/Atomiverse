@@ -780,13 +780,38 @@ void bind_md(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::FixCsvrParams* p, double T_start, double tau,
-               double dt, unsigned seed) {
-                new (p) cpu::task::FixCsvrParams{T_start, tau, dt, seed};
+               double dt, unsigned seed, std::vector<int> types,
+               const std::string& bias) {
+                std::uint8_t b = 0;
+                if (bias == "com")
+                    b = static_cast<std::uint8_t>(
+                        ATV::md::TemperatureBias::Com);
+                else if (bias != "none")
+                    throw std::invalid_argument(
+                        "CSVR: bias must be 'none' or 'com', got '" + bias
+                        + "'");
+                for (int t : types)
+                    if (t < 0)
+                        throw std::invalid_argument(
+                            "CSVR: atom types must be >= 0, got "
+                            + std::to_string(t));
+                new (p) cpu::task::FixCsvrParams{
+                    T_start, tau, dt, seed, std::move(types), b};
             },
             nb::arg("T_start"), nb::arg("tau"), nb::arg("dt"), nb::arg("seed"),
+            nb::arg("types") = std::vector<int>{}, nb::arg("bias") = "none",
             "Construct with target temperature [temperature], coupling time "
-            "tau [time] "
-            "(CP2K `TIMECON`), timestep dt [time], and RNG seed.");
+            "tau [time] (CP2K `TIMECON`, LAMMPS `Tdamp`), timestep dt [time] "
+            "and RNG seed. `types` restricts the thermostat to atoms whose "
+            "force-field type (molpy atoms.type_id) is listed (empty: every "
+            "atom); bias='com' measures and rescales velocities relative to "
+            "the group's centre-of-mass velocity (LAMMPS `fix_modify temp` "
+            "with `compute temp/com`). Several CSVR thermostats may be set on "
+            "one driver, each with its own group and seed.")
+        .def_ro("types", &cpu::task::FixCsvrParams::types)
+        .def_prop_ro("bias", [](const cpu::task::FixCsvrParams& p) {
+            return std::string(p.bias == 0 ? "none" : "com");
+        });
 
     nb::class_<cpu::task::NoseHooverNptParams>(
         m, "NoseHooverNPT",
@@ -1139,7 +1164,8 @@ void bind_md(nb::module_& m) {
             [](MdHandle& self, const cpu::task::FixCsvrParams& p) {
                 self.set_categorical(
                     "set_thermostat", p,
-                    cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed});
+                    cpu::md::FixCSVR{p.T_start, p.tau, p.dt, p.seed, p.types,
+                                     cpu::task::csvr_bias(p.bias)});
             },
             nb::arg("comp"), "LAMMPS-style set_thermostat (CSVR).")
         .def(

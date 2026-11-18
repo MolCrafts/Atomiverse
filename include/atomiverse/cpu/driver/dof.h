@@ -2,6 +2,10 @@
 /// @brief The system's degree-of-freedom count — computed once, owned by one place.
 #pragma once
 
+#include "atomiverse/core/precision.h"
+
+#include <vector>
+
 namespace ATV {
 namespace cpu {
 
@@ -31,6 +35,19 @@ struct Context;
 /// @param n_constraints Total scalar constraints imposed by Constraint components.
 /// @throws std::runtime_error if no degrees of freedom remain.
 void publish_global_dof(Context& ctx, const Frame& frame, int n_constraints);
+
+/// @brief Sum this rank's per-type constraint tallies over the ranks (in
+///        place) and publish a view of them on `ctx.md`.
+/// @param ctx Execution context; `md.n_constraints_by_type`,
+///        `md.n_constraint_types` and `md.constraints_by_type_known` are
+///        written.
+/// @param tallies This rank's tallies (owned rows), indexed by type id;
+///        replaced by the global sums. The caller owns it and keeps it alive
+///        while `ctx` is used (the view points into it).
+/// @param known False when the tallies could not be formed (no `type`
+///        column with constraints present); published as unknown.
+void publish_constraints_by_type(Context& ctx, std::vector<BigInt>& tallies,
+                                 bool known);
 
 } // namespace cpu
 } // namespace ATV

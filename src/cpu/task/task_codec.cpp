@@ -306,6 +306,8 @@ void write(Writer& w, const FixCsvrParams& p) {
     w.f64(p.tau);
     w.f64(p.dt);
     w.u32(p.seed);
+    w.vec_i32(p.types);
+    w.u8(p.bias);
 }
 void write(Writer& w, const NoseHooverNptParams& p) {
     w.f64(p.T_target);
@@ -836,7 +838,9 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
     case ComponentId::FixLangevin:
         return FixLangevinParams{r.f64(), r.f64(), r.f64(), r.f64(), r.u32()};
     case ComponentId::FixCSVR:
-        return FixCsvrParams{r.f64(), r.f64(), r.f64(), r.u32()};
+        // Braced init: the field reads are sequenced left to right.
+        return FixCsvrParams{r.f64(), r.f64(),     r.f64(),
+                             r.u32(), r.vec_i32(), r.u8()};
     case ComponentId::NoseHooverNPT:
         return NoseHooverNptParams{
             r.f64(), r.f64(), r.f64(),

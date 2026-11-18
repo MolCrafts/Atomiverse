@@ -89,6 +89,12 @@ struct SystemScalars {
     /// `NoseHooverNPT` that need the pressure mid-step recompute the
     /// kinetic part from the velocities of that moment instead.
     double stress_kinetic[6] = {};
+
+    /// @brief Accumulated stochastic-thermostat bath energy [eV]
+    ///        (`kThermostatEnergy`): every `FixCSVR` adds −ΔK of its
+    ///        rescale. Persistent across steps — the LAST member so the
+    ///        per-step `ZeroScalars` clear (everything before it) leaves it.
+    double thermostat_energy = 0;
 };
 
 } // namespace ATV

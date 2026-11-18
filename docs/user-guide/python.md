@@ -1183,7 +1183,7 @@ own.
 | `set_observer` | `InitVelocity(T, seed)` | Maxwell-Boltzmann init |
 | `set_thermostat` | `NoseHoover(T, tau_T, dt)` | NVT thermostat |
 | `set_thermostat` | `Langevin(T_start, T_stop, damp, dt, seed)` | Langevin thermostat |
-| `set_thermostat` | `CSVR(T, tau, dt, seed)` | Bussi velocity rescale |
+| `set_thermostat` | `CSVR(T, tau, dt, seed, types=[], bias="none")` | Bussi velocity rescale (`fix temp/csvr`), CPU and CUDA; `types` = thermostatted force-field types (empty: all), `bias="com"` = `compute temp/com`; plural (one per group) |
 | `set_barostat` | `BerendsenBarostat(P, tau_P, dt, bulk_modulus=1.0)` | Berendsen isotropic barostat (`fix press/berendsen iso`) — installed *alongside* `VelocityVerlet` + a thermostat |
 | `set_neighbor` | `NeighborList(cutoff, skin=-1)` | Cell-list pair builder |
 | `set_evaluator` | `PairLJCut(ε, σ, cutoff, s12=1, s13=1, s14=1, energy_shift=True)` or `PairLJCut([LJTypeCoeff(type_i, type_j, ε, σ, cutoff=None), …], cutoff, s12=1, s13=1, s14=1, energy_shift=True)` | Lennard-Jones 12-6, single-type or per-type table |

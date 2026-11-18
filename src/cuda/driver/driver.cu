@@ -178,6 +178,20 @@ void Backend::publish_dof_(const cpu::Frame& frame) {
             + std::to_string(n_constraints) + " constraints on "
             + std::to_string(frame.nlocal()) + " atoms)");
     context_.md.n_dof_global = ndof;
+
+    // Per-type attribution for group thermostats (LAMMPS
+    // `FixShake::dof(igroup)`); needs the `type` column to key on.
+    constraints_by_type_.clear();
+    const bool typed = frame.has("atoms", "type");
+    if (typed && plan_)
+        for (const Component* c : plan_->components())
+            if (const ConstraintProvider* cp = c->as_constraint())
+                cp->count_constraints_by_type(frame, constraints_by_type_);
+    context_.md.n_constraints_by_type =
+        constraints_by_type_.empty() ? nullptr : constraints_by_type_.data();
+    context_.md.n_constraint_types =
+        static_cast<int>(constraints_by_type_.size());
+    context_.md.constraints_by_type_known = typed || n_constraints == 0;
 }
 
 void Backend::materialize(const cpu::Frame& frame) {

@@ -175,6 +175,9 @@ class Backend {
     /// `Ndof = 3N - 3 - n_constraints` over the loaded plan's constraint
     /// providers, before any component builds (thermostats cache it).
     void publish_dof_(const cpu::Frame& frame);
+    /// Global constraint tallies per owning-atom type; `context_.md` holds
+    /// a view (`publish_dof_`).
+    std::vector<BigInt> constraints_by_type_;
     void observe_fault_(BigInt step_idx);
     void apply_demand_(LaunchContext& ctx, BigInt step) const;
     void execute_step_graphed_(BigInt step_idx);

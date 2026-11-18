@@ -102,6 +102,11 @@ class FixSettle : public Constraint,
                       const cpu::Frame& /*frame*/) const override {
         return 3 * static_cast<int>(waters_.size());
     }
+    /// @brief Three constraints per water, on the oxygen's type; a water
+    ///        is counted on the rank owning its oxygen.
+    void count_constraints_by_type(const cpu::Context& ctx,
+                                   const cpu::Frame& frame,
+                                   std::vector<BigInt>& by_type) const override;
 
     void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;

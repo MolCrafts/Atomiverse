@@ -144,6 +144,7 @@ SystemScalars gather_scalars(const cpu::Frame& f) {
     sc.energy_improper = meta_or_zero(f, kEnergyImproper);
     sc.kinetic = meta_or_zero(f, kKinetic);
     sc.conserved = meta_or_zero(f, kConserved);
+    sc.thermostat_energy = meta_or_zero(f, kThermostatEnergy);
     if (f.meta.contains(kStress.key)) {
         const auto& s = f.meta.get(kStress);
         for (int i = 0; i < 6; ++i)
@@ -167,6 +168,7 @@ void scatter_scalars(cpu::Frame& f, const SystemScalars& sc) {
     meta_put(f, kEnergyImproper, sc.energy_improper);
     meta_put(f, kKinetic, sc.kinetic);
     meta_put(f, kConserved, sc.conserved);
+    meta_put(f, kThermostatEnergy, sc.thermostat_energy);
     MetaF64x6 stress{};
     MetaF64x6 stress_kin{};
     for (int i = 0; i < 6; ++i) {

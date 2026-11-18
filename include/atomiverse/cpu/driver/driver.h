@@ -1389,11 +1389,25 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         for (const cpu::ConstraintProvider* cp : constraint_providers_)
             n_con += cp->n_constraints(context, frame);
         cpu::publish_global_dof(context, frame, n_con);
+        // Per-type attribution for group thermostats. Without a `type`
+        // column there is nothing to key on: zero constraints is still
+        // exact, any constraint leaves the tally unknown.
+        constraints_by_type_.clear();
+        const bool typed = frame.has("atoms", "type");
+        if (typed)
+            for (const cpu::ConstraintProvider* cp : constraint_providers_)
+                cp->count_constraints_by_type(context, frame,
+                                              constraints_by_type_);
+        cpu::publish_constraints_by_type(context, constraints_by_type_,
+                                         typed || n_con == 0);
     }
 
     /// Constraint components, captured at `build()` while the pending list still
     /// exists. Non-owning: the Plan owns the components.
     std::vector<const cpu::ConstraintProvider*> constraint_providers_;
+
+    /// Global constraint tallies per owning-atom type; `ctx.md` holds a view.
+    std::vector<BigInt> constraints_by_type_;
 
     /// @brief Const scan: provide/require facts plus const protocol probes.
     ///

@@ -476,6 +476,123 @@ def _assert_same_state(cpu_frame, cuda_frame, *, box: bool) -> None:
         )
 
 
+def _two_species(frame: "molpy.Frame") -> "molpy.Frame":
+    """Relabel every other atom type 2 (same LJ), so a group is a strict
+    subset; the type-2 atoms get a drift along x so a COM bias matters."""
+    old = frame["atoms"]
+    n = np.asarray(old["x"]).size
+    types = np.where(np.arange(n) % 2 == 0, 1, 2).astype(np.uint32)
+    vx = np.asarray(old["vx"], dtype=np.float64).copy()
+    vx[types == 2] += 5.0  # [Å/ps]
+    atoms = molpy.Block()
+    for key in old.keys():
+        if key == "type_id":
+            atoms.insert(key, types)
+        elif key == "vx":
+            atoms.insert(key, vx)
+        else:
+            atoms.insert(key, np.asarray(old[key]).copy())
+    frame["atoms"] = atoms
+    return frame
+
+
+def _group_momentum(frame: "molpy.Frame", t: int) -> np.ndarray:
+    atoms = frame["atoms"]
+    sel = np.asarray(atoms["type_id"]) == t
+    m = _columns(frame, "mass")[sel]
+    v = np.stack([_columns(frame, k)[sel] for k in ("vx", "vy", "vz")], axis=1)
+    return (m[:, None] * v).sum(axis=0)
+
+
+@needs_cuda
+class TestCudaCsvr:
+    @pytest.mark.parametrize("steps", [1, 5])
+    def test_global_parity(self, steps: int) -> None:
+        """Same seed, same state: the CPU and CUDA thermostats draw the same
+        randoms (core/csvr.h) and rescale identically. Its own dt (99 fs) is
+        replaced by the integrator's 2 fs on both devices."""
+        frames = {}
+        for device in ("cpu", "cuda"):
+            frame = _ar_frame(3.8, 120.0)
+            sim = _lj_md(device)
+            sim.set_integrator(VelocityVerlet(0.002))
+            sim.set_thermostat(CSVR(40.0, 0.01, 0.099, 11))
+            sim.run(frame, steps)
+            frames[device] = frame
+        before = _ar_frame(3.8, 120.0)
+        assert not np.allclose(_velocities(frames["cpu"]), _velocities(before))
+        _assert_same_state(frames["cpu"], frames["cuda"], box=False)
+        np.testing.assert_allclose(
+            frames["cuda"].meta["thermostat_energy"],
+            frames["cpu"].meta["thermostat_energy"],
+            rtol=1e-9,
+        )
+
+    @pytest.mark.parametrize("steps", [1, 5])
+    def test_species_groups_with_com_bias_parity(self, steps: int) -> None:
+        """Two CSVR instances, one per type, each with the COM bias and its
+        own seed: CPU and CUDA agree."""
+        frames = {}
+        for device in ("cpu", "cuda"):
+            frame = _two_species(_ar_frame(3.8, 120.0))
+            sim = _lj_md(device)
+            sim.set_integrator(VelocityVerlet(0.002))
+            sim.set_thermostat(CSVR(40.0, 0.01, 0.002, 11, types=[1], bias="com"))
+            sim.set_thermostat(CSVR(60.0, 0.01, 0.002, 12, types=[2], bias="com"))
+            sim.run(frame, steps)
+            frames[device] = frame
+        _assert_same_state(frames["cpu"], frames["cuda"], box=False)
+
+    def test_com_bias_keeps_the_group_drift(self) -> None:
+        """A strongly coupled (τ = 1 fs) COM-biased thermostat on the drifting
+        species leaves that species' momentum to the forces alone: with the
+        same forces (one step, same state) the type-2 momentum after the step
+        matches an unthermostatted NVE step, while its peculiar KE moved."""
+        momenta = {}
+        for label, thermostat in (
+            ("nve", None),
+            ("csvr", CSVR(10.0, 0.001, 0.002, 5, types=[2], bias="com")),
+        ):
+            frame = _two_species(_ar_frame(3.8, 120.0))
+            sim = _lj_md("cuda")
+            sim.set_integrator(VelocityVerlet(0.002))
+            if thermostat is not None:
+                sim.set_thermostat(thermostat)
+            sim.run(frame, 1)
+            momenta[label] = (_group_momentum(frame, 2), _group_momentum(frame, 1))
+            momenta[label + "_v"] = _velocities(frame)
+        np.testing.assert_allclose(
+            momenta["csvr"][0], momenta["nve"][0], rtol=1e-10, atol=1e-10
+        )
+        # The other species is not touched at all.
+        np.testing.assert_allclose(
+            momenta["csvr"][1], momenta["nve"][1], rtol=1e-12, atol=1e-12
+        )
+        assert not np.allclose(momenta["csvr_v"], momenta["nve_v"])
+
+    def test_group_temperature_relaxes_to_its_own_setpoint(self) -> None:
+        """Two species thermostatted at 30 K and 90 K (COM bias) relax to
+        their own setpoints: the second-half mean of each group's peculiar
+        temperature (3 N_g − 3 DOF) is within 15 % of its target."""
+        frame = _two_species(_ar_frame(3.8, 60.0))
+        sim = _lj_md("cuda")
+        sim.set_integrator(VelocityVerlet(0.002))
+        sim.set_thermostat(CSVR(30.0, 0.05, 0.002, 21, types=[1], bias="com"))
+        sim.set_thermostat(CSVR(90.0, 0.05, 0.002, 22, types=[2], bias="com"))
+
+        def group_t(f, t):
+            sel = np.asarray(f["atoms"]["type_id"]) == t
+            m = _columns(f, "mass")[sel]
+            v = np.stack([_columns(f, k)[sel] for k in ("vx", "vy", "vz")], axis=1)
+            v = v - (m[:, None] * v).sum(axis=0) / m.sum()
+            return float(np.sum(m[:, None] * v * v) * _MVV2E / ((3 * m.size - 3) * _KB))
+
+        temps = _chunked(sim, frame, 40, 25, lambda f: (group_t(f, 1), group_t(f, 2)))
+        late = np.asarray(temps[20:])
+        assert abs(late[:, 0].mean() - 30.0) < 0.15 * 30.0
+        assert abs(late[:, 1].mean() - 90.0) < 0.15 * 90.0
+
+
 @needs_cuda
 class TestCpuCudaParity:
     @pytest.mark.parametrize("steps", [1, 5])
@@ -584,10 +701,16 @@ class TestNptRefusesASecondThermostatOrBarostat:
 
 @needs_cuda
 class TestCudaRefusals:
-    def test_csvr_names_the_alternatives(self) -> None:
+    def test_csvr_group_must_select_atoms(self) -> None:
         sim = _lj_md("cuda")
-        with pytest.raises(ValueError, match="NoseHoover or Langevin"):
-            sim.set_thermostat(CSVR(50.0, 0.1, 0.002, 3))
+        sim.set_integrator(VelocityVerlet(0.002))
+        sim.set_thermostat(CSVR(50.0, 0.1, 0.002, 3, types=[9]))
+        with pytest.raises(RuntimeError, match="selects no atoms"):
+            sim.run(_ar_frame(3.8, 50.0), 1)
+
+    def test_csvr_bias_is_named(self) -> None:
+        with pytest.raises(ValueError, match="'none' or 'com'"):
+            CSVR(50.0, 0.1, 0.002, 3, bias="vcm")
 
     def test_parrinello_rahman_names_the_alternatives(self) -> None:
         sim = _lj_md("cuda")

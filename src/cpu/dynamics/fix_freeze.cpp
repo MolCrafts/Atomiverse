@@ -27,6 +27,18 @@ int FixFreeze::n_constraints(const cpu::Context& /*ctx*/,
     return 3 * count;
 }
 
+void FixFreeze::count_constraints_by_type(const cpu::Context& /*ctx*/,
+                                          const cpu::Frame& frame,
+                                          std::vector<BigInt>& by_type) const {
+    const int n = frame.nlocal();
+    const auto type = frame.span(kAtom_type);
+    BigInt count = 0;
+    for (int i = 0; i < n; ++i)
+        count += static_cast<int>(type[i]) == type_id_;
+    if (count > 0)
+        cpu::tally_constraints(by_type, type_id_, 3 * count);
+}
+
 void FixFreeze::resolve_rows_(const cpu::Frame& f, int n_owned) {
     rows_.clear();
     const auto type = f.span(kAtom_type);

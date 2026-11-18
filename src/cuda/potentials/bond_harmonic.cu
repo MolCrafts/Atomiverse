@@ -7,6 +7,7 @@
 #include "atomiverse/cuda/frame/precision.cuh"
 #include "atomiverse/cuda/frame/types.cuh"
 #include "atomiverse/cuda/potentials/bond_harmonic.cuh"
+#include "internal/topology_types.cuh"
 #include <cmath>
 #include <cuda_runtime.h>
 
@@ -114,8 +115,10 @@ BondHarmonic::~BondHarmonic() = default;
 BondHarmonic::BondHarmonic(BondHarmonic&&) noexcept = default;
 BondHarmonic& BondHarmonic::operator=(BondHarmonic&&) noexcept = default;
 
-void BondHarmonic::build(const BuildContext& /*ctx*/) {
+void BondHarmonic::build(const BuildContext& ctx) {
     int nt = static_cast<int>(K_.size());
+    internal::require_topology_types(name().c_str(), ctx.frame.bonds.type,
+                                     ctx.frame.n_bonds(), nt);
     state_->n_types = nt;
     const std::vector<force_t> device_K(K_.begin(), K_.end());
     const std::vector<force_t> device_r0(r0_.begin(), r0_.end());

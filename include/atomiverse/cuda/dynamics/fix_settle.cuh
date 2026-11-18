@@ -69,6 +69,9 @@ class FixSettle : public cuda::Constraint,
     BigInt n_constraints(const cpu::Frame& /*frame*/) const override {
         return 3 * static_cast<BigInt>(waters_.size());
     }
+    /// @brief Three per water, on the oxygen's type.
+    void count_constraints_by_type(const cpu::Frame& frame,
+                                   std::vector<BigInt>& by_type) const override;
 
     cuda::TimestepConsumer* as_timestep_consumer() override { return this; }
     bool timestep_required() const override { return false; }
