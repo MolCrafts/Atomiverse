@@ -17,7 +17,10 @@
 
 #include <functional>
 #include <memory>
+#include <string_view>
 #include <vector>
+
+#include "atomiverse/core/unit_system.h"
 
 #include "atomiverse/cuda/communication/spatial_grid.cuh"
 #include "atomiverse/cuda/component/context.cuh"
@@ -53,6 +56,18 @@ class MultiGpu {
     ~MultiGpu();
     MultiGpu(const MultiGpu&) = delete;
     MultiGpu& operator=(const MultiGpu&) = delete;
+
+    /// @brief LAMMPS `units <style>` of this engine (default lj). Every
+    ///        factor its integrators and force fields use (ftm2v, qqrd2e,
+    ///        boltz, ...) is read from it; set it before `partition`.
+    /// @throws std::invalid_argument on an unknown style.
+    void set_units(std::string_view style) {
+        units_ = units::from_style(style);
+        for (auto& c : ctx_)
+            c.units = units_;
+    }
+    /// @brief The engine's LAMMPS units style.
+    const units::UnitSystem& units() const noexcept { return units_; }
 
     int count() const { return dm_.count(); }
     const DeviceManager& devices() const { return dm_; }
@@ -160,8 +175,9 @@ class MultiGpu {
     /// Set up the per-subdomain cross-GPU bonded force engine. Call after
     /// `setup_force_engine` (it reuses the per-GPU Context's box/stream). One
     /// `cuda::BondHarmonic` per subdomain, built with the given per-type spring
-    /// constants `bond_K` [eV/Å²] and equilibria `bond_r0` [Å]. Angle
-    /// (`angle_K` [eV/rad²], `angle_theta0` [deg]) and dihedral
+    /// constants `bond_K` [energy/length²] and equilibria `bond_r0` [length]
+    /// (the engine's `set_units` style). Angle (`angle_K` [energy/rad²],
+    /// `angle_theta0` [rad], as `cuda::AngleHarmonic`) and dihedral
     /// (`dihedral_C`, per-type 5-coeff multi/harmonic) components are created
     /// only when their coefficient lists are non-empty.
     ///
@@ -332,6 +348,7 @@ class MultiGpu {
 
     // Cluster force engine (one per subdomain); built by setup_force_engine.
     std::vector<cuda::Context> ctx_;
+    units::UnitSystem units_ = units::UnitSystem::lj();
     std::vector<std::unique_ptr<cuda::NeighborList>> nlist_;
     // Force families held by ABSTRACT BASE pointer (de-hardcoded): any
     // cuda::Pair / KSpace / Bond / Angle / Dihedral subclass, built by the
