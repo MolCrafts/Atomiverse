@@ -3,12 +3,34 @@
 #pragma once
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
+
+#include <optional>
+
+#include "atomiverse/core/unit_system.h"
 
 #include <stdexcept>
 #include <string>
 
 namespace ATV::python {
+
+/// @brief `style`, or — when None — `atomiverse.units_style()`, the style a
+///        driver built without `units=` adopts (the Python `units` command).
+/// @throws nanobind::value_error on an unknown LAMMPS style name.
+inline std::string resolve_units(const std::optional<std::string>& style) {
+    std::string name = style
+                           ? *style
+                           : nanobind::cast<std::string>(
+                                 nanobind::module_::import_("atomiverse._units")
+                                     .attr("units_style")());
+    try {
+        (void)units::parse_style(name);
+    } catch (const std::invalid_argument& e) {
+        throw nanobind::value_error(e.what());
+    }
+    return name;
+}
 
 /// @brief Bind LAMMPS `units <style>` on a driver class.
 /// @param cls The nanobind class of the handle.

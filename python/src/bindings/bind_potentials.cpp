@@ -19,6 +19,7 @@
 
 #include "atomiverse/cpu/longrange/ewald.h"
 #include "atomiverse/cpu/task/task_spec.h"
+#include "units_binding.h"
 #ifdef ATV_HAS_KSPACE
 #include "atomiverse/core/pppm_accuracy.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
@@ -669,7 +670,7 @@ void bind_potentials(nb::module_& m) {
             [](nb::object frame_obj, double accuracy, double cutoff, int order,
                std::optional<double> alpha,
                std::optional<std::array<int, 3>> mesh,
-               const std::string& units_style) {
+               std::optional<std::string> units_style) {
                 auto frame = borrow_molpy_frame(frame_obj);
                 if (!has_molpy_column(*frame, "atoms", "charge"))
                     throw nb::value_error(
@@ -693,24 +694,26 @@ void bind_potentials(nb::module_& m) {
                     for (int d = 0; d < 3; ++d)
                         req.mesh[d] = (*mesh)[d];
                 // The run's LAMMPS row: two_charge and qqrd2e of PPPM::init.
-                try {
-                    req.unit_system = units::from_style(units_style);
-                } catch (const std::invalid_argument& e) {
-                    throw nb::value_error(e.what());
-                }
+                // No `units=`: the style new drivers adopt
+                // (atomiverse.units_style(), LAMMPS `units`), never a fixed
+                // one.
+                req.unit_system =
+                    units::from_style(ATV::python::resolve_units(units_style));
                 const auto r = longrange::pppm_from_accuracy(req);
                 return cpu::task::KSpacePppmParams{
                     r.alpha, 1.0, r.order, {r.mesh[0], r.mesh[1], r.mesh[2]}};
             },
             nb::arg("frame"), nb::arg("accuracy"), nb::arg("cutoff"),
             nb::arg("order") = 6, nb::arg("alpha") = nb::none(),
-            nb::arg("mesh") = nb::none(), nb::arg("units") = "lj",
+            nb::arg("mesh") = nb::none(), nb::arg("units") = nb::none(),
             "LAMMPS `kspace_style pppm <accuracy>` for this frame: alpha "
             "and mesh from the relative RMS force accuracy, the real-space "
             "Coulomb cutoff, the cell and the charges (PPPM::init: "
             "set_grid_global + adjust_gewald). two_charge and qqrd2e come "
             "from `units`, the LAMMPS style of the run that will use the "
-            "result (pass the driver's units_style). "
+            "result (pass the driver's units_style; None takes "
+            "atomiverse.units_style(), the style a driver built without "
+            "units= adopts). "
             "The mesh counts stay fixed after this call. A later cell change "
             "rebuilds the Green's function only (PPPM::setup), and does not "
             "call set_grid_global. `alpha` / `mesh` fix one of them "

@@ -151,8 +151,8 @@ class MD:
 
         import atomiverse as av
 
-        sim = av.MD()
-        sim.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
+        sim = av.MD(units="real")  # LAMMPS units: kcal/mol, Å, fs, K, atm
+        sim.set_evaluator(av.PairLJCut(0.2381, 3.4, 8.5))  # argon
         sim.set_neighbor(av.NeighborList(8.5, 0.5))
         sim.set_integrator(av.VelocityVerlet(1.0))
         sim.set_thermo(200)
@@ -193,6 +193,8 @@ class MD:
     def set_units(self, style: str) -> MD:
         """LAMMPS ``units <style>`` of this run (before the first :meth:`run`)."""
         self._cpp.set_units(style)
+        # The style's defaults (neighbor skin, …) are applied at build.
+        self._built = False
         return self
 
     @property
@@ -651,9 +653,11 @@ FixShake = _cpp.FixShake
 FixRattle = _cpp.FixRattle
 
 #: Constant uniform electric field (LAMMPS ``fix efield``) —
-#: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in V/Å;
-#: register it with :meth:`MD.set_evaluator`. F = qE [eV/Å]; the energy is
-#: −Σ q E·r^u on unwrapped coordinates and no virial is added.
+#: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in the
+#: run's LAMMPS field unit (V/Å for ``real`` and ``metal``); register it with
+#: :meth:`MD.set_evaluator`. F = q E qe2f in the run's force unit (real:
+#: 23.060549 kcal/mol/Å per e·V/Å, metal: 1 eV/Å); the energy is
+#: −Σ q qe2f E·r^u on unwrapped coordinates and no virial is added.
 FixEfield = _cpp.FixEfield
 
 def ConfigurationalTemperature(every: int = 1, *, device: str = "cpu"):

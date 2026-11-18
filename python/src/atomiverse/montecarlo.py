@@ -57,10 +57,13 @@ constructors.
 
 Units
 -----
-Temperature [K]; pressure [eV/A^3] (LAMMPS sign, positive = compressive;
-1 bar ~ 6.2415e-7 eV/A^3); chemical potential [eV], total, including the
-ideal part (see *Chemical potential* below); mass [amu]; displacement [A];
-volume [A^3]; energy [eV].
+LAMMPS ``units``, like MD: each preset takes ``units=`` (default
+:func:`atomiverse.units_style`, i.e. ``"lj"`` unless
+:func:`atomiverse.set_units` chose another) and every quantity is in that
+style — temperature; pressure in the style's pressure unit (``real`` atm,
+``metal`` bar; LAMMPS sign, positive = compressive); chemical potential in
+the style's energy, total, including the ideal part (see *Chemical
+potential* below); mass; displacement; volume; energy.
 
 Shape
 -----
@@ -206,15 +209,17 @@ from atomiverse._binding import _cpp, require_domain
 
 require_domain(__name__, "mc")
 
-#: Canonical NVT Metropolis — ``cpu::mc::MC(temperature [K], seed)``.
+#: Canonical NVT Metropolis — ``cpu::mc::MC(temperature, seed, units=None)``.
 MC = _cpp.MC
 
 #: Isothermal-isobaric MC —
-#: ``cpu::mc::NptMc(temperature [K], pressure [eV/A^3], seed)``.
+#: ``cpu::mc::NptMc(temperature, pressure [style pressure], seed,
+#: units=None)``.
 NptMC = _cpp.NptMC
 
 #: Grand-canonical muVT MC —
-#: ``cpu::mc::Gcmc(temperature [K], mu [eV], mass [amu], seed)``.
+#: ``cpu::mc::Gcmc(temperature, mu [style energy], mass, seed,
+#: units=None)``.
 GCMC = _cpp.GCMC
 
 #: Single-particle displacement Mover —

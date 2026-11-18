@@ -104,6 +104,8 @@ class Evaluate:
     def set_units(self, style: str):
         """LAMMPS ``units <style>`` of this run (before the first ``run``)."""
         self._cpp.set_units(style)
+        # The style's defaults (neighbor skin, …) are applied at build.
+        self._built = False
         return self
 
     @property
