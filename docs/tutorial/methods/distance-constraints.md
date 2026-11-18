@@ -14,7 +14,7 @@ from atomiverse.md.integrator import NoseHooverNPT
 sim = MD(device="cuda", units="real")
 sim.set_integrator(NoseHooverNPT(1000, 100, 1, 1000, 1.0))
 constraint = FixShake(1.0, tolerance=1e-6, max_iter=1000)
-constraint.constrain_bond(1, 1.0969)  # zero-based type in the execution topology
+constraint.constrain_bond(1, 1.0969)  # the bond type value the Frame stores
 sim.set_observer(constraint)
 # Install the force field and neighbor list, then build and run on your frame.
 ```
@@ -23,8 +23,11 @@ Use `FixRattle` with the same arguments for position and velocity constraints.
 C++ uses the same calls, e.g. `cpu::md::FixRattle{dt, tolerance, max_iter}`.
 The driver supplies its integrator timestep through `TimestepConsumer`.
 To hold an angle, call `constrain_angle(type, distance_13)`; supply the 1–3
-length rather than an angle in degrees. Topology indices are zero-based,
-so LAMMPS bond type 2 maps to execution bond type 1.
+length rather than an angle in degrees. The type is the value the Frame's
+bond/angle type column holds — the same index the bonded potential tables
+use. Atomiverse's LAMMPS data reader stores zero-based types (LAMMPS bond type
+2 becomes 1); a molpy Frame passes its `type_id` through unchanged, so a
+1-based molpy `type_id` 2 is constrained with `constrain_bond(2, ...)`.
 
 SHAKE predicts the next unconstrained positions from the current coordinates,
 half-step velocities and physical forces. A cluster solve supplies the reaction

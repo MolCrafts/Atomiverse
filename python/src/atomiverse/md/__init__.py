@@ -375,8 +375,9 @@ class MD:
         """Install an observer (``Driver::set_observer``).
 
         ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed),
-        ``FixShake`` and ``FixRattle`` (distance constraints; their
-        bond/angle type indices are zero-based) run on both devices.
+        ``FixShake`` and ``FixRattle`` (distance constraints; a bond/angle
+        type is the value the Frame stores — a molpy ``type_id`` as is, the
+        same index the bonded tables use) run on both devices.
         ``ConfigurationalTemperature`` (borrowed, built for this driver's
         device with ``ConfigurationalTemperature(every, device=...)``)
         evaluates the first-order configurational temperature; after ``run``
