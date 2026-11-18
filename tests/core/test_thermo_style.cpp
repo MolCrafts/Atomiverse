@@ -71,3 +71,34 @@ TEST(ThermoStyle, TemperatureUsesDegreesOfFreedom) {
     ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf", &temp), 1);
     EXPECT_NEAR(temp, 300.0, 1e-4);
 }
+
+TEST(ThermoStyle, RealAndMetalReportKelvinAndAtmOrBarLikeLammps) {
+    // LAMMPS Update::set_units factors written out (not read back from the
+    // engine): real boltz 0.0019872067 kcal/mol/K, nktv2p 68568.415
+    // atm·Å³/(kcal/mol); metal boltz 8.617343e-5 eV/K, nktv2p 1.6021765e6
+    // bar·Å³/eV. KE = 1 energy unit over 3 DOF, W_xx = 3 energy units in
+    // 1000 Å³ (K = 0).
+    struct Row {
+        const char* style;
+        double boltz, nktv2p;
+    };
+    const ThermoStyle style({"temp", "press", "pxx"});
+    for (const Row& r : {Row{"real", 0.0019872067, 68568.415},
+                         Row{"metal", 8.617343e-5, 1.6021765e6}}) {
+        const auto u = units::from_style(r.style);
+        ThermoSample s;
+        s.ke = 1.0;
+        s.ndof = 3;
+        s.volume = 1000.0;
+        s.virial[0] = 3.0;
+        s.boltz = u.boltz;
+        s.nktv2p = u.nktv2p;
+        double temp = 0, press = 0, pxx = 0;
+        ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf %lf %lf", &temp,
+                              &press, &pxx),
+                  3);
+        EXPECT_NEAR(temp, 2.0 / (3.0 * r.boltz), 1e-6 * temp) << r.style;
+        EXPECT_NEAR(pxx, 3.0 / 1000.0 * r.nktv2p, 1e-6 * pxx) << r.style;
+        EXPECT_NEAR(press, 1.0 / 1000.0 * r.nktv2p, 1e-6 * press) << r.style;
+    }
+}
