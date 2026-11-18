@@ -35,14 +35,17 @@ void AnisotropicCellRelax::build(const BuildContext& ctx) {
 }
 
 void AnisotropicCellRelax::launch(const LaunchContext& ctx) {
+    // 1 eV/Å³ in the run's style unless the caller chose a modulus.
+    const double bulk = units::resolve_style_default(
+        bulk_mod, ctx.runtime.units.ev_per_cubic_angstrom());
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
     const double V = f.box.volume();
     const bool relaxed[3] = {relax_x, relax_y, relax_z};
     double invalid =
         !std::isfinite(P_target) || !(alpha0 > 0.0) || !std::isfinite(alpha0)
-        || !(max_scale >= 0.0 && max_scale < 1.0) || !(bulk_mod > 0.0)
-        || !std::isfinite(bulk_mod) || !(V > 0.0) || !std::isfinite(V)
+        || !(max_scale >= 0.0 && max_scale < 1.0) || !(bulk > 0.0)
+        || !std::isfinite(bulk) || !(V > 0.0) || !std::isfinite(V)
         || !f.box.is_orthorhombic() || (!relax_x && !relax_y && !relax_z);
     const auto& stress = f.meta.get(kStress);
     for (double value : stress)
@@ -54,7 +57,7 @@ void AnisotropicCellRelax::launch(const LaunchContext& ctx) {
         pressures[d] = invalid ? 0.0 : stress[d] / V * ctx.runtime.units.nktv2p;
         if (relaxed[d]) {
             const double delta = pressures[d] - P_target;
-            ds[d] = invalid ? 0.0 : alpha0 * delta / bulk_mod;
+            ds[d] = invalid ? 0.0 : alpha0 * delta / bulk;
             if (!std::isfinite(delta) || !std::isfinite(ds[d]))
                 invalid = 1;
             residual = std::max(residual, std::fabs(delta));

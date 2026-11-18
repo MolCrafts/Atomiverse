@@ -5,6 +5,11 @@
 /// task alternative owns its own phase enum, component allow-list, and budget:
 /// MD cannot carry a minimizer phase and Minimize cannot carry an MD phase.
 /// There is one byte layout and no compatibility decoder.
+///
+/// Units: every classical MD / Minimize quantity below is in the run's LAMMPS
+/// `units` style (the task's `units` byte, `core/unit_system.h`) and is never
+/// converted: [energy] is kcal/mol in real and eV in metal, [time] fs / ps,
+/// [temperature] K, [pressure] atm / bar, [length] Å.
 #pragma once
 
 #include <array>
@@ -86,17 +91,17 @@ inline bool same_rows(const std::vector<R4TypeCoeff>& a,
 /// then the LJ rows, then the r⁻⁴ rows, then the tail and energy-shift
 /// bytes.
 struct PairLJCutParams {
-    double epsilon; ///< Single-type well depth [eV]; 0 with a table.
-    double sigma;   ///< Single-type length [Å]; 0 with a table.
-    double cutoff;  ///< Cutoff [Å]; the global LJ cutoff with a table.
+    double epsilon; ///< Single-type well depth [energy]; 0 with a table.
+    double sigma;   ///< Single-type length [length]; 0 with a table.
+    double cutoff;  ///< Cutoff [length]; the global LJ cutoff with a table.
     /// 1-2 / 1-3 / 1-4 pair weights (LAMMPS special_bonds). Default 1 keeps
     /// every pair.
     double s12 = 1.0;
     double s13 = 1.0;
     double s14 = 1.0;
-    /// Per-type LJ rows (ε [eV], σ [Å], optional cutoff [Å]).
+    /// Per-type LJ rows (ε [energy], σ [length], optional cutoff [length]).
     std::vector<LJTypeCoeff> coeffs = {};
-    /// r⁻⁴ attraction rows (S [eV], σ [Å], r_c [Å]).
+    /// r⁻⁴ attraction rows (S [energy], σ [length], r_c [length]).
     std::vector<R4TypeCoeff> r4 = {};
     /// LAMMPS `pair_modify tail yes` (`set_tail_correction`).
     bool tail = false;
@@ -138,17 +143,17 @@ inline bool operator==(const PairLJCutParams& a, const PairLJCutParams& b) {
 /// are the C++ defaults: Amber specials and a shifted LJ. Not mirrored:
 /// `set_tail_correction` (CPU-only) — a launcher run gets no LJ tail.
 struct PairLJCutCoulLongParams {
-    /// LJ type rows (ε [eV], σ [Å], optional per-pair LJ cutoff [Å]).
+    /// LJ type rows (ε [energy], σ [length], optional per-pair LJ cutoff [length]).
     std::vector<LJTypeCoeff> coeffs;
     double alpha;  ///< Ewald α [1/Å]; equals the reciprocal partner's.
-    double cutoff; ///< Coulomb cutoff and global LJ cutoff [Å].
+    double cutoff; ///< Coulomb cutoff and global LJ cutoff [length].
     /// LJ special weights of 1-2 / 1-3 / 1-4 pairs [dimensionless].
     double lj12 = 0.0, lj13 = 0.0, lj14 = 0.5;
     /// Coulomb special weights of 1-2 / 1-3 / 1-4 pairs [dimensionless].
     double c12 = 0.0, c13 = 0.0, c14 = 5.0 / 6.0;
     /// LAMMPS `pair_modify shift` of every pair at its own LJ cutoff.
     bool energy_shift = true;
-    /// r⁻⁴ attraction rows (S [eV], σ [Å], r_c [Å]).
+    /// r⁻⁴ attraction rows (S [energy], σ [length], r_c [length]).
     std::vector<R4TypeCoeff> r4 = {};
     /// LAMMPS `pair_modify tail yes` (`set_tail_correction`).
     bool tail = false;
@@ -340,17 +345,16 @@ inline ATV::md::TemperatureBias csvr_bias(std::uint8_t value) {
 /// chosen, and `TaskMaterializer` installs `[0, n_steps]` from the owning
 /// `MDTask`.
 struct NoseHooverNptParams {
-    /// Thermostat setpoint, and the start value of the optional ramp [K].
+    /// Thermostat setpoint, and the start value of the optional ramp [temperature].
     double T_target;
-    /// Thermostat coupling time [fs] (LAMMPS `Tdamp`) — the timescale on
+    /// Thermostat coupling time [time] (LAMMPS `Tdamp`) — the timescale on
     /// which the thermostat pulls the kinetic temperature to `T_target`.
     double tau_T;
-    /// Barostat setpoint [eV/Å³], LAMMPS sign (positive ⇔ compressive).
-    /// 1 bar ≈ 6.2415e-7 eV/Å³.
+    /// Barostat setpoint [style pressure: real atm, metal bar], LAMMPS sign (positive ⇔ compressive).
     double P_target;
-    /// Barostat coupling time [fs] (LAMMPS `Pdamp`).
+    /// Barostat coupling time [time] (LAMMPS `Pdamp`).
     double tau_P;
-    /// Timestep [fs].
+    /// Timestep [time].
     double dt;
     /// Empirical extra damping of the Nose-Hoover chain momenta (LAMMPS
     /// `drag`); dimensionless, 0 disables it.
@@ -365,7 +369,7 @@ struct NoseHooverNptParams {
     /// Per-axis barostat enable `{x, y, z}` (LAMMPS `p_flag`). A `false`
     /// axis keeps its cell edge rigid, i.e. that direction stays NVT.
     std::array<bool, 3> couple_axis;
-    /// End temperature of the linear setpoint ramp [K]. A negative value
+    /// End temperature of the linear setpoint ramp [temperature]. A negative value
     /// folds to `T_target` in the constructor, i.e. no ramp.
     double T_stop;
 };
@@ -391,19 +395,19 @@ inline bool operator==(const NoseHooverNptParams& a,
 /// fields in this declaration order.
 ///
 /// Not mirrored (C++ defaults apply on the launcher path): the optional
-/// sixth constructor argument `W_cell` (barostat mass [eV·fs²]) and the
+/// sixth constructor argument `W_cell` (barostat mass [energy·time²]) and the
 /// setters `set_drag` / `set_mtchain` / `set_mpchain`.
 struct ParrinelloRahmanNptParams {
-    /// Thermostat setpoint [K].
+    /// Thermostat setpoint [temperature].
     double T_target;
-    /// Target hydrostatic pressure [eV/Å³], LAMMPS sign (positive ⇔
-    /// compressive). 1 bar ≈ 6.2415e-7 eV/Å³.
+    /// Target hydrostatic pressure [style pressure: real atm, metal bar], LAMMPS sign (positive ⇔
+    /// compressive).
     double P_target;
-    /// Thermostat coupling time [fs] (LAMMPS `Tdamp`).
+    /// Thermostat coupling time [time] (LAMMPS `Tdamp`).
     double tau_T;
-    /// Barostat coupling time [fs] (LAMMPS `Pdamp`).
+    /// Barostat coupling time [time] (LAMMPS `Pdamp`).
     double tau_P;
-    /// Timestep [fs].
+    /// Timestep [time].
     double dt;
 };
 inline bool operator==(const ParrinelloRahmanNptParams& a,
@@ -422,20 +426,19 @@ inline bool operator==(const ParrinelloRahmanNptParams& a,
 /// them, so it is materialized through `MD::set_barostat`.
 ///
 /// No field is defaulted here: every wire payload states `bulk_modulus`
-/// explicitly. The C++ default of 1.0 is supplied by whoever builds this
-/// struct (e.g. the Python binding), not by the wire layer.
+/// explicitly. The C++ default of 10.0 (LAMMPS) is supplied by whoever
+/// builds this struct (e.g. the Python binding), not by the wire layer.
 struct BerendsenBarostatParams {
-    /// Target pressure [eV/Å³], LAMMPS sign (positive ⇔ compressive).
-    /// 1 bar ≈ 6.2415e-7 eV/Å³.
+    /// Target pressure [style pressure: real atm, metal bar], LAMMPS sign
+    /// (positive ⇔ compressive).
     double P_target;
-    /// Barostat coupling time [fs] (LAMMPS `Pdamp`).
+    /// Barostat coupling time [style time] (LAMMPS `Pdamp`).
     double tau_P;
-    /// Timestep [fs].
+    /// Timestep [style time].
     double dt;
-    /// Tunable modulus β [eV/Å³] (LAMMPS `modulus`). It divides the
-    /// per-step rescale, so a larger β means a gentler box change and
-    /// slower pressure relaxation. The C++ default is 1.0 — deliberately
-    /// not LAMMPS's 10.0; the reasoning is in `cpu/dynamics/barostat.h`.
+    /// Tunable modulus β [style pressure] (LAMMPS `modulus`, default 10).
+    /// It divides the per-step rescale, so a larger β means a gentler box
+    /// change and slower pressure relaxation.
     double bulk_modulus;
 };
 inline bool operator==(const BerendsenBarostatParams& a,
@@ -458,7 +461,7 @@ inline bool operator==(const BerendsenBarostatParams& a,
 /// factors LAMMPS applies to atoms one, two or three bonds apart) and
 /// `coulomb` mirrors `set_coulomb_constant`.
 struct PairCoulCutParams {
-    /// Real-space cutoff [Å]. The neighbor list must be built with a cutoff
+    /// Real-space cutoff [length]. The neighbor list must be built with a cutoff
     /// ≥ this value.
     double cutoff;
     double s12 = 1.0; ///< 1-2 Coulomb weight.
@@ -503,7 +506,7 @@ struct CoulLongParams {
     /// which the screened pair term has fallen to erfc(3.5) ≈ 7e-7 of the
     /// bare one at the cutoff (`regressions/md/npt/REFERENCE.md`).
     double alpha;
-    /// Real-space cutoff [Å]. The neighbor list must be built with a cutoff
+    /// Real-space cutoff [length]. The neighbor list must be built with a cutoff
     /// ≥ this value.
     double cutoff;
 };
@@ -540,7 +543,7 @@ struct KSpacePmeParams {
     /// Ewald splitting parameter α [1/Å] — must equal the `CoulLongParams`
     /// α of the same task, or the driver refuses to build.
     double alpha;
-    /// Target real-space grid spacing [Å]. The mesh itself is derived from
+    /// Target real-space grid spacing [length]. The mesh itself is derived from
     /// the box and rounded to FFT-friendly sizes, so a smaller spacing buys
     /// a finer mesh and a more accurate — costlier — reciprocal sum.
     double grid_spacing;
@@ -563,7 +566,7 @@ inline bool operator==(const KSpacePmeParams& a, const KSpacePmeParams& b) {
 struct KSpacePppmParams {
     /// Ewald splitting parameter α [1/Å]. Must equal the paired `CoulLong`.
     double alpha;
-    /// Target real-space mesh spacing [Å]. Rounded to FFT sizes of factors 2, 3, 5.
+    /// Target real-space mesh spacing [length]. Rounded to FFT sizes of factors 2, 3, 5.
     double grid_spacing;
     /// Charge-assignment order [count]. Python supplies 6, the C++ default of
     /// both backends.
@@ -598,7 +601,7 @@ inline bool operator==(const KSpaceEwaldParams& a, const KSpaceEwaldParams& b) {
 /// Registered beside the task wire like `KSpacePppmParams`: a launcher
 /// payload cannot name it.
 struct ImproperCvffParams {
-    std::vector<double> K; ///< Amplitude per improper type [eV].
+    std::vector<double> K; ///< Amplitude per improper type [energy].
     std::vector<int> d;    ///< Sign per type, +1 or −1.
     std::vector<int> n;    ///< Multiplicity per type, 0..6.
 };
@@ -738,13 +741,13 @@ inline bool operator==(const PWParams& a, const PWParams& b) {
 /// It is the tree's "a new pair style costs two files" demonstration; the
 /// mirror carries that caveat rather than hiding it.
 struct PairMorseParams {
-    /// @brief Well depth D [eV].
+    /// @brief Well depth D [energy].
     double D = 0.0;
     /// @brief Width parameter α [Å⁻¹].
     double alpha = 0.0;
-    /// @brief Equilibrium separation r₀ [Å].
+    /// @brief Equilibrium separation r₀ [length].
     double r0 = 0.0;
-    /// @brief Pair cutoff [Å] (> 0); the potential is shifted to zero there.
+    /// @brief Pair cutoff [length] (> 0); the potential is shifted to zero there.
     double cutoff = 0.0;
 };
 inline bool operator==(const PairMorseParams& a, const PairMorseParams& b) {
@@ -766,13 +769,13 @@ inline bool operator==(const PairMorseParams& a, const PairMorseParams& b) {
 /// Same arity as `PairMorseParams`, so the two are told apart on the wire by
 /// their IDs alone. O(N²) all-pairs, like every style of this group.
 struct PairBuckParams {
-    /// @brief Born-Mayer prefactor A [eV] (≥ 0).
+    /// @brief Born-Mayer prefactor A [energy] (≥ 0).
     double A = 0.0;
-    /// @brief Softness length ρ [Å] (> 0).
+    /// @brief Softness length ρ [length] (> 0).
     double rho = 0.0;
-    /// @brief Dispersion coefficient C [eV·Å⁶] (≥ 0).
+    /// @brief Dispersion coefficient C [energy·length⁶] (≥ 0).
     double C = 0.0;
-    /// @brief Pair cutoff [Å] (> 0).
+    /// @brief Pair cutoff [length] (> 0).
     double cutoff = 0.0;
 };
 inline bool operator==(const PairBuckParams& a, const PairBuckParams& b) {
@@ -811,17 +814,17 @@ struct PairBornParams {
     std::vector<int> type_i;
     /// @brief Second type of each row; the table is symmetric in (i, j).
     std::vector<int> type_j;
-    /// @brief Born-Mayer prefactor A per row [eV].
+    /// @brief Born-Mayer prefactor A per row [energy].
     std::vector<double> A;
-    /// @brief Softness length ρ per row [Å] (> 0).
+    /// @brief Softness length ρ per row [length] (> 0).
     std::vector<double> rho;
-    /// @brief Ionic-pair radius parameter σ per row [Å].
+    /// @brief Ionic-pair radius parameter σ per row [length].
     std::vector<double> sigma;
-    /// @brief Dispersion coefficient C per row [eV·Å⁶].
+    /// @brief Dispersion coefficient C per row [energy·length⁶].
     std::vector<double> C;
-    /// @brief \(r^{-8}\) coefficient D per row [eV·Å⁸].
+    /// @brief \(r^{-8}\) coefficient D per row [energy·length⁸].
     std::vector<double> D;
-    /// @brief Interaction cutoff [Å] (> 0), shared by every row.
+    /// @brief Interaction cutoff [length] (> 0), shared by every row.
     double cutoff = 0.0;
     /// @brief LAMMPS `pair_modify shift` (`set_energy_shift`): subtract
     ///        U(r_c) per pair. Default on.
@@ -849,11 +852,11 @@ inline bool operator==(const PairBornParams& a, const PairBornParams& b) {
 /// Charges are NOT read: the amplitude is the whole interaction strength,
 /// which is what separates this style from `PairCoulCutParams`.
 struct PairYukawaParams {
-    /// @brief Amplitude A [eV·Å]; positive is repulsive.
+    /// @brief Amplitude A [energy·length]; positive is repulsive.
     double A = 0.0;
     /// @brief Screening wavenumber κ [Å⁻¹] (≥ 0).
     double kappa = 0.0;
-    /// @brief Pair cutoff [Å] (> 0).
+    /// @brief Pair cutoff [length] (> 0).
     double cutoff = 0.0;
 };
 inline bool operator==(const PairYukawaParams& a, const PairYukawaParams& b) {
@@ -870,9 +873,9 @@ inline bool operator==(const PairYukawaParams& a, const PairYukawaParams& b) {
 /// chosen, which is the whole point of the style. This is therefore the only
 /// two-double pair payload on the wire.
 struct PairWcaParams {
-    /// @brief Well depth of the parent LJ, ε [eV].
+    /// @brief Well depth of the parent LJ, ε [energy].
     double epsilon = 0.0;
-    /// @brief Length scale σ [Å].
+    /// @brief Length scale σ [length].
     double sigma = 0.0;
 };
 inline bool operator==(const PairWcaParams& a, const PairWcaParams& b) {
@@ -907,16 +910,16 @@ inline bool operator==(const PairWcaParams& a, const PairWcaParams& b) {
 /// ordering, and a single point is not reproducible across different steps
 /// unless γ = 0.
 struct PairDpdParams {
-    /// @brief Soft repulsion amplitude a [eV/Å].
+    /// @brief Soft repulsion amplitude a [energy/length].
     double a = 0.0;
-    /// @brief Dissipative friction γ [eV·fs/Å²]; 0 switches the dissipative
+    /// @brief Dissipative friction γ [energy·time/length²]; 0 switches the dissipative
     ///        AND random terms off (σ = √(2γk_BT)).
     double gamma = 0.0;
-    /// @brief Thermostat temperature T [K] (> 0).
+    /// @brief Thermostat temperature T [temperature] (> 0).
     double temperature = 0.0;
-    /// @brief Pair cutoff r_c [Å] (> 0).
+    /// @brief Pair cutoff r_c [length] (> 0).
     double cutoff = 0.0;
-    /// @brief Timestep [fs] (> 0) — the random force scales as 1/√dt, so it
+    /// @brief Timestep [time] (> 0) — the random force scales as 1/√dt, so it
     ///        must be the timestep the integrator actually uses.
     double dt = 0.0;
     /// @brief Random-stream seed; 64-bit, unlike the thermostat mirrors'.
@@ -945,9 +948,9 @@ inline bool operator==(const PairDpdParams& a, const PairDpdParams& b) {
 /// type — hence its own ID: a swapped arm would read a maximum extension as
 /// an equilibrium length.
 struct BondFeneParams {
-    /// @brief Spring constants per bond type [eV/Å²].
+    /// @brief Spring constants per bond type [energy/length²].
     std::vector<double> K;
-    /// @brief Maximum extensions per bond type [Å].
+    /// @brief Maximum extensions per bond type [length].
     std::vector<double> R0;
 };
 inline bool operator==(const BondFeneParams& a, const BondFeneParams& b) {
@@ -973,7 +976,7 @@ inline bool operator==(const BondFeneParams& a, const BondFeneParams& b) {
 /// documented-omission arrangement `PairCoulCutParams` uses for
 /// `set_special_bonds`.
 struct DihedralCharmmParams {
-    /// @brief Force constants per dihedral type [eV].
+    /// @brief Force constants per dihedral type [energy].
     std::vector<double> K;
     /// @brief Multiplicities per type — the number of energy minima the
     ///        torsion has per full 360° turn (dimensionless, ≥ 1). n = 3 is
@@ -1002,7 +1005,7 @@ inline bool operator==(const DihedralCharmmParams& a,
 /// Two parallel vectors indexed by improper type — the same shape as
 /// `BondFeneParams`, hence its own ID.
 struct ImproperHarmonicParams {
-    /// @brief Force constants per improper type [eV/rad²].
+    /// @brief Force constants per improper type [energy/rad²].
     std::vector<double> K;
     /// @brief Equilibrium improper angles per type χ₀ [rad].
     std::vector<double> chi0;
@@ -1020,7 +1023,7 @@ inline bool operator==(const ImproperHarmonicParams& a,
 /// style has none — which is why it is not an `AngleHarmonicParams` with a
 /// fixed θ₀ but its own ID.
 struct AngleCosineParams {
-    /// @brief Angle stiffness per angle type K [eV].
+    /// @brief Angle stiffness per angle type K [energy].
     std::vector<double> K;
 };
 inline bool operator==(const AngleCosineParams& a, const AngleCosineParams& b) {
@@ -1030,16 +1033,18 @@ inline bool operator==(const AngleCosineParams& a, const AngleCosineParams& b) {
 /// @brief Wire mirror of `cpu::md::FixEfield(Ex, Ey, Ez)` — LAMMPS
 ///        `fix efield` with a constant uniform field.
 ///
-/// \(\mathbf F_i \mathrel{+}= q_i\mathbf E\) on every owned atom, and
-/// \(U \mathrel{+}= -\sum_i q_i\,\mathbf E\cdot\mathbf r_i^{\mathrm u}\) with
-/// unwrapped coordinates \(\mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n\)
-/// (image flags \(\mathbf n\)). Field in V/Å, so with charges in e the force
-/// is eV/Å (LAMMPS metal `qe2f = 1`). No virial: LAMMPS adds one only under
-/// `fix_modify virial yes`. Reads the per-atom charge column.
+/// \(\mathbf F_i \mathrel{+}= q_i\,\texttt{qe2f}\,\mathbf E\) on every owned
+/// atom, and \(U \mathrel{+}= -\sum_i q_i\,\texttt{qe2f}\,\mathbf E\cdot
+/// \mathbf r_i^{\mathrm u}\) with unwrapped coordinates
+/// \(\mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n\) (image flags
+/// \(\mathbf n\)). Field in the run's LAMMPS field unit (V/Å for real and
+/// metal); `qe2f` is the run's (real 23.060549, metal 1). No virial: LAMMPS
+/// adds one only under `fix_modify virial yes`. Reads the per-atom charge
+/// column.
 struct FixEfieldParams {
-    double Ex = 0.0; ///< Field x-component [V/Å].
-    double Ey = 0.0; ///< Field y-component [V/Å].
-    double Ez = 0.0; ///< Field z-component [V/Å].
+    double Ex = 0.0; ///< Field x-component [style field unit].
+    double Ey = 0.0; ///< Field y-component [style field unit].
+    double Ez = 0.0; ///< Field z-component [style field unit].
 };
 inline bool operator==(const FixEfieldParams& a, const FixEfieldParams& b) {
     return a.Ex == b.Ex && a.Ey == b.Ey && a.Ez == b.Ez;
@@ -1059,7 +1064,7 @@ struct LBFGSParams {
     /// @brief Number of stored correction pairs [count]. More memory buys a
     ///        better curvature estimate at a linear cost in storage and work.
     int memory = 5;
-    /// @brief Initial step size α₀ [Å²/eV] — the trial displacement per unit
+    /// @brief Initial step size α₀ [length²/energy] — the trial displacement per unit
     ///        force, before the line search backtracks.
     double alpha0 = 0.01;
     /// @brief Cap on backtracking attempts within one step [count].
@@ -1086,7 +1091,7 @@ inline bool operator==(const LBFGSParams& a, const LBFGSParams& b) {
 /// c2 = 0.1, max_step = 0.2 Å, min_alpha = 1e-8) — the documented-omission
 /// arrangement `PairCoulCutParams` already uses for `set_special_bonds`.
 struct CGParams {
-    /// @brief Step size α₀ [Å²/eV] — the trial step along the conjugate
+    /// @brief Step size α₀ [length²/energy] — the trial step along the conjugate
     ///        direction, before the line search refines it.
     double alpha0 = 0.01;
 };
@@ -1107,9 +1112,9 @@ inline bool operator==(const CGParams& a, const CGParams& b) {
 /// DECLARATION order of `cpu/minimize/fire.h`, which is also what `task_codec`
 /// writes and what `task_materializer` assigns.
 struct FIREParams {
-    /// @brief Initial pseudo-timestep [fs].
+    /// @brief Initial pseudo-timestep [time].
     double dt0 = 0.1;
-    /// @brief Ceiling on the pseudo-timestep [fs].
+    /// @brief Ceiling on the pseudo-timestep [time].
     double dt_max = 1.0;
     /// @brief Accelerating steps required before Δt grows (Bitzek `N_min`)
     ///        [count].
@@ -1123,7 +1128,7 @@ struct FIREParams {
     double alpha0 = 0.1;
     /// @brief Decay factor applied to α while accelerating (dimensionless).
     double f_alpha = 0.99;
-    /// @brief Cap on the per-atom displacement of one step [Å].
+    /// @brief Cap on the per-atom displacement of one step [length].
     double max_step = 0.2;
 };
 inline bool operator==(const FIREParams& a, const FIREParams& b) {
@@ -1150,7 +1155,7 @@ inline bool operator==(const FIREParams& a, const FIREParams& b) {
 /// DECLARATION order — what `task_codec` writes and what `task_materializer`
 /// replays as construct-then-assign.
 struct IsotropicCellRelaxParams {
-    /// @brief Target pressure [eV/Å³]; 0 is a relaxed (zero-stress) cell.
+    /// @brief Target pressure [style pressure]; 0 is a relaxed (zero-stress) cell.
     double P_target = 0.0;
     /// @brief Relative scale-step gain (dimensionless) — the proportionality
     ///        between the pressure residual and the requested `|s−1|`.
@@ -1158,9 +1163,9 @@ struct IsotropicCellRelaxParams {
     /// @brief Cap on `|s−1|` per step (dimensionless): how far one iteration
     ///        may breathe the cell.
     double max_scale = 0.05;
-    /// @brief Soft bulk modulus [eV/Å³] dividing the step; larger means a
+    /// @brief Soft bulk modulus [style pressure] dividing the step; larger means a
     ///        gentler cell change per iteration.
-    double bulk_mod = 1.0;
+    double bulk_mod = units::kStyleDefault; ///< 1 eV/Å³ in the run's style
 };
 inline bool operator==(const IsotropicCellRelaxParams& a,
                        const IsotropicCellRelaxParams& b) {
@@ -1180,14 +1185,14 @@ inline bool operator==(const IsotropicCellRelaxParams& a,
 /// axis is never scaled and never enters the residual, so a constrained
 /// direction's reaction stress cannot block convergence.
 struct AnisotropicCellRelaxParams {
-    /// @brief Target pressure [eV/Å³], the same on every relaxed axis.
+    /// @brief Target pressure [style pressure], the same on every relaxed axis.
     double P_target = 0.0;
     /// @brief Per-axis relative scale gain (dimensionless).
     double alpha0 = 0.05;
     /// @brief Cap on `|s−1|` per axis per step (dimensionless).
     double max_scale = 0.05;
-    /// @brief Soft bulk modulus [eV/Å³] dividing the step.
-    double bulk_mod = 1.0;
+    /// @brief Soft bulk modulus [style pressure] dividing the step.
+    double bulk_mod = units::kStyleDefault; ///< 1 eV/Å³ in the run's style
     /// @brief Relax the x box edge; `false` freezes it.
     bool relax_x = true;
     /// @brief Relax the y box edge; `false` freezes it.
@@ -1221,8 +1226,8 @@ struct TriclinicCellRelaxParams {
     double alpha0 = 0.02;
     /// @brief Cap on `|ε_αβ|` per step (dimensionless).
     double max_strain = 0.05;
-    /// @brief Soft modulus [eV/Å³] dividing the step.
-    double bulk_mod = 1.0;
+    /// @brief Soft modulus [style pressure] dividing the step.
+    double bulk_mod = units::kStyleDefault; ///< 1 eV/Å³ in the run's style
 };
 inline bool operator==(const TriclinicCellRelaxParams& a,
                        const TriclinicCellRelaxParams& b) {
@@ -1242,16 +1247,16 @@ inline bool operator==(const TriclinicCellRelaxParams& a,
 /// `MinimizeTask::convergence` carries one criterion, so a launcher payload
 /// names the binding one and leaves the other to the iteration budget.
 struct JointIsotropicRelaxParams {
-    /// @brief Target pressure [eV/Å³].
+    /// @brief Target pressure [style pressure].
     double P_target = 0.0;
-    /// @brief Atom displacement along the unit force per iteration [Å].
+    /// @brief Atom displacement along the unit force per iteration [length].
     double atom_step = 0.01;
     /// @brief Relative cell-scale gain (dimensionless).
     double alpha0 = 0.05;
     /// @brief Cap on `|s−1|` per step (dimensionless).
     double max_scale = 0.05;
-    /// @brief Soft bulk modulus [eV/Å³] dividing the cell step.
-    double bulk_mod = 1.0;
+    /// @brief Soft bulk modulus [style pressure] dividing the cell step.
+    double bulk_mod = units::kStyleDefault; ///< 1 eV/Å³ in the run's style
 };
 inline bool operator==(const JointIsotropicRelaxParams& a,
                        const JointIsotropicRelaxParams& b) {
@@ -1269,15 +1274,15 @@ inline bool operator==(const JointIsotropicRelaxParams& a,
 /// displacement pair is skipped on an iteration where no previous geometry
 /// exists to difference against.
 struct ForceConvergedParams {
-    /// @brief Largest per-atom force magnitude allowed [eV/Å].
+    /// @brief Largest per-atom force magnitude allowed [style force].
     double ftol = 0.05;
-    /// @brief Root-mean-square force over all atoms allowed [eV/Å].
+    /// @brief Root-mean-square force over all atoms allowed [style force].
     double rms_ftol = 0.03;
-    /// @brief Largest per-atom displacement of the last step allowed [Å].
+    /// @brief Largest per-atom displacement of the last step allowed [length].
     double max_dtol = 0.002;
-    /// @brief Root-mean-square displacement of the last step allowed [Å].
+    /// @brief Root-mean-square displacement of the last step allowed [length].
     double rms_dtol = 0.001;
-    /// @brief Energy change between the last two iterations allowed [eV].
+    /// @brief Energy change between the last two iterations allowed [style energy].
     double etol = 1e-5;
 };
 inline bool operator==(const ForceConvergedParams& a,
@@ -1290,8 +1295,8 @@ inline bool operator==(const ForceConvergedParams& a,
 /// @brief Mirrors both `cpu::PressureConverged` constructor arguments.
 ///
 /// The termination test of an isotropic variable-cell run: it reads the
-/// extensive Voigt virial `kStress` [eV] plus the box volume, forms
-/// `P = tr(W)/(3V)` [eV/Å³], and declares convergence once `|P − P_target|`
+/// extensive Voigt virial `kStress` [style energy] plus the box volume, forms
+/// `P = tr(W)/(3V)` [style pressure], and declares convergence once `|P − P_target|`
 /// falls below `ptol`. Every producer writes that same extensive convention
 /// (`core/frame_schema.h`); `StressConvergedParams` reads the identical key
 /// and divides by the identical volume, and differs only in judging each
@@ -1302,10 +1307,11 @@ inline bool operator==(const ForceConvergedParams& a,
 /// is a perfectly legal payload while a non-positive tolerance is refused at
 /// `TaskSpec` construction rather than at materialization.
 struct PressureConvergedParams {
-    /// @brief Target pressure [eV/Å³]; 0 is a relaxed cell.
+    /// @brief Target pressure [style pressure]; 0 is a relaxed cell.
     double P_target = 0.0;
-    /// @brief Absolute pressure tolerance [eV/Å³]; must be > 0.
-    double ptol = 1e-5;
+    /// @brief Absolute pressure tolerance [style pressure]; must be > 0, or
+    ///        `units::kStyleDefault` (1e-5 eV/Å³ in the run's style).
+    double ptol = units::kStyleDefault;
 };
 inline bool operator==(const PressureConvergedParams& a,
                        const PressureConvergedParams& b) {
@@ -1315,8 +1321,8 @@ inline bool operator==(const PressureConvergedParams& a,
 /// @brief Mirrors all five `cpu::StressConverged` constructor arguments.
 ///
 /// The per-axis termination test: it reads the same extensive Voigt virial
-/// `kStress` [eV] as `PressureConvergedParams` and judges the intensive
-/// diagonal stress `σ_dd = W_dd/V` [eV/Å³] of every UNMASKED axis against
+/// `kStress` [style energy] as `PressureConvergedParams` and judges the intensive
+/// diagonal stress `σ_dd = W_dd/V` [style pressure] of every UNMASKED axis against
 /// `sigma_target`, which is what pairs it with
 /// `AnisotropicCellRelaxParams::relax_*` — mask the same
 /// axes on both and a constrained direction's reaction stress cannot block
@@ -1326,10 +1332,11 @@ inline bool operator==(const PressureConvergedParams& a,
 /// `TaskSpec` construction: `stol > 0`, and at least one axis judged — an
 /// all-masked criterion would test nothing and declare victory.
 struct StressConvergedParams {
-    /// @brief Target diagonal stress [eV/Å³]; 0 is a relaxed cell.
+    /// @brief Target diagonal stress [style pressure]; 0 is a relaxed cell.
     double sigma_target = 0.0;
-    /// @brief Absolute stress tolerance [eV/Å³]; must be > 0.
-    double stol = 1e-4;
+    /// @brief Absolute stress tolerance [style pressure]; must be > 0, or
+    ///        `units::kStyleDefault` (1e-4 eV/Å³ in the run's style).
+    double stol = units::kStyleDefault;
     /// @brief Judge σ_xx.
     bool check_x = true;
     /// @brief Judge σ_yy.

@@ -22,6 +22,7 @@
 #include "molpy_frame_bridge.h"
 #include "units_binding.h"
 
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
@@ -64,6 +65,12 @@ using cpu::task::MinimizeComponentEntry;
 using cpu::task::MinimizeComponentParams;
 using cpu::task::MinimizeCriterionParams;
 using cpu::task::TaskResult;
+
+/// A pressure default resolved per run (`units::kStyleDefault`): a bare
+/// number would be a different pressure in every LAMMPS style.
+double style_default(std::optional<double> v) {
+    return v.value_or(units::kStyleDefault);
+}
 
 /// @brief Is `P` one of the alternatives of the variant `V`?
 ///
@@ -516,12 +523,13 @@ void bind_minimizer(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::IsotropicCellRelaxParams* p, double P_target,
-               double alpha0, double max_scale, double bulk_mod) {
+               double alpha0, double max_scale,
+               std::optional<double> bulk_mod) {
                 new (p) cpu::task::IsotropicCellRelaxParams{
-                    P_target, alpha0, max_scale, bulk_mod};
+                    P_target, alpha0, max_scale, style_default(bulk_mod)};
             },
             nb::arg("P_target") = 0.0, nb::arg("alpha0") = 0.05,
-            nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = 1.0,
+            nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = nb::none(),
             "Construct with the target pressure P_target [pressure] (0 is a "
             "relaxed cell; metal bar, real atm).\n\n"
             "  alpha0     relative scale-step gain, i.e. how strongly the "
@@ -529,7 +537,9 @@ void bind_minimizer(nb::module_& m) {
             "  max_scale  cap on |s-1| per step — how far one iteration may "
             "breathe the cell.\n"
             "  bulk_mod   soft bulk modulus [pressure] dividing the step; "
-            "larger means a gentler cell change per iteration.");
+            "larger means a gentler cell change per iteration. None "
+            "(default) is 1 eV/A^3 in the run's style (1.6e6 bar in metal, "
+            "1.58e6 atm in real; 1 in lj).");
 
     nb::class_<cpu::task::AnisotropicCellRelaxParams>(
         m, "AnisotropicCellRelax",
@@ -546,14 +556,14 @@ void bind_minimizer(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::AnisotropicCellRelaxParams* p, double P_target,
-               double alpha0, double max_scale, double bulk_mod, bool relax_x,
-               bool relax_y, bool relax_z) {
+               double alpha0, double max_scale, std::optional<double> bulk_mod,
+               bool relax_x, bool relax_y, bool relax_z) {
                 new (p) cpu::task::AnisotropicCellRelaxParams{
-                    P_target, alpha0,  max_scale, bulk_mod,
+                    P_target, alpha0,  max_scale, style_default(bulk_mod),
                     relax_x,  relax_y, relax_z};
             },
             nb::arg("P_target") = 0.0, nb::arg("alpha0") = 0.05,
-            nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = 1.0,
+            nb::arg("max_scale") = 0.05, nb::arg("bulk_mod") = nb::none(),
             nb::arg("relax_x") = true, nb::arg("relax_y") = true,
             nb::arg("relax_z") = true,
             "Construct with the target pressure P_target [pressure], the same "
@@ -581,12 +591,12 @@ void bind_minimizer(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::TriclinicCellRelaxParams* p, double alpha0,
-               double max_strain, double bulk_mod) {
-                new (p) cpu::task::TriclinicCellRelaxParams{alpha0, max_strain,
-                                                            bulk_mod};
+               double max_strain, std::optional<double> bulk_mod) {
+                new (p) cpu::task::TriclinicCellRelaxParams{
+                    alpha0, max_strain, style_default(bulk_mod)};
             },
             nb::arg("alpha0") = 0.02, nb::arg("max_strain") = 0.05,
-            nb::arg("bulk_mod") = 1.0,
+            nb::arg("bulk_mod") = nb::none(),
             "Construct with the strain gain alpha0, the per-step cap "
             "max_strain on |eps_ab|, and the soft modulus bulk_mod [pressure] "
             "dividing the step.");
@@ -607,13 +617,14 @@ void bind_minimizer(nb::module_& m) {
             "__init__",
             [](cpu::task::JointIsotropicRelaxParams* p, double P_target,
                double atom_step, double alpha0, double max_scale,
-               double bulk_mod) {
+               std::optional<double> bulk_mod) {
                 new (p) cpu::task::JointIsotropicRelaxParams{
-                    P_target, atom_step, alpha0, max_scale, bulk_mod};
+                    P_target, atom_step, alpha0, max_scale,
+                    style_default(bulk_mod)};
             },
             nb::arg("P_target") = 0.0, nb::arg("atom_step") = 0.01,
             nb::arg("alpha0") = 0.05, nb::arg("max_scale") = 0.05,
-            nb::arg("bulk_mod") = 1.0,
+            nb::arg("bulk_mod") = nb::none(),
             "Construct with the target pressure P_target [pressure], the atom "
             "displacement atom_step [length] taken along the unit force each "
             "iteration, the relative cell-scale gain alpha0, the per-step cap "
@@ -672,15 +683,17 @@ void bind_minimizer(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::PressureConvergedParams* p, double P_target,
-               double ptol) {
-                new (p) cpu::task::PressureConvergedParams{P_target, ptol};
+               std::optional<double> ptol) {
+                new (p) cpu::task::PressureConvergedParams{P_target,
+                                                           style_default(ptol)};
             },
-            nb::arg("P_target") = 0.0, nb::arg("ptol") = 1e-5,
+            nb::arg("P_target") = 0.0, nb::arg("ptol") = nb::none(),
             "Construct with the target pressure P_target [pressure] (0 is a "
             "relaxed cell; negative is a tensile setpoint) and the absolute "
             "tolerance ptol [pressure], which must be > 0 — a non-positive "
             "tolerance can never be met, and add_criterion raises ValueError "
-            "on it.");
+            "on it. None (default) is 1e-5 eV/A^3 in the run's style "
+            "(16.0 bar in metal, 15.8 atm in real; 1e-5 in lj).");
 
     nb::class_<cpu::task::StressConvergedParams>(
         m, "StressConverged",
@@ -704,16 +717,20 @@ void bind_minimizer(nb::module_& m) {
         .def(
             "__init__",
             [](cpu::task::StressConvergedParams* p, double sigma_target,
-               double stol, bool check_x, bool check_y, bool check_z) {
+               std::optional<double> stol, bool check_x, bool check_y,
+               bool check_z) {
                 new (p) cpu::task::StressConvergedParams{
-                    sigma_target, stol, check_x, check_y, check_z};
+                    sigma_target, style_default(stol), check_x, check_y,
+                    check_z};
             },
-            nb::arg("sigma_target") = 0.0, nb::arg("stol") = 1e-4,
+            nb::arg("sigma_target") = 0.0, nb::arg("stol") = nb::none(),
             nb::arg("check_x") = true, nb::arg("check_y") = true,
             nb::arg("check_z") = true,
             "Construct with the target diagonal stress sigma_target [pressure] "
             "(0 is a relaxed cell), the absolute tolerance stol [pressure] "
-            "(must be > 0) and the check_x / check_y / check_z axis mask.");
+            "(must be > 0; None, the default, is 1e-4 eV/A^3 in the run's "
+            "style: 160 bar in metal, 158 atm in real, 1e-4 in lj) and the "
+            "check_x / check_y / check_z axis mask.");
 
     nb::class_<TaskResult>(m, "MinimizeResult",
                            "Loop-control result; state is written to Frame.")

@@ -26,6 +26,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -91,8 +92,12 @@ struct UnitSystem {
     double femtosecond = 1.0; ///< 1 fs in the style's time.
     double qelectron = 1.0;   ///< Elementary charge in the style's charge.
     double dielectric = 1.0;  ///< LAMMPS `dielectric` (default 1).
-    double dt = 0.005;        ///< Default `timestep` [style time].
-    double skin = 0.3;        ///< Default `neighbor` skin [style length].
+    /// SI value [Pa] of the style's pressure unit (LAMMPS `units` doc:
+    /// real atm, metal bar, si Pa, cgs dyne/cm², electron Pa, micro
+    /// pg/(µm·µs²), nano ag/(nm·ns²)); 0 for lj, which has no SI unit.
+    double pressure_si = 0.0;
+    double dt = 0.005; ///< Default `timestep` [style time].
+    double skin = 0.3; ///< Default `neighbor` skin [style length].
 
     /// @brief LAMMPS name of this style.
     [[nodiscard]] constexpr const char* name() const {
@@ -108,8 +113,26 @@ struct UnitSystem {
         return qqr2e * qelectron * qelectron / (angstrom * angstrom);
     }
 
+    /// @brief 1 eV/Å³ (160.2176634 GPa) in the style's pressure unit;
+    ///        1 in lj (reduced units carry no physical scale).
+    [[nodiscard]] constexpr double ev_per_cubic_angstrom() const {
+        return pressure_si > 0.0 ? 1.602176634e11 / pressure_si : 1.0;
+    }
+
     [[nodiscard]] static constexpr UnitSystem lj() { return UnitSystem{}; }
 };
+
+/// @brief Sentinel for a pressure-valued default that is resolved against
+///        the run's style at build/launch time (e.g. a cell-relax bulk
+///        modulus of 1 eV/Å³), because a bare number would mean a different
+///        pressure in every style.
+inline constexpr double kStyleDefault = -std::numeric_limits<double>::max();
+
+/// @brief `value`, or `style_value` when `value` is `kStyleDefault`.
+[[nodiscard]] constexpr double resolve_style_default(double value,
+                                                     double style_value) {
+    return value == kStyleDefault ? style_value : value;
+}
 
 /// @brief LAMMPS `Update::set_units(style)`.
 [[nodiscard]] constexpr UnitSystem from_style(Style s) {
@@ -137,6 +160,7 @@ struct UnitSystem {
         u.qelectron = 1.0;
         u.dt = 1.0;
         u.skin = 2.0;
+        u.pressure_si = 101325.0;
         break;
     case Style::metal:
         u.boltz = 8.617343e-5;
@@ -154,6 +178,7 @@ struct UnitSystem {
         u.qelectron = 1.0;
         u.dt = 0.001;
         u.skin = 2.0;
+        u.pressure_si = 1.0e5;
         break;
     case Style::si:
         u.boltz = 1.3806504e-23;
@@ -164,6 +189,7 @@ struct UnitSystem {
         u.qelectron = 1.6021765e-19;
         u.dt = 1.0e-8;
         u.skin = 0.001;
+        u.pressure_si = 1.0;
         break;
     case Style::cgs:
         u.boltz = 1.3806504e-16;
@@ -174,6 +200,7 @@ struct UnitSystem {
         u.qelectron = 4.8032044e-10;
         u.dt = 1.0e-8;
         u.skin = 0.1;
+        u.pressure_si = 0.1;
         break;
     case Style::electron:
         u.boltz = 3.16681534e-6;
@@ -191,6 +218,7 @@ struct UnitSystem {
         u.qelectron = 1.0;
         u.dt = 0.001;
         u.skin = 2.0;
+        u.pressure_si = 1.0;
         break;
     case Style::micro:
         u.boltz = 1.3806504e-8;
@@ -201,6 +229,7 @@ struct UnitSystem {
         u.qelectron = 1.6021765e-7;
         u.dt = 2.0;
         u.skin = 0.1;
+        u.pressure_si = 1.0e3;
         break;
     case Style::nano:
         u.boltz = 0.013806504;
@@ -211,6 +240,7 @@ struct UnitSystem {
         u.qelectron = 1.0;
         u.dt = 0.00045;
         u.skin = 0.1;
+        u.pressure_si = 1.0e6;
         break;
     }
     return u;
@@ -225,5 +255,6 @@ struct UnitSystem {
 static_assert(UnitSystem::lj().two_charge_force() == 1.0);
 static_assert(UnitSystem::lj().qqrd2e() == 1.0);
 static_assert(from_style(Style::real).qqr2e == 332.06371);
+static_assert(UnitSystem::lj().ev_per_cubic_angstrom() == 1.0);
 
 } // namespace ATV::units

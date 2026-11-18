@@ -26,10 +26,11 @@ class Barostat : public cuda::Barostat {
   public:
     /// @brief Construct barostat.
     /// @param P_target Target pressure [style pressure].
-    /// @param tau_p    Pressure coupling time [fs].
-    /// @param dt       Time step [fs].
+    /// @param tau_p    Pressure coupling time [style time].
+    /// @param dt       Time step [style time].
+    /// @param bulk_modulus LAMMPS `modulus` [style pressure], default 10.
     Barostat(double P_target, double tau_p, double dt,
-             double bulk_modulus = 1.0);
+             double bulk_modulus = 10.0);
     ~Barostat() override;
     Barostat(Barostat&&) noexcept;
     Barostat& operator=(Barostat&&) noexcept;
