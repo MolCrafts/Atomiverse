@@ -106,7 +106,8 @@ void ConstPotMaZe::ensure_u_() {
     u_.assign(static_cast<std::size_t>(m), 0.0);
     // CG on A u = 1 to well below maze_tol so the χ shift cannot pollute
     // the constraint residual. Solved once per elastance build.
-    const double utol = maze_tol * 1e-2;
+    // maze_tol is in V; the residual is energy per charge (qe2f · V).
+    const double utol = bo_.v2e_ * maze_tol * 1e-2;
     std::vector<double> r(static_cast<std::size_t>(m), 1.0);
     std::vector<double> p = r;
     std::vector<double> Ap(static_cast<std::size_t>(m));
@@ -153,7 +154,7 @@ int ConstPotMaZe::shake_cg_(std::vector<double>& Q,
     for (int i = 0; i < m; ++i)
         r[static_cast<std::size_t>(i)] =
             rhs[static_cast<std::size_t>(i)] - tmp[static_cast<std::size_t>(i)];
-    if (inf_norm(r) <= maze_tol)
+    if (inf_norm(r) <= bo_.v2e_ * maze_tol)
         return 0; // Verlet guess already on the constraint manifold.
 
     std::vector<double> gamma(static_cast<std::size_t>(m), 0.0);
@@ -179,7 +180,7 @@ int ConstPotMaZe::shake_cg_(std::vector<double>& Q,
             r[static_cast<std::size_t>(i)] -=
                 alpha * Bp[static_cast<std::size_t>(i)];
         }
-        if (inf_norm(r) <= maze_tol)
+        if (inf_norm(r) <= bo_.v2e_ * maze_tol)
             break;
         const double rsnew = dot(r, r);
         const double beta = rsnew / rs;
