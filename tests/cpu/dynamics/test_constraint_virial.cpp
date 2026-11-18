@@ -105,7 +105,7 @@ TEST(ConstraintVirial, AlgorithmsHaveDistinctVelocityBindings) {
     EXPECT_EQ(rattle.name(), "rattle");
     EXPECT_EQ(shake.default_bindings().size(), 3u);
     EXPECT_EQ(rattle.default_bindings().size(), 4u);
-    EXPECT_THROW(cpu::md::FixShake(std::numeric_limits<double>::infinity()),
+    EXPECT_THROW((cpu::md::FixShake{std::numeric_limits<double>::infinity()}),
                  std::invalid_argument);
     EXPECT_THROW(
         shake.constrain_bond(0, std::numeric_limits<double>::quiet_NaN()),
