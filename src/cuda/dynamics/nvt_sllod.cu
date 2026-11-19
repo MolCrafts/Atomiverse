@@ -466,7 +466,8 @@ void NvtSllod::build(const BuildContext& ctx) {
     if (state_->ndof > 0)
         ATV::md::sllod_chain_masses(chain.data() + 2 * tchain_, tchain_,
                                     static_cast<double>(state_->ndof),
-                                    ctx.runtime.units.boltz * T_, tau_);
+                                    ctx.runtime.units.boltzmann_constant() * T_,
+                                    tau_);
     state_->mass0 = chain[2 * tchain_];
     ATV_CUDA_CHECK(cudaMalloc(&state_->device, sizeof(Device)));
     ATV_CUDA_CHECK(cudaMemcpy(state_->device, &host, sizeof(Device),
@@ -531,15 +532,15 @@ void NvtSllod::launch(const LaunchContext& ctx) {
     if (!armed_)
         throw std::logic_error("NvtSllod: launch before build");
 
-    const double kT = ctx.runtime.units.boltz * T_;
+    const double kT = ctx.runtime.units.boltzmann_constant() * T_;
     const ChainArgs chain{state_->chain,
                           tchain_,
                           static_cast<double>(state_->ndof) * kT,
                           kT,
                           dt_,
                           state_->ndof > 0 && state_->mass0 > 0,
-                          ctx.runtime.units.ftm2v,
-                          ctx.runtime.units.mvv2e};
+                          ctx.runtime.units.velocity_impulse.scale(),
+                          ctx.runtime.units.kinetic_energy.scale()};
     const int grid = cuda::grid_size(n);
     auto scale = [&]() {
         scale_peculiar<<<grid, block, 0, stream>>>(
@@ -569,7 +570,7 @@ void NvtSllod::launch(const LaunchContext& ctx) {
         nve_x<<<grid, block, 0, stream>>>(
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
             a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag, step_ptr,
-            ctx.step, d, dt_, ctx.runtime.units.ftm2v, n);
+            ctx.step, d, dt_, ctx.runtime.units.velocity_impulse.scale(), n);
     } else if (ctx.at(ATV::md::Phase::pre_exchange)) {
         if (!can_flip_)
             return;

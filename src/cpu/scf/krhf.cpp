@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/scf/krhf.cpp
 /// @brief cpu::scf::KRHF — Driver<scf::Phase> over the FFTDF kernel.
 ///
@@ -204,6 +205,11 @@ void KRHF::commit(Frame& frame, int executed, int cap, Write write) {
 }
 
 void KRHF::solve(Frame& frame, Write write) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](Frame& native) { solve(native, write); });
+        return;
+    }
     require_controls(tol, max_iter);
     this->setup_pass(frame);
     try {
@@ -243,6 +249,12 @@ void KRHF::run(const Frame& frame) {
 void KRHF::run(Frame& frame) { solve(frame, Write::Overwrite); }
 
 int KRHF::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame, int budget) {
+    if (units::needs_conversion(frame, "electronic")) {
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            Runtime::ScopedFrame binding(*ctx.exec.runtime, native);
+            return run_nested_erased(ctx, native, budget);
+        });
+    }
     if (!ctx.exec.runtime)
         throw std::runtime_error("cpu::scf::KRHF: nested run has no Runtime");
     require_controls(tol, max_iter);

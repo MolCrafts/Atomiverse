@@ -150,3 +150,13 @@ def test_multiatom_graph_without_connectivity_is_refused_without_mutation():
     with pytest.raises(ValueError, match="bond|connect"):
         atv.AM1BCCCharges(correction="bcc").assign(mol)
     assert _snapshot(mol) == before
+
+
+def test_charge_model_converts_declared_geometry_and_charge_units():
+    molecule = _tetrahedron(6)
+    native = atv.AM1BCCCharges().assign(molecule)
+    for atom in molecule.atoms:
+        for axis in ("x", "y", "z"):
+            atom[axis] *= 1.e-10
+    si = atv.AM1BCCCharges().assign(molecule, units="si")
+    np.testing.assert_allclose(si / 1.602176634e-19, native, rtol=1.e-10, atol=1.e-12)

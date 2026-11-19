@@ -88,6 +88,10 @@ class Thermo : public AsyncRecorder {
   protected:
     void on_build(const BuildContext& ctx) override {
         runtime_ = &ctx.runtime;
+        // Consumption runs asynchronously: native electronic evaluations may
+        // temporarily replace the numerical context on the producer thread.
+        boltz_ = ctx.runtime.units.boltzmann_constant();
+        pressure_scale_ = ctx.runtime.units.pressure.scale();
         header_printed_ = false;
         if (!filename_.empty()) {
             file_.open(filename_);
@@ -114,8 +118,8 @@ class Thermo : public AsyncRecorder {
             sample.kinetic[a] = sc.stress_kinetic[a];
         }
         sample.ndof = runtime_->md.n_dof_global;
-        sample.boltz = runtime_->units.boltz;
-        sample.nktv2p = runtime_->units.nktv2p;
+        sample.boltz = boltz_;
+        sample.nktv2p = pressure_scale_;
         // The setup line opens a run (LAMMPS prints the header per run).
         if (v.kind == CaptureKind::setup || !header_printed_) {
             ATV_INFO("{}", style_.header());
@@ -141,6 +145,8 @@ class Thermo : public AsyncRecorder {
     ThermoStyle style_;
     std::string filename_;
     const cuda::Context* runtime_ = nullptr; ///< n_dof_global per line
+    double boltz_ = 1.0;
+    double pressure_scale_ = 1.0;
     bool header_printed_ = false;
     std::ofstream file_;
 };

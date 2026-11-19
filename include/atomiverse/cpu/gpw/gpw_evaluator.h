@@ -57,6 +57,8 @@ namespace gpw {
 /// timestep member to keep in sync (and no way to run CPMD outside an MD loop).
 class GPWEvaluator : public cpu::GPW, public cpu::TimestepConsumer {
   public:
+    bool timestep_in_femtoseconds() const override { return true; }
+
     bool provides_force() const override { return compute_forces; }
 
     /// @brief Compute analytic forces (one SCF + one gradient pass), added to

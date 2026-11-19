@@ -152,3 +152,40 @@ TEST(EspCharges, UnsupportedElementThrows) {
     EXPECT_THROW(MKCharges{}.grid(f), std::invalid_argument);
     EXPECT_THROW(ChelpgCharges{}.grid(f), std::invalid_argument);
 }
+
+#include "atomiverse/cpu/units/frame.h"
+TEST(EspCharges, DeclaredPotentialGeometryAndChargeUnitsArePreparedTogether) {
+    auto native = h2o_frame();
+    units::annotate(native, "electronic");
+    const auto e = units::PhysicalUnits::from_style("electronic");
+    const auto atomic_potential =
+        units::Unit{e.energy().dimension,
+                    units::kHartreeInEv * e.energy().scale, 0}
+        / e.charge();
+    MKCharges model;
+    for (const auto* style : {"si", "real", "electron"}) {
+        SCOPED_TRACE(style);
+        auto frame = units::convert(native, style);
+        const auto source = units::PhysicalUnits::from_style(style);
+        auto grid = model.grid(frame);
+        auto native_grid = grid;
+        const units::Conversion length(source.length(), e.length());
+        for (auto& point : native_grid)
+            for (auto& value : point)
+                value = length(value);
+        auto values = point_charge_potential(native, kTrueQ, native_grid);
+        const auto native_values = values;
+        const units::Conversion potential(atomic_potential, source.potential());
+        for (auto& value : values)
+            value = potential(value);
+        const auto charges = model.fit_potential(values, grid, frame, 0.);
+        const auto explicit_units =
+            model.fit_potential(native_values, native_grid, frame, 0.,
+                                atomic_potential, e.length());
+        const units::Conversion charge(source.charge(), e.charge());
+        for (std::size_t i = 0; i < charges.size(); ++i) {
+            EXPECT_NEAR(charge(charges[i]), kTrueQ[i], 1.e-6);
+            EXPECT_NEAR(charge(explicit_units[i]), kTrueQ[i], 1.e-6);
+        }
+    }
+}

@@ -194,8 +194,11 @@ void QmmmPolarizable::launch(const LaunchContext& ctx) {
         const double zi = pos[static_cast<std::size_t>(3 * a + 2)];
         // Field from QM density charges (private frame).
         for (std::size_t k = 0; k < qm_rows.size(); ++k) {
-            const double q = static_cast<double>(q_qm[k]);
-            double dx = xi - qx[k], dy = yi - qy[k], dz = zi - qz[k];
+            const double q =
+                sub_.native_charge_to_run(static_cast<double>(q_qm[k]));
+            double dx = xi - sub_.native_position_to_run(qx[k]),
+                   dy = yi - sub_.native_position_to_run(qy[k]),
+                   dz = zi - sub_.native_position_to_run(qz[k]);
             f.box.min_image(dx, dy, dz);
             const double r2 = dx * dx + dy * dy + dz * dz;
             if (!(r2 > 0.0))
@@ -233,7 +236,7 @@ void QmmmPolarizable::launch(const LaunchContext& ctx) {
     last_pol_iters_ = 0;
     if (alpha > 0.0 && n_mm > 0) {
         std::vector<double> mu;
-        e_pol_ = ctx.runtime.units.qqrd2e()
+        e_pol_ = ctx.runtime.units.coulomb_constant()
                  * solve_induced_dipoles(n_mm, pos.data(), alpha_v.data(),
                                          e_perm.data(), thole_a, pol_tol,
                                          pol_max_iter, mu, &last_pol_iters_);

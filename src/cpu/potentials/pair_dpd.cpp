@@ -63,7 +63,8 @@ double PairDpd::a_of_(int ti, int tj) const {
 void PairDpd::compute(const LaunchContext& ctx) {
     auto& f = ctx.frame;
     // LAMMPS pair dpd `sigma = sqrt(2 boltz T gamma)` in the run's units.
-    sigma_ = std::sqrt(2.0 * gamma_ * ctx.runtime.units.boltz * temperature_);
+    sigma_ = std::sqrt(2.0 * gamma_ * ctx.runtime.units.boltzmann_constant()
+                       * temperature_);
     const double rc = pair_cutoff();
     const double inv_sqrt_dt = 1.0 / std::sqrt(dt_);
     // The single-amplitude form needs no force-field type; only the

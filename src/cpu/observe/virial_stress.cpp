@@ -46,12 +46,12 @@ void Virial::launch(const cpu::LaunchContext& ctx) {
     // Overwrite (not +=) since this is the canonical kinetic contribution and
     // each integrator step computes it once from current velocities. The pair
     // virial accumulates separately into `frame.meta.get(kStress)`.
-    f.meta.get(kStressKinetic)[0] = ctx.runtime.units.mvv2e * v_xx;
-    f.meta.get(kStressKinetic)[1] = ctx.runtime.units.mvv2e * v_yy;
-    f.meta.get(kStressKinetic)[2] = ctx.runtime.units.mvv2e * v_zz;
-    f.meta.get(kStressKinetic)[3] = ctx.runtime.units.mvv2e * v_xy;
-    f.meta.get(kStressKinetic)[4] = ctx.runtime.units.mvv2e * v_xz;
-    f.meta.get(kStressKinetic)[5] = ctx.runtime.units.mvv2e * v_yz;
+    f.meta.get(kStressKinetic)[0] = ctx.runtime.units.kinetic_energy(v_xx);
+    f.meta.get(kStressKinetic)[1] = ctx.runtime.units.kinetic_energy(v_yy);
+    f.meta.get(kStressKinetic)[2] = ctx.runtime.units.kinetic_energy(v_zz);
+    f.meta.get(kStressKinetic)[3] = ctx.runtime.units.kinetic_energy(v_xy);
+    f.meta.get(kStressKinetic)[4] = ctx.runtime.units.kinetic_energy(v_xz);
+    f.meta.get(kStressKinetic)[5] = ctx.runtime.units.kinetic_energy(v_yz);
 }
 
 } // namespace md

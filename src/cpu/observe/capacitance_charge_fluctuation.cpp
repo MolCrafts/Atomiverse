@@ -51,10 +51,10 @@ void CapacitanceChargeFluctuation::launch(const LaunchContext& ctx) {
     sum_q_ += Q;
     sum_q2_ += Q * Q;
 
-    const double kT =
-        ctx.runtime.units.boltz * temperature_K_; // eV; 1 e·V = 1 eV
+    const double kT = ctx.runtime.units.boltzmann_constant()
+                      * temperature_K_; // eV; 1 e·V = 1 eV
     const double var = charge_variance();
-    last_c_diff_ = var / kT;
+    last_c_diff_ = ctx.runtime.units.electric_potential(var / kT);
 
     if (delta_psi_V_ != 0.0) {
         last_c_int_ = mean_charge() / delta_psi_V_;

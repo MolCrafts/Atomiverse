@@ -229,3 +229,32 @@ TEST(LammpsCoeffs, RejectsNonArithmeticMixing) {
     EXPECT_THROW(load_lammps_coeffs(path), std::invalid_argument);
     std::remove(path.c_str());
 }
+
+TEST(LammpsCoeffs, ImportPreparesEveryDimensionalParameterForTheRun) {
+    const auto path = write_tmp(
+        "pair_style lj/cut 10.0\npair_coeff 1 1 23.060547830619 3.4 "
+        "9.0\nbond_style harmonic\nbond_coeff 1 300.0 1.5\nangle_style "
+        "harmonic\nangle_coeff 1 50.0 110.0\ndihedral_style "
+        "charmm\ndihedral_coeff 1 2.0 3 180.0 0.0\n");
+    const auto real =
+        ATV::units::PhysicalUnits::from_style(ATV::units::Style::real);
+    const auto metal =
+        ATV::units::PhysicalUnits::from_style(ATV::units::Style::metal);
+    const auto coefficients = load_lammps_coeffs(path, real, metal);
+    ASSERT_EQ(coefficients.lj.size(), 1u);
+    EXPECT_NEAR(coefficients.lj[0].epsilon, 1., 1.e-12);
+    EXPECT_DOUBLE_EQ(coefficients.lj[0].sigma, 3.4);
+    EXPECT_DOUBLE_EQ(*coefficients.lj[0].cutoff, 9.);
+    EXPECT_NEAR(coefficients.bond_K[0], 300. / 23.060547830619, 1.e-12);
+    EXPECT_NEAR(coefficients.angle_K[0], 50. / 23.060547830619, 1.e-12);
+    EXPECT_NEAR(coefficients.dihedral_charmm_K[0], 2. / 23.060547830619,
+                1.e-12);
+    EXPECT_EQ(coefficients.dihedral_charmm_n[0], 3);
+    EXPECT_NEAR(coefficients.dihedral_charmm_delta[0], ATV::units::pi, 1.e-14);
+    const auto si =
+        ATV::units::PhysicalUnits::from_style(ATV::units::Style::si);
+    const auto in_si = load_lammps_coeffs(path, real, si);
+    EXPECT_NEAR(in_si.pair_cut_lj, 1.e-9, 1.e-23);
+    EXPECT_NEAR(in_si.bond_r0[0], 1.5e-10, 1.e-24);
+    std::remove(path.c_str());
+}

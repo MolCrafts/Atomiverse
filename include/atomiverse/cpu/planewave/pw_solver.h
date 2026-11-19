@@ -85,6 +85,8 @@ struct PWResult {
 /// path-local StepFn bodies (restricted / collinear × fixed / smear).
 class PW : public cpu::Driver<ATV::pw::Phase> {
   public:
+    bool uses_electronic_frame() const override { return true; }
+
     bool requires_full_frame() const override { return true; }
     /// Un-hide `cpu::Driver::build()` (Plan compile) alongside `build(frame)`.
     using cpu::Driver<ATV::pw::Phase>::build;

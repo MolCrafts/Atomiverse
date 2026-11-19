@@ -105,6 +105,10 @@ struct LoopServices {
 /// These flags describe evaluation intent, not physical Frame state. A nested
 /// slot narrows output requests and restores this slice even when it throws.
 struct ExecServices {
+    /// Public run convention inherited by children while a fixed-convention
+    /// solver temporarily prepares Context::units for its numeric arrays.
+    /// Borrowed only for the synchronous unit-boundary scope.
+    const units::UnitSystem* inherited_units = nullptr;
     bool forces_requested = true;
     bool stress_requested = true;
     bool initializing_forces = false;

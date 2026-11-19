@@ -96,7 +96,7 @@ TEST(PppmBrickParity, StaticMadelungForceOn1And2Ranks) {
     sim.run(frame, 1);
 
     const double e_ref =
-        -0.5 * kN * kMadelung * units::UnitSystem::lj().qqrd2e() / kD;
+        -0.5 * kN * kMadelung * units::UnitSystem::lj().coulomb_constant() / kD;
     const double E = frame.meta.get(ATV::kEnergy);
     const double rel = std::fabs(E / e_ref - 1.0);
     EXPECT_LT(rel, kStaticEnergyRel)
@@ -162,7 +162,7 @@ TEST(PppmBrickParity, OneRankAgreesWithTwoRankEnergy) {
     sim.run(frame, 1);
     const double E = frame.meta.get(ATV::kEnergy);
     const double e_ref =
-        -0.5 * kN * kMadelung * units::UnitSystem::lj().qqrd2e() / kD;
+        -0.5 * kN * kMadelung * units::UnitSystem::lj().coulomb_constant() / kD;
 
     // Publish E to rank 0 for logging; both sizes independently hit Madelung.
     double E_root = E;

@@ -381,7 +381,7 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
                     tau_T_,
                     tau_P_,
                     // LAMMPS `p_target / nktv2p`: energy/volume.
-                    P_target_ / ctx.runtime.units.nktv2p,
+                    P_target_ / ctx.runtime.units.pressure.scale(),
                     dt_,
                     drag_,
                     mtchain_,
@@ -393,9 +393,9 @@ void NoseHooverNPT::build(const BuildContext& ctx) {
                     ctx.frame.n_atoms(),
                     {couple_axis_[0], couple_axis_[1], couple_axis_[2]},
                     nullptr,
-                    ctx.runtime.units.boltz,
-                    ctx.runtime.units.mvv2e,
-                    ctx.runtime.units.ftm2v};
+                    ctx.runtime.units.boltzmann_constant(),
+                    ctx.runtime.units.kinetic_energy.scale(),
+                    ctx.runtime.units.velocity_impulse.scale()};
     s.chain.resize(3 * (mtchain_ + mpchain_));
     NptHistory h{};
     h.qt = thrust::raw_pointer_cast(s.chain.data());

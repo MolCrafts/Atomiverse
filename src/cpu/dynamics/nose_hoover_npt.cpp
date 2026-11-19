@@ -117,8 +117,8 @@ void NoseHooverNPT::build(const cpu::BuildContext& ctx) {
     }
 #endif
     n_atoms_global_ = N;
-    boltz_ = ctx.runtime.units.boltz;
-    nktv2p_ = ctx.runtime.units.nktv2p;
+    boltz_ = ctx.runtime.units.boltzmann_constant();
+    nktv2p_ = ctx.runtime.units.pressure.scale();
     kT_ = boltz_ * T_target_;
 
     // Standard MTK masses (Tuckerman 2006 §III).
@@ -202,7 +202,7 @@ double NoseHooverNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
+    ke_local = .5 * ctx.runtime.units.kinetic_energy(ke_local);
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -235,9 +235,9 @@ NoseHooverNPT::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * ctx.runtime.units.mvv2e * kx,
-                    0.5 * ctx.runtime.units.mvv2e * ky,
-                    0.5 * ctx.runtime.units.mvv2e * kz};
+    double ke[3] = {.5 * ctx.runtime.units.kinetic_energy(kx),
+                    .5 * ctx.runtime.units.kinetic_energy(ky),
+                    .5 * ctx.runtime.units.kinetic_energy(kz)};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -509,7 +509,7 @@ void NoseHooverNPT::kick_v_by_force(const cpu::LaunchContext& ctx,
                                     double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * ctx.runtime.units.ftm2v;
+    const double dtf = ctx.runtime.units.velocity_impulse(half_dt);
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);

@@ -120,7 +120,7 @@ Atoms
 
 TEST(LammpsDataFull, LoadsChargeTypeCoords) {
     const std::string path = write_temp("full", kMiniFull);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
 
     ASSERT_EQ(f.nlocal(), 2);
@@ -138,7 +138,7 @@ TEST(LammpsDataFull, LoadsChargeTypeCoords) {
 
 TEST(LammpsDataFull, MolecularPathStillWorks) {
     const std::string path = write_temp("mol", kMiniMolecular);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
 
     ASSERT_EQ(f.nlocal(), 2);
@@ -154,7 +154,7 @@ TEST(LammpsDataFull, MolecularPathStillWorks) {
 
 TEST(LammpsDataFull, BondsBuildSpecialList) {
     const std::string path = write_temp("spec", kMiniFull);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
 
     const auto nspecial = f.span(kAtom_nspecial);
@@ -182,7 +182,7 @@ TEST(LammpsDataFull, BondsBuildSpecialList) {
 TEST(LammpsDataFull, MalformedAtomsThrows) {
     const std::string path = write_temp("bad", kMalformedAtoms);
     try {
-        Frame f = load_lammps_data(path);
+        Frame f = load_lammps_data(path, "real");
         (void)f;
         FAIL() << "expected throw";
     } catch (const std::runtime_error& e) {
@@ -229,7 +229,7 @@ Velocities
 
 TEST(LammpsDataFull, ShiftsPositionsByBoxOrigin) {
     const std::string path = write_temp("origin", kOriginVel);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
 
     // Positions land in the [0, L) frame: shifted by (xlo, ylo, zlo).
@@ -244,7 +244,7 @@ TEST(LammpsDataFull, ShiftsPositionsByBoxOrigin) {
 
 TEST(LammpsDataFull, ReadsVelocities) {
     const std::string path = write_temp("vel", kOriginVel);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
 
     EXPECT_NEAR(f.span(ATV::kAtom_vx)[0], 0.01, 1e-12);
@@ -325,7 +325,7 @@ Impropers
 
 TEST(LammpsDataFull, CoeffSectionsDoNotOverwriteMasses) {
     const std::string path = write_temp("sections", kSections);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
     const auto mass = f.span(ATV::kAtom_mass);
     EXPECT_DOUBLE_EQ(mass[0], 12.011);
@@ -335,7 +335,7 @@ TEST(LammpsDataFull, CoeffSectionsDoNotOverwriteMasses) {
 
 TEST(LammpsDataFull, ReadsImpropersOnCentralSecondAtom) {
     const std::string path = write_temp("impropers", kSections);
-    Frame f = load_lammps_data(path);
+    Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
     const auto num = f.span(ATV::kAtom_num_improper);
     const auto atom = f.span(ATV::kAtom_improper_atom);
@@ -352,7 +352,7 @@ TEST(LammpsDataFull, UnsupportedSectionThrows) {
     std::string text = kSections;
     text += "\nEllipsoids\n\n1 1 1 1\n";
     const std::string path = write_temp("unsupported", text);
-    EXPECT_THROW(load_lammps_data(path), std::runtime_error);
+    EXPECT_THROW(load_lammps_data(path, "real"), std::runtime_error);
     std::remove(path.c_str());
 }
 
@@ -360,7 +360,7 @@ TEST(LammpsDataFull, ExtraRowsThrow) {
     std::string text = kSections;
     text += "2 1 4 3 2 1\n"; // a second improper the header did not declare
     const std::string path = write_temp("extra", text);
-    EXPECT_THROW(load_lammps_data(path), std::runtime_error);
+    EXPECT_THROW(load_lammps_data(path, "real"), std::runtime_error);
     std::remove(path.c_str());
 }
 
@@ -369,7 +369,7 @@ TEST(LammpsDataFull, TriclinicTiltThrows) {
     text.replace(text.find("0 20 zlo zhi"), 12,
                  "0 20 zlo zhi\n1.0 0 0 xy xz yz");
     const std::string path = write_temp("tilt", text);
-    EXPECT_THROW(load_lammps_data(path), std::runtime_error);
+    EXPECT_THROW(load_lammps_data(path, "real"), std::runtime_error);
     std::remove(path.c_str());
 }
 
@@ -382,7 +382,7 @@ TEST(LammpsDataFull, ReadsTrailingImageFlags) {
     text.replace(text.find(row1), row1.size(), row1 + " 300 -2 0");
     text.replace(text.find(row2), row2.size(), row2 + " 0 1 -40000");
     const std::string path = write_temp("image", text);
-    const Frame f = load_lammps_data(path);
+    const Frame f = load_lammps_data(path, "real");
     std::remove(path.c_str());
     const auto image = f.span(ATV::kAtom_image);
     EXPECT_EQ(image(0, 0), 300);

@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/scf/response.cpp
 /// @brief CPHF nuclear Hessian and static polarizability. The kernels moved
 ///        off `RHF`; the algebra is unchanged (`pyscf.hessian.rhf.Hessian`
@@ -47,6 +48,10 @@ Polarizability<Method>::Polarizability(Method& mf) : mf_(&mf) {}
 template <typename Method>
 vib::HessianResult Hessian<Method>::run(Frame& frame,
                                         const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     Method& mf = *mf_;
     refuse_x2c_hessian(mf.x2c);
     if (mf.ri != RI::None)
@@ -327,6 +332,10 @@ StabilityResult Stability<Method>::run() const {
 template <>
 vib::HessianResult Hessian<UHF>::run(Frame& frame,
                                      const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     UHF& mf = *mf_;
     refuse_x2c_hessian(mf.x2c);
     if (mf.ri != RI::None)
@@ -429,6 +438,10 @@ vib::HessianResult finite_difference_hessian(Method& mf, Frame& frame,
 template <>
 vib::HessianResult Hessian<RKS>::run(Frame& frame,
                                      const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     RKS& mf = *mf_;
     // FD of analytic RKS forces. Full CPKS is not this path.
     return finite_difference_hessian(
@@ -444,6 +457,10 @@ vib::HessianResult Hessian<RKS>::run(Frame& frame,
 template <>
 vib::HessianResult Hessian<ROHF>::run(Frame& frame,
                                       const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     ROHF& mf = *mf_;
     // PySCF has no hessian.ROHF. Differentiate analytic forces.
     return finite_difference_hessian(
@@ -458,6 +475,10 @@ vib::HessianResult Hessian<ROHF>::run(Frame& frame,
 template <>
 vib::HessianResult Hessian<UKS>::run(Frame& frame,
                                      const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     UKS& mf = *mf_;
     SCFInitialGuess ref_guess;
     return finite_difference_hessian(

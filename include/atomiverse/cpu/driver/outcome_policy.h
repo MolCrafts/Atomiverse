@@ -161,7 +161,7 @@ class Metropolis : public OutcomePolicy {
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const AccReal dE = e_trial - e_cur_;
         ++n_attempts_;
-        if (accept_(dE, s.runtime.units.boltz)) {
+        if (accept_(dE, s.runtime.units.boltzmann_constant())) {
             e_cur_ = e_trial; // the frame already holds the move
             ++n_accepts_;
             return Outcome::Commit;

@@ -185,7 +185,8 @@ void bind_semiempirical(nb::module_& m) {
              nb::arg("correction") = "bcc")
         .def(
             "assign",
-            [](AM1BCCCharges& self, nb::object molecule) {
+            [](AM1BCCCharges& self, nb::object molecule,
+               const std::string& source_units, nb::object reference) {
                 auto atomistic =
                     nb::module_::import_("molpy").attr("Atomistic");
                 if (!nb::isinstance(molecule, atomistic))
@@ -228,6 +229,9 @@ void bind_semiempirical(nb::module_& m) {
                                  + axis + " is missing on some atoms")
                                     .c_str());
                 }
+                nb::module_::import_("atomiverse.units")
+                    .attr("annotate")(frame, source_units,
+                                      nb::arg("reference") = reference);
                 auto transport = borrow_molpy_frame(frame);
                 std::vector<double> charges;
                 {
@@ -236,8 +240,10 @@ void bind_semiempirical(nb::module_& m) {
                 }
                 return to_vector_array(charges);
             },
-            nb::arg("molecule"),
-            "Return partial charges [e] in molecule atom order without "
+            nb::arg("molecule"), nb::arg("units") = "electronic",
+            nb::arg("reference") = nb::none(),
+            "Return partial charges [source charge units] in molecule atom "
+            "order without "
             "mutation. "
             "Requires a complete molpy.Atomistic with x/y/z coordinates [A].")
         .def("last_am1_result", &AM1BCCCharges::last_am1_result,
@@ -276,7 +282,13 @@ void bind_semiempirical(nb::module_& m) {
             p.max_iter = method.max_iter;
             p.density_tol = method.density_tol;
             p.energy_tol = method.energy_tol;
-            cpu::task::TaskSpec spec{cpu::task::SinglePointTask{p}};
+            const auto task_style = units::frame_profile(work) == "electronic"
+                                        ? units::Style::metal
+                                        : units::frame_style(work);
+            if (units::frame_profile(work) != units::style_name(task_style))
+                work = units::convert(std::move(work),
+                                      units::style_name(task_style));
+            cpu::task::TaskSpec spec{cpu::task::SinglePointTask{p, task_style}};
             cpu::Frame result(0);
             {
                 nb::gil_scoped_release release;

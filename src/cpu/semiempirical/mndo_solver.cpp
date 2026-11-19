@@ -1,6 +1,7 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file src/cpu/semiempirical/mndo_solver.cpp
-#include "atomiverse/cpu/semiempirical/mndo_solver.h"
 #include "atomiverse/cpu/semiempirical/internal/nddo_solver.h"
+#include "atomiverse/cpu/semiempirical/mndo_solver.h"
 #include <utility>
 
 #include "atomiverse/core/frame_schema.h"
@@ -32,6 +33,11 @@ void MNDO::sync_engine_() {
     engine_ = std::make_unique<NDDOSolver>(c);
 }
 void MNDO::build(const cpu::Frame& reference) {
+    if (units::needs_conversion(reference, "electronic")) {
+        auto native = units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
     sync_engine_();
     engine_->build(reference);
 }

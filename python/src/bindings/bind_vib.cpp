@@ -175,7 +175,7 @@ struct VibHandle {
     ///         IUPAC-2013 mass table does not cover (Z outside 1..18).
     cpu::vib::HessianResult run(nb::object frame_obj) {
         auto fref = borrow_molpy_frame(frame_obj);
-        work_ = cpu::from_molpy(*fref);
+        work_ = cpu::from_molpy_for_run(*fref, driver.units().name());
         cpu::vib::HessianResult result;
         {
             nb::gil_scoped_release release;
@@ -428,6 +428,9 @@ void bind_vib(nb::module_& m) {
         "This is molecular vibrational analysis — free-molecule translations "
         "and rotations are projected out. Periodic phonons are a different "
         "calculation and are not bound.");
+    hessian.def("set_units", [](VibHandle& self, const std::string& style) {
+        self.driver.set_units(style);
+    });
     hessian.def(
         "__init__",
         [](VibHandle* self, double temperature, double pressure,
@@ -438,14 +441,15 @@ void bind_vib(nb::module_& m) {
                 VibHandle(temperature, pressure, multiplicity, symmetry_number,
                           frequency_tsv, mode_xyz_prefix);
         },
-        nb::arg("temperature") = 298.15, nb::arg("pressure") = 101325.0,
+        nb::arg("temperature") = 298.15, nb::arg("pressure") = 1.01325,
         nb::arg("multiplicity") = 1, nb::arg("symmetry_number") = 1,
         nb::arg("frequency_tsv") = "", nb::arg("mode_xyz_prefix") = "",
         "Construct the driver. Every argument configures the "
         "rigid-rotor/harmonic-oscillator thermochemistry or the optional file "
         "output; the finite-difference step itself is not tunable.\n\n"
         "  temperature      [K, default 298.15] of the thermal corrections.\n"
-        "  pressure         [Pa, default 101325.0 = 1 atm] — enters the "
+        "  pressure         [run pressure units, default 1.01325 bar = 1 atm] "
+        "— enters the "
         "translational entropy (the Sackur-Tetrode ideal-gas expression) and "
         "nothing else.\n"
         "  multiplicity     spin multiplicity M = 2S+1 (dimensionless, "

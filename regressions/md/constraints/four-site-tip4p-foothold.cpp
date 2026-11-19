@@ -41,7 +41,7 @@ int run() {
     const double r_oh = 0.9572;
     const double theta = 104.52 * units::kDegreeInRad;
     const double qdist = 0.15;
-    const double eps = cpu::kcal_per_mol_to_ev(0.1550);
+    const double eps = 0.1550; // real energy: kcal/mol
     const double sigma = 3.15365;
     const double cut = 10.0;
     const double qO = -1.04, qH = 0.52;
@@ -119,6 +119,7 @@ int run() {
     }
 
     cpu::Evaluate eval;
+    eval.set_units("real");
     eval.set_neighbor(
         cpu::md::NeighborList<>{tip4p.neighbor_cutoff(), 0.3, 1, 0, true});
     eval.set_evaluator(std::move(tip4p));
@@ -126,7 +127,15 @@ int run() {
     eval.build();
     eval.run(f);
 
-    const double E = f.meta.get(kEnergy);
+    const auto oracle_profile =
+        units::PhysicalUnits::from_style(units::Style::metal);
+    const auto run_profile =
+        units::PhysicalUnits::from_style(units::Style::real);
+    const units::Conversion oracle_energy(run_profile.energy(),
+                                          oracle_profile.energy());
+    const units::Conversion oracle_force(run_profile.force(),
+                                         oracle_profile.force());
+    const double E = oracle_energy(f.meta.get(kEnergy));
     std::printf("TIP4P dimer E=%.16e eV (pin=%.16e)\n", E, E_pin);
     if (!(std::fabs(E - E_pin) <= 1e-8)) {
         std::printf("FAIL: energy\n");
@@ -136,9 +145,9 @@ int run() {
     bool ok = true;
     for (int i = 0; i < 6; ++i) {
         const int row = row_of(f, i + 1); // pins are in tag order
-        const double fx = f.span(kAtom_fx)[row];
-        const double fy = f.span(kAtom_fy)[row];
-        const double fz = f.span(kAtom_fz)[row];
+        const double fx = oracle_force(f.span(kAtom_fx)[row]);
+        const double fy = oracle_force(f.span(kAtom_fy)[row]);
+        const double fz = oracle_force(f.span(kAtom_fz)[row]);
         std::printf("F%d  % .16e % .16e % .16e\n", i + 1, fx, fy, fz);
         if (!(std::fabs(fx - fx_pin[i]) <= 1e-6) || !(std::fabs(fy) <= 1e-10)
             || !(std::fabs(fz - fz_pin[i]) <= 1e-6)) {

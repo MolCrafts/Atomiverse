@@ -545,7 +545,7 @@ TEST(PairGaussianCoul, VirialMatchesPairSum) {
     Voigt got;
     run_style(gc, f, e, got);
 
-    const double K = units::UnitSystem::lj().qqrd2e();
+    const double K = units::UnitSystem::lj().coulomb_constant();
     const Voigt want =
         reference_virial(f, kCutoff, [&](int i, int j, double r2) {
             const double r = std::sqrt(r2);

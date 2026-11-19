@@ -129,6 +129,7 @@ def _make_frame(
     """
     assert len(atomic_numbers) == len(masses) == len(xyz)
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.array([p[0] for p in xyz], dtype=np.float64))
     atoms.insert("y", np.array([p[1] for p in xyz], dtype=np.float64))

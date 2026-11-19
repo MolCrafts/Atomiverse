@@ -73,6 +73,7 @@ class GpwForceWorkspace;
 /// Move-only.
 class GpwDft : public cuda::Driver<ATV::gpw::Phase>, public cuda::DriverNode {
   public:
+    bool uses_electronic_frame() const override { return true; }
     // ── Identity (constructor arguments, same as `cpu::gpw::GpwDft`) ─────
     /// @brief Per-element basis + GTH potential. `build(Frame)` / `run(Frame)`
     ///        map `kAtom_atomic_number` (Z) onto these entries.

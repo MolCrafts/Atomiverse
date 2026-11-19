@@ -64,10 +64,10 @@ static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
     auto vy = f.span(kAtom_vy);
     auto vz = f.span(kAtom_vz);
     const auto mass = f.span(kAtom_mass);
-    const double kT = u.boltz * temperature_K;
+    const double kT = u.boltzmann_constant() * temperature_K;
     for (int i = 0; i < n; ++i) {
         const double m = static_cast<double>(mass[i]);
-        const double sig = std::sqrt(kT / (u.mvv2e * m));
+        const double sig = std::sqrt(kT / (u.kinetic_energy.scale() * m));
         vx[i] = sig * g(rng);
         vy[i] = sig * g(rng);
         vz[i] = sig * g(rng);
@@ -94,10 +94,10 @@ static void seed_bead_velocity_(cpu::Frame& f, double temperature_K,
 double Pimd::compute_k_spring_(double temperature_K, int n_beads,
                                double mass_amu, const units::UnitSystem& u) {
     // ℏ = hplanck / 2π. m_eff = mvv2e * m. β = 1/(boltz T), run's units.
-    const double hbar = u.hplanck / (2.0 * units::pi);
-    const double kT = u.boltz * temperature_K;
+    const double hbar = u.planck_constant() / (2.0 * units::pi);
+    const double kT = u.boltzmann_constant() * temperature_K;
     const double beta = 1.0 / kT;
-    const double m_eff = u.mvv2e * mass_amu;
+    const double m_eff = u.kinetic_energy.scale() * mass_amu;
     const double beta_hbar = beta * hbar;
     return m_eff * static_cast<double>(n_beads) / (beta_hbar * beta_hbar);
 }
@@ -238,10 +238,10 @@ double Pimd::free_particle_rg2_analytic() const {
     // 3D free ring polymer (single particle):
     // ⟨R_g²⟩ = (ℏ² β² / (4 m_eff)) (1 − 1/P²), run's units.
     // Ref: Tuckerman, Statistical Mechanics; Chandler & Wolynes (1981).
-    const double hbar = units.hplanck / (2.0 * units::pi);
-    const double kT = units.boltz * temperature;
+    const double hbar = units.planck_constant() / (2.0 * units::pi);
+    const double kT = units.boltzmann_constant() * temperature;
     const double beta = 1.0 / kT;
-    const double m_eff = units.mvv2e * mass_amu_;
+    const double m_eff = units.kinetic_energy.scale() * mass_amu_;
     const double P = static_cast<double>(n_beads);
     const double hb = hbar * beta;
     return (hb * hb / (4.0 * m_eff)) * (1.0 - 1.0 / (P * P));

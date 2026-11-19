@@ -1,6 +1,7 @@
 /// @file cpu/dynamics/fix_efield.h
 /// @brief CPU uniform external electric field — LAMMPS-equivalent `fix efield`.
 #pragma once
+#include "atomiverse/core/unit_system.h"
 
 #include <string>
 #include <vector>
@@ -13,7 +14,7 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-/// @brief Apply a uniform electric field to charged atoms (metal units).
+/// @brief Apply a uniform electric field to charged atoms (run units).
 ///
 /// Mirrors LAMMPS `fix efield Ex Ey Ez` for the **constant** field path
 /// (`lammps/src/fix_efield.cpp`, charge interactions only):
@@ -23,9 +24,9 @@ namespace md {
 ///     U \mathrel{+}= -q_i\,\mathbf{E}\cdot\mathbf{r}_i^{\mathrm{u}}
 ///   \]
 ///
-/// with \(\mathbf{E}\) in V/Å, \(q\) in elementary charge, \(\mathbf{F}\) in
-/// eV/Å, \(U\) in eV. Metal-unit `qe2f = 1` (no extra scale). Unwrapped
-/// coordinates use the image flags on Frame,
+/// Field, charge, force and energy follow the run's unit profile.
+/// The unit module prepares field amplitudes in force/charge units.
+/// Unwrapped coordinates use the image flags on Frame,
 /// \(\mathbf{r}^{\mathrm{u}} = \mathbf{r} + H\mathbf{n}\) with the lattice
 /// vectors in the columns of \(H\) (LAMMPS `Domain::unmap`), so orthorhombic
 /// and triclinic cells are both supported.
@@ -51,13 +52,13 @@ namespace md {
 /// for minimization-only variable energy.
 class FixEfield : public cpu::Bias {
   public:
-    /// @param Ex Electric field x-component [V/Å] (LAMMPS metal units).
-    /// @param Ey Electric field y-component [V/Å].
-    /// @param Ez Electric field z-component [V/Å].
+    /// @param Ex Electric field x-component [run electric field].
+    /// @param Ey Electric field y-component [run electric field].
+    /// @param Ez Electric field z-component [run electric field].
     FixEfield(double Ex, double Ey, double Ez) noexcept
         : Ex(Ex), Ey(Ey), Ez(Ez) {}
 
-    /// Field components [V/Å] — public members (no Config bag).
+    /// Field components [run electric field] — public members (no Config bag).
     double Ex = 0.0;
     double Ey = 0.0;
     double Ez = 0.0;
@@ -69,13 +70,17 @@ class FixEfield : public cpu::Bias {
         return {ATV::make_binding(ATV::md::Phase::post_force, +100)};
     }
 
+    void build(const BuildContext& ctx) override {
+        field_units_ = ctx.runtime.units.electric_field;
+    }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
-    /// @return Last field energy contribution written this launch [eV].
+    /// @return Last field energy contribution written this launch [run energy].
     double last_energy() const noexcept { return last_u_; }
 
   private:
+    units::Conversion field_units_;
     double last_u_ = 0.0;
 };
 

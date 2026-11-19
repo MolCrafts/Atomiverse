@@ -239,8 +239,9 @@ class Driver {
     /// (`boltz`, `mvv2e`, `ftm2v`, `qqrd2e`, `nktv2p`, ...), and with it the
     /// unit of every number the run takes and reports: parameters, `dt`,
     /// temperatures, pressures and the frame's positions, masses, charges
-    /// and velocities are all in that style, as in LAMMPS. Nothing is
-    /// converted. Like LAMMPS, which refuses `units` once the box exists,
+    /// and velocities of the internal frame use that style. Annotated
+    /// external Frames are adapted at the materialization boundary.
+    /// Like LAMMPS, which refuses `units` once the box exists,
     /// the style is fixed once this driver has bound a system: set it before
     /// the first `run()`. A nested driver runs in its parent's style.
     /// @param style LAMMPS name: lj, real, metal, si, cgs, electron, micro,

@@ -92,7 +92,8 @@ int run() {
     // Coulomb energy of the equilibrated charges. The LAMMPS metal thermo
     // pin is qqr2e = units::coulomb; the engine multiplies qqrd2e.
     check("E_coul", f.meta.get(kEnergy),
-          -0.254699311955 * units::UnitSystem::lj().qqrd2e() / units::coulomb,
+          -0.254699311955 * units::UnitSystem::lj().coulomb_constant()
+              / units::coulomb,
           1e-9);
 
     // ── Fair perf twin: 1000 repeated equilibrations (see in.qeq_perf) ─

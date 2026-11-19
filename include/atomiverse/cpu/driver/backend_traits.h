@@ -1,6 +1,7 @@
 /// @file cpu/driver/backend_traits.h
 /// @brief CPU backend_traits specialization. CUDA-free header.
 #pragma once
+#include "atomiverse/cpu/units/frame.h"
 
 #include "atomiverse/core/plan.h"
 #include "atomiverse/core/timer.h"
@@ -32,8 +33,12 @@ struct backend_traits<cpu::device_tag> {
     static void run(backend_type& backend, frame_type& frame,
                     const Plan<component_type>& plan, timer_type*,
                     const units::UnitSystem& units, int steps) {
+        if (!ATV::units::has_frame_units(frame))
+            ATV::units::annotate(frame, units.name());
+        if (ATV::units::has_frame_units(frame))
+            ATV::units::require_frame_units(frame, units.style);
         backend.init();
-        backend.context().units = units;
+        backend.context().units = ATV::units::for_frame(units, frame);
         backend.load(plan);
         backend.set_frame(frame);
         backend.build_components();

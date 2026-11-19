@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/planewave/berry_polarization.cpp
 /// @brief King–Smith–Vanderbilt Berry-phase polarization on frozen PW
 ///        \(V_\mathrm{eff}\) (NSCF strings + occupied overlap determinants).
@@ -267,6 +268,10 @@ BerryPolarization::string_kpoints(int dir) const {
 
 BerryPolarizationResult
 BerryPolarization::compute(const PW& method, const cpu::Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return compute(method, native);
+    }
     if (method.smearing != ATV::electronic::Smearing::none)
         throw std::invalid_argument(
             "BerryPolarization::compute: Berry-phase polarization requires "

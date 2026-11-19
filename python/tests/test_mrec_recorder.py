@@ -67,6 +67,7 @@ def _argon_frame() -> "molpy.Frame":
     atoms.insert("mass", np.full(n, 39.948, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(20.0)
     return frame

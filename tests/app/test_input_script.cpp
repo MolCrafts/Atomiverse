@@ -42,7 +42,7 @@ TEST(InputScript, RejectsUnknownCommand) {
 }
 
 TEST(InputScript, RejectsBadUnits) {
-    std::istringstream in("units real\n");
+    std::istringstream in("units unknown\n");
     EXPECT_THROW(ATV::app::parse_input_script(in), std::invalid_argument);
 }
 
@@ -70,4 +70,13 @@ TEST(CliArgs, Help) {
     char a1[] = "-h";
     char* argv[] = {a0, a1};
     EXPECT_TRUE(ATV::app::parse_cli_args(2, argv).help);
+}
+
+TEST(InputScript, EveryUnitStyleUsesTheSameRunDefinitions) {
+    for (const auto* style : ATV::units::kStyleNames) {
+        std::istringstream input(std::string("units ") + style + "\n");
+        const auto deck = ATV::app::parse_input_script(input);
+        EXPECT_EQ(deck.units, ATV::units::parse_style(style));
+        EXPECT_DOUBLE_EQ(deck.timestep, ATV::units::from_style(style).dt);
+    }
 }

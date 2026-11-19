@@ -1,6 +1,8 @@
 /// @file cuda/driver/backend_traits.cuh
 /// @brief CUDA backend_traits specialization.
 #pragma once
+#include "atomiverse/cpu/units/frame.h"
+#include "atomiverse/cuda/units/electronic_frame.cuh"
 
 #include "atomiverse/core/plan.h"
 #include "atomiverse/cpu/frame/frame.h"
@@ -30,8 +32,12 @@ struct backend_traits<cuda::device_tag> {
     static void run(backend_type& backend, frame_type& frame,
                     const Plan<component_type>& plan, timer_type* timer,
                     const units::UnitSystem& units, int steps) {
+        if (!ATV::units::has_frame_units(frame))
+            ATV::units::annotate(frame, units.name());
+        if (ATV::units::has_frame_units(frame))
+            ATV::units::require_frame_units(frame, units.style);
         backend.init();
-        backend.context().units = units;
+        backend.context().units = ATV::units::for_frame(units, frame);
         if (timer)
             backend.set_timer(timer);
         backend.load(plan);
@@ -57,6 +63,7 @@ struct backend_traits<cuda::device_tag> {
     static std::unique_ptr<component_type>
     nested_slot(std::unique_ptr<Node> owned, Node* node, int cap, bool, bool) {
         struct Slot : component_type {
+            cuda::unit_boundary::ElectronicFrame unit_adapter;
             std::unique_ptr<cuda::DriverNode> owned_node;
             Node* node = nullptr;
             int budget = 0;
@@ -83,10 +90,18 @@ struct backend_traits<cuda::device_tag> {
             }
             void invalidate_inputs(InputChange changes,
                                    const cuda::BuildContext& ctx) override {
-                node->invalidate_inputs(changes, ctx.runtime, ctx.frame);
+                cuda::unit_boundary::ElectronicFrame::Scope units(
+                    unit_adapter, ctx.runtime, ctx.frame);
+                node->invalidate_inputs(changes, ctx.runtime, units.frame());
             }
             void build(const cuda::BuildContext& ctx) override {
-                node->build_on(ctx.runtime, ctx.frame);
+                unit_adapter.configure(
+                    ctx.runtime, ctx.frame,
+                    static_cast<const cuda::DriverNode&>(*node)
+                        .uses_electronic_frame());
+                cuda::unit_boundary::ElectronicFrame::Scope units(
+                    unit_adapter, ctx.runtime, ctx.frame);
+                node->build_on(ctx.runtime, units.frame());
             }
             void launch(const cuda::LaunchContext& ctx) override {
                 struct Restore {
@@ -104,10 +119,15 @@ struct backend_traits<cuda::device_tag> {
                     ctx.stress_requested && provides_system_stress();
                 exec.initializing_forces |= ctx.initializing_forces;
                 exec.trial_evaluation |= ctx.trial_evaluation;
-                node->run_nested_erased(ctx.runtime, ctx.frame, budget);
+                cuda::unit_boundary::ElectronicFrame::Scope units(
+                    unit_adapter, ctx.runtime, ctx.frame);
+                node->run_nested_erased(ctx.runtime, units.frame(), budget);
+                units.publish();
             }
             void destroy(const cuda::DestroyContext& ctx) override {
-                node->destroy_on(ctx.runtime, ctx.frame);
+                cuda::unit_boundary::ElectronicFrame::Scope units(
+                    unit_adapter, ctx.runtime, ctx.frame, false);
+                node->destroy_on(ctx.runtime, units.frame());
             }
         };
 

@@ -87,7 +87,7 @@ void QmmmMechanical::launch(const LaunchContext& ctx) {
     e_vdw_ = vdw_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested);
     e_coul_ = classical_qmmm_coulomb(ctx.frame, sub_.qm_rows(), coul_cutoff_,
                                      ctx.forces_requested,
-                                     ctx.runtime.units.qqrd2e());
+                                     ctx.runtime.units.coulomb_constant());
     ctx.frame.meta.get(kEnergy) += e_vdw_ + e_coul_;
     // Classical terms are not electronic.
 }

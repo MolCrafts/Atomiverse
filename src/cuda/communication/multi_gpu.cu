@@ -2044,9 +2044,10 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
                 // migrate() does cross-device P2P reads that streams cannot
                 // order) drains all devices at entry instead.
                 auto st = static_cast<cudaStream_t>(ctx_[s].stream);
-                launch_nve_limit_initial(frames_[s], nl, ctx_[s].host_box, dtw,
-                                         mixed_t(ctx_[s].units.ftm2v),
-                                         kNveLimitXmax, step, st);
+                launch_nve_limit_initial(
+                    frames_[s], nl, ctx_[s].host_box, dtw,
+                    mixed_t(ctx_[s].units.velocity_impulse.scale()),
+                    kNveLimitXmax, step, st);
                 CKM(cudaGetLastError());
                 if (count() > 1)
                     CKM(cudaEventRecord(ev_pos_[s], st));
@@ -2069,9 +2070,10 @@ void MultiGpu::run_nve_pe(int steps, double dt, int reneigh_every) {
                 // reverse halo's scatter-adds (comm stream) — wait its event.
                 if (count() > 1)
                     CKM(cudaStreamWaitEvent(st, ev_rev_[s], 0));
-                launch_nve_limit_final(frames_[s], nl, dtw,
-                                       mixed_t(ctx_[s].units.ftm2v),
-                                       kNveLimitXmax, step, st);
+                launch_nve_limit_final(
+                    frames_[s], nl, dtw,
+                    mixed_t(ctx_[s].units.velocity_impulse.scale()),
+                    kNveLimitXmax, step, st);
                 CKM(cudaGetLastError());
             }
         });

@@ -1,5 +1,6 @@
 /// @file src/cpu/multiscale/internal/qm_subsystem.cpp
 #include "atomiverse/cpu/multiscale/internal/qm_subsystem.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -89,6 +90,20 @@ void QmSubsystem::build(const BuildContext& ctx, int mpi_size,
                         bool require_embedding) {
     built_ = false;
     auto& frame = ctx.frame;
+    if (units::has_frame_units(frame)
+        || ctx.runtime.units.style != units::Style::lj) {
+        const auto source =
+            units::has_frame_units(frame)
+                ? units::PhysicalUnits::from_style(
+                      units::frame_profile(frame),
+                      units::reduced_reference(frame))
+                : units::PhysicalUnits::from_style(ctx.runtime.units.style);
+        const auto target = units::PhysicalUnits::from_style("electronic");
+        length_to_qm_ = units::Conversion(source.length(), target.length());
+        charge_to_qm_ = units::Conversion(source.charge(), target.charge());
+        energy_from_qm_ = units::Conversion(target.energy(), source.energy());
+        force_from_qm_ = units::Conversion(target.force(), source.force());
+    }
     if (mpi_size > 1)
         throw std::runtime_error(
             "QmSubsystem: MPI (mpi_size > 1) is not supported in v1 "
@@ -240,7 +255,20 @@ void QmSubsystem::refresh_(Frame& frame) {
         qmass[h] = 1.0;
         qfx[h] = qfy[h] = qfz[h] = 0;
     }
+    for (int i = 0; i < n_fqm_; ++i) {
+        qx[i] = length_to_qm_(qx[i]);
+        qy[i] = length_to_qm_(qy[i]);
+        qz[i] = length_to_qm_(qz[i]);
+    }
     qm_frame_->box = frame.box;
+    if (frame.box.volume() > 0.) {
+        auto cell = frame.box.cell();
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                cell(i, j) = length_to_qm_(cell(i, j));
+        qm_frame_->box.set_cell(cell);
+    }
+    units::annotate(*qm_frame_, "electronic");
     qm_frame_->meta.get(kEnergy) = 0.0;
     qm_frame_->meta.get(kEnergyElectronic) = 0.0;
 }
@@ -280,10 +308,10 @@ void QmSubsystem::collect_sites_(const Frame& frame) {
         if (!in_range)
             continue;
         EmbeddingSite s;
-        s.x = x[i];
-        s.y = y[i];
-        s.z = z[i];
-        s.q = static_cast<double>(charge[i]);
+        s.x = length_to_qm_(x[i]);
+        s.y = length_to_qm_(y[i]);
+        s.z = length_to_qm_(z[i]);
+        s.q = charge_to_qm_(static_cast<double>(charge[i]));
         sites_.push_back(s);
         site_user_rows_.push_back(i);
     }
@@ -309,15 +337,16 @@ void QmSubsystem::scatter_(Frame& frame, bool forces_requested, double e_qm) {
 
     for (std::size_t k = 0; k < qm_rows_.size(); ++k) {
         const int i = qm_rows_[k];
-        fx[i] += qfx[k];
-        fy[i] += qfy[k];
-        fz[i] += qfz[k];
+        fx[i] += force_from_qm_(qfx[k]);
+        fy[i] += force_from_qm_(qfy[k]);
+        fz[i] += force_from_qm_(qfz[k]);
     }
     for (const auto& rl : resolved_links_) {
         const int h = rl.fqm_h_row;
-        project_link_force(link_scale, qfx[h], qfy[h], qfz[h], fx[rl.qm_row],
-                           fy[rl.qm_row], fz[rl.qm_row], fx[rl.mm_row],
-                           fy[rl.mm_row], fz[rl.mm_row]);
+        project_link_force(link_scale, force_from_qm_(qfx[h]),
+                           force_from_qm_(qfy[h]), force_from_qm_(qfz[h]),
+                           fx[rl.qm_row], fy[rl.qm_row], fz[rl.qm_row],
+                           fx[rl.mm_row], fy[rl.mm_row], fz[rl.mm_row]);
     }
 
     // Site forces from embedding engine (electrostatic/polarizable only).
@@ -328,9 +357,9 @@ void QmSubsystem::scatter_(Frame& frame, bool forces_requested, double e_qm) {
                 "QmSubsystem: embedding_site_forces size mismatch");
         for (std::size_t s = 0; s < sf.size(); ++s) {
             const int i = site_user_rows_[s];
-            fx[i] += sf[s].fx;
-            fy[i] += sf[s].fy;
-            fz[i] += sf[s].fz;
+            fx[i] += force_from_qm_(sf[s].fx);
+            fy[i] += force_from_qm_(sf[s].fy);
+            fz[i] += force_from_qm_(sf[s].fz);
         }
     }
 
@@ -364,7 +393,7 @@ void QmSubsystem::launch(const LaunchContext& ctx, double& e_qm) {
         forces_requested,
         ctx.stress_requested && ctx.runtime.exec.stress_requested};
     engine_->evaluate(lctx);
-    e_qm = qm_frame_->meta.get(kEnergy);
+    e_qm = energy_from_qm_(qm_frame_->meta.get(kEnergy));
     scatter_(frame, forces_requested, e_qm);
 }
 

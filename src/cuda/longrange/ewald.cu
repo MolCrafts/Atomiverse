@@ -261,7 +261,7 @@ void KSpaceEwald::build(const BuildContext& ctx) {
     for (const force_t q : charge)
         net_charge += double(q);
     background_coef_ = -longrange::background_energy(
-        net_charge, 1.0, alpha_, ctx.runtime.units.qqrd2e());
+        net_charge, 1.0, alpha_, ctx.runtime.units.coulomb_constant());
 }
 
 void KSpaceEwald::compute(const LaunchContext& ctx) {
@@ -272,7 +272,7 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
         return;
 
     const cuda::Box& box = ctx.runtime.host_box;
-    const double qqrd2e = ctx.runtime.units.qqrd2e();
+    const double qqrd2e = ctx.runtime.units.coulomb_constant();
     const double self_pref = longrange::self_energy_prefactor(alpha_, qqrd2e);
     const double inv4a2 = 1.0 / (4.0 * alpha_ * alpha_);
     auto* tables = static_cast<EwaldTables*>(d_tables_);

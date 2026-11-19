@@ -25,6 +25,7 @@ _H = 0.629118
 
 def _ch4_frame() -> molpy.Frame:
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, _H, -_H, -_H, _H]))
     atoms.insert("y", np.array([0.0, _H, -_H, _H, -_H]))

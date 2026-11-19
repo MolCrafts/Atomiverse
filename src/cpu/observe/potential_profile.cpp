@@ -52,7 +52,8 @@ void PotentialProfile::launch(const LaunchContext& ctx) {
     const double Ly = f.box.length(1);
     const double area = Lx * Ly;
     const double inv_area_dz = 1.0 / (area * dz_);
-    const double four_pi_ke = 4.0 * units::pi * ctx.runtime.units.qqrd2e();
+    const double four_pi_ke =
+        4.0 * units::pi * ctx.runtime.units.coulomb_constant();
 
     for (std::size_t i = 0; i < nb; ++i)
         rho_[i] = q_bin_[i] * inv_area_dz;
@@ -74,7 +75,12 @@ void PotentialProfile::launch(const LaunchContext& ctx) {
             psi_left - (E_left * dz_ + 0.5 * four_pi_ke * rho_i * dz_ * dz_);
         E_left += dE;
     }
-    potential_drop_ = psi_left; // Ψ(z_max) − Ψ(z_min), Ψ(z_min)=0
+    for (auto& value : psi_)
+        value = ctx.runtime.units.electric_potential.inverse(value);
+    for (auto& value : field_)
+        value = ctx.runtime.units.electric_field.inverse(value);
+    potential_drop_ = ctx.runtime.units.electric_potential.inverse(
+        psi_left); // Ψ(z_max) − Ψ(z_min), Ψ(z_min)=0
 
     if (!f.meta.contains(kPotentialDrop.key))
         f.meta.insert(kPotentialDrop, potential_drop_);

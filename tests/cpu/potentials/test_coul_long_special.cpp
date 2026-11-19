@@ -79,7 +79,7 @@ TEST(CoulLongSpecial, Half14RealSpace) {
     const double e05 = run_coul(f, pairs, 0.5);
     ASSERT_NE(e1, 0.0);
     const double pref =
-        ATV::units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0) / 3.6;
+        ATV::units::UnitSystem::lj().coulomb_constant() * (1.0) * (-1.0) / 3.6;
     EXPECT_NEAR(e05, e1 - 0.5 * pref, 1e-10 * std::abs(e1));
 }
 
@@ -124,7 +124,7 @@ TEST(CoulLongSpecial, Zero12Bonded) {
     // Excluded (f=0) bonded pair still owes the Ewald compensation:
     // e = pref·erfc - pref = -pref·erf(αr), pref = C·q1·q2/r.
     const double pref =
-        ATV::units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0) / 1.5;
+        ATV::units::UnitSystem::lj().coulomb_constant() * (1.0) * (-1.0) / 1.5;
     const double e_ref = -pref * std::erf(0.3 * 1.5);
     EXPECT_NEAR(f.meta.get(kEnergy), e_ref, 1e-10 * std::abs(e_ref));
 }

@@ -133,7 +133,7 @@ void PairCoulSoft::compute(const LaunchContext& ctx) {
     kernel.q = f.span(kAtom_charge);
     kernel.rc_sq = cutoff_sq_;
     kernel.inv_rc = inv_rc_;
-    kernel.qqr2e = ctx.runtime.units.qqrd2e();
+    kernel.qqr2e = ctx.runtime.units.coulomb_constant();
     kernel.lam = lam;
     kernel.soft0 = soft0;
     kernel.dsoft0_dlam = dsoft0_dlam;

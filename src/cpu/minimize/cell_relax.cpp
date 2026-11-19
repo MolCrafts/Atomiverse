@@ -57,7 +57,8 @@ void IsotropicCellRelax::launch(const LaunchContext& ctx) {
             invalid = 1;
     // In the run's pressure unit (LAMMPS fix box/relax: × nktv2p).
     const double pressure =
-        invalid ? 0.0 : pressure_from_frame_(f) * ctx.runtime.units.nktv2p;
+        invalid ? 0.0
+                : pressure_from_frame_(f) * ctx.runtime.units.pressure.scale();
     const double residual = pressure - P_target;
     const double ds_unclamped = invalid ? 0.0 : alpha0 * residual / bulk_mod;
     if (!std::isfinite(pressure) || !std::isfinite(residual)

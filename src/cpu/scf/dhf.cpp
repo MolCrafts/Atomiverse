@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/scf/dhf.cpp
 /// @brief cpu::scf::DHF — Driver<scf::Phase> over the Dirac–Coulomb kernel.
 ///
@@ -224,6 +225,11 @@ void DHF::commit(Frame& frame, int executed, int cap, Write write) {
 }
 
 void DHF::solve(Frame& frame, Write write) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](Frame& native) { solve(native, write); });
+        return;
+    }
     require_controls(tol, max_iter);
     this->setup_pass(frame);
     try {
@@ -252,6 +258,12 @@ void DHF::run(const Frame& frame) {
 void DHF::run(Frame& frame) { solve(frame, Write::Overwrite); }
 
 int DHF::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame, int budget) {
+    if (units::needs_conversion(frame, "electronic")) {
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            Runtime::ScopedFrame binding(*ctx.exec.runtime, native);
+            return run_nested_erased(ctx, native, budget);
+        });
+    }
     if (!ctx.exec.runtime)
         throw std::runtime_error("cpu::scf::DHF: nested run has no Runtime");
     require_controls(tol, max_iter);

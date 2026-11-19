@@ -100,7 +100,8 @@ void FixEfield::launch(const LaunchContext& ctx) {
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.charge, a.image, a.fx,
         a.fy, a.fz, f.force_fault,
         ctx.energy_requested ? &f.scalars->energy : nullptr,
-        ctx.runtime.host_box, Ex, Ey, Ez, ctx.forces_requested, n);
+        ctx.runtime.host_box, field_units_(Ex), field_units_(Ey),
+        field_units_(Ez), ctx.forces_requested, n);
 }
 
 } // namespace md

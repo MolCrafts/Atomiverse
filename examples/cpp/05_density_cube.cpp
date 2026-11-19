@@ -27,6 +27,7 @@ int main() {
     auto handle = rhf.result_handle();
 
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.on(evaluate::Phase::evaluate).add(std::move(rhf));
     eval.on(evaluate::Phase::finalize)
         .add(cpu::recorder::DensityCubeWriter{handle, "h2_density.cube"});

@@ -9,6 +9,8 @@
 /// image-resolved P̃/W̃ from P(k)/W(k)).
 /// Optional additive Grimme D3(BJ) dispersion (molecular sum, analytic forces).
 #include "atomiverse/cpu/semiempirical/dftb2.h"
+#include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <array>
@@ -3200,19 +3202,52 @@ void DFTB2::run(const Frame& frame) {
 }
 
 void DFTB2::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](Frame& native) { run(native); });
+        return;
+    }
     compute(frame, false, false, true, nullptr);
     publish(frame, false, false, false);
 }
 
 void DFTB2::forces(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](Frame& native) { forces(native); });
+        return;
+    }
     compute(frame, true, false, true, nullptr);
     publish(frame, true, false, false);
 }
 
 std::array<double, 6> DFTB2::stress(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        auto result = units::evaluate_in(
+            frame, "electronic", [&](Frame& work) { return stress(work); });
+        const units::Conversion scale(
+            native.energy()
+                / (native.length() * native.length() * native.length()),
+            source.pressure());
+        for (auto& value : result)
+            value = scale(value);
+        return result;
+    }
     compute(frame, false, true, true, nullptr);
     publish(frame, false, true, false);
-    return last_stress_;
+    auto result = last_stress_;
+    if (units::has_frame_units(frame)) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion pressure(native.pressure(), source.pressure());
+        for (auto& value : result)
+            value = pressure(value);
+    }
+    return result;
 }
 
 bool DFTB2::provides_system_stress() const {
@@ -3221,6 +3256,17 @@ bool DFTB2::provides_system_stress() const {
 }
 
 void DFTB2::launch(const LaunchContext& ctx) {
+    if (units::needs_conversion(ctx.frame, "electronic")) {
+        units::evaluate_in(ctx.frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (ctx.runtime.exec.runtime)
+                binding.emplace(*ctx.runtime.exec.runtime, native);
+            launch({ctx.runtime, native, ctx.stage, ctx.step,
+                    ctx.forces_requested, ctx.stress_requested});
+        });
+        return;
+    }
+
     const bool force = ctx.forces_requested;
     const bool stress = ctx.stress_requested && provides_system_stress();
     compute(ctx.frame, force, stress,
@@ -3257,6 +3303,14 @@ void DFTB2::publish(Frame& frame, bool forces, bool stress,
 
 void DFTB2::compute(const Frame& f, bool want_forces, bool want_stress,
                     bool history_step, Runtime* host) {
+    if (units::needs_conversion(f, "electronic")) {
+        auto native = units::convert(f, "electronic");
+        std::optional<Runtime::ScopedFrame> binding;
+        if (host)
+            binding.emplace(*host, native);
+        compute(native, want_forces, want_stress, history_step, host);
+        return;
+    }
     bool success = false;
     auto invalidate = [&] {
         if (!success) {

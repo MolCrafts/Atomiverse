@@ -217,6 +217,7 @@ def _ar_dimer_frame(atomic_number: int = _Z_AR) -> "molpy.Frame":
     @return A molpy.Frame with x/y/z [Å], mass [amu] and atomic_number.
     """
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.zeros(2, dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
@@ -477,6 +478,7 @@ class TestSemiempiricalForceSource:
         DFTB2 twin (soft floor 100 cm^-1; the absolute wavenumber is not
         pinned here, the SE oracle loop owns that)."""
         frame = molpy.Frame()
+        frame.meta["units_style"] = "electronic"
         atoms = molpy.Block()
         atoms.insert("x", np.array([0.0, 0.74], dtype=np.float64))
         atoms.insert("y", np.zeros(2, dtype=np.float64))

@@ -992,13 +992,12 @@ inline bool operator==(const AngleCosineParams& a, const AngleCosineParams& b) {
 /// \(\mathbf F_i \mathrel{+}= q_i\mathbf E\) on every owned atom, and
 /// \(U \mathrel{+}= -\sum_i q_i\,\mathbf E\cdot\mathbf r_i^{\mathrm u}\) with
 /// unwrapped coordinates \(\mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n\)
-/// (image flags \(\mathbf n\)). Field in V/Å, so with charges in e the force
-/// is eV/Å (LAMMPS metal `qe2f = 1`). No virial: LAMMPS adds one only under
+/// (image flags \(\mathbf n\)). Field, charge, force and energy follow the run unit profile. No virial: LAMMPS adds one only under
 /// `fix_modify virial yes`. Reads the per-atom charge column.
 struct FixEfieldParams {
-    double Ex = 0.0; ///< Field x-component [V/Å].
-    double Ey = 0.0; ///< Field y-component [V/Å].
-    double Ez = 0.0; ///< Field z-component [V/Å].
+    double Ex = 0.0; ///< Field x-component [run electric field].
+    double Ey = 0.0; ///< Field y-component [run electric field].
+    double Ez = 0.0; ///< Field z-component [run electric field].
 };
 inline bool operator==(const FixEfieldParams& a, const FixEfieldParams& b) {
     return a.Ex == b.Ex && a.Ey == b.Ey && a.Ez == b.Ez;
@@ -1702,9 +1701,10 @@ inline bool operator==(const MDTask& a, const MDTask& b) {
 
 struct SinglePointTask {
     AM1Params evaluator;
+    units::Style units = units::Style::metal;
 };
 inline bool operator==(const SinglePointTask& a, const SinglePointTask& b) {
-    return a.evaluator == b.evaluator;
+    return a.evaluator == b.evaluator && a.units == b.units;
 }
 
 /// @brief One launcher-dispatchable geometry optimization: what to build,

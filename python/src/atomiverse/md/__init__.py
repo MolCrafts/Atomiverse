@@ -109,8 +109,8 @@ class MD:
         LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
         ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
         ``"nano"``). Every parameter, ``dt``, temperature, pressure and the
-        frame are taken in that style and every result is reported in it;
-        nothing is converted. Default: :func:`atomiverse.units_style`
+        numeric parameters use that style. Annotated Frame data is adapted
+        at import and results are written back in its source units. Default: :func:`atomiverse.units_style`
         (``"lj"`` unless :func:`atomiverse.set_units` chose another).
     capture_buffer_bytes : int, optional
         Byte budget [bytes, >= 1] of the driver's ONE shared asynchronous
@@ -575,8 +575,8 @@ class MD:
 InitVelocity = _cpp.InitVelocity
 
 #: Constant uniform electric field (LAMMPS ``fix efield``) —
-#: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in V/Å;
-#: register it with :meth:`MD.set_evaluator`. F = qE [eV/Å]; the energy is
+#: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in the run electric-field unit;
+#: register it with :meth:`MD.set_evaluator`. F = qE in run force units; the energy is
 #: −Σ q E·r^u on unwrapped coordinates and no virial is added.
 FixEfield = _cpp.FixEfield
 

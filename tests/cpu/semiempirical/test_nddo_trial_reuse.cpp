@@ -69,6 +69,7 @@ MinimizeRun minimize_water(int iterations, bool veto_reuse) {
 
     LaunchProbe probe;
     cpu::minimizer::Minimize opt;
+    opt.set_units("metal");
     opt.set_optimizer(cpu::minimizer::LBFGS{});
     opt.on(ATV::minimizer::Phase::force).add(cpu::semiempirical::AM1{});
     opt.on(ATV::minimizer::Phase::force).add_ref(probe, /*order=*/5);

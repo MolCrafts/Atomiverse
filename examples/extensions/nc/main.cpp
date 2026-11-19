@@ -187,7 +187,9 @@ int main(int argc, char** argv) {
                         const double got = d == 0 ? x[i] : d == 1 ? y[i] : z[i];
                         const double want =
                             xyz[i][d]
-                            + .5 * dt * dt * units::UnitSystem::lj().ftm2v
+                            + .5 * dt * dt
+                                  * units::UnitSystem::lj()
+                                        .velocity_impulse.scale()
                                   * initial_force[i][d]
                                   / frame.span(kAtom_mass)[i];
                         nc_example::near(got, want, 2e-12,

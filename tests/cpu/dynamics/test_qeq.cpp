@@ -122,3 +122,34 @@ TEST(QEq, DefaultBindingPreForce) {
     EXPECT_EQ(b[0].phase, ATV::slot_of(ATV::md::Phase::pre_force));
     EXPECT_EQ(b[0].order, -50);
 }
+
+#include "atomiverse/cpu/units/frame.h"
+TEST(QEq, PhysicalChargesAndEnergyAgreeAcrossRunStyles) {
+    auto native = diatomic(1.5);
+    units::annotate(native, "electronic");
+    const auto e = units::PhysicalUnits::from_style("electronic");
+    const double expected =
+        (7. - 4.) / (120. + 140. - 2. * units::coulomb / 1.5);
+    for (const auto* style :
+         {"metal", "real", "si", "cgs", "electron", "micro", "nano"}) {
+        SCOPED_TRACE(style);
+        const auto run = units::PhysicalUnits::from_style(style);
+        auto work = units::convert(native, style);
+        cpu::Context context;
+        context.units = units::from_style(style);
+        const units::Conversion length(e.length(), run.length());
+        const units::Conversion chi(e.energy() / e.charge(),
+                                    run.energy() / run.charge());
+        const units::Conversion hardness(e.energy() / (e.charge() * e.charge()),
+                                         run.energy()
+                                             / (run.charge() * run.charge()));
+        cpu::md::QEq qeq(length(10.));
+        qeq.set_type(1, chi(4.), hardness(120.))
+            .set_type(2, chi(7.), hardness(140.));
+        qeq.build({context, work});
+        qeq.launch({context, work, 0, 0});
+        const auto result = units::convert(work, "electronic");
+        EXPECT_NEAR(result.span(kAtom_charge)[0], expected, 1.e-13);
+        EXPECT_NEAR(result.span(kAtom_charge)[1], -expected, 1.e-13);
+    }
+}

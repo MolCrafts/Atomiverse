@@ -36,11 +36,26 @@ namespace cuda {
 ///                   evaluator must run during `prepare` or `finalize`.
 template <typename Evaluator>
 void single_point(cpu::Frame& frame, Evaluator& evaluator,
-                  ATV::evaluate::Phase phase = ATV::evaluate::Phase::evaluate) {
+                  ATV::evaluate::Phase phase = ATV::evaluate::Phase::evaluate,
+                  std::optional<ATV::units::Style> requested_style = {}) {
     cuda::Evaluate eval;
+    const auto style = requested_style.value_or(
+        ATV::units::has_frame_units(frame)
+                && ATV::units::frame_profile(frame) != "electronic"
+            ? ATV::units::frame_style(frame)
+            : ATV::units::Style::metal);
+    eval.set_units(ATV::units::style_name(style));
     eval.on(phase).add_ref(evaluator); // lvalue borrow — caller retains
     eval.build();
-    eval.run(frame);
+    if (ATV::units::has_frame_units(frame)
+        && ATV::units::frame_profile(frame) == "electronic") {
+        auto prepared =
+            ATV::units::convert(frame, ATV::units::style_name(style));
+        eval.run(prepared);
+        auto restored = ATV::units::convert(std::move(prepared), "electronic");
+        ATV::units::publish_electronic_results(restored, frame);
+    } else
+        eval.run(frame);
 }
 
 } // namespace cuda

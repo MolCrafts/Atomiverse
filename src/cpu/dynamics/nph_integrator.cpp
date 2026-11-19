@@ -44,7 +44,7 @@ NphIntegrator::NphIntegrator(double P_target, double tau_P, double dt,
     : P_target_(P_target), tau_P_(tau_P), dt_(dt), W_override_(W_cell) {}
 
 void NphIntegrator::build(const cpu::BuildContext& ctx) {
-    nktv2p_ = ctx.runtime.units.nktv2p;
+    nktv2p_ = ctx.runtime.units.pressure.scale();
     // Driver publishes the constraint-aware global DOF count before build.
     n_dof_ = ctx.runtime.md.n_dof_global;
 
@@ -59,7 +59,7 @@ void NphIntegrator::build(const cpu::BuildContext& ctx) {
             compute_global_KE(cpu::LaunchContext{ctx.runtime, ctx.frame, 0, 0});
         double kT = (n_dof_ > 0 && ke > 0.0)
                         ? (2.0 * ke / static_cast<double>(n_dof_))
-                        : (ctx.runtime.units.boltz * kTref_K);
+                        : (ctx.runtime.units.boltzmann_constant() * kTref_K);
         W_ = (static_cast<double>(n_dof_) + 3.0) * kT * tau_P2;
     }
 
@@ -81,7 +81,7 @@ double NphIntegrator::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
+    ke_local = .5 * ctx.runtime.units.kinetic_energy(ke_local);
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -110,9 +110,9 @@ NphIntegrator::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * ctx.runtime.units.mvv2e * kx,
-                    0.5 * ctx.runtime.units.mvv2e * ky,
-                    0.5 * ctx.runtime.units.mvv2e * kz};
+    double ke[3] = {.5 * ctx.runtime.units.kinetic_energy(kx),
+                    .5 * ctx.runtime.units.kinetic_energy(ky),
+                    .5 * ctx.runtime.units.kinetic_energy(kz)};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -186,7 +186,7 @@ void NphIntegrator::kick_v_by_force(const cpu::LaunchContext& ctx,
                                     double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * ctx.runtime.units.ftm2v;
+    const double dtf = ctx.runtime.units.velocity_impulse(half_dt);
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);

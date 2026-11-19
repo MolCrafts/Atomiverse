@@ -37,12 +37,14 @@ using namespace ATV;
 int run() {
     // ── Argon-flavoured LJ, truncated AND shifted at 2.5σ ────────────────
     const double eps =
-        120.0 * units::UnitSystem::lj().boltz; // ε/k_B = 120 K [eV]
-    const double sigma = 3.4;                  // [Å]
-    const double cutoff = 2.5 * sigma;         // [Å]
-    const double t_red = 1.5;                  // supercritical vapor
-    const double temperature = t_red * 120.0;  // 180 K
-    const double kT = units::UnitSystem::lj().boltz * temperature; // [eV]
+        120.0
+        * units::UnitSystem::lj().boltzmann_constant(); // ε/k_B = 120 K [eV]
+    const double sigma = 3.4;                           // [Å]
+    const double cutoff = 2.5 * sigma;                  // [Å]
+    const double t_red = 1.5;                           // supercritical vapor
+    const double temperature = t_red * 120.0;           // 180 K
+    const double kT =
+        units::UnitSystem::lj().boltzmann_constant() * temperature; // [eV]
     const double mass = 39.948; // argon [amu]
     const int n_atoms = 125;    // 5³ — clean SC lattice
 

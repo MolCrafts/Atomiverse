@@ -21,8 +21,8 @@ class TimestepProvider {
   public:
     virtual ~TimestepProvider() = default;
 
-    /// @brief Nuclear MD timestep [fs].
-    /// @return The integrator's own step size [fs] (its constructor `dt`).
+    /// @brief Nuclear MD timestep in run time units.
+    /// @return The integrator's own step size in run time units (its constructor `dt`).
     virtual double timestep() const = 0;
 };
 
@@ -34,9 +34,10 @@ class TimestepConsumer {
     /// @brief True when this consumer cannot run without a pushed dt.
     /// @return True to require a `TimestepProvider` in the same driver.
     virtual bool timestep_required() const = 0;
+    virtual bool timestep_in_femtoseconds() const { return false; }
 
-    /// @brief Receive the integrator timestep [fs] (before component build).
-    /// @param dt_fs Nuclear MD timestep [fs].
+    /// @brief Receive the integrator timestep in run time units (before component build).
+    /// @param dt_fs Nuclear MD timestep in run time units.
     /// @throws std::invalid_argument when dt_fs is not finite and > 0.
     virtual void set_timestep(double dt_fs) = 0;
 };

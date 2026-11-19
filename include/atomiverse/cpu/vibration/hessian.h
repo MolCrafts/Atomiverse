@@ -91,7 +91,7 @@ class Hessian : public Driver<ATV::vib::Phase> {
     /// @brief Construct with custom thermochemistry inputs.
     ///
     /// @param temperature Temperature [K].
-    /// @param pressure Pressure [Pa].
+    /// @param pressure Pressure in the run units.
     /// @param multiplicity Spin multiplicity `2S+1`.
     /// @param symmetry_number Rotational sigma.
     Hessian(double temperature, double pressure, int multiplicity,
@@ -100,7 +100,7 @@ class Hessian : public Driver<ATV::vib::Phase> {
     /// @brief Construct with thermochemistry inputs and Recorder paths.
     ///
     /// @param temperature Temperature [K].
-    /// @param pressure Pressure [Pa].
+    /// @param pressure Pressure in the run units.
     /// @param multiplicity Spin multiplicity `2S+1`.
     /// @param symmetry_number Rotational sigma.
     /// @param frequency_tsv Path for the `FrequencyReport` TSV.

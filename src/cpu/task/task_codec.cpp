@@ -967,6 +967,7 @@ std::vector<std::byte> pack(const TaskSpec& spec) {
         w.i64(task.n_steps);
         w.u64(task.capture_buffer_bytes);
     } else if (spec.kind() == TaskKind::SinglePoint) {
+        w.u8(static_cast<std::uint8_t>(spec.single_point().units));
         w.u16(static_cast<std::uint16_t>(ComponentId::AM1));
         write(w, spec.single_point().evaluator);
     } else {
@@ -1019,10 +1020,11 @@ TaskSpec unpack(const std::byte* data, std::size_t size) {
     }
 
     if (kind == TaskKind::SinglePoint) {
+        const auto style = read_units(r);
         const ComponentId id = decode_component_id(r.u16());
         if (id != ComponentId::AM1)
             wrong_task(id, TaskKind::SinglePoint);
-        SinglePointTask task{read_am1(r)};
+        SinglePointTask task{read_am1(r), style};
         r.require_end();
         return TaskSpec(std::move(task));
     }

@@ -35,8 +35,8 @@ class TimestepProvider {
   public:
     virtual ~TimestepProvider() = default;
 
-    /// @brief Nuclear MD timestep [fs]; must be finite and > 0.
-    /// @return The integrator's own step size [fs] (its constructor `dt`).
+    /// @brief Nuclear MD timestep [run time]; must be finite and > 0.
+    /// @return The integrator's own step size [run time] (its constructor `dt`).
     virtual double timestep() const = 0;
 };
 
@@ -52,6 +52,9 @@ class TimestepConsumer {
     ///        (e.g. `cpmd == true`). Gates the missing-provider throw.
     /// @return True to require a `TimestepProvider` in the same driver.
     virtual bool timestep_required() const = 0;
+    /// Fixed-unit electronic propagation and file clocks request fs. All
+    /// classical consumers receive the selected run time unit.
+    virtual bool timestep_in_femtoseconds() const { return false; }
 
     /// @brief Receive the integrator timestep [fs] (before component build).
     /// @param dt_fs Nuclear MD timestep [fs].

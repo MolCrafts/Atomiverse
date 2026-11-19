@@ -114,7 +114,6 @@ cpu::Frame make_liquid(int n_side, double density, bool charged) {
 // ── Constrained molecular liquids (2 fs step, PME) ───────────────────────
 
 /// Molecular cases are units metal too: one fs is 1e-3 ps; charges in e.
-constexpr double kFs = 1.0e-3;
 constexpr double kMolCutoff = 9.0, kMolAlpha = 0.3;
 constexpr double kMolTemperature = 300.0; // [K]
 constexpr double kDOH = 0.9572, kDHH = 1.5139;
@@ -361,7 +360,7 @@ int main(int argc, char** argv) try {
     sim.set_neighbor_ref(neighbor);
     const bool lj = name.rfind("lj-", 0) == 0;
     if (water || ethane) {
-        const double dt = 2.0 * kFs;
+        const double dt = 0.002; // metal time unit: ps
         sim.set_integrator(cuda::md::VelocityVerlet{dt});
         sim.on(md::Phase::force).add(cuda::KSpacePME{kMolAlpha, 1.0, 5}, 100);
         if (water) {

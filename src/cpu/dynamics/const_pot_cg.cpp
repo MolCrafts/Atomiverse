@@ -47,7 +47,9 @@ ConstPotCG ConstPotCG::add_electrode(int type, double psi) && {
 }
 
 void ConstPotCG::build(const BuildContext& ctx) {
-    qqrd2e_ = ctx.runtime.units.qqrd2e();
+    qqrd2e_ = ctx.runtime.units.coulomb_constant();
+    potential_units_ = ctx.runtime.units.electric_potential;
+    field_units_ = ctx.runtime.units.electric_field;
     if (groups_.empty())
         throw std::runtime_error("ConstPotCG: add at least one electrode via "
                                  "add_electrode(type, Psi)");
@@ -112,7 +114,7 @@ void ConstPotCG::collect_electrodes_(const cpu::Frame& frame) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
                 elec_group_.push_back(static_cast<int>(g));
-                psi_vec_.push_back(groups_[g].psi);
+                psi_vec_.push_back(potential_units_(groups_[g].psi));
                 break;
             }
         }

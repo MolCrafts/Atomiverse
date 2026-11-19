@@ -83,6 +83,7 @@ def argon_frame(n_atoms: int) -> "molpy.Frame":
     """
     xs, ys, zs, box_len = _argon_columns(n_atoms)
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     atoms.insert("x", xs)
     atoms.insert("y", ys)
@@ -158,6 +159,7 @@ def bonded_frame() -> "molpy.Frame":
         return block
 
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     frame["atoms"] = atoms
     frame["bonds"] = bonds
     frame["dihedrals"] = _four_tuple()

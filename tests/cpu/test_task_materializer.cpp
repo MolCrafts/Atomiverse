@@ -1282,6 +1282,7 @@ TEST(TaskMaterializer, SinglePointAm1H2MatchesHandBuiltEvaluateBitwise) {
     // AM1Params / constructor — no intermediate Config bag).
     cpu::Frame direct_frame = make_h2_frame();
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.on(ATV::evaluate::Phase::evaluate)
         .add(cpu::semiempirical::AM1{0, 1, 200, 1.0e-8, 1.0e-10});
     eval.build();
@@ -1343,7 +1344,9 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     entries.push_back(MDComponentEntry{
         AM1Params{0, 1, kBomdMaxIter, kBomdDensTol, kBomdEnergyTol},
         std::nullopt});
-    const TaskSpec spec(MDTask{std::move(entries), kBomdSteps});
+    auto task = MDTask{std::move(entries), kBomdSteps};
+    task.units = units::Style::real;
+    const TaskSpec spec(std::move(task));
 
     cpu::Frame materialized_frame = make_h2_bomd_frame();
     TaskMaterializer mat(spec);
@@ -1354,6 +1357,7 @@ TEST(TaskMaterializer, MdAm1BomdRunMatchesHandBuiltDriverBitwise) {
     // mounted directly and computes forces because the MD force phase asks.
     cpu::Frame direct_frame = make_h2_bomd_frame();
     cpu::md::MD sim;
+    sim.set_units("real");
     sim.set_integrator(cpu::md::VelocityVerlet{kBomdDt});
     sim.set_observer(cpu::md::InitVelocity{kBomdT, kBomdSeed});
     sim.set_evaluator(cpu::semiempirical::AM1{0, 1, kBomdMaxIter, kBomdDensTol,
@@ -1491,7 +1495,9 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
                  /*mp_order=*/kPwMpOrder,
                  /*extra_bands=*/kPwExtraBands},
         std::nullopt});
-    const TaskSpec spec(MDTask{std::move(entries), kPwSteps});
+    auto task = MDTask{std::move(entries), kPwSteps};
+    task.units = units::Style::real;
+    const TaskSpec spec(std::move(task));
 
     cpu::Frame materialized_frame = make_si2_bomd_frame();
     TaskMaterializer mat(spec);
@@ -1523,6 +1529,7 @@ TEST(TaskMaterializer, MdPwBomdRunMatchesHandBuiltDriverBitwise) {
     pw.extra_bands = kPwExtraBands;
 
     cpu::md::MD sim;
+    sim.set_units("real");
     sim.set_integrator(cpu::md::VelocityVerlet{kPwDt});
     sim.set_observer(cpu::md::InitVelocity{kPwT, kPwSeed});
     // `PW` is move-only (it owns FFTW plans and SCF workspaces), so the

@@ -114,7 +114,7 @@ TEST(HessianZeroing, AccumulatingSourceYieldsTheAnalyticCurvature) {
 
     const std::string tmp = ::testing::TempDir();
     ATV::cpu::vib::Hessian hess(
-        /*temperature=*/298.15, /*pressure=*/101325.0,
+        /*temperature=*/298.15, /*pressure=*/1.01325,
         /*multiplicity=*/1, /*symmetry_number=*/1,
         /*frequency_tsv=*/tmp + "atv_test_hessian_zeroing_freq.tsv",
         /*mode_xyz_prefix=*/tmp + "atv_test_hessian_zeroing_mode");

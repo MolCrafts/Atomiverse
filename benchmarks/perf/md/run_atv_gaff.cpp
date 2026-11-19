@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
 
     // Load on rank 0 then... actually load_lammps_data is serial full-system;
     // DomainDecomposition will scatter on build. All ranks load (simple).
-    cpu::Frame frame = cpu::load_lammps_data(args.data);
+    cpu::Frame frame = cpu::load_lammps_data(args.data, "real");
     const int n_atoms = frame.nlocal();
     if (rank == 0) {
         std::printf(

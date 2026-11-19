@@ -74,6 +74,7 @@ def _forcefield(
 
 def _frame(xyz, types, charges, *, bonds=(), angles=(), dihedrals=(), impropers=()):
     frame = molpy.Frame()
+    frame.meta["units_style"] = "real"
     atoms = molpy.Block()
     xyz = np.asarray(xyz, dtype=np.float64)
     for col, key in enumerate(("x", "y", "z")):
@@ -128,13 +129,15 @@ def test_parameters_stay_in_the_force_fields_units():
     assert isinstance(lj, LJCut)
 
 
-def test_a_force_field_in_another_style_than_the_run_is_refused():
-    frame = _frame([(0, 0, 0), (5, 0, 0)], ["a", "b"], [0.0, 0.0])
-    with pytest.raises(ForceFieldError, match="units 'real' but the run is in units 'metal'"):
-        avff.compile(_forcefield(), frame, units="metal")
-    # The default is the script-level style (lj unless set_units chose one).
-    with pytest.raises(ForceFieldError, match="units 'lj'"):
-        avff.compile(_forcefield(), frame)
+def test_force_field_parameters_are_converted_to_the_run_style():
+    frame = _frame([(0, 0, 0), (5, 0, 0)], ["a", "b"], [0.1, -0.1])
+    real = avff.compile(_forcefield(), frame, units="real")
+    metal = avff.compile(_forcefield(), frame, units="metal")
+    assert metal.units == "metal"
+    assert metal.frame.meta["units_style"] == "metal"
+    assert _energy(real) / 23.060547830619 == pytest.approx(_energy(metal), rel=1e-10)
+    assert frame.meta["units_style"] == "real"
+    np.testing.assert_array_equal(np.asarray(frame["atoms"]["x"]), [0.,5.])
 
 
 def test_like_kinds_split_by_type_not_element():
@@ -242,6 +245,7 @@ def test_gaff2_typed_molecule_translates_completely():
     typifier = molpy.ff.typifier.GaffTypifier(parameter_set="gaff2")
     typed = typifier.typify(typed)
     frame = typed.to_frame()
+    frame.meta["units_style"] = "real"
     charges = molpy.ff.charge.GasteigerModel().assign(typed)
     frame["atoms"].insert("charge", np.asarray(charges))
     frame.box = molpy.Box.cube(BOX)

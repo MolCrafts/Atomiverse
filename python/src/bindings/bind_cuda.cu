@@ -70,7 +70,7 @@ struct CudaEvaluateHandle {
     void run(nb::object obj) {
         require_local_cuda();
         auto frame = borrow_molpy_frame(obj);
-        auto work = cpu::from_molpy(*frame);
+        auto work = cpu::from_molpy_for_run(*frame, driver.units().name());
         {
             nb::gil_scoped_release release;
             driver.run(work);
@@ -227,7 +227,7 @@ struct CudaMdHandle {
                 "CUDA MD continuation requires the same molpy.Frame; use a new "
                 "MD for another frame");
         auto frame = borrow_molpy_frame(obj);
-        auto incoming = cpu::from_molpy(*frame);
+        auto incoming = cpu::from_molpy_for_run(*frame, driver.units().name());
         if (!work) {
             work.emplace(std::move(incoming));
             frame_owner = obj;
@@ -292,7 +292,7 @@ struct CudaMinimizeHandle {
     cpu::task::TaskResult run(nb::object obj, BigInt steps) {
         require_local_cuda();
         auto frame = borrow_molpy_frame(obj);
-        auto work = cpu::from_molpy(*frame);
+        auto work = cpu::from_molpy_for_run(*frame, driver.units().name());
         BigInt iterations;
         {
             nb::gil_scoped_release release;

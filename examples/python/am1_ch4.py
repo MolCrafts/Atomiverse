@@ -83,6 +83,7 @@ def build_ch4_frame() -> "molpy.Frame":
     atoms.insert("atomic_number", np.array(_ATOMIC_NUMBERS, dtype=np.uint32))
 
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_BOX)
     return frame

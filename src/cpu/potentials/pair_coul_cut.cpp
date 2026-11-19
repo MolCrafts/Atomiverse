@@ -62,7 +62,7 @@ PairCoulCut PairCoulCut::set_special_bonds(double s12, double s13,
 
 void PairCoulCut::build(const BuildContext& ctx) {
     // LAMMPS `force->qqrd2e` of the run unless the model states its own.
-    qqr2e_ = coulomb_ > 0.0 ? coulomb_ : ctx.runtime.units.qqrd2e();
+    qqr2e_ = coulomb_ > 0.0 ? coulomb_ : ctx.runtime.units.coulomb_constant();
     filtered_source_ = nullptr;
     loop_.reset();
 

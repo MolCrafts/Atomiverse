@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/scf/post_hf.cpp
 /// @brief Post-HF entry points. Algorithms stay in the internal packs
 ///        (mp2.kernel, CCSD.kernel / ccsd_t, CASCI/CASSCF, NEVPT). This file
@@ -236,6 +237,10 @@ MP2<Method>::MP2(Method& mf) : mf_(&mf) {}
 
 template <typename Method>
 MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     Method& mf = *mf_;
     if (mf.method_ == MeanFieldType::KS && mf.spin_ != SpinType::Restricted)
         throw std::invalid_argument(
@@ -283,6 +288,10 @@ MP2Result MP2<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
 
 template <typename Method>
 GradientResult MP2<Method>::forces(Frame& frame, const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return forces(native, guess);
+        });
     Method& mf = *mf_;
     if (mf.method_ == MeanFieldType::KS && mf.spin_ != SpinType::Restricted)
         throw std::invalid_argument(
@@ -337,6 +346,10 @@ MP3<Method>::MP3(Method& mf) : mf_(&mf) {}
 
 template <typename Method>
 MP3Result MP3<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "MP3::run");
     if (mf.spin_ != SpinType::Restricted)
@@ -361,6 +374,10 @@ MP4<Method>::MP4(Method& mf) : mf_(&mf) {}
 
 template <typename Method>
 MP4Result MP4<Method>::run(Frame& frame, const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, guess);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "MP4::run");
     if (mf.spin_ != SpinType::Restricted)
@@ -381,6 +398,9 @@ FCI<Method>::FCI(Method& mf) : mf_(&mf) {}
 
 template <typename Method>
 FCIResult FCI<Method>::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic",
+                                  [&](Frame& native) { return run(native); });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "FCI::run");
     if (mf.spin_ == SpinType::RestrictedOpen)
@@ -401,6 +421,10 @@ CASCI<Method>::CASCI(Method& mf) : mf_(&mf) {}
 
 template <typename Method>
 CASCIResult CASCI<Method>::run(Frame& frame, int ncas, int nelecas) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, ncas, nelecas);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CASCI::run");
     if (mf.spin_ == SpinType::RestrictedOpen)
@@ -572,6 +596,13 @@ void CASSCF<Method>::require_reference(const char* what) const {
 template <typename Method>
 CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write, int cap,
                                    cpu::Context* nested) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (nested && nested->exec.runtime)
+                binding.emplace(*nested->exec.runtime, native);
+            return solve(native, write, cap, nested);
+        });
     require_reference("CASSCF::run");
     if (!(orb_tol > 0.0) || cap < 1)
         throw std::invalid_argument(
@@ -608,6 +639,9 @@ CASSCFResult CASSCF<Method>::solve(Frame& frame, Write write, int cap,
 
 template <typename Method>
 CASSCFResult CASSCF<Method>::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic",
+                                  [&](Frame& native) { return run(native); });
     return solve(frame, Write::Overwrite, max_macro, nullptr);
 }
 
@@ -636,6 +670,10 @@ NEVPT2<Method>::NEVPT2(Method& mf) : mf_(&mf) {}
 
 template <typename Method>
 NEVPT2Result NEVPT2<Method>::run(Frame& frame, int ncas, int nelecas) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run(native, ncas, nelecas);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "NEVPT2::run");
     if (mf.spin_ == SpinType::RestrictedOpen)
@@ -805,6 +843,9 @@ CCSDResult CCSD<Method>::solve_amplitudes(Frame& frame, Write write,
 
 template <typename Method>
 CCSDResult CCSD<Method>::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic",
+                                  [&](Frame& native) { return run(native); });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::run");
     if (mf.spin_ != SpinType::Restricted)
@@ -870,12 +911,20 @@ GradientResult CCSD<Method>::compute_forces(Frame& frame, Write write,
 
 template <typename Method>
 GradientResult CCSD<Method>::forces(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic", [&](Frame& native) { return forces(native); });
     return compute_forces(frame, Write::Overwrite, nullptr);
 }
 
 template <typename Method>
 int CCSD<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
                                     int budget) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            Runtime::ScopedFrame binding(*ctx.exec.runtime, native);
+            return run_nested_erased(ctx, native, budget);
+        });
     if (!ctx.exec.runtime)
         throw std::runtime_error("cpu::scf::CCSD: nested run has no Runtime");
     if (ctx.exec.forces_requested) {
@@ -898,6 +947,10 @@ int CCSD<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
 
 template <typename Method>
 EOMEECCSDResult CCSD<Method>::eom_ee_ccsd(Frame& frame, int n_states) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return eom_ee_ccsd(native, n_states);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::eom_ee_ccsd");
     if (mf.spin_ != SpinType::Restricted)
@@ -913,6 +966,10 @@ EOMEECCSDResult CCSD<Method>::eom_ee_ccsd(Frame& frame, int n_states) {
 
 template <typename Method>
 EOMIPCCSDResult CCSD<Method>::eom_ip_ccsd(Frame& frame, int n_states) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return eom_ip_ccsd(native, n_states);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::eom_ip_ccsd");
     if (mf.spin_ != SpinType::Restricted)
@@ -928,6 +985,10 @@ EOMIPCCSDResult CCSD<Method>::eom_ip_ccsd(Frame& frame, int n_states) {
 
 template <typename Method>
 EOMEACCSDResult CCSD<Method>::eom_ea_ccsd(Frame& frame, int n_states) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return eom_ea_ccsd(native, n_states);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::eom_ea_ccsd");
     if (mf.spin_ != SpinType::Restricted)
@@ -944,6 +1005,10 @@ EOMEACCSDResult CCSD<Method>::eom_ea_ccsd(Frame& frame, int n_states) {
 template <typename Method>
 EOMSFCCSDResult CCSD<Method>::eom_sf_ccsd(Frame& frame, int n_states,
                                           const SCFInitialGuess* guess) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return eom_sf_ccsd(native, n_states, guess);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::eom_sf_ccsd");
     if (mf.spin_ == SpinType::Restricted)
@@ -959,6 +1024,9 @@ EOMSFCCSDResult CCSD<Method>::eom_sf_ccsd(Frame& frame, int n_states,
 
 template <typename Method>
 CCSDTResult CCSD<Method>::ccsd_t(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic", [&](Frame& native) { return ccsd_t(native); });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CCSD::ccsd_t");
     if (mf.spin_ != SpinType::Restricted)
@@ -1092,6 +1160,13 @@ void CC2<Method>::require_reference(const char* what) const {
 template <typename Method>
 CC2Result CC2<Method>::solve(Frame& frame, Write write, int cap,
                              cpu::Context* nested) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (nested && nested->exec.runtime)
+                binding.emplace(*nested->exec.runtime, native);
+            return solve(native, write, cap, nested);
+        });
     require_reference("CC2::run");
     if (!(tol > 0.0) || cap < 1)
         throw std::invalid_argument(
@@ -1128,6 +1203,9 @@ CC2Result CC2<Method>::solve(Frame& frame, Write write, int cap,
 
 template <typename Method>
 CC2Result CC2<Method>::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic",
+                                  [&](Frame& native) { return run(native); });
     return solve(frame, Write::Overwrite, max_iter, nullptr);
 }
 
@@ -1153,6 +1231,10 @@ int CC2<Method>::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
 
 template <typename Method>
 EOMCC2Result CC2<Method>::eom_cc2(Frame& frame, int n_states) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return eom_cc2(native, n_states);
+        });
     Method& mf = *mf_;
     refuse_ks(mf.method_, "CC2::eom_cc2");
     if (mf.spin_ != SpinType::Restricted)

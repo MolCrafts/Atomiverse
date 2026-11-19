@@ -167,7 +167,7 @@ double ConstPotBO::electrode_potential(std::size_t ie) const {
     if (ie >= groups_.size())
         throw std::out_of_range("ConstPotBO::electrode_potential");
     if (ie < solved_psi_.size())
-        return solved_psi_[ie];
+        return potential_units_.inverse(solved_psi_[ie]);
     return groups_[ie].psi;
 }
 
@@ -189,7 +189,9 @@ void ConstPotBO::record_aspc_() {
 }
 
 void ConstPotBO::build(const BuildContext& ctx) {
-    qqrd2e_ = ctx.runtime.units.qqrd2e();
+    qqrd2e_ = ctx.runtime.units.coulomb_constant();
+    potential_units_ = ctx.runtime.units.electric_potential;
+    field_units_ = ctx.runtime.units.electric_field;
     if (groups_.empty())
         throw std::runtime_error(
             "ConstPotBO: add at least one electrode via add_electrode(type, "
@@ -279,8 +281,9 @@ void ConstPotBO::collect_electrodes_(const cpu::Frame& frame) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
                 elec_group_.push_back(static_cast<int>(g));
-                psi_vec_.push_back(groups_[g].const_charge ? 0.0
-                                                           : groups_[g].psi);
+                psi_vec_.push_back(groups_[g].const_charge
+                                       ? 0.0
+                                       : potential_units_(groups_[g].psi));
                 // Per-group η_e when registered; shared member otherwise.
                 eta_vec_.push_back(groups_[g].eta > 0.0 ? groups_[g].eta : eta);
                 break;
@@ -416,7 +419,8 @@ void ConstPotBO::build_rhs_(const cpu::Frame& frame) {
     for (int a = 0; a < m; ++a) {
         const auto& g = groups_[static_cast<std::size_t>(
             elec_group_[static_cast<std::size_t>(a)])];
-        psi_vec_[static_cast<std::size_t>(a)] = g.const_charge ? 0.0 : g.psi;
+        psi_vec_[static_cast<std::size_t>(a)] =
+            g.const_charge ? 0.0 : potential_units_(g.psi);
     }
     const int n = frame.nlocal();
     auto x = frame.span(kAtom_x);
@@ -448,9 +452,9 @@ void ConstPotBO::build_rhs_(const cpu::Frame& frame) {
 
     // b stores Φ_electrolyte − E·r so that RHS = Ψ − b = Ψ − Φ_elyt + E·r.
     // Φ_ext = −E·r (U = q Φ_ext = −q E·r). Ex=Ey=Ez=0 → E1 path unchanged.
-    const double ex = Ex;
-    const double ey = Ey;
-    const double ez = Ez;
+    const double ex = field_units_(Ex);
+    const double ey = field_units_(Ey);
+    const double ez = field_units_(Ez);
 
     std::fill(b_.begin(), b_.end(), 0.0);
     for (int a = 0; a < m; ++a) {
@@ -730,7 +734,8 @@ void ConstPotBO::solve_(bool use_history) {
     // overwritten with the solved response inside constrain_const_q_.
     solved_psi_.assign(groups_.size(), 0.0);
     for (std::size_t g = 0; g < groups_.size(); ++g)
-        solved_psi_[g] = groups_[g].const_charge ? 0.0 : groups_[g].psi;
+        solved_psi_[g] =
+            groups_[g].const_charge ? 0.0 : potential_units_(groups_[g].psi);
 
     // neutrality_target_ set in build_rhs_ (0 or −Q_elyt).
 

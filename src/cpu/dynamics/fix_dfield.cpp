@@ -51,8 +51,13 @@ void FixDfield::launch(const cpu::LaunchContext& ctx) {
 
     // Maxwell field along z: foothold E ≡ D, feedback E = D - 4π k_e P.
     // 4π k_e converts P [charge/area] into a field; k_e = the run's qqrd2e.
-    const double four_pi_k = 4.0 * units::pi * ctx.runtime.units.qqrd2e();
-    const double Ez = polarization_feedback ? Dz - four_pi_k * Pz : Dz;
+    const double four_pi_k =
+        4.0 * units::pi * ctx.runtime.units.coulomb_constant();
+    const double dx_native = ctx.runtime.units.electric_field(Dx);
+    const double dy_native = ctx.runtime.units.electric_field(Dy);
+    const double dz_native = ctx.runtime.units.electric_field(Dz);
+    const double Ez =
+        polarization_feedback ? dz_native - four_pi_k * Pz : dz_native;
 
     // Pass 2 — forces + field-coupling energy.
     double U = 0.0;
@@ -67,21 +72,22 @@ void FixDfield::launch(const cpu::LaunchContext& ctx) {
         const double rx = static_cast<double>(x[i]) + ix * Lx;
         const double ry = static_cast<double>(y[i]) + iy * Ly;
         const double rz = static_cast<double>(z[i]) + iz * Lz;
-        fx[i] += static_cast<AccReal>(qi * Dx);
-        fy[i] += static_cast<AccReal>(qi * Dy);
+        fx[i] += static_cast<AccReal>(qi * dx_native);
+        fy[i] += static_cast<AccReal>(qi * dy_native);
         fz[i] += static_cast<AccReal>(qi * Ez);
-        U -= qi * (Dx * rx + Dy * ry);
+        U -= qi * (dx_native * rx + dy_native * ry);
         if (!polarization_feedback)
-            U -= qi * Dz * rz;
+            U -= qi * dz_native * rz;
     }
     if (polarization_feedback) {
         // Constant-D electric enthalpy U_D = V (D_z - 4π k_e P_z)² / (8π k_e)
         // so F_iz = -∂U_D/∂z_i = q_i E_z exactly (KE + U_D is conserved).
-        U += V * Ez * Ez / (8.0 * units::pi * ctx.runtime.units.qqrd2e());
+        U += V * Ez * Ez
+             / (8.0 * units::pi * ctx.runtime.units.coulomb_constant());
     }
     last_u_ = U;
     last_Pz_ = Pz;
-    last_Ez_ = Ez;
+    last_Ez_ = ctx.runtime.units.electric_field.inverse(Ez);
     f.meta.get(kEnergy) += U;
 }
 

@@ -56,7 +56,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
     if method_device != device:
         raise ValueError(f"Method device={method_device!r} does not match requested device={device!r}")
     if device == "cuda":
-        evaluation = Evaluate(device="cuda")
+        evaluation = Evaluate(device="cuda", units=_cpp._frame_run_style(frame))
         evaluation.set_evaluator(evaluator)
         evaluation.run(frame)
         return
@@ -65,7 +65,7 @@ def single_point(frame: object, evaluator: object, device: str = "cpu") -> None:
         _cpp.single_point(frame, evaluator)
         return
     if has_domain("am1") and isinstance(evaluator, (_cpp.RM1, _cpp.MNDO, _cpp.PM3)):
-        Evaluate(device="cpu").set_evaluator(evaluator).run(frame)
+        evaluator.forces(frame)
         return
     # Methods own their standalone Frame entry. This also covers PW and
     # DFTB2 without a second per-family list of supported methods.

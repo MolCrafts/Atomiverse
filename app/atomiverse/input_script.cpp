@@ -70,10 +70,14 @@ InputDeck parse_input_script(std::istream& in) {
         const std::string& c = t[0];
         try {
             if (c == "units") {
-                if (t.size() < 2 || (t[1] != "metal" && t[1] != "atomiverse"))
+                if (t.size() != 2)
+                    throw std::invalid_argument("units: expected one style");
+                if (d.created_atoms)
                     throw std::invalid_argument(
-                        "units: only 'metal' or 'atomiverse' "
-                        "(eV, Å, fs, amu) — no other LAMMPS unit sets");
+                        "units: select the style before creating atoms");
+                d.units = units::parse_style(t[1]);
+                if (!d.timestep_explicit)
+                    d.timestep = units::from_style(d.units).dt;
             } else if (c == "dimension") {
                 if (req_i(t, 1, "dimension") != 3)
                     throw std::invalid_argument("dimension: only 3");
@@ -132,6 +136,7 @@ InputDeck parse_input_script(std::istream& in) {
                 // accepted no-op (defaults match LAMMPS)
             } else if (c == "timestep") {
                 d.timestep = req_d(t, 1, "timestep");
+                d.timestep_explicit = true;
                 if (!(d.timestep > 0))
                     throw std::invalid_argument("timestep: must be > 0");
             } else if (c == "thermo") {
@@ -207,6 +212,7 @@ void run_input_deck(const InputDeck& d, std::ostream& log) {
     frame.box = ATV::cpu::Box::orthorhombic(Lx, Ly, Lz);
 
     ATV::cpu::md::MD sim;
+    sim.set_units(units::style_name(d.units));
     sim.set_evaluator(
         ATV::cpu::PairLJCut{d.pair_eps, d.pair_sigma, d.pair_cut});
     sim.set_neighbor(ATV::cpu::md::NeighborList<>{d.pair_cut, d.neighbor_skin});
@@ -219,12 +225,12 @@ void run_input_deck(const InputDeck& d, std::ostream& log) {
     sim.build();
 
     log << "atomiverse native input: n=" << n << "  box=" << Lx << " " << Ly
-        << " " << Lz << " Å  dt=" << d.timestep << " fs  steps=" << d.run_steps
-        << "\n";
+        << " " << Lz << " units=" << units::style_name(d.units)
+        << " dt=" << d.timestep << " steps=" << d.run_steps << "\n";
     if (d.run_steps > 0)
         sim.run(frame, d.run_steps);
     const double pe = frame.meta.get(ATV::kEnergy);
-    log << "PE = " << pe << " eV\n";
+    log << "PE = " << pe << " [" << units::style_name(d.units) << "]\n";
 }
 
 int run_input_script(const std::string& path, const std::string& log_path) {

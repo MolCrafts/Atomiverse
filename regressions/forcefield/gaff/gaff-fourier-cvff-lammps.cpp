@@ -39,7 +39,7 @@ int run() {
     const double tol_E = 1e-10; // kcal/mol
     const double tol_F = 1e-10; // kcal/mol/Å
 
-    cpu::Frame f = cpu::load_lammps_data(dir + "/system.data");
+    cpu::Frame f = cpu::load_lammps_data(dir + "/system.data", "real");
     const cpu::LammpsCoeffs ff = cpu::load_lammps_coeffs(dir + "/torsion.ff");
     if (!ff.has_fourier || !ff.has_improper_cvff) {
         std::printf("FAIL: torsion.ff lost its fourier/cvff styles\n");

@@ -31,6 +31,7 @@ class KRHF : public cuda::Driver<ATV::scf::Phase>,
              public cuda::DriverNode,
              public cuda::HF {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Basis set. Fixed at construction.
     const cpu::scf::BasisSet basis;
     /// @brief Monkhorst–Pack divisions. Each entry ≥ 1.

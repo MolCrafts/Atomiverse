@@ -26,6 +26,7 @@ EPS, SIG = 0.01, 3.0
 
 def _frame(xyz, types, charges, bonds=()) -> molpy.Frame:
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     xyz = np.asarray(xyz, dtype=np.float64) + 10.0
     for col, key in enumerate(("x", "y", "z")):

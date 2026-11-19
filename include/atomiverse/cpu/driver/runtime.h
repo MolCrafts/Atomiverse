@@ -56,6 +56,7 @@ struct DomainDecomposition;
 class Runtime {
   public:
     class ScopedPlan;
+    class ScopedFrame;
     /// Protect a synchronous callback, including criterion/outcome polling.
     class DispatchScope {
       public:
@@ -354,6 +355,36 @@ class Runtime {
     /// Every refold (build, live mount, nested plan in or out) sets this so
     /// the next rebuild boundary re-runs `setup()` before exchanging.
     bool comm_contract_stale_ = false;
+};
+
+/// A fixed-unit numerical child borrows the same services on a converted
+/// private Frame. Domain ownership and the parent frame's buffers stay intact.
+class Runtime::ScopedFrame {
+    Runtime& runtime_;
+    Frame* saved_;
+    units::UnitSystem saved_units_;
+    const units::UnitSystem* inherited_;
+
+  public:
+    ScopedFrame(
+        Runtime& runtime, Frame& frame,
+        const units::UnitSystem& prepared = units::UnitSystem::electronic())
+        : runtime_(runtime), saved_(runtime.frame_),
+          saved_units_(std::move(runtime.context_.units)),
+          inherited_(runtime.context_.exec.inherited_units) {
+        if (!inherited_)
+            runtime_.context_.exec.inherited_units = &saved_units_;
+        runtime_.context_.units = prepared;
+        runtime_.context_.units.dielectric = saved_units_.dielectric;
+        runtime_.frame_ = &frame;
+    }
+    ~ScopedFrame() {
+        runtime_.frame_ = saved_;
+        runtime_.context_.units = std::move(saved_units_);
+        runtime_.context_.exec.inherited_units = inherited_;
+    }
+    ScopedFrame(const ScopedFrame&) = delete;
+    ScopedFrame& operator=(const ScopedFrame&) = delete;
 };
 
 /// Active-plan lifetime for a nested loop. Domain ownership remains shared.

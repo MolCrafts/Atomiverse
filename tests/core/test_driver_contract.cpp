@@ -62,7 +62,7 @@ TEST(DriverContract, UnitsStyleIsChosenOnceAndPublishedToTheBackend) {
     EXPECT_THROW(driver.set_units("kcal"), std::invalid_argument);
     driver.set_units("real");
     EXPECT_STREQ(driver.units().name(), "real");
-    EXPECT_DOUBLE_EQ(driver.units().qqr2e, 332.06371);
+    EXPECT_NEAR(driver.units().coulomb_constant(), 332.06371330062672, 1e-10);
     driver.on(ATV::evaluate::Phase::evaluate).add(ProbeComponent{});
     driver.build();
     ProbeFrame frame;

@@ -12,7 +12,7 @@ class RequestProbe : public cuda::Component {
   public:
     std::string name() const override { return "request_probe"; }
     void launch(const cuda::LaunchContext& ctx) override {
-        observed = {ctx.forces_requested, ctx.stress_requested,
+        observed = {nullptr, ctx.forces_requested, ctx.stress_requested,
                     ctx.initializing_forces, ctx.trial_evaluation};
         ++calls;
         if (fail)
@@ -41,7 +41,7 @@ class RequestNode : public cuda::DriverNode {
         // A child owns its loop; even an exceptional exit must not leave the
         // parent pointing to child state or carrying narrowed requests.
         ctx.loop = {&status, &metrics};
-        ctx.exec = {false, false, true, true};
+        ctx.exec = {nullptr, false, false, true, true};
         if (fail)
             throw std::runtime_error("injected nested failure");
         return 1;
@@ -61,7 +61,7 @@ class RequestNode : public cuda::DriverNode {
 TEST(CudaNestedRequests, LaunchContextInheritsAllParentRequests) {
     cuda::Context runtime;
     cuda::Frame frame;
-    runtime.exec = {false, false, true, true};
+    runtime.exec = {nullptr, false, false, true, true};
     const cuda::LaunchContext launch{runtime, frame, 0, 2};
     EXPECT_FALSE(launch.forces_requested);
     EXPECT_FALSE(launch.stress_requested);
@@ -102,7 +102,7 @@ TEST(CudaNestedRequests, NestedSlotPropagatesIntentAndRestoresParent) {
 TEST(CudaNestedRequests, NestedSlotCannotWidenParentRequests) {
     cuda::Context runtime;
     cuda::Frame frame;
-    runtime.exec = {false, false, true, true};
+    runtime.exec = {nullptr, false, false, true, true};
     RequestNode node;
     auto slot = backend_traits<cuda::device_tag>::nested_slot(
         std::unique_ptr<RequestNode>{}, &node, 1, true, true);
@@ -197,7 +197,7 @@ TEST(CudaNestedRequests, BackendCombinesPhaseAndInheritedRequests) {
     EXPECT_FALSE(probe.observed.trial_evaluation);
     plan.slots[0].forces_requested = true;
     plan.slots[0].stress_requested = true;
-    backend.context().exec = {false, false, true, true};
+    backend.context().exec = {nullptr, false, false, true, true};
     backend.execute_phases(1, 0, 1);
     EXPECT_FALSE(probe.observed.forces_requested);
     EXPECT_FALSE(probe.observed.stress_requested);

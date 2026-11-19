@@ -147,6 +147,7 @@ def _dimer_frame(separation: float, box_length: float = _DIMER_BOX) -> "molpy.Fr
     @return A two-atom molpy.Frame.
     """
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, separation], dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
@@ -757,7 +758,7 @@ side, a = 4, 2.9
 g = np.arange(side) * a
 xyz = np.array(np.meshgrid(g, g, g, indexing="ij")).reshape(3, -1).T + rng.normal(0, 0.15, (side**3, 3))
 q = np.array([1.0 if (i + j + k) % 2 == 0 else -1.0 for i in range(side) for j in range(side) for k in range(side)])
-frame = molpy.Frame(); atoms = molpy.Block()
+frame = molpy.Frame(); frame.meta["units_style"] = "lj"; atoms = molpy.Block()
 for axis, col in zip("xyz", xyz.T): atoms.insert(axis, col.copy())
 atoms.insert("mass", np.full(len(q), 30.0)); atoms.insert("charge", q)
 atoms.insert("atomic_number", np.full(len(q), 11, dtype=np.uint32))

@@ -1,6 +1,8 @@
 /// @file src/cpu/semiempirical/gfn2.cpp
 /// GFN2-xTB energy (H/C/N/O): native static tables, no libxtb.
 #include "atomiverse/cpu/semiempirical/gfn2.h"
+#include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <array>
@@ -1429,6 +1431,17 @@ SolveOut solve_gfn2(const Frame& f, int charge, double scc_tol, int max_scc,
 void GFN2::build(const BuildContext& /*ctx*/) {}
 
 void GFN2::launch(const LaunchContext& ctx) {
+    if (units::needs_conversion(ctx.frame, "electronic")) {
+        units::evaluate_in(ctx.frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (ctx.runtime.exec.runtime)
+                binding.emplace(*ctx.runtime.exec.runtime, native);
+            launch({ctx.runtime, native, ctx.stage, ctx.step,
+                    ctx.forces_requested, ctx.stress_requested});
+        });
+        return;
+    }
+
     auto& f = ctx.frame;
     if (f.nlocal() < 1)
         throw std::invalid_argument("GFN2: empty frame");

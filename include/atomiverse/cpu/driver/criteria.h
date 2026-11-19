@@ -174,8 +174,8 @@ class PressureConverged : public Criterion {
             return Verdict::Stop;
         const auto& st = s.frame.meta.get(kStress);
         // In the run's pressure unit (LAMMPS: virial / V · nktv2p).
-        const double P =
-            (st[0] / V + st[1] / V + st[2] / V) / 3.0 * s.runtime.units.nktv2p;
+        const double P = (st[0] / V + st[1] / V + st[2] / V) / 3.0
+                         * s.runtime.units.pressure.scale();
         if (!std::isfinite(P))
             return Verdict::Stop;
         return (std::fabs(P - P_target_) < ptol_) ? Verdict::Converged
@@ -264,8 +264,9 @@ class StressConverged : public Criterion {
         double r = 0.0;
         for (std::size_t d = 0; d < 3; ++d)
             if (check_[d]) {
-                const double residual = std::fabs(
-                    st[d] / V * s.runtime.units.nktv2p - sigma_target_);
+                const double residual =
+                    std::fabs(st[d] / V * s.runtime.units.pressure.scale()
+                              - sigma_target_);
                 if (!std::isfinite(residual))
                     return Verdict::Stop;
                 r = std::max(r, residual);

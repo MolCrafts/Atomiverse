@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/scf/krhf.cu
 /// @brief Device SCF step for cuda::scf::KRHF.
 ///
@@ -1091,6 +1092,11 @@ int KRHF::drive(cuda::Context& ctx, cpu::Frame& host, cuda::Frame* device,
 }
 
 void KRHF::run(const cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        run(std::as_const(native));
+        return;
+    }
     cpu::Frame scratch(frame);
     this->setup_pass(scratch);
     try {
@@ -1104,6 +1110,11 @@ void KRHF::run(const cpu::Frame& frame) {
 }
 
 void KRHF::run(cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](cpu::Frame& native) { run(native); });
+        return;
+    }
     this->setup_pass(frame);
     try {
         drive(this->backend_->context(), frame, nullptr, max_iter,

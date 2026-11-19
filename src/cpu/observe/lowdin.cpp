@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/observe/lowdin.cpp
 /// @brief Löwdin population analysis implementation. @see lowdin.h
 
@@ -36,6 +37,10 @@ constexpr double kCenterTol = 1e-8;
 std::vector<double> lowdin_populations(const MeanFieldOutputs& outputs,
                                        const Frame& frame,
                                        const RealMatrix& P_in) {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return lowdin_populations(outputs, native, P_in);
+    }
     const auto& shells = *outputs.shells;
     const auto blocks = scf::blocks_from_shells(shells);
     const int n_blocks = static_cast<int>(blocks.size());
@@ -179,6 +184,14 @@ std::vector<double> lowdin_charge(const scf::MeanFieldOutputs& outputs,
     std::vector<double> q(pop.size());
     for (std::size_t A = 0; A < pop.size(); ++A)
         q[A] = static_cast<double>(type[static_cast<int>(A)]) - pop[A];
+    if (units::has_frame_units(frame)) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion charge(native.charge(), source.charge());
+        for (auto& value : q)
+            value = charge(value);
+    }
     return q;
 }
 

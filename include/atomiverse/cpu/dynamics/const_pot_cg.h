@@ -99,6 +99,8 @@ class ConstPotCG : public cpu::Component {
     int max_cg_iter = 1000;
 
   private:
+    units::Conversion potential_units_;
+    units::Conversion field_units_;
     double qqrd2e_ = 1.0; ///< The run's qqrd2e, cached at build().
     std::vector<ElectrodeGroup> groups_;
 

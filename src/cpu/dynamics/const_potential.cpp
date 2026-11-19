@@ -91,7 +91,9 @@ ConstPotentialBO::ConstPotentialBO(std::vector<int> electrode_types,
 }
 
 void ConstPotentialBO::build(const BuildContext& ctx) {
-    qqrd2e_ = ctx.runtime.units.qqrd2e();
+    qqrd2e_ = ctx.runtime.units.coulomb_constant();
+    potential_units_ = ctx.runtime.units.electric_potential;
+    field_units_ = ctx.runtime.units.electric_field;
     const int n = owned_count(ctx);
     const auto type = ctx.frame.span(kAtom_type);
 
@@ -208,7 +210,7 @@ void ConstPotentialBO::solve_(Frame& frame) {
             phi += ke * qj * erf_over_r(r, w_);
         }
         b_[static_cast<std::size_t>(i)] =
-            potentials_[static_cast<std::size_t>(e)] - phi;
+            potential_units_(potentials_[static_cast<std::size_t>(e)]) - phi;
     }
 
     // Augmented system for neutrality: Σ Q = −q_electrolyte

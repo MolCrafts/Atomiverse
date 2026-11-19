@@ -33,14 +33,11 @@ takes neither the force field's Coulomb special weights nor its Coulomb
 constant, so it cannot reproduce them; compose ``CoulLong`` + a k-space
 solver yourself when you mean a different model.
 
-Units are LAMMPS's: a force field states its ``units`` style and its
-numbers are taken in that style, unconverted, exactly as LAMMPS takes a
-``pair_coeff`` line. The run must be in the same style (``MD(units=...)``,
-:func:`atomiverse.set_units`); :func:`compile` refuses a force field whose
-style is not the run's, and one that states none. Only an angle *value*
-(dimension ``A``, stored in degrees) becomes radians, as LAMMPS does
-internally; a per-angle constant (``E/A^2``) is already per radian, as the
-registry's own expressions (``k*(theta-theta0*(pi/180))^2``) show.
+The force field declares the units of its parameter tables; the Frame declares
+its own source units. Parameters are converted by their registry dimensions
+into the selected run style. Angles stored in degrees become radians; per-angle
+constants already use radians. Physical conversions involving LJ require an
+explicit reduced reference.
 
 Every evaluator is a cutoff style. A gas-phase (vacuum) calculation of one
 molecule is plain composition: set the pair styles' ``cutoff`` beyond the
@@ -88,13 +85,13 @@ class ForceFieldError(ValueError):
 class Compiled(NamedTuple):
     """What :func:`compile` returns.
 
-    ``units`` is the LAMMPS style every number is in (the force field's own;
+    ``units`` is the LAMMPS style every number is in (the selected run style;
     run the drivers with it). ``frame`` is the ``molpy.Frame`` a driver runs
     on (positions, masses,
     charges, the force-field atom type as integer ``atoms.type_id``, the
     topology with integer ``type_id`` kinds, the box). ``evaluators`` are the
     parameter objects, one per translated style, in the force field's style
-    order. ``cutoff`` is the largest pair cutoff [Å] — build the
+    order. ``cutoff`` is the largest pair cutoff [run length] — build the
     ``NeighborList`` at least this long — or ``None`` without pair styles.
     """
 
@@ -104,7 +101,7 @@ class Compiled(NamedTuple):
     units: str
 
 
-def compile(forcefield: Any, frame: Any, units: str | None = None) -> Compiled:  # noqa: A001 - mirrors molpy's PotentialCompiler.compile
+def compile(forcefield: Any, frame: Any, units: str | None = None, *, reference: Any = None) -> Compiled:  # noqa: A001 - mirrors molpy's PotentialCompiler.compile
     """Translate ``forcefield`` against the typed ``frame``, style by style.
 
     Parameters
@@ -118,7 +115,7 @@ def compile(forcefield: Any, frame: Any, units: str | None = None) -> Compiled: 
         ``Atomistic.to_frame()`` writes a typed molecule. It is not modified.
     units : str, optional
         LAMMPS ``units`` style of the run the evaluators are for; default
-        :func:`atomiverse.units_style`. Must equal the force field's.
+        :func:`atomiverse.units_style`. Parameters are converted from the force field's declared units.
 
     Raises
     ------
@@ -128,8 +125,7 @@ def compile(forcefield: Any, frame: Any, units: str | None = None) -> Compiled: 
         the kernel cannot honour (LJ exponents other than 12-6, an unknown
         mixing rule, a Coulomb ``delta``, a CHARMM dihedral weight), a
         torsion multiplicity that is not a positive integer, a force field
-        that declares no ``units``, or one whose ``units`` are not the run's
-        (nothing is ever converted).
+        that declares no ``units``, or a conversion lacking required LJ reference scales.
     KeyError
         If the frame has no box, or no ``atoms.charge`` while a Coulomb style
         is present.
@@ -142,12 +138,6 @@ def compile(forcefield: Any, frame: Any, units: str | None = None) -> Compiled: 
         raise ForceFieldError(
             "the force field declares no units; its numbers mean nothing "
             "without a LAMMPS units style"
-        )
-    if forcefield.units != run_units:
-        raise ForceFieldError(
-            f"the force field is in units {forcefield.units!r} but the run is "
-            f"in units {run_units!r}; parameters are never converted: run the "
-            f"drivers with units={forcefield.units!r}"
         )
     specs = {(s.category, s.name): s for s in style_registry.GlobalRegistry().styles()}
     styles = list(forcefield.get_styles(molpy.ff.forcefield.Style))
@@ -177,9 +167,22 @@ def compile(forcefield: Any, frame: Any, units: str | None = None) -> Compiled: 
         if special is None
         else (tuple(float(w) for w in special[0]), tuple(float(w) for w in special[1]))
     )
-    conv = _Converter(specs)
+    from atomiverse.units import _reference
+    reference = reference or _reference(frame)
+    reference_args = reference._args() if reference else (None, "")
+    conv = _Converter(specs, forcefield.units, run_units, reference_args)
     atom_types = sorted({str(t) for t in np.asarray(work["atoms"]["type"])})
+    if "units_style" not in frame.meta:
+        raise ForceFieldError("the Frame declares no units_style; annotate its source units first")
+    source_units = str(frame.meta["units_style"])
+    if "mass" not in work["atoms"].keys():
+        # materialize_params supplied masses in force-field units.
+        mass_scale = _cpp._unit_scales(forcefield.units, source_units, *reference_args)[3]
+        work["atoms"].insert("mass", _dense(work["atoms"], _PREFIX + "mass", "atoms") * mass_scale)
     out = _driver_frame(work, atom_types)
+    out.meta["units_style"] = source_units
+    if source_units != run_units:
+        _cpp._convert_frame_units(out, run_units, *reference_args)
     evaluators: list[Any] = []
     cutoffs: list[float] = []
     for style in styles:
@@ -237,13 +240,14 @@ def _check_styles(styles: list[Any]) -> None:
 
 class _Converter:
     """Dimension-driven reading of registry parameters: degrees to radians,
-    every other base taken as stated (the force field's units are the run's).
+    all physical bases resolved by the C++ unit definitions.
     """
 
-    _BASES = frozenset({"E", "L", "Q"})
+    _BASES = frozenset({"E", "L", "Q", "M", "T"})
 
-    def __init__(self, specs: dict[tuple[str, str], Any]) -> None:
+    def __init__(self, specs: dict[tuple[str, str], Any], source: str = "lj", target: str = "lj", reference_args: tuple = (None, "")) -> None:
         self._specs = specs
+        self._scales = dict(zip(("E", "L", "Q", "M", "T"), _cpp._unit_scales(source, target, *reference_args)))
 
     def factor(self, dim: str) -> float:
         """Factor for a registry dimension such as ``E/L^2`` or ``E*L/Q^2``."""
@@ -259,7 +263,7 @@ class _Converter:
                 # only the value).
                 total *= (math.pi / 180.0) ** p if p > 0 else 1.0
             elif base in self._BASES:
-                continue
+                total *= self._scales[base] ** p
             else:
                 raise ForceFieldError(f"dimension '{dim}': unknown base '{base}'")
         return total
@@ -318,7 +322,9 @@ def _driver_frame(work: Any, atom_types: list[str]) -> Any:
     atoms = work["atoms"]
     index = {name: i for i, name in enumerate(atom_types)}
     block = molpy.Block()
-    for key in ("x", "y", "z"):
+    for key in ("x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz"):
+        if key not in atoms.keys():
+            continue
         block.insert(key, _column(atoms, key).astype(np.float64))
     if "charge" in atoms.keys():
         block.insert("charge", _column(atoms, "charge").astype(np.float64))
@@ -332,6 +338,8 @@ def _driver_frame(work: Any, atom_types: list[str]) -> Any:
     out = molpy.Frame()
     out["atoms"] = block
     out.box = work.box
+    for key in work.meta.keys():
+        out.meta[key] = work.meta[key]
     return out
 
 

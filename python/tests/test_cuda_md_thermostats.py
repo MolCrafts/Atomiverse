@@ -103,6 +103,7 @@ def _ar_frame(
         ijk = np.indices((_SIDE,) * 3).reshape(3, -1).sum(axis=0)
         atoms.insert("charge", np.where(ijk % 2 == 0, charge, -charge))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     frame["atoms"] = atoms
     edge = _SIDE * spacing
     if tilt == 0.0:

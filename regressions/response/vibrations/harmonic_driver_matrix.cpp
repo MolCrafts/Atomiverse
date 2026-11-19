@@ -142,7 +142,7 @@ int run() {
     {
         auto frame = make_atom(0.0, mass);
         cpu::vib::Hessian hess(
-            /*temperature=*/298.15, /*pressure=*/101325.0,
+            /*temperature=*/298.15, /*pressure=*/1.01325,
             /*multiplicity=*/1, /*symmetry_number=*/1,
             /*frequency_tsv=*/"/tmp/atv_reg_harmonic_freq.tsv",
             /*mode_xyz_prefix=*/"/tmp/atv_reg_harmonic_mode");

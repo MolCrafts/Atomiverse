@@ -2,6 +2,7 @@
 /// @brief molpy.Frame <-> canonical CPU block Frame.
 
 #include "atomiverse/cpu/frame/molpy_exchange.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <array>
 #include <cstddef>
@@ -346,6 +347,7 @@ Frame materialize(const molrs::FrameRef& src) {
         }
     }
     internal::decode_molpy_meta(src, frame.meta);
+    (void)ATV::units::frame_profile(frame); // Validate declared styles.
     return frame;
 }
 
@@ -359,7 +361,46 @@ Frame from_molpy(const molrs::FrameRef& src) {
     }
 }
 
-void to_molpy(const Frame& src, molrs::FrameRef& dst) {
+Frame from_molpy(const molrs::FrameRef& src, std::string_view target_profile) {
+    return ATV::units::convert(from_molpy(src), target_profile);
+}
+
+Frame from_molpy_for_run(const molrs::FrameRef& src,
+                         std::string_view target_profile) {
+    auto work = from_molpy(src);
+    // The materializer requires a source declaration; matching run units
+    // avoid a second traversal of the newly materialized buffers.
+    if (ATV::units::has_frame_units(work)
+        && ATV::units::frame_profile(work) != target_profile)
+        return ATV::units::convert(std::move(work), target_profile);
+    return work;
+}
+
+void to_molpy(const Frame& src, molrs::FrameRef& dst,
+              bool restore_original_units) {
+    if (restore_original_units && ATV::units::has_frame_units(src)) {
+        Frame destination;
+        internal::decode_molpy_meta(dst, destination.meta);
+        if (ATV::units::has_frame_units(destination)) {
+            const auto target = ATV::units::frame_profile(destination);
+            const auto reference =
+                target == "lj" ? ATV::units::reduced_reference(destination)
+                               : std::optional<units::ReducedReference>{};
+            if (target == "lj" && ATV::units::frame_profile(src) == "lj"
+                && ATV::units::reduced_reference(src) != reference
+                && !reference)
+                throw std::invalid_argument(
+                    "to_molpy: destination LJ Frame has no reference identity");
+            if (ATV::units::frame_profile(src) != target
+                || (target == "lj"
+                    && ATV::units::reduced_reference(src) != reference)) {
+                const auto converted =
+                    ATV::units::convert(src, target, reference);
+                to_molpy(converted, dst);
+                return;
+            }
+        }
+    }
     const int n = src.nlocal();
     for (const auto& col : src.block("atoms").resolve_columns(kColWriteBack)) {
         if (col.cols != 1)

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "atomiverse/core/lj_type_coeff.h"
+#include "atomiverse/core/physical_units.h"
 #include "atomiverse/cpu/potentials/periodic_torsion.h"
 
 namespace ATV {
@@ -95,6 +96,17 @@ struct LammpsCoeffs {
 ///         weight ≠ 0, an improper style other than cvff, a mixing rule
 ///         other than arithmetic)
 LammpsCoeffs load_lammps_coeffs(const std::string& path);
+/// Declare the file's source units and prepare all coefficients for a run.
+LammpsCoeffs load_lammps_coeffs(const std::string& path,
+                                const units::PhysicalUnits& source,
+                                const units::PhysicalUnits& target);
 
 } // namespace cpu
 } // namespace ATV
+
+namespace ATV::units {
+/// Transform typed coefficient data without changing the source object.
+cpu::LammpsCoeffs convert(cpu::LammpsCoeffs coefficients,
+                          const PhysicalUnits& source,
+                          const PhysicalUnits& target);
+} // namespace ATV::units

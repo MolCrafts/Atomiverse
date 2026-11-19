@@ -7,10 +7,10 @@
 /// rebuilds the multipole one-electron integrals about the center of nuclear
 /// charge, and writes:
 ///
-///   - `frame.meta.get(kDipole)`          dipole [Debye], (x,y,z)
+///   - `frame.meta.get(kDipole)`          dipole [run charge·length], (x,y,z)
 ///   - `frame.meta.get(kQuadrupole)`      traceless Buckingham quadrupole
-///                                        [D·Å], packed xx,xy,xz,yy,yz,zz
-///   - `frame.meta.get(kMultipoleOrigin)` expansion origin [Å]
+///                                        [run charge·length²], packed xx,xy,xz,yy,yz,zz
+///   - `frame.meta.get(kMultipoleOrigin)` expansion origin [run length]
 ///
 /// μ = Σ_A Z_A R_A − Tr(P·r); Θ_ab = ½Σ q (3 r_a r_b − r² δ_ab). The origin
 /// convention (center of nuclear charge) is reported with the numbers —
@@ -46,6 +46,7 @@ class MultipoleObserver : public Observer {
 
     /// @brief Compute μ/Θ from the current determinant and write frame.meta.
     /// @param ctx Launch context (frame + phase guard by the caller's plan).
+    void build(const BuildContext& ctx) override;
     void launch(const LaunchContext& ctx) override;
 
     /// @brief Dipole from the last launch [a.u., e·Bohr].
@@ -65,6 +66,9 @@ class MultipoleObserver : public Observer {
     std::array<double, 3> origin_angstrom() const { return origin_ang_; }
 
   private:
+    void prepare_units_(const units::PhysicalUnits&);
+    units::Conversion position_to_bohr_, dipole_to_run_, quadrupole_to_run_,
+        origin_to_run_;
     scf::MeanFieldOutputs handle_;
     std::array<double, 3> dipole_au_{};
     std::array<double, 6> quad_au_{}; // traceless, [e·Bohr²]

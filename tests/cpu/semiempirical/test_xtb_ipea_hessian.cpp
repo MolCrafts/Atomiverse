@@ -14,7 +14,7 @@ using namespace ATV;
 TEST(XtbIpeaHessian, BuildAcceptsIpeaForceKind) {
     cpu::semiempirical::IPEA ipea;
     ipea.with_forces = true;
-    cpu::vib::Hessian hess(298.15, 101325.0, 1, 1, "", "");
+    cpu::vib::Hessian hess(298.15, 1.01325, 1, 1, "", "");
     hess.on(vib::Phase::force).add(std::move(ipea));
     EXPECT_NO_THROW(hess.build());
 }

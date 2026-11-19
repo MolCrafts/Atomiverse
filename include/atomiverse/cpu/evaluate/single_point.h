@@ -42,11 +42,25 @@ namespace cpu {
 ///                   `evaluate::Phase::evaluate`.
 template <typename Evaluator>
 void single_point(cpu::Frame& frame, Evaluator& evaluator,
-                  ATV::evaluate::Phase phase = ATV::evaluate::Phase::evaluate) {
+                  ATV::evaluate::Phase phase = ATV::evaluate::Phase::evaluate,
+                  std::optional<units::Style> requested_style = {}) {
     cpu::Evaluate eval;
+    const auto style = requested_style.value_or(
+        units::has_frame_units(frame)
+                && units::frame_profile(frame) != "electronic"
+            ? units::frame_style(frame)
+            : units::Style::metal);
+    eval.set_units(units::style_name(style));
     eval.on(phase).add_ref(evaluator);
     eval.build();
-    eval.run(frame);
+    if (units::has_frame_units(frame)
+        && units::frame_profile(frame) == "electronic") {
+        auto prepared = units::convert(frame, units::style_name(style));
+        eval.run(prepared);
+        auto restored = units::convert(std::move(prepared), "electronic");
+        units::publish_electronic_results(restored, frame);
+    } else
+        eval.run(frame);
 }
 
 } // namespace cpu

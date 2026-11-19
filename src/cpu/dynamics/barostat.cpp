@@ -50,7 +50,7 @@ void Barostat::launch(const cpu::LaunchContext& ctx) {
     const double P =
         ATV::md::isotropic_pressure(f.meta.get(kStress).data(),
                                     f.meta.get(kStressKinetic).data(), V)
-        * ctx.runtime.units.nktv2p;
+        * ctx.runtime.units.pressure.scale();
     const double mu =
         ATV::md::berendsen_dilation(P, P_target_, dt_, tau_P_, bulk_modulus_);
 

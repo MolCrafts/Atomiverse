@@ -18,6 +18,7 @@
 /// take identical convergence decisions.
 
 #include "atomiverse/cpu/planewave/pw_solver.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/log.h"
@@ -235,6 +236,12 @@ bool PW::drive_stage_loop_(int max_iter_in, PWResult& res,
 }
 
 void PW::build(const cpu::Frame& reference) {
+    if (units::needs_conversion(reference, "electronic")) {
+        const auto native = units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
+
     internal::assign_nc_species(reference, potentials);
     if (!poisson_) {
         poisson_ = std::make_unique<internal::PoissonSolver>();
@@ -246,6 +253,11 @@ void PW::build(const cpu::Frame& reference) {
 }
 
 PWResult& PW::run(const cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return run(native);
+    }
+
     // Lazy build — convenience for callers that skip explicit build().
     if (!built_)
         build(frame);
@@ -1004,12 +1016,20 @@ PWResult& PW::run(const cpu::Frame& frame) {
 }
 
 PWResult& PW::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic",
+            [&](Frame& native) -> PWResult& { return run(native); });
+
     PWResult& res = run(std::as_const(frame));
     frame.meta.get(kEnergy) = res.energy * qe_units::rydberg_to_ev;
     return res;
 }
 
 void PW::build_on(cpu::Runtime& rt) {
+    this->adopt_parent_units_(rt.context().exec.inherited_units
+                                  ? *rt.context().exec.inherited_units
+                                  : rt.context().units);
     if (host_runtime_ && host_runtime_ != &rt)
         throw std::logic_error("PW: already nested on another Runtime");
     host_runtime_ = &rt;
@@ -1020,8 +1040,12 @@ void PW::destroy_on(cpu::Runtime& rt) {
         host_runtime_ = nullptr;
 }
 
-int PW::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
-                          int /*budget*/) {
+int PW::run_nested_erased(cpu::Context& ctx, cpu::Frame& frame, int budget) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            Runtime::ScopedFrame binding(*ctx.exec.runtime, native);
+            return run_nested_erased(ctx, native, budget);
+        });
     const bool want_forces = ctx.exec.forces_requested;
     // The plane-wave virial costs a second assembly and is unsupported for
     // some occupations, so it is computed only when the hosting plan reads it.
@@ -1158,6 +1182,11 @@ void PW::evaluate_(const Frame& frame,
 }
 
 PWResult& PW::forces(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic",
+            [&](Frame& native) -> PWResult& { return forces(native); });
+
     std::vector<std::array<double, 3>> F;
     evaluate_(frame, &F, nullptr);
     AccReal* __restrict fx = frame.span(kAtom_fx);
@@ -1175,6 +1204,17 @@ PWResult& PW::forces(Frame& frame) {
 }
 
 std::array<double, 6> PW::stress(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto result = units::evaluate_in(
+            frame, "electronic", [&](Frame& native) { return stress(native); });
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion pressure(native.pressure(), source.pressure());
+        for (auto& value : result)
+            value = pressure(value);
+        return result;
+    }
     std::array<double, 6> sigma;
     evaluate_(frame, nullptr, &sigma);
     // kStress is the extensive virial W = σΩ [eV] (core/frame_schema.h).
@@ -1184,16 +1224,47 @@ std::array<double, 6> PW::stress(Frame& frame) {
         st[static_cast<std::size_t>(k)] =
             sigma[static_cast<std::size_t>(k)] * vol;
     frame.meta.get(kEnergy) = result_.energy * qe_units::rydberg_to_ev;
+    if (units::has_frame_units(frame)) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion pressure(native.pressure(), source.pressure());
+        for (auto& value : sigma)
+            value = pressure(value);
+    }
     return sigma;
 }
 
 std::array<double, 6> pw_stress_fd(const cpu::Frame& frame, const PW& method,
                                    double h) {
+    if (units::has_frame_units(frame)) {
+        auto native = units::convert(frame, "electronic");
+        auto result = internal::pw_stress_fd_impl(native, method, h);
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto e = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion pressure(e.pressure(), source.pressure());
+        for (auto& value : result)
+            value = pressure(value);
+        return result;
+    }
     return internal::pw_stress_fd_impl(frame, method, h);
 }
 
 std::vector<std::array<double, 3>>
 pw_forces_fd(const cpu::Frame& frame, const PW& method, double h_ang) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        auto result = pw_forces_fd(native, method, h_ang);
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto e = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion force(e.force(), source.force());
+        for (auto& row : result)
+            for (auto& value : row)
+                value = force(value);
+        return result;
+    }
     if (h_ang <= 0.0)
         throw std::invalid_argument("pw_forces_fd: h_ang must be > 0");
     const int n = frame.nlocal();

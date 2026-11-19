@@ -272,6 +272,7 @@ if(NOT ATV_DOCS_ONLY)
         src/cpu/record/timing_report.cpp
         # CPU runtime infrastructure (Runtime + composed sub-runtimes)
         src/cpu/frame/frame.cpp
+        src/cpu/units/frame.cpp
         src/cpu/driver/runtime.cpp
         src/cpu/communication/domain_runtime.cpp
         src/cpu/device/device_runtime.cpp
@@ -565,6 +566,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cuda/communication/spatial_grid.cu
             src/cuda/asynchronous/capture_buffer.cu
             src/cuda/frame/transfer.cu
+            src/cuda/units/electronic_frame.cu
             src/cuda/device/timer.cu
             src/cuda/driver/driver.cu
             src/cuda/component/zero.cu

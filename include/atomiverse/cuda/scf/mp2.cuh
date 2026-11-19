@@ -29,6 +29,7 @@ class MP2Device;
 /// forces are unavailable; mounting in a force-requesting phase throws.
 class MP2 : public cuda::DriverNode {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Bind an RHF reference and bound additional correlation scratch.
     /// @param mf Borrowed CUDA RHF; must outlive this object.
     /// @param workspace_budget_bytes Maximum MP2 scratch [bytes], excluding HF.

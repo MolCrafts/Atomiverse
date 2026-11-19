@@ -100,7 +100,7 @@ double brute_force_coul_energy(const cpu::Frame& frame, double alpha,
             if (r2 >= rc_sq || r2 == 0.0)
                 continue;
             const double r = std::sqrt(r2);
-            e += units::UnitSystem::lj().qqrd2e()
+            e += units::UnitSystem::lj().coulomb_constant()
                  * frame.span(ATV::kAtom_charge)[i]
                  * frame.span(ATV::kAtom_charge)[j] * std::erfc(alpha * r) / r;
         }

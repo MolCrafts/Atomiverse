@@ -169,7 +169,7 @@ class MD : public Driver<ATV::md::Phase> {
     /// @return Number of iterations actually executed.
 #ifdef ATV_HAS_MOLPY
     BigInt run(molrs::FrameRef& frame, BigInt n_steps) {
-        cpu::Frame work = cpu::from_molpy(frame);
+        cpu::Frame work = cpu::from_molpy_for_run(frame, this->units().name());
         const int n_import = work.nlocal();
         std::vector<TagInt> import_tags(
             static_cast<std::size_t>(std::max(n_import, 0)));

@@ -23,12 +23,11 @@ namespace md {
 
 /// @brief Charge equilibration minimizing
 /// \(E(q)=\sum_i(\chi_i q_i + \tfrac12\eta_i q_i^2)
-///   + \sum_{i<j,\,r\le r_c} q_i q_j / r_{ij}\)
+///   + \sum_{i<j,\,r\le r_c} k_C q_i q_j / r_{ij}\)
 /// subject to \(\sum_i q_i = q_{\mathrm{tot}}\).
 ///
-/// The coupling kernel is exactly LAMMPS `fix qeq/point`: bare \(1/r\) inside
-/// a hard cutoff with **no** Coulomb prefactor on the off-diagonal (the
-/// literal LAMMPS convention — `compute_H` fills `0.5/r` on a full list),
+/// Coupling is \(k_C/r\) inside a hard cutoff, where the prepared run
+/// Coulomb constant supplies the energy/charge² conversion. The hardness
 /// diagonal \(\eta_i\), RHS \(-\chi_i\), and the two-vector constraint
 /// \(q = s - ((\Sigma s - q_{\mathrm{tot}})/\Sigma t)\,t\) where
 /// \(H s = -\chi\) and \(H t = -\mathbf 1\). Distances use the frame box
@@ -37,23 +36,23 @@ namespace md {
 ///
 /// Parameters are constructor arguments and public members — no Config bag:
 /// @code
-/// cpu::md::QEq qeq(/*cutoff [Å]=*/10.0);
-/// qeq.set_type(/*type=*/1, /*chi [eV]=*/5.343, /*eta [eV/e²]=*/10.126);
+/// cpu::md::QEq qeq(/*cutoff [length]=*/10.0);
+/// qeq.set_type(/*type=*/1, /*chi [energy/charge]=*/5.343, /*eta [energy/charge²]=*/10.126);
 /// qeq.set_type(2, 8.741, 13.364);
 /// sim.on(md::Phase::pre_force).add(std::move(qeq));
 /// @endcode
 class QEq : public cpu::Component {
   public:
     bool requires_full_frame() const override { return true; }
-    /// @param cutoff Coulomb coupling cutoff \(r_c\) [Å] (> 0).
+    /// @param cutoff Coulomb coupling cutoff \(r_c\) [length] (> 0).
     explicit QEq(double cutoff);
 
     /// @brief Register electronegativity / hardness for one atom type.
     ///        Every type present in the frame must be registered (no
     ///        fallback — `build()` throws on an unparameterized type).
     /// @param type Atom type id (matches `kAtom_type`).
-    /// @param chi Electronegativity \(\chi\) [eV] (LAMMPS qeq param file col 2).
-    /// @param eta Hardness \(\eta\) [eV/e²] (> 0; param file col 3).
+    /// @param chi Electronegativity \(\chi\) [energy/charge] (LAMMPS qeq param file col 2).
+    /// @param eta Hardness \(\eta\) [energy/charge²] (> 0; param file col 3).
     QEq& set_type(int type, double chi, double eta) &;
     QEq set_type(int type, double chi, double eta) &&;
 
@@ -74,38 +73,39 @@ class QEq : public cpu::Component {
     void launch(const LaunchContext& ctx) override;
     void destroy(const DestroyContext& ctx) override;
 
-    /// @brief Equilibrated charges [e] in frame-row order (last launch).
+    /// @brief Equilibrated charges [charge] in frame-row order (last launch).
     const std::vector<double>& charges() const { return q_; }
 
     /// @brief QEq objective \(\sum\chi q + \tfrac12 q^{\mathsf T}Hq\) at the
-    ///        last solve [eV] (bare-\(1/r\) kernel convention, as LAMMPS).
+    ///        last solve [energy] (the run's energy unit).
     double qeq_energy() const { return energy_; }
 
-    /// @brief \(\sum_i q_i\) after the last solve [e] (equals `qtot`).
+    /// @brief \(\sum_i q_i\) after the last solve [charge] (equals `qtot`).
     double net_charge() const;
 
     /// @brief Number of atoms in the last solve.
     int n_solved() const { return static_cast<int>(q_.size()); }
 
     // ── Public parameters (mutable after construction) ───────────────
-    double cutoff = 10.0; ///< Coupling cutoff [Å].
-    /// Constrained total charge \(q_{\mathrm{tot}}\) [e]. LAMMPS `fix qeq`
+    double cutoff = 10.0; ///< Coupling cutoff [length].
+    /// Constrained total charge \(q_{\mathrm{tot}}\) [charge]. LAMMPS `fix qeq`
     /// always drives \(\sum q\to 0\); nonzero models a net-charged system.
     double qtot = 0.0;
 
   private:
     struct TypeParam {
         int type;
-        double chi; ///< [eV]
-        double eta; ///< [eV/e²]
+        double chi; ///< [energy/charge]
+        double eta; ///< [energy/charge²]
     };
     std::vector<TypeParam> params_;
 
-    std::vector<double> chi_i_; ///< Per-atom χ [eV].
-    std::vector<double> eta_i_; ///< Per-atom η [eV/e²].
-    std::vector<double> H_;     ///< Row-major (η δ + 1/r) [eV/e²].
-    std::vector<double> q_;     ///< Solved charges [e].
+    std::vector<double> chi_i_; ///< Per-atom χ [energy/charge].
+    std::vector<double> eta_i_; ///< Per-atom η [energy/charge²].
+    std::vector<double> H_;     ///< Row-major (η δ + k/r) [energy/charge²].
+    std::vector<double> q_;     ///< Solved charges [charge].
     double energy_ = 0.0;
+    double coulomb_ = 1.0;
 
     void collect_params_(const cpu::Frame& frame);
     void build_matrix_(const cpu::Frame& frame);

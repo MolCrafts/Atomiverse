@@ -86,7 +86,7 @@ void KineticEnergy::launch(const LaunchContext& ctx) {
         frame.atoms.vx, frame.atoms.vy, frame.atoms.vz, frame.atoms.mass,
         &frame.scalars->kinetic,
         frame.scalars != nullptr ? frame.scalars->stress_kinetic : nullptr,
-        static_cast<acc_t>(ctx.runtime.units.mvv2e), n);
+        static_cast<acc_t>(ctx.runtime.units.kinetic_energy.scale()), n);
 }
 
 } // namespace md

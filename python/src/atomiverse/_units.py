@@ -2,7 +2,8 @@
 
 A run's unit style belongs to its driver (``Driver::set_units``): every
 parameter, the timestep, temperatures, pressures and the frame are in that
-style, and nothing is converted. A Python script mirrors a LAMMPS input
+style. A Frame carrying ``meta["units_style"]`` is adapted at the run
+boundary and written back in its original units. A Python script mirrors a LAMMPS input
 script: :func:`set_units` near the top is its ``units`` command, and every
 ``MD`` / ``Minimize`` / ``Evaluate`` constructed afterwards without an
 explicit ``units=`` runs in that style. A driver keeps the style it was

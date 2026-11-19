@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/semiempirical/rm1_solver.cu
 /// @brief RM1 concrete Driver: this is the sole owner of the SCF loop.
 #include "atomiverse/core/frame_schema.h"
@@ -182,6 +183,11 @@ void RM1::standalone_(const cpu::Frame& frame) {
     last_stream_ = ctx.stream;
 }
 void RM1::build(const cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic")) {
+        auto native = ATV::units::convert(frame, "electronic");
+        build(native);
+        return;
+    }
     start_();
     standalone_(frame);
 }
@@ -238,6 +244,10 @@ int RM1::solve_(cuda::Context& ctx, cuda::Frame& frame, int budget,
     return workspace_->result.iterations;
 }
 RM1Result& RM1::run_host_(const cpu::Frame& frame, bool force_request) {
+    if (ATV::units::needs_conversion(frame, "electronic")) {
+        auto native = ATV::units::convert(frame, "electronic");
+        return run_host_(native, force_request);
+    }
     start_();
     standalone_(frame);
     auto& ctx = this->backend_->context();
@@ -267,6 +277,10 @@ RM1Result& RM1::run_host_(const cpu::Frame& frame, bool force_request) {
 }
 RM1Result& RM1::run(const cpu::Frame& frame) { return run_host_(frame, false); }
 RM1Result& RM1::run(cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic"))
+        return ATV::units::evaluate_in(
+            frame, "electronic",
+            [&](cpu::Frame& native) -> RM1Result& { return run(native); });
     auto& result = run(static_cast<const cpu::Frame&>(frame));
     frame.meta.get(kEnergy) = result.total_energy_ev;
     frame.meta.get(kEnergyElectronic) = result.total_energy_ev;
@@ -276,6 +290,10 @@ RM1Result& RM1::run(cpu::Frame& frame) {
     return result;
 }
 RM1Result& RM1::forces(cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic"))
+        return ATV::units::evaluate_in(
+            frame, "electronic",
+            [&](cpu::Frame& native) -> RM1Result& { return forces(native); });
     auto& result = run_host_(frame, true);
     frame.meta.get(kEnergy) = result.total_energy_ev;
     frame.meta.get(kEnergyElectronic) = result.total_energy_ev;

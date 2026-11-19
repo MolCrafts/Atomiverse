@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/planewave/pw_solver.cu
 /// @brief cuda::pw::PW — GPU plane-wave SCF method object.
 ///
@@ -300,6 +301,11 @@ void PW::validate_members() const {
 }
 
 void PW::build(const cpu::Frame& reference) {
+    if (units::needs_conversion(reference, "electronic")) {
+        auto native = units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
     cpu::pw::internal::assign_nc_species(reference, potentials);
     built_ = true;
 }
@@ -868,6 +874,10 @@ PW::evaluate_(const cpu::Frame& frame, const cpu::pw::internal::PWSetup& prob,
 PWResult& PW::standalone_(const cpu::Frame& geometry,
                           std::vector<std::array<double, 3>>* forces_out,
                           std::array<double, 6>* stress_out) {
+    if (units::needs_conversion(geometry, "electronic")) {
+        auto native = units::convert(geometry, "electronic");
+        return standalone_(native, forces_out, stress_out);
+    }
     result_ = PWResult{};
     validate_members();
     if (stress_out && !(geometry.box.volume() > 0))
@@ -906,11 +916,19 @@ PWResult& PW::run(const cpu::Frame& frame) {
     return standalone_(frame, nullptr, nullptr);
 }
 PWResult& PW::run(cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic",
+            [&](cpu::Frame& native) -> PWResult& { return run(native); });
     PWResult& res = standalone_(frame, nullptr, nullptr);
     frame.meta.get(kEnergy) = res.energy * cpu::pw::qe_units::rydberg_to_ev;
     return res;
 }
 PWResult& PW::forces(cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic",
+            [&](cpu::Frame& native) -> PWResult& { return forces(native); });
     std::vector<std::array<double, 3>> force;
     standalone_(frame, &force, nullptr);
     auto fx = frame.span(kAtom_fx), fy = frame.span(kAtom_fy),
@@ -924,12 +942,33 @@ PWResult& PW::forces(cpu::Frame& frame) {
     return result_;
 }
 std::array<double, 6> PW::stress(cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto result =
+            units::evaluate_in(frame, "electronic", [&](cpu::Frame& native) {
+                return stress(native);
+            });
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion pressure(native.pressure(), source.pressure());
+        for (auto& value : result)
+            value = pressure(value);
+        return result;
+    }
     std::array<double, 6> sigma{};
     standalone_(frame, nullptr, &sigma);
     auto& virial = frame.meta.get(kStress);
     for (std::size_t k = 0; k < sigma.size(); ++k)
         virial[k] = sigma[k] * frame.box.volume();
     frame.meta.get(kEnergy) = result_.energy * cpu::pw::qe_units::rydberg_to_ev;
+    if (units::has_frame_units(frame)) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion pressure(native.pressure(), source.pressure());
+        for (auto& value : sigma)
+            value = pressure(value);
+    }
     return sigma;
 }
 

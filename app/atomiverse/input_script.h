@@ -5,6 +5,7 @@
 /// Commands map to public ctor args / categorical setters — no Config bag.
 #pragma once
 
+#include "atomiverse/core/unit_system.h"
 #include <iosfwd>
 #include <string>
 #include <vector>
@@ -14,6 +15,8 @@ namespace app {
 
 /// @brief Parsed native input (units: eV, Å, fs, amu).
 struct InputDeck {
+    units::Style units = units::Style::lj;
+    bool timestep_explicit = false;
     double lattice_a = 0; ///< sc lattice constant [Å]
     double xlo = 0, xhi = 0;
     double ylo = 0, yhi = 0;
@@ -28,7 +31,7 @@ struct InputDeck {
     double pair_sigma = 0; ///< [Å]
     bool have_pair = false;
     double neighbor_skin = -1.0; ///< [Å]; negative = NeighborList auto
-    double timestep = 1.0;       ///< [fs]
+    double timestep = .005;      ///< [fs]
     int thermo_every = 0;
     double velocity_T = -1.0; ///< <0 = no InitVelocity
     unsigned velocity_seed = 42;

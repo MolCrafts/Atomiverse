@@ -40,7 +40,7 @@ namespace {
 constexpr double kSqrt2OverPi = 0.79788456080286535588;
 
 double A_self(double eta) {
-    return units::UnitSystem::lj().qqrd2e() * eta * kSqrt2OverPi;
+    return units::UnitSystem::lj().coulomb_constant() * eta * kSqrt2OverPi;
 }
 
 } // namespace

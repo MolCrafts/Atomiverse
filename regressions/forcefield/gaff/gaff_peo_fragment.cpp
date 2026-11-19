@@ -62,14 +62,14 @@ int run() {
     f.build_special_list();
 
     using cpu::degree_to_rad;
-    using cpu::kcal_per_mol_to_ev;
-    // Diagonal LJ (kcal → eV) for c3, oh, h*
-    const double eps_c3 = kcal_per_mol_to_ev(0.1078);
-    const double eps_oh = kcal_per_mol_to_ev(0.0930);
-    const double eps_h = kcal_per_mol_to_ev(0.0157);
+    // Diagonal LJ in the run's real units for c3, oh, h*
+    const double eps_c3 = 0.1078;
+    const double eps_oh = 0.0930;
+    const double eps_h = 0.0157;
     const double sig_c3 = 3.3977, sig_oh = 3.2429, sig_h = 2.4714;
 
     cpu::Evaluate eval;
+    eval.set_units("real");
     eval.set_neighbor(cpu::md::NeighborList<>{10.0, 0.5});
     eval.set_evaluator(cpu::PairLJCut{
         {{0, 0, eps_c3, sig_c3}, {1, 1, eps_oh, sig_oh}, {2, 2, eps_h, sig_h}},
@@ -77,15 +77,11 @@ int run() {
                            .set_special_bonds(0.0, 0.0, 0.5));
     eval.on(evaluate::Phase::evaluate)
         .add(cpu::PairCoulCut{10.0}.set_special_bonds(0.0, 0.0, 0.5));
-    eval.set_evaluator(cpu::BondHarmonic{{kcal_per_mol_to_ev(228.89),
-                                          kcal_per_mol_to_ev(285.15),
-                                          kcal_per_mol_to_ev(340.0)},
-                                         {1.5354, 1.4242, 1.09}});
-    eval.set_evaluator(cpu::AngleHarmonic{
-        {kcal_per_mol_to_ev(76.79), kcal_per_mol_to_ev(88.33)},
-        {degree_to_rad(109.66), degree_to_rad(113.6)}});
     eval.set_evaluator(
-        cpu::DihedralCharmm({kcal_per_mol_to_ev(0.166667)}, {3}, {0.0}));
+        cpu::BondHarmonic{{228.89, 285.15, 340.0}, {1.5354, 1.4242, 1.09}});
+    eval.set_evaluator(cpu::AngleHarmonic{
+        {76.79, 88.33}, {degree_to_rad(109.66), degree_to_rad(113.6)}});
+    eval.set_evaluator(cpu::DihedralCharmm({0.166667}, {3}, {0.0}));
     eval.build();
     eval.run(f);
 
@@ -94,9 +90,9 @@ int run() {
     const double E_bond = f.meta.get(kEnergyBond);
     const double E_angle = f.meta.get(kEnergyAngle);
     const double E_dihed = f.meta.get(kEnergyDihedral);
-    std::printf(
-        "gaff_fragment E=%.8f pair=%.8f bond=%.8f angle=%.8f dihed=%.8f eV\n",
-        E, E_pair, E_bond, E_angle, E_dihed);
+    std::printf("gaff_fragment E=%.8f pair=%.8f bond=%.8f angle=%.8f "
+                "dihed=%.8f kcal/mol\n",
+                E, E_pair, E_bond, E_angle, E_dihed);
 
     if (!std::isfinite(E) || !std::isfinite(E_pair) || !std::isfinite(E_bond)) {
         std::printf("FAIL: non-finite energy\n");
@@ -105,7 +101,7 @@ int run() {
     // Soft pin: energy must stay in a bounded band for this fixed geometry.
     // Tightened once REFERENCE is regenerated from a known-good build.
     // Band is intentionally wide enough for minor kernel reordering ULPs.
-    if (std::fabs(E) > 50.0) {
+    if (std::fabs(E) > 1200.0) {
         std::printf("FAIL: |E| too large\n");
         return 1;
     }

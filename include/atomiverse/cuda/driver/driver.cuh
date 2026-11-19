@@ -56,6 +56,7 @@
 ///
 /// User code does not subclass this directly — it constructs a preset.
 #pragma once
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -373,14 +374,30 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
     /// The CUDA flavour transfers the host frame onto the device
     /// (`materialize`, H2D) before building components.
     /// @param frame Host-resident system state, transferred to the device.
+    virtual bool uses_electronic_frame() const { return false; }
+    virtual void prepare_clocks_(const units::UnitSystem&) {}
+
     void setup_pass(cpu::Frame& frame) {
+        if (!units::has_frame_units(frame))
+            units::annotate(frame, uses_electronic_frame()
+                                       ? "electronic"
+                                       : this->units_.name());
+        if (uses_electronic_frame()) {
+            if (units::needs_conversion(frame, "electronic"))
+                throw std::invalid_argument(
+                    "electronic driver requires a prepared electronic Frame");
+        } else
+            units::require_frame_units(frame, this->units_.style);
         if (!this->backend_)
             this->backend_ = std::make_unique<typename Base::BackendT>();
         this->backend_->init();
         // LAMMPS `units`: one style for the run, on the Context before any
         // component builds.
-        this->backend_->context().units = this->units_;
+        this->backend_->context().units =
+            uses_electronic_frame() ? units::UnitSystem::electronic()
+                                    : units::for_frame(this->units_, frame);
         this->units_bound_ = true;
+        prepare_clocks_(this->backend_->context().units);
         this->backend_->capture().set_budget(this->capture_buffer_bytes_);
         if (this->timer_)
             this->backend_->set_timer(this->timer_.get());
@@ -413,7 +430,8 @@ class Driver : public ATV::Driver<PhaseEnum, cuda::device_tag> {
             flush_new_mounts_();
             return;
         }
-        this->adopt_parent_units_(ctx.units);
+        this->adopt_parent_units_(
+            ctx.exec.inherited_units ? *ctx.exec.inherited_units : ctx.units);
         this->build();
         borrowed_backend_ = execution;
         borrowed_frame_ = &frame;

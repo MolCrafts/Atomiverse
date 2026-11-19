@@ -85,7 +85,7 @@ void KSpaceEwald::build(const BuildContext& ctx) {
 }
 
 void KSpaceEwald::compute(const LaunchContext& ctx) {
-    sum_.set_qqrd2e(ctx.runtime.units.qqrd2e());
+    sum_.set_qqrd2e(ctx.runtime.units.coulomb_constant());
     auto& f = ctx.frame;
     ensure_kvectors(f, false);
 #ifdef ATV_HAS_MPI
@@ -174,15 +174,16 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
         double e_slab = 0.0;
         if (slab_active()) {
             e_slab = longrange::slab_corr_energy(
-                mz, q_total, mz_r2, vol, zprd_slab, ctx.runtime.units.qqrd2e());
+                mz, q_total, mz_r2, vol, zprd_slab,
+                ctx.runtime.units.coulomb_constant());
             // Slab forces: every rank must apply using the *global* Mz.
             // Publish globals via a second pass on non-root below — here we
             // apply on rank 0's owned atoms; other ranks apply after the
             // collective that mirrors q_total/mz (see else branch).
             if (ctx.forces_requested)
-                longrange::slab_corr_add_forces(q, z, n_local, mz, q_total, vol,
-                                                ctx.runtime.units.qqrd2e(),
-                                                sp_fz);
+                longrange::slab_corr_add_forces(
+                    q, z, n_local, mz, q_total, vol,
+                    ctx.runtime.units.coulomb_constant(), sp_fz);
         }
 
         f.meta.get(kEnergy) += e_recip + e_net + e_slab;
@@ -211,9 +212,9 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
             MPI_Allreduce(MPI_IN_PLACE, &mz_r2, 1, MPI_DOUBLE, MPI_SUM,
                           dd->cart_comm);
             if (ctx.forces_requested)
-                longrange::slab_corr_add_forces(q, z, n_local, mz, q_total, vol,
-                                                ctx.runtime.units.qqrd2e(),
-                                                sp_fz);
+                longrange::slab_corr_add_forces(
+                    q, z, n_local, mz, q_total, vol,
+                    ctx.runtime.units.coulomb_constant(), sp_fz);
         }
     }
 #endif

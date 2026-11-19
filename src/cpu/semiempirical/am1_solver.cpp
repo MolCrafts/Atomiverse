@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file src/cpu/semiempirical/am1_solver.cpp
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 
@@ -42,6 +43,11 @@ void AM1::sync_engine_() {
 }
 
 void AM1::build(const cpu::Frame& reference) {
+    if (units::needs_conversion(reference, "electronic")) {
+        auto native = units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
     sync_engine_();
     engine_->build(reference);
 }

@@ -6,6 +6,7 @@
 /// a file lacking a Lattice= header throws a named exception -- no fallback
 /// box.
 
+#include "atomiverse/cpu/units/frame.h"
 #include <gtest/gtest.h>
 
 #include <cstdio>
@@ -46,7 +47,7 @@ TEST(CpuIoExtxyz, InlineFixtureLoadsAtomsBoxAndZ) {
                             "H -0.3 0.85 0.0\n";
     const std::string path = write_temp("inline", xyz);
 
-    Frame f = load_extxyz(path);
+    Frame f = load_extxyz(path, "electronic");
     std::remove(path.c_str());
 
     ASSERT_EQ(f.nlocal(), 3);
@@ -70,7 +71,7 @@ TEST(CpuIoExtxyz, MissingLatticeThrows) {
                             "H 0.9 0.0 0.0\n";
     const std::string path = write_temp("nolattice", xyz);
 
-    EXPECT_THROW(load_extxyz(path), std::runtime_error);
+    EXPECT_THROW(load_extxyz(path, "electronic"), std::runtime_error);
     std::remove(path.c_str());
 }
 
@@ -78,7 +79,7 @@ TEST(CpuIoExtxyz, LatticeVectorsBecomeBoxColumnsWithoutRotatingPositions) {
     const std::string xyz = "1\nLattice=\"4 0 0 1.5 5 0 0.2 0.7 6\" "
                             "Properties=species:S:1:pos:R:3\nH 1.33 1.78 2.4\n";
     const auto path = write_temp("tilted", xyz);
-    const auto frame = load_extxyz(path);
+    const auto frame = load_extxyz(path, "electronic");
     std::remove(path.c_str());
     const auto& h = frame.box.cell();
     EXPECT_DOUBLE_EQ(h(0, 1), 1.5);
@@ -92,4 +93,16 @@ TEST(CpuIoExtxyz, LatticeVectorsBecomeBoxColumnsWithoutRotatingPositions) {
     EXPECT_NEAR(frac[0], 0.2, 1e-12);
     EXPECT_NEAR(frac[1], 0.3, 1e-12);
     EXPECT_NEAR(frac[2], 0.4, 1e-12);
+}
+
+TEST(CpuIoExtxyz, ExplicitSourceUnitsLabelWithoutRescaling) {
+    const auto path =
+        write_temp("units", "1\nLattice=\"5 0 0 0 5 0 0 0 5\" "
+                            "Properties=species:S:1:pos:R:3\nH 1 0 0\n");
+    auto f = load_extxyz(path, "electronic");
+    EXPECT_EQ(ATV::units::frame_profile(f), "electronic");
+    EXPECT_DOUBLE_EQ(f.span(ATV::kAtom_x)[0], 1.);
+    EXPECT_NEAR(ATV::units::convert(f, "si").span(ATV::kAtom_x)[0], 1.e-10,
+                1e-24);
+    std::remove(path.c_str());
 }

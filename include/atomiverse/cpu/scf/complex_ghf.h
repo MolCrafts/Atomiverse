@@ -39,6 +39,7 @@ namespace scf {
 /// Hartree. l > 3 on the X2C path throws `complex_ghf_ao_lgt3`.
 class ComplexGHF : public cpu::Driver<ATV::scf::Phase>, public HF {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Basis set. Fixed at construction.
     const BasisSet basis;
     /// @brief Molecular charge [e]. Electrons = ΣZ − charge.

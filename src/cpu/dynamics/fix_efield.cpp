@@ -15,10 +15,9 @@ void FixEfield::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
 
-    // Metal units: F [eV/Å] = q [e] * E [V/Å] with qe2f = 1.
-    const double ex = Ex;
-    const double ey = Ey;
-    const double ez = Ez;
+    const double ex = field_units_(Ex);
+    const double ey = field_units_(Ey);
+    const double ez = field_units_(Ez);
 
     // Unwrapped coordinates r^u = r + H n with H's columns the lattice
     // vectors (LAMMPS Domain::unmap, orthorhombic and triclinic alike).

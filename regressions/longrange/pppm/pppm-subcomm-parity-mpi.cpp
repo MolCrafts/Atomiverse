@@ -576,10 +576,13 @@ int run(int argc, char** argv) {
     // out in this file; if the engine's constant ever moved, the "literature"
     // energy would quietly stop being the engine's own units.
     failures += gate(
-        "|kCoulomb - units::UnitSystem::lj().qqrd2e()|",
-        std::fabs(kCoulomb
-                  - static_cast<double>(units::UnitSystem::lj().qqrd2e())),
-        0.0, kCoulomb == static_cast<double>(units::UnitSystem::lj().qqrd2e()));
+        "|kCoulomb - units::UnitSystem::lj().coulomb_constant()|",
+        std::fabs(
+            kCoulomb
+            - static_cast<double>(units::UnitSystem::lj().coulomb_constant())),
+        0.0,
+        kCoulomb
+            == static_cast<double>(units::UnitSystem::lj().coulomb_constant()));
 
     Report serial, subgroup, world;
     if (!run_under_mpiexec(self, 1, /*force_world_arm=*/false, serial))

@@ -65,8 +65,9 @@ class NptMetropolis : public OutcomePolicy {
                 "NptMetropolis: ctx.mc.proposal not published — must run "
                 "under an MC preset");
         const AccReal e_trial = s.frame.meta.get(kEnergy);
-        const double beta =
-            1.0 / (s.runtime.units.boltz * static_cast<double>(temperature_));
+        const double beta = 1.0
+                            / (s.runtime.units.boltzmann_constant()
+                               * static_cast<double>(temperature_));
         const double dE = static_cast<double>(e_trial - e_cur_);
 
         double arg; // exponent of the Boltzmann acceptance factor
@@ -82,8 +83,8 @@ class NptMetropolis : public OutcomePolicy {
             const double v_trial = s.frame.box.volume();
             const double n = static_cast<double>(s.frame.nlocal());
             // P·ΔV in energy: the pressure over the run's nktv2p.
-            const double p_energy =
-                static_cast<double>(pressure_) / s.runtime.units.nktv2p;
+            const double p_energy = static_cast<double>(pressure_)
+                                    / s.runtime.units.pressure.scale();
             arg = beta * (dE + p_energy * (v_trial - v_cur_))
                   - n * std::log(v_trial / v_cur_);
             break;

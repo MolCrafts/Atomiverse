@@ -2,6 +2,7 @@
 /// @brief NDDO Driver loop: diagonalize → density → fock → check.
 
 #include "atomiverse/cpu/semiempirical/nddo_method.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <array>
@@ -219,6 +220,11 @@ NddoMethod::~NddoMethod() {
 
 ATV::semiempirical::NDDOResult& NddoMethod::drive_(NDDOSolver& solver,
                                                    const cpu::Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return drive_(solver, native);
+    }
+
     if (!workspace_)
         throw std::logic_error(
             "NddoMethod: cannot solve with a moved-from method");
@@ -304,6 +310,16 @@ ATV::semiempirical::NDDOResult& NddoMethod::drive_(NDDOSolver& solver,
 
 void NddoMethod::publish_(NDDOSolver& solver, cpu::Frame& frame,
                           bool forces_requested, bool accumulate) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (attached_runtime_)
+                binding.emplace(*attached_runtime_, native);
+            publish_(solver, native, forces_requested, accumulate);
+        });
+        return;
+    }
+
     auto& result = drive_(solver, frame);
     if (forces_requested)
         solver.compute_forces(frame);

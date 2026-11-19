@@ -102,6 +102,7 @@ int main() {
                       /*tol=*/1e-6, /*max_iter=*/200};
 
     cpu::minimizer::Minimize opt;
+    opt.set_units("metal");
     opt.set_optimizer(cpu::minimizer::LBFGS{
         5,    // memory
         0.01, // alpha0 [Å²/eV] (only the Fixed-mode / step-0 fallback)

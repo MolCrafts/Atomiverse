@@ -131,7 +131,7 @@ int run() {
         cpu::Frame f = make_water();
         cpu::semiempirical::GFN1 gfn1;
         gfn1.with_forces = true;
-        cpu::vib::Hessian hess(298.15, 101325.0, 1, 1, "", "");
+        cpu::vib::Hessian hess(298.15, 1.01325, 1, 1, "", "");
         hess.on(vib::Phase::force).add(std::move(gfn1));
         hess.build();
         const auto t0 = std::chrono::steady_clock::now();
@@ -203,7 +203,7 @@ int run() {
         cpu::Frame f = make_water();
         cpu::semiempirical::GFN2 gfn2;
         gfn2.with_forces = true;
-        cpu::vib::Hessian hess(298.15, 101325.0, 1, 1, "", "");
+        cpu::vib::Hessian hess(298.15, 1.01325, 1, 1, "", "");
         hess.on(vib::Phase::force).add(std::move(gfn2));
         hess.build();
         const auto t0 = std::chrono::steady_clock::now();

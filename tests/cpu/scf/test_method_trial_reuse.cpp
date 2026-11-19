@@ -70,6 +70,7 @@ MinimizeRun minimize_h2(int iterations, bool veto_reuse) {
 
     LaunchProbe probe;
     cpu::minimizer::Minimize opt;
+    opt.set_units("metal");
     opt.set_optimizer(cpu::minimizer::LBFGS{});
     opt.on(ATV::minimizer::Phase::force)
         .add(cpu::scf::RHF{cpu::scf::BasisSet::STO3G, /*charge=*/0,

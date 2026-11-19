@@ -6,7 +6,9 @@
 #include <stdexcept>
 #include <utility>
 
+#include "../io/molpy_meta.h"
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/units/frame.h"
 #include "rust/cxx.h"
 
 namespace ATV::cpu::semiempirical {
@@ -53,12 +55,21 @@ std::vector<double> AM1BCCCharges::assign(molrs::FrameRef& molecule) {
     if (n > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         throw std::invalid_argument(
             "AM1BCCCharges: molecule has too many atoms");
+    Frame source_metadata(0);
+    cpu::internal::decode_molpy_meta(molecule, source_metadata.meta);
+    const auto source = units::PhysicalUnits::from_style(
+        units::frame_profile(source_metadata),
+        units::reduced_reference(source_metadata));
+    const auto native = units::PhysicalUnits::from_style("electronic");
+    const units::Conversion length(source.length(), native.length());
+    const units::Conversion charge(native.charge(), source.charge());
     Frame work(static_cast<int>(n));
+    units::annotate(work, "electronic");
     for (std::size_t i = 0; i < n; ++i) {
         work.span(kAtom_atomic_number)[i] = static_cast<int>(atomic_numbers[i]);
-        work.span(kAtom_x)[i] = static_cast<StorageReal>(x[i]);
-        work.span(kAtom_y)[i] = static_cast<StorageReal>(y[i]);
-        work.span(kAtom_z)[i] = static_cast<StorageReal>(z[i]);
+        work.span(kAtom_x)[i] = static_cast<StorageReal>(length(x[i]));
+        work.span(kAtom_y)[i] = static_cast<StorageReal>(length(y[i]));
+        work.span(kAtom_z)[i] = static_cast<StorageReal>(length(z[i]));
     }
     am1_.build(work);
     const auto& base =
@@ -70,7 +81,11 @@ std::vector<double> AM1BCCCharges::assign(molrs::FrameRef& molecule) {
     if (result.size() != n)
         throw std::runtime_error(
             "AM1BCCCharges: BCC charge count differs from atom count");
-    return {result.begin(), result.end()};
+    std::vector<double> output;
+    output.reserve(result.size());
+    for (const auto value : result)
+        output.push_back(charge(value));
+    return output;
 }
 
 } // namespace ATV::cpu::semiempirical

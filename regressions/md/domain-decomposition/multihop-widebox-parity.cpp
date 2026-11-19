@@ -312,7 +312,7 @@ OracleEnergy brute_force(const std::vector<double>& x,
     const double rc2 = kCut * kCut;
     const double rc6inv = (1.0 / (rc2 * rc2 * rc2)) * sigma6;
     const double v_shift = 4.0 * kEps * (rc6inv * rc6inv - rc6inv);
-    const double coulomb = ATV::units::UnitSystem::lj().qqrd2e();
+    const double coulomb = ATV::units::UnitSystem::lj().coulomb_constant();
 
     // ── Non-bonded: every unordered pair, same-molecule pairs excluded.
     for (std::size_t i = 0; i < n; ++i) {

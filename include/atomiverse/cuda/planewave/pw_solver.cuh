@@ -71,6 +71,7 @@ struct PwLoopState;
 
 class PW : public cuda::Driver<ATV::pw::Phase>, public cuda::DriverNode {
   public:
+    bool uses_electronic_frame() const override { return true; }
     // ── Identity (constructor arguments, fixed after construction) ────
     /// @brief Shared immutable builtin NC providers, keyed by atomic number.
     const std::vector<

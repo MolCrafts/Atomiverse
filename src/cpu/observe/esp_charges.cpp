@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/observe/esp_charges.cpp
 /// @brief MK / CHELPG ESP-fitted charges implementation. @see esp_charges.h
 
@@ -61,11 +62,21 @@ double bondi_radius(int Z) {
 }
 
 /// @brief Atom positions [Å] and atomic numbers from the Frame.
+units::PhysicalUnits data_units(const Frame& frame) {
+    return units::has_frame_units(frame)
+               ? units::PhysicalUnits::from_style(
+                     units::frame_profile(frame),
+                     units::reduced_reference(frame))
+               : units::PhysicalUnits::from_style("electronic");
+}
 struct Sites {
     std::vector<std::array<double, 3>> pos_ang;
     std::vector<int> z;
 
     explicit Sites(const Frame& frame) {
+        const auto source = data_units(frame);
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion length(source.length(), native.length());
         const int natm = frame.nlocal();
         const auto x = frame.span(kAtom_x);
         const auto y = frame.span(kAtom_y);
@@ -74,7 +85,8 @@ struct Sites {
         pos_ang.resize(static_cast<std::size_t>(natm));
         z.resize(static_cast<std::size_t>(natm));
         for (int i = 0; i < natm; ++i) {
-            pos_ang[static_cast<std::size_t>(i)] = {x[i], y[i], zc[i]};
+            pos_ang[static_cast<std::size_t>(i)] = {length(x[i]), length(y[i]),
+                                                    length(zc[i])};
             z[static_cast<std::size_t>(i)] = static_cast<int>(type[i]);
         }
     }
@@ -276,11 +288,26 @@ std::vector<std::array<double, 3>> MKCharges::grid(const Frame& frame) const {
             }
         }
     }
+    const auto source = data_units(frame);
+    const auto native = units::PhysicalUnits::from_style("electronic");
+    const units::Conversion length(native.length(), source.length());
+    for (auto& point : pts)
+        for (auto& value : point)
+            value = length(value);
     return pts;
 }
 
 std::vector<double> MKCharges::fit(const scf::MeanFieldOutputs& outputs,
                                    const Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        auto result = fit(outputs, native);
+        const units::Conversion charge(data_units(native).charge(),
+                                       data_units(frame).charge());
+        for (auto& value : result)
+            value = charge(value);
+        return result;
+    }
     const Sites sites{frame};
     const double q_tot = check_handle_q_tot(outputs, sites);
     const auto g = grid(frame);
@@ -291,8 +318,35 @@ std::vector<double> MKCharges::fit(const scf::MeanFieldOutputs& outputs,
 std::vector<double>
 MKCharges::fit_potential(const std::vector<double>& V,
                          const std::vector<std::array<double, 3>>& grid_ang,
-                         const Frame& frame, double q_tot) const {
-    return constrained_fit(V, grid_ang, Sites{frame}, q_tot);
+                         const Frame& frame, double q_tot,
+                         std::optional<units::Unit> potential_unit,
+                         std::optional<units::Unit> grid_unit) const {
+    const auto source = data_units(frame);
+    const auto native = units::PhysicalUnits::from_style("electronic");
+    const auto atomic_potential =
+        units::Unit{native.energy().dimension,
+                    units::kHartreeInEv * native.energy().scale, 0}
+        / native.charge();
+    const units::Conversion potential(
+        potential_unit.value_or(units::has_frame_units(frame)
+                                    ? source.potential()
+                                    : atomic_potential),
+        atomic_potential);
+    const units::Conversion length(grid_unit.value_or(source.length()),
+                                   native.length());
+    const units::Conversion charge_to_native(source.charge(), native.charge());
+    auto values = V;
+    auto points = grid_ang;
+    for (auto& value : values)
+        value = potential(value);
+    for (auto& point : points)
+        for (auto& value : point)
+            value = length(value);
+    auto result =
+        constrained_fit(values, points, Sites{frame}, charge_to_native(q_tot));
+    for (auto& value : result)
+        value = charge_to_native.inverse(value);
+    return result;
 }
 
 std::vector<std::array<double, 3>>
@@ -352,11 +406,26 @@ ChelpgCharges::grid(const Frame& frame) const {
                 if (outside_all && near_one)
                     pts.push_back(p);
             }
+    const auto source = data_units(frame);
+    const auto native = units::PhysicalUnits::from_style("electronic");
+    const units::Conversion length(native.length(), source.length());
+    for (auto& point : pts)
+        for (auto& value : point)
+            value = length(value);
     return pts;
 }
 
 std::vector<double> ChelpgCharges::fit(const scf::MeanFieldOutputs& outputs,
                                        const Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        auto result = fit(outputs, native);
+        const units::Conversion charge(data_units(native).charge(),
+                                       data_units(frame).charge());
+        for (auto& value : result)
+            value = charge(value);
+        return result;
+    }
     const Sites sites{frame};
     const double q_tot = check_handle_q_tot(outputs, sites);
     const auto g = grid(frame);
@@ -367,8 +436,35 @@ std::vector<double> ChelpgCharges::fit(const scf::MeanFieldOutputs& outputs,
 std::vector<double>
 ChelpgCharges::fit_potential(const std::vector<double>& V,
                              const std::vector<std::array<double, 3>>& grid_ang,
-                             const Frame& frame, double q_tot) const {
-    return constrained_fit(V, grid_ang, Sites{frame}, q_tot);
+                             const Frame& frame, double q_tot,
+                             std::optional<units::Unit> potential_unit,
+                             std::optional<units::Unit> grid_unit) const {
+    const auto source = data_units(frame);
+    const auto native = units::PhysicalUnits::from_style("electronic");
+    const auto atomic_potential =
+        units::Unit{native.energy().dimension,
+                    units::kHartreeInEv * native.energy().scale, 0}
+        / native.charge();
+    const units::Conversion potential(
+        potential_unit.value_or(units::has_frame_units(frame)
+                                    ? source.potential()
+                                    : atomic_potential),
+        atomic_potential);
+    const units::Conversion length(grid_unit.value_or(source.length()),
+                                   native.length());
+    const units::Conversion charge_to_native(source.charge(), native.charge());
+    auto values = V;
+    auto points = grid_ang;
+    for (auto& value : values)
+        value = potential(value);
+    for (auto& point : points)
+        for (auto& value : point)
+            value = length(value);
+    auto result =
+        constrained_fit(values, points, Sites{frame}, charge_to_native(q_tot));
+    for (auto& value : result)
+        value = charge_to_native.inverse(value);
+    return result;
 }
 
 } // namespace cpu

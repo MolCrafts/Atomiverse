@@ -43,8 +43,8 @@ double temperature(const cpu::Frame& f, int n_dof) {
         const double vx = f.span(kAtom_vx)[i];
         ke += f.span(kAtom_mass)[i] * vx * vx;
     }
-    ke *= 0.5 * units::UnitSystem::lj().mvv2e;
-    return 2.0 * ke / (n_dof * units::UnitSystem::lj().boltz);
+    ke *= 0.5 * units::UnitSystem::lj().kinetic_energy.scale();
+    return 2.0 * ke / (n_dof * units::UnitSystem::lj().boltzmann_constant());
 }
 
 cpu::Context make_ctx(int n_dof) {

@@ -91,6 +91,11 @@ class StepStamp final : public cpu::Component {
 /// divide by zero) and tags.
 ::rust::Box<molrs::FrameRef> make_argon_frame() {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta{};
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
 
     std::vector<double> x(kN), y(kN), z(kN), mass(kN);
     std::vector<std::uint64_t> atomic_number(kN);

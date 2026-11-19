@@ -14,7 +14,7 @@ using namespace ATV;
 TEST(XtbGfn0Hessian, BuildAcceptsGfn0ForceKind) {
     cpu::semiempirical::GFN0 gfn0;
     gfn0.with_forces = true;
-    cpu::vib::Hessian hess(298.15, 101325.0, 1, 1, "", "");
+    cpu::vib::Hessian hess(298.15, 1.01325, 1, 1, "", "");
     hess.on(vib::Phase::force).add(std::move(gfn0));
     EXPECT_NO_THROW(hess.build());
 }

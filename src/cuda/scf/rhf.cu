@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/scf/rhf.cu
 /// @brief cuda::scf::RHF — concrete restricted HF on the CUDA backend.
 ///
@@ -507,6 +508,11 @@ void RHF::destroy_on(cuda::Context& ctx, cuda::Frame& frame) {
 }
 
 void RHF::run(cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic")) {
+        ATV::units::evaluate_in(frame, "electronic",
+                                [&](cpu::Frame& native) { run(native); });
+        return;
+    }
     energy_available_ = false;
     cache_host_types(frame);
     try {
@@ -525,6 +531,11 @@ void RHF::run(cpu::Frame& frame) {
 }
 
 void RHF::run(const cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic")) {
+        auto native = ATV::units::convert(frame, "electronic");
+        run(std::as_const(native));
+        return;
+    }
     energy_available_ = false;
     // Scratch so setup cannot touch the caller's columns. No retrieve:
     // to_cpu would overwrite positions, forces, and kEnergy.

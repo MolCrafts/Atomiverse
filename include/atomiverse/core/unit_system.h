@@ -1,229 +1,162 @@
 /// @file core/unit_system.h
-/// @brief LAMMPS `units` styles: the run-level unit system of classical MD.
-///
-/// The factor table is `Update::set_units` from LAMMPS `src/update.cpp`
-/// (2 Sep 2026): lj, real, metal, si, cgs, electron, micro, nano, with every
-/// `Force` factor that command sets (`boltz`, `hplanck`, `mvv2e`, `ftm2v`,
-/// `mv2d`, `nktv2p`, `qqr2e`, `qe2f`, `vxmu2f`, `xxt2kmu`, `e_mass`,
-/// `hhmrr2e`, `mvh2r`, `angstrom`, `femtosecond`, `qelectron`) and the two
-/// defaults it resets (`update->dt`, `neighbor->skin`). `qqrd2e = qqr2e /
-/// dielectric` is `Force::init`; `two_charge_force` is `KSpace::two_charge`.
-///
-/// A run selects one style, exactly like the `units` command: the driver
-/// owns it (`Driver::set_units`, default lj as in LAMMPS), publishes it on
-/// the execution Context before any component builds, and refuses a change
-/// once the run has bound a system (LAMMPS refuses `units` after the box
-/// exists). Every classical factor a pair style, k-space solver,
-/// integrator, thermostat, barostat or observer multiplies is read from that
-/// Context (`ctx.runtime.units`); CUDA kernels receive the factors as launch
-/// arguments. There is no process-global style.
-///
-/// The CODATA eV·Å·fs identities in `units.h` (`coulomb`, `kB_ev_per_k`,
-/// `h_planck_ev_fs`, ...) belong to the electronic-structure Hamiltonians
-/// (SCF, PW, DFTB, NDDO), which work in their own units; they are not the
-/// LAMMPS metal row and classical MD never multiplies them.
+/// Prepared run-unit values. All conversions derive from PhysicalUnits;
+/// there is no second hand-maintained table of equation factors.
 #pragma once
+#include "atomiverse/core/physical_units.h"
+// nvcc does not support constexpr destruction of the host-only owning
+// reference metadata (libstdc++ string/optional). Prepared numeric Conversion
+// and PhysicalUnits remain constexpr on both compilers.
+#if defined(__CUDACC__)
+#define ATV_UNIT_SYSTEM_CONSTEXPR inline
+#else
+#define ATV_UNIT_SYSTEM_CONSTEXPR constexpr
+#endif
+namespace ATV::units {
+struct UnitSystem {
+    Style style = Style::lj;
+    Conversion kinetic_energy;
+    Conversion velocity_impulse;
+    Conversion density;
+    Conversion pressure;
+    Conversion electric_field;
+    Conversion electric_potential;
+    Conversion length_from_angstrom;
+    Conversion time_from_femtoseconds;
+    Conversion charge_from_electron;
 
-#include <array>
-#include <cstdint>
-#include <stdexcept>
-#include <string>
-#include <string_view>
+  private:
+    double boltzmann_ = 1.;
+    double planck_ = 1.;
+    double coulomb_ = 1.;
+    std::optional<PhysicalUnits> physical_;
+    std::optional<ReducedReference> reference_;
+    friend ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem from_style(Style);
+    static ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem prepare(const PhysicalUnits&);
+
+  public:
+    const PhysicalUnits& physical() const {
+        if (!physical_)
+            throw std::invalid_argument("units: LJ needs a physical reference "
+                                        "for coupling to physical models");
+        return *physical_;
+    }
+    const std::optional<ReducedReference>& reference() const {
+        return reference_;
+    }
+    void bind_reference(const ReducedReference& reference) {
+        if (style != Style::lj)
+            throw std::invalid_argument(
+                "units: only LJ has reduced reference scales");
+        reference.validate();
+        physical_ = PhysicalUnits::from_style(Style::lj, reference);
+        reference_ = reference;
+        constexpr auto si = PhysicalUnits::from_style(Style::si);
+        length_from_angstrom =
+            Conversion(Unit{length_dimension, 1.e-10, 0}, physical_->length());
+        time_from_femtoseconds =
+            Conversion(Unit{time_dimension, 1.e-15, 0}, physical_->time());
+        charge_from_electron =
+            Conversion(Unit{charge_dimension, elementary_charge_si, 0},
+                       physical_->charge());
+        planck_ = convert(planck_si, si.energy() * si.time(),
+                          physical_->energy() * physical_->time());
+    }
+    double dielectric = 1.;
+    double dt = .005;
+    double skin = .3;
+    constexpr const char* name() const {
+        // Native electronic execution differs from metal in its clock.
+        // Keep serialized results faithful to the actual prepared basis.
+        return style == Style::metal && physical_
+                       && physical_->time().scale
+                              == PhysicalUnits::from_style("electronic")
+                                     .time()
+                                     .scale
+                   ? "electronic"
+                   : style_name(style);
+    }
+    constexpr double boltzmann_constant() const { return boltzmann_; }
+    constexpr double planck_constant() const { return planck_; }
+    constexpr double thermal_energy(double temperature) const {
+        return boltzmann_ * temperature;
+    }
+    constexpr double coulomb_constant() const { return coulomb_ / dielectric; }
+    constexpr double two_charge_force() const {
+        return coulomb_ * charge_from_electron(1.) * charge_from_electron(1.)
+               / (length_from_angstrom(1.) * length_from_angstrom(1.));
+    }
+    static ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem lj() { return {}; }
+    static ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem electronic();
+};
+ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem
+UnitSystem::prepare(const PhysicalUnits& u) {
+    UnitSystem out;
+    out.physical_ = u;
+    constexpr auto si = PhysicalUnits::from_style(Style::si);
+    out.boltzmann_ = convert(boltzmann_si, si.energy() / si.temperature(),
+                             u.energy() / u.temperature());
+    out.planck_ =
+        convert(planck_si, si.energy() * si.time(), u.energy() * u.time());
+    out.kinetic_energy =
+        Conversion(u.mass() * u.velocity() * u.velocity(), u.energy());
+    out.velocity_impulse =
+        Conversion(u.force() / u.mass() * u.time(), u.velocity());
+    out.density = Conversion(u.mass() / (u.length() * u.length() * u.length()),
+                             u.density());
+    out.pressure = Conversion(
+        u.energy() / (u.length() * u.length() * u.length()), u.pressure());
+    out.coulomb_ = convert(
+        coulomb_si, si.energy() * si.length() / (si.charge() * si.charge()),
+        u.energy() * u.length() / (u.charge() * u.charge()));
+    out.electric_field = Conversion(u.electric_field(), u.force() / u.charge());
+    out.electric_potential = Conversion(u.potential(), u.energy() / u.charge());
+    out.length_from_angstrom =
+        Conversion(Unit{length_dimension, 1.e-10, 0}, u.length());
+    out.time_from_femtoseconds =
+        Conversion(Unit{time_dimension, 1.e-15, 0}, u.time());
+    out.charge_from_electron =
+        Conversion(Unit{charge_dimension, elementary_charge_si, 0}, u.charge());
+    return out;
+}
+ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem UnitSystem::electronic() {
+    auto out = prepare(PhysicalUnits::from_style("electronic"));
+    out.style = Style::metal;
+    return out;
+}
+[[nodiscard]] ATV_UNIT_SYSTEM_CONSTEXPR UnitSystem from_style(Style style) {
+    if (style == Style::lj)
+        return {};
+    auto out = UnitSystem::prepare(PhysicalUnits::from_style(style));
+    out.style = style;
+    constexpr double timesteps[] = {.005,  1.,   .001, 1.e-8,
+                                    1.e-8, .001, 2.,   .00045};
+    constexpr double skins[] = {.3, 2., 2., .001, .1, 2., .1, .1};
+    out.dt = timesteps[static_cast<unsigned>(style)];
+    out.skin = skins[static_cast<unsigned>(style)];
+    return out;
+}
+[[nodiscard]] inline UnitSystem from_style(std::string_view style) {
+    return from_style(parse_style(style));
+}
+} // namespace ATV::units
 
 namespace ATV::units {
 
-/// @brief LAMMPS `units` style. The byte value is the task-wire encoding.
-enum class Style : std::uint8_t {
-    lj = 0,
-    real = 1,
-    metal = 2,
-    si = 3,
-    cgs = 4,
-    electron = 5,
-    micro = 6,
-    nano = 7,
-};
-
-/// Number of styles (wire range check).
-inline constexpr int kStyleCount = 8;
-
-/// LAMMPS spelling of each style, indexed by `Style`.
-inline constexpr std::array<const char*, kStyleCount> kStyleNames = {
-    "lj", "real", "metal", "si", "cgs", "electron", "micro", "nano"};
-
-/// @brief LAMMPS name of `s` (e.g. `"real"`).
-[[nodiscard]] constexpr const char* style_name(Style s) {
-    return kStyleNames[static_cast<std::uint8_t>(s)];
-}
-
-/// @brief Style named `name`, spelled as in the LAMMPS `units` command.
-/// @throws std::invalid_argument on an unknown name.
-[[nodiscard]] inline Style parse_style(std::string_view name) {
-    for (int i = 0; i < kStyleCount; ++i)
-        if (name == kStyleNames[i])
-            return static_cast<Style>(i);
-    throw std::invalid_argument(
-        "units: unknown LAMMPS style '" + std::string(name)
-        + "' (lj, real, metal, si, cgs, electron, micro, nano)");
-}
-
-/// @brief One LAMMPS `units` style, in that style's own factors.
+/// @brief de Broglie thermal wavelength in a LAMMPS `units` style.
 ///
-/// Field names and values are LAMMPS `Force` members after
-/// `Update::set_units`. `e_mass`, `hhmrr2e` and `mvh2r` are 0 where LAMMPS
-/// leaves them "not yet set".
-struct UnitSystem {
-    Style style = Style::lj;
-    double boltz = 1.0;       ///< Boltzmann constant [energy/temperature].
-    double hplanck = 1.0;     ///< Planck constant [energy·time].
-    double mvv2e = 1.0;       ///< mass·velocity² → energy.
-    double ftm2v = 1.0;       ///< force/mass·time → velocity.
-    double mv2d = 1.0;        ///< mass/volume → density.
-    double nktv2p = 1.0;      ///< N·k·T/V → pressure.
-    double qqr2e = 1.0;       ///< q·q/r → energy.
-    double qe2f = 1.0;        ///< q·E-field → force.
-    double vxmu2f = 1.0;      ///< velocity × dipole → force (magnetic).
-    double xxt2kmu = 1.0;     ///< length²/time → kinematic viscosity·μ.
-    double e_mass = 0.0;      ///< Electron mass [mass].
-    double hhmrr2e = 0.0;     ///< ħ²/(m·r²) → energy.
-    double mvh2r = 0.0;       ///< m·v/ħ → 1/length.
-    double angstrom = 1.0;    ///< 1 Å in the style's length.
-    double femtosecond = 1.0; ///< 1 fs in the style's time.
-    double qelectron = 1.0;   ///< Elementary charge in the style's charge.
-    double dielectric = 1.0;  ///< LAMMPS `dielectric` (default 1).
-    double dt = 0.005;        ///< Default `timestep` [style time].
-    double skin = 0.3;        ///< Default `neighbor` skin [style length].
-
-    /// @brief LAMMPS name of this style.
-    [[nodiscard]] constexpr const char* name() const {
-        return style_name(style);
-    }
-
-    /// @brief LAMMPS `qqrd2e = qqr2e / dielectric` (`Force::init`).
-    [[nodiscard]] constexpr double qqrd2e() const { return qqr2e / dielectric; }
-
-    /// @brief LAMMPS `KSpace::two_charge`: force between two unit charges one
-    ///        Å apart, in the style's force unit.
-    [[nodiscard]] constexpr double two_charge_force() const {
-        return qqr2e * qelectron * qelectron / (angstrom * angstrom);
-    }
-
-    [[nodiscard]] static constexpr UnitSystem lj() { return UnitSystem{}; }
-};
-
-/// @brief LAMMPS `Update::set_units(style)`.
-[[nodiscard]] constexpr UnitSystem from_style(Style s) {
-    UnitSystem u;
-    u.style = s;
-    switch (s) {
-    case Style::lj:
-        break;
-    case Style::real:
-        u.boltz = 0.0019872067;
-        u.hplanck = 95.306976368;
-        u.mvv2e = 48.88821291 * 48.88821291;
-        u.ftm2v = 1.0 / 48.88821291 / 48.88821291;
-        u.mv2d = 1.0 / 0.602214129;
-        u.nktv2p = 68568.415;
-        u.qqr2e = 332.06371;
-        u.qe2f = 23.060549;
-        u.vxmu2f = 1.4393264316e4;
-        u.xxt2kmu = 0.1;
-        u.e_mass = 1.0 / 1836.1527556560675;
-        u.hhmrr2e = 0.0957018663603261;
-        u.mvh2r = 1.5339009481951;
-        u.angstrom = 1.0;
-        u.femtosecond = 1.0;
-        u.qelectron = 1.0;
-        u.dt = 1.0;
-        u.skin = 2.0;
-        break;
-    case Style::metal:
-        u.boltz = 8.617343e-5;
-        u.hplanck = 4.135667403e-3;
-        u.mvv2e = 1.0364269e-4;
-        u.ftm2v = 1.0 / 1.0364269e-4;
-        u.mv2d = 1.0 / 0.602214129;
-        u.nktv2p = 1.6021765e6;
-        u.qqr2e = 14.399645;
-        u.qe2f = 1.0;
-        u.vxmu2f = 0.6241509647;
-        u.xxt2kmu = 1.0e-4;
-        u.angstrom = 1.0;
-        u.femtosecond = 1.0e-3;
-        u.qelectron = 1.0;
-        u.dt = 0.001;
-        u.skin = 2.0;
-        break;
-    case Style::si:
-        u.boltz = 1.3806504e-23;
-        u.hplanck = 6.62606896e-34;
-        u.qqr2e = 8.9876e9;
-        u.angstrom = 1.0e-10;
-        u.femtosecond = 1.0e-15;
-        u.qelectron = 1.6021765e-19;
-        u.dt = 1.0e-8;
-        u.skin = 0.001;
-        break;
-    case Style::cgs:
-        u.boltz = 1.3806504e-16;
-        u.hplanck = 6.62606896e-27;
-        u.qqr2e = 1.0;
-        u.angstrom = 1.0e-8;
-        u.femtosecond = 1.0e-15;
-        u.qelectron = 4.8032044e-10;
-        u.dt = 1.0e-8;
-        u.skin = 0.1;
-        break;
-    case Style::electron:
-        u.boltz = 3.16681534e-6;
-        u.hplanck = 0.1519829846;
-        u.mvv2e = 1.06657236;
-        u.ftm2v = 0.937582899;
-        u.mv2d = 1.0;
-        u.nktv2p = 2.94210108e13;
-        u.qqr2e = 1.0;
-        u.qe2f = 1.94469051e-10;
-        u.vxmu2f = 3.39893149e1;
-        u.xxt2kmu = 3.13796367e-2;
-        u.angstrom = 1.88972612;
-        u.femtosecond = 1.0;
-        u.qelectron = 1.0;
-        u.dt = 0.001;
-        u.skin = 2.0;
-        break;
-    case Style::micro:
-        u.boltz = 1.3806504e-8;
-        u.hplanck = 6.62606896e-13;
-        u.qqr2e = 8.987556e6;
-        u.angstrom = 1.0e-4;
-        u.femtosecond = 1.0e-9;
-        u.qelectron = 1.6021765e-7;
-        u.dt = 2.0;
-        u.skin = 0.1;
-        break;
-    case Style::nano:
-        u.boltz = 0.013806504;
-        u.hplanck = 6.62606896e-4;
-        u.qqr2e = 230.7078669;
-        u.angstrom = 1.0e-1;
-        u.femtosecond = 1.0e-6;
-        u.qelectron = 1.0;
-        u.dt = 0.00045;
-        u.skin = 0.1;
-        break;
-    }
-    return u;
+/// `Λ = hplanck / sqrt(2 π m boltz T mvv2e)` (LAMMPS `fix gcmc`), with mass,
+/// temperature and the result in the style's own units.
+/// @param mass Particle mass in the style's mass unit.
+/// @param temperature Temperature in the style's temperature unit.
+/// @param u The run's unit system.
+/// @return Λ in the style's length unit.
+[[nodiscard]] inline double lambda_thermal(double mass, double temperature,
+                                           const UnitSystem& u) {
+    return u.planck_constant()
+           / std::sqrt(2.0 * pi * mass * u.thermal_energy(temperature)
+                       * u.kinetic_energy.scale());
 }
-
-/// @brief LAMMPS `Update::set_units` for a style spelled by name.
-/// @throws std::invalid_argument on an unknown name.
-[[nodiscard]] inline UnitSystem from_style(std::string_view name) {
-    return from_style(parse_style(name));
-}
-
-static_assert(UnitSystem::lj().two_charge_force() == 1.0);
-static_assert(UnitSystem::lj().qqrd2e() == 1.0);
-static_assert(from_style(Style::real).qqr2e == 332.06371);
 
 } // namespace ATV::units
+
+#undef ATV_UNIT_SYSTEM_CONSTEXPR

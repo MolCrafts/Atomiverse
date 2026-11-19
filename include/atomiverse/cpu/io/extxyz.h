@@ -11,6 +11,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include "atomiverse/cpu/frame/frame.h"
 
@@ -38,6 +39,10 @@ namespace cpu {
 ///          `rust::Error`, and this function rethrows it as a
 ///          `std::runtime_error` naming the path.
 Frame load_extxyz(const std::string& path);
+
+/// Explicit source-unit declaration for files without unit metadata. A
+/// conflicting declaration in the file is rejected; numbers are unchanged.
+Frame load_extxyz(const std::string& path, std::string_view source_profile);
 
 } // namespace cpu
 } // namespace ATV

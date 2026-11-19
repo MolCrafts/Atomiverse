@@ -30,7 +30,7 @@ Run — installed wheel (pure-Python phase 1, then the native phase 2)::
     python -m atomiverse install
     python md_lj_argon.py
 
-Units: the classical engine's LAMMPS lj row (boltz = mvv2e = ftm2v = 1).
+Units: metal (eV, Angstrom, ps, amu, elementary charge, K).
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ import molpy
 import numpy as np
 
 import atomiverse as av
+from atomiverse import units
 
 # ── Lennard-Jones argon, the parameters of examples/cpp/08_md_lj.cpp ──
 _EPS: float = 0.0104  # well depth [eV]
@@ -63,15 +64,15 @@ _CUTOFF: float = 2.0 * _SIGMA  # [Å]
 _SKIN: float = 0.5  # [Å]
 
 # ── Thermostatted run ──
-_DT: float = 1.0  # timestep [fs]
+_DT: float = 0.001  # timestep [ps]
 _TEMPERATURE: float = 94.4  # target temperature [K]
-_DAMP: float = 100.0  # Langevin damping time [fs]
+_DAMP: float = 0.1  # Langevin damping time [ps]
 _SEED: int = 42
 _N_STEPS: int = 200  # 0.2 ps
 _THERMO_EVERY: int = 100  # LAMMPS-style print cadence
 
-#: Temperature report uses the run's boltz (lj row, 1).
-_KB_EV_PER_K: float = 1.0
+#: Resolve physical constants from the same run profile as the driver.
+_KB_EV_PER_K: float = units.from_style("metal").boltzmann_constant
 
 #: Minimum motion a 0.2 ps run at 94 K must produce [Å]. Argon's thermal
 #: speed there is ~2.4 Å/ps, so this leaves two orders of magnitude of
@@ -98,6 +99,7 @@ def build_argon_frame() -> "molpy.Frame":
     atoms.insert("atomic_number", np.full(n_atoms, _Z_AR, dtype=np.uint32))
 
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_BOX)
     return frame
@@ -121,10 +123,10 @@ def main() -> int:
     frame = build_argon_frame()
     start = positions(frame)
     n_atoms = start.shape[0]
-    print(f"=== NVT Lennard-Jones argon: {n_atoms} atoms, {_N_STEPS} × {_DT} fs ===")
+    print(f"=== NVT Lennard-Jones argon: {n_atoms} atoms, {_N_STEPS} × {_DT} ps ===")
 
     # Categorical setters, same vocabulary as cpu::md::MD in C++.
-    sim = av.MD()
+    sim = av.MD(units="metal")
     sim.set_integrator(av.VelocityVerlet(_DT))
     sim.set_observer(av.InitVelocity(_TEMPERATURE, _SEED))
     sim.set_thermostat(av.Langevin(_TEMPERATURE, _TEMPERATURE, _DAMP, _DT, _SEED))

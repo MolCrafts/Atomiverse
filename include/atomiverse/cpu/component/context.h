@@ -257,6 +257,10 @@ struct LoopServices {
 /// publishes itself here in `init()` so a node reached through a `LaunchContext` can ask
 /// the Runtime to execute a Plan. @see cpu::DriverNode
 struct ExecServices {
+    /// Public run convention inherited by children while a fixed-convention
+    /// solver temporarily prepares Context::units for its numeric arrays.
+    /// Borrowed only for the synchronous unit-boundary scope.
+    const units::UnitSystem* inherited_units = nullptr;
     /// @brief The Backend running this node tree. Null outside a run.
     Runtime* runtime = nullptr;
     /// Physical evaluation transaction; nested solves borrow this ledger.

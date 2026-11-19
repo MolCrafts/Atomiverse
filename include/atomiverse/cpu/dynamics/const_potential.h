@@ -81,6 +81,8 @@ class ConstPotentialBO : public cpu::Component {
     double neutrality_residual() const { return neutrality_residual_; }
 
   private:
+    units::Conversion potential_units_;
+    units::Conversion field_units_;
     double qqrd2e_ = 1.0; ///< The run's qqrd2e, cached at build().
     void rebuild_A_(const Frame& frame);
     void solve_(Frame& frame);

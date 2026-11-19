@@ -216,6 +216,7 @@ def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molpy.Frame":
         coords[i, 1] = ((i // side) % side + 0.5) * spacing
         coords[i, 2] = (i // (side * side) + 0.5) * spacing
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     atoms.insert("x", np.ascontiguousarray(coords[:, 0]))
     atoms.insert("y", np.ascontiguousarray(coords[:, 1]))

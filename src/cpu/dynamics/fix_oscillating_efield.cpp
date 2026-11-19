@@ -12,8 +12,8 @@ namespace md {
 
 void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
     if (!(period > 0.0) || !(dt > 0.0)) {
-        throw std::runtime_error(
-            "FixOscillatingEfield: period and dt must be > 0 [fs]");
+        throw std::runtime_error("FixOscillatingEfield: period and dt must be "
+                                 "> 0 in run time units");
     }
 
     auto& f = ctx.frame;
@@ -25,6 +25,11 @@ void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
     last_Ex_ = ex;
     last_Ey_ = ey;
     last_Ez_ = ez;
+
+    const double oscillation = std::cos(omega_t(ctx.step));
+    const double force_ex = field_units_(Ex0) * oscillation;
+    const double force_ey = field_units_(Ey0) * oscillation;
+    const double force_ez = field_units_(Ez0) * oscillation;
 
     // Unwrapped energy needs orthorhombic image · L (LAMMPS domain->unmap).
     if (!f.box.is_orthorhombic()) {
@@ -51,9 +56,9 @@ void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
 #pragma omp parallel for reduction(+ : u) schedule(static)
     for (int i = 0; i < n; ++i) {
         const double qi = static_cast<double>(q[i]);
-        const double fxi = qi * ex;
-        const double fyi = qi * ey;
-        const double fzi = qi * ez;
+        const double fxi = qi * force_ex;
+        const double fyi = qi * force_ey;
+        const double fzi = qi * force_ez;
         if (want_force) {
             fx[i] += fxi;
             fy[i] += fyi;

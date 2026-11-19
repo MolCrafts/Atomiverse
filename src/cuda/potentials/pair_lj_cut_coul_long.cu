@@ -376,8 +376,8 @@ void PairLJCutCoulLong::build(const BuildContext& ctx) {
     // Ordinary tile force excludes every exception. The sparse pass restores
     // the scaled LJ / r^-4 and the real-space Ewald exclusion correction
     // into the partial slots after the tiles.
-    const potentials::CoulKernel coul{ctx.runtime.units.qqrd2e(), alpha_,
-                                      cut_coul_ * cut_coul_};
+    const potentials::CoulKernel coul{ctx.runtime.units.coulomb_constant(),
+                                      alpha_, cut_coul_ * cut_coul_};
     const tile::Coulomb coulomb{coul, f.atoms.charge,
                                 /*masked=*/s.typed && cut_coul_ < cutoff_};
     if (s.typed)
@@ -440,9 +440,10 @@ void PairLJCutCoulLong::compute(const LaunchContext& ctx) {
             exceptions<E, V><<<s.exception_blocks, kDefaultBlock, 0, stream>>>(
                 s.pairs, s.count, f.atoms.x, f.atoms.y, f.atoms.z,
                 f.atoms.charge, s.table, ctx.runtime.host_box, force_t(alpha_),
-                force_t(ctx.runtime.units.qqrd2e()), coul_cut2, f.atoms.fx,
-                f.atoms.fy, f.atoms.fz, f.force_fault, engine.partial(),
-                engine.partial_stride(), engine.extra_offset());
+                force_t(ctx.runtime.units.coulomb_constant()), coul_cut2,
+                f.atoms.fx, f.atoms.fy, f.atoms.fz, f.force_fault,
+                engine.partial(), engine.partial_stride(),
+                engine.extra_offset());
         engine.template reduce<E, V>(
             ctx, energy_term(f.scalars, EnergyKind::Pair, E),
             V ? f.scalars->stress : nullptr);

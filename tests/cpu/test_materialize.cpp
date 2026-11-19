@@ -51,6 +51,11 @@ namespace {
 // angle, one dihedral, and a cubic box.
 ::rust::Box<molrs::FrameRef> make_full_frame() {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta{};
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
 
     const std::vector<double> x = {0.0, 1.5, 3.0};
     const std::vector<double> y = {0.1, 1.6, 3.1};
@@ -184,6 +189,11 @@ namespace {
 // topology, no tag/image columns.
 ::rust::Box<molrs::FrameRef> make_minimal_frame() {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta{};
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
     const std::vector<double> x = {0.0, 1.0};
     const std::vector<std::int32_t> type = {1, 1};
     molrs::frame_set_column_f64(
@@ -332,6 +342,11 @@ TEST(Materialize, RoundTrip) {
 
 TEST(Materialize, MissingPositionsThrows) {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta{};
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
     // type present, x/y/z absent.
     const std::vector<std::int32_t> type = {1, 2};
     const std::vector<std::uint64_t> z_num(type.begin(), type.end());
@@ -353,6 +368,11 @@ namespace {
 /// @brief A molpy frame with three atoms' positions and nothing else.
 ::rust::Box<molrs::FrameRef> positions_only_frame() {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta{};
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
     const std::vector<double> x = {0.0, 1.0, 2.0};
     molrs::frame_set_column_f64(
         *fr, "atoms", "x", ::rust::Slice<const double>(x.data(), x.size()));
@@ -433,6 +453,11 @@ TEST(Materialize, AtomicNumberAbove118Throws) {
 
 TEST(Materialize, MissingOptionalFieldsDefaultToZero) {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta{};
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
     // Only required fields: x, y, z, type. No velocities, no charge.
     const std::vector<double> x = {0.0, 1.0, 2.0};
     const std::vector<std::int32_t> type = {1, 1, 1};

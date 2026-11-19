@@ -30,9 +30,9 @@ void bind_units(Class& cls, DriverOf driver_of, Guard guard) {
            nanobind::arg("style"),
            "LAMMPS `units <style>` of this run: lj, real, metal, si, cgs, "
            "electron, micro or nano (default lj). Every parameter, the "
-           "timestep, temperatures, pressures and the frame are taken in "
-           "that style and every result is reported in it; nothing is "
-           "converted. Fixed once the run has bound its system.")
+           "timestep, temperatures and pressures use that style. Annotated "
+           "Frames are converted on import and results restored to their "
+           "original units. Fixed once the run has bound its system.")
         .def_prop_ro(
             "units_style",
             [driver_of](Handle& self) {

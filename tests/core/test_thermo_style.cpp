@@ -47,9 +47,9 @@ TEST(ThermoStyle, PressureIsVirialPlusKineticOverVolumeTimesNktv2p) {
         s.volume = 1000.0;
         s.virial[0] = 1.0; // energy
         s.kinetic[0] = 2.0;
-        s.boltz = u.boltz;
-        s.nktv2p = u.nktv2p;
-        const double pxx = 3.0 / 1000.0 * u.nktv2p;
+        s.boltz = u.boltzmann_constant();
+        s.nktv2p = u.pressure.scale();
+        const double pxx = 3.0 / 1000.0 * u.pressure.scale();
         const std::string line = style.line(s);
         double press = 0, xx = 0, vol = 0;
         ASSERT_EQ(std::sscanf(line.c_str(), "%lf %lf %lf", &press, &xx, &vol),
@@ -64,8 +64,8 @@ TEST(ThermoStyle, TemperatureUsesDegreesOfFreedom) {
     const ThermoStyle style({"temp"});
     ThermoSample s;
     const auto real = units::from_style("real");
-    s.ke = 0.5 * 3.0 * real.boltz * 300.0;
-    s.boltz = real.boltz;
+    s.ke = 0.5 * 3.0 * real.boltzmann_constant() * 300.0;
+    s.boltz = real.boltzmann_constant();
     s.ndof = 3;
     double temp = 0;
     ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf", &temp), 1);

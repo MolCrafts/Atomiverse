@@ -16,7 +16,9 @@ namespace ATV {
 namespace cpu {
 
 /// @brief kcal/mol → eV.
-inline constexpr double kKcalPerMolInEv = 1.0 / 23.060547830619026;
+inline constexpr double kKcalPerMolInEv = units::convert<
+    units::PhysicalUnits::from_style(units::Style::real).energy(),
+    units::PhysicalUnits::from_style(units::Style::metal).energy()>(1.);
 
 /// @brief Convert energy from kcal/mol to eV.
 inline double kcal_per_mol_to_ev(double e_kcal) {

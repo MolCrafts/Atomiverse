@@ -61,13 +61,14 @@ struct CaptureView {
     long long step = 0;                   ///< [completed steps]
     CaptureKind kind = CaptureKind::step; ///< Why it was captured.
     int n_atoms = 0;
-    const double* cell = nullptr; ///< 3×3 row-major [Å].
+    const double* cell = nullptr; ///< 3×3 row-major [run length].
     const SystemScalars* scalars = nullptr;
-    const double *x = nullptr, *y = nullptr, *z = nullptr;    ///< [Å]
-    const double *vx = nullptr, *vy = nullptr, *vz = nullptr; ///< [Å/fs]
-    const double *fx = nullptr, *fy = nullptr, *fz = nullptr; ///< [eV/Å]
-    const double* charge = nullptr;                           ///< [e]
-    const double* mass = nullptr;                             ///< [amu]
+    const double *x = nullptr, *y = nullptr, *z = nullptr; ///< [run length]
+    const double *vx = nullptr, *vy = nullptr,
+                 *vz = nullptr; ///< [run length/time]
+    const double *fx = nullptr, *fy = nullptr, *fz = nullptr; ///< [run force]
+    const double* charge = nullptr;                           ///< [run charge]
+    const double* mass = nullptr;                             ///< [run mass]
     const std::int64_t* tag = nullptr;                        ///< Global tags.
     const ImageInt* image = nullptr; ///< Row-major 3 × n.
     /// Static identity, copied once when the buffer was allocated (null when

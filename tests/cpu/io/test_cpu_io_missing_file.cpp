@@ -37,7 +37,7 @@ TEST(CpuIoMissingFile, LoadExtxyzMissingPathThrows) {
     ASSERT_FALSE(std::filesystem::exists(path));
 
     try {
-        ATV::cpu::load_extxyz(path);
+        ATV::cpu::load_extxyz(path, "electronic");
         FAIL() << "load_extxyz did not throw on a nonexistent path";
     } catch (const std::runtime_error& e) {
         const std::string msg = e.what();
@@ -56,7 +56,7 @@ TEST(CpuIoMissingFile, LoadExtxyzDirectoryThrows) {
 TEST(CpuIoMissingFile, LoadLammpsDataMissingPathThrows) {
     const std::string path = missing_path("lammps.data");
     ASSERT_FALSE(std::filesystem::exists(path));
-    EXPECT_THROW(ATV::cpu::load_lammps_data(path), std::runtime_error);
+    EXPECT_THROW(ATV::cpu::load_lammps_data(path, "real"), std::runtime_error);
 }
 
 // ── Readable-but-corrupt input ─────────────────────────────────────────────

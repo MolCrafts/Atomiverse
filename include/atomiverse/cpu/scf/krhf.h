@@ -34,6 +34,7 @@ namespace scf {
 /// A shell with l > 0 throws (`krhf_ao_lgt0`).
 class KRHF : public cpu::Driver<ATV::scf::Phase>, public HF {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Basis set. Fixed at construction.
     const BasisSet basis;
     /// @brief Monkhorst–Pack divisions along a, b, c. Each entry ≥ 1.

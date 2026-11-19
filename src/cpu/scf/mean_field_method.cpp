@@ -6,6 +6,7 @@
 ///        resolve_occupation live in rhf/uhf/rks/uks.cpp.
 
 #include "atomiverse/cpu/scf/methods.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -359,6 +360,9 @@ void MeanFieldMethod<D>::ensure_driver_built_() {
 
 template <typename D>
 void MeanFieldMethod<D>::build_on(cpu::Runtime& rt) {
+    this->adopt_parent_units_(rt.context().exec.inherited_units
+                                  ? *rt.context().exec.inherited_units
+                                  : rt.context().units);
     // Stage wiring needs geometry (internal::IntegralWorkspace dimensions), so
     // each nested solve registers the stage plan on this Runtime itself
     // (drive_scf_core_) and runs every iteration on it — no private backend.
@@ -534,6 +538,16 @@ void MeanFieldMethod<D>::engage_xl_bomd_() {
 template <typename D>
 void MeanFieldMethod<D>::drive_scf_(Frame& frame, const SCFInitialGuess* guess,
                                     const DriveOpts& opts) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (opts.nested && host_runtime_)
+                binding.emplace(*host_runtime_, native);
+            drive_scf_(native, guess, opts);
+        });
+        return;
+    }
+
     if (xc_type_ == xc::XCType::Custom && hybrid_alpha_override > 0)
         throw std::invalid_argument(
             "Custom XC: exact-exchange overrides are unsupported");

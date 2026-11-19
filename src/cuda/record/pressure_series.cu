@@ -31,7 +31,7 @@ PressureSeries::PressureSeries(std::string path, int every, double epsilon_ev,
 }
 
 void PressureSeries::on_build(const BuildContext& ctx) {
-    mvv2e_ = ctx.runtime.units.mvv2e;
+    mvv2e_ = ctx.runtime.units.kinetic_energy.scale();
     if (ctx.frame.n_local() < 1 || ctx.frame.box == nullptr
         || ctx.frame.scalars == nullptr)
         throw std::invalid_argument(
