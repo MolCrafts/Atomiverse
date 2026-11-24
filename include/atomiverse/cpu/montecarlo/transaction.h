@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "atomiverse/core/precision.h"
@@ -59,6 +60,18 @@ class Transaction {
     /// @brief The trial verb recorded by the Mover for this proposal.
     Verb verb = Verb::None;
 
+    /// Explicitly declare a symmetric proposal by setting zero, or supply
+    /// log(q_reverse/q_forward) plus the proposal's measure correction.
+    /// For Box/Insert/Delete, supply the correction relative to the reference
+    /// move already assumed by the ensemble policy (uniform V, or equal
+    /// insert/delete with uniform position/victim). Apply each factor once.
+    /// Negative infinity means the reverse proposal is impossible.
+    std::optional<double> log_proposal_ratio;
+    std::optional<double> exchange_mass; ///< Mass of the exchanged species.
+    bool connectivity_changed = false; ///< Trial changed the bond graph.
+
+    double require_log_proposal_ratio() const;
+
     /// @brief Construct an empty changeset (the driver owns it; a Mover
     ///        fills it each `propose` phase).
     Transaction() = default;
@@ -68,7 +81,7 @@ class Transaction {
     ///        restore the population count for any verb.
     /// @param v The trial verb.
     /// @param f The main frame, BEFORE any mutation.
-    void begin(Verb v, const cpu::Frame& f);
+    void begin(Verb v, const cpu::Frame& f, int displacement_rows = 1);
 
     /// @brief Record row `row`'s current (pre-mutation) content into the
     ///        patch. Call BEFORE mutating that row.

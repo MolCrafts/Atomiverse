@@ -11,7 +11,7 @@
 /// and every later trial is rejected against an overlap it cannot see. The
 /// chain freezes with no error and no NaN.
 ///
-/// So `McBase::install_defaults()` calls `forbid_row_reordering()` on the
+/// So `MC::install_defaults()` calls `forbid_row_reordering()` on the
 /// neighbour provider it was handed. These tests pin both halves: the
 /// provider honours the request, and the MC preset makes it.
 

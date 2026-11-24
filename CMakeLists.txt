@@ -401,7 +401,11 @@ if(NOT ATV_DOCS_ONLY)
 
     if(ATV_BUILD_MC)
         list(APPEND ATOMIVERSE_SRCS
+            src/cpu/montecarlo/mc.cpp
+            src/cpu/montecarlo/kmc.cpp
+            src/cpu/montecarlo/kinetic.cpp
             src/cpu/montecarlo/translate_move.cpp
+            src/cpu/montecarlo/polymer_moves.cpp
             src/cpu/montecarlo/transaction.cpp
             src/cpu/montecarlo/volume_move.cpp
             src/cpu/montecarlo/insert_delete_move.cpp

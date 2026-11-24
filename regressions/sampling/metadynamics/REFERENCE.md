@@ -366,7 +366,7 @@ iterations per sweep (≤ 4, measured 3.000) — which is machine-independent.
    broke, the RHF + umbrella gradient (~1 eV/Å at the sampled geometries) would
    land there and the case fails on `|f|_max`.
 2. **Node-aware MC validation** (esmm-contract-02): the only energy source that
-   scores a trial here is a nested **`DriverNode`**, so `McBase::validate_components`
+   scores a trial here is a nested **`DriverNode`**, so `MC::validate_components`
    must cross-cast it to the `HF` kind. Before that fix `mc.build()` threw.
 3. **Per-sweep zeroing** (esmm-contract-01): 125 000 accumulating evaluations
    onto a clean slate. Without the `ZeroForces`/`ZeroEnergy` pair at the head of

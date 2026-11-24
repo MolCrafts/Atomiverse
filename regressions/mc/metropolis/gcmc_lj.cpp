@@ -19,7 +19,7 @@
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
-#include "atomiverse/cpu/montecarlo/gcmc.h"
+#include "atomiverse/cpu/montecarlo/mc.h"
 #include "atomiverse/cpu/montecarlo/insert_delete_move.h"
 #include "atomiverse/cpu/montecarlo/move_selector.h"
 #include "atomiverse/cpu/montecarlo/translate_move.h"
@@ -106,10 +106,12 @@ int run() {
             frame.span(ATV::kAtom_z)[i] = (i / (side * side) + 0.5) * spacing;
             frame.span(ATV::kAtom_mass)[i] = mass;
             frame.span(ATV::kAtom_type)[i] = 1;
+            frame.span(ATV::kAtom_atomic_number)[i] = 18;
         }
         frame.box = ATV::cpu::Box::cubic(box_len);
 
-        cpu::mc::Gcmc mc{temperature, mu, mass, /*seed=*/97u + p};
+        cpu::mc::MC mc{/*seed=*/97u + p};
+        mc.set_gcmc(temperature, mu, mass);
         mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
         mc.set_neighbor(
             cpu::md::NeighborList<>{cutoff, /*skin=*/1.0, 1, 0, true});

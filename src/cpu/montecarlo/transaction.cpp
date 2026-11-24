@@ -5,13 +5,15 @@
 #include "atomiverse/cpu/montecarlo/transaction.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace ATV {
 namespace cpu {
 namespace mc {
 
-void Transaction::begin(Verb v, const cpu::Frame& f) {
+void Transaction::begin(Verb v, const cpu::Frame& f, int displacement_rows) {
     clear();
     verb = v;
     nlocal_before_ = f.nlocal();
@@ -24,7 +26,7 @@ void Transaction::begin(Verb v, const cpu::Frame& f) {
     if (v == Verb::Box)
         prepare_patch_(f, f.nlocal());
     else if (v == Verb::Displace)
-        prepare_patch_(f, 1);
+        prepare_patch_(f, displacement_rows);
     else if (v == Verb::Delete)
         prepare_patch_(f, 2);
 }
@@ -41,6 +43,8 @@ void Transaction::record_touch(const cpu::Frame& f, int row) {
 }
 
 void Transaction::record_box(const cpu::Frame& f) {
+    if (box_recorded_)
+        return;
     patch_.box = f.box;
     box_recorded_ = true;
 }
@@ -56,14 +60,27 @@ void Transaction::rollback(cpu::Frame& f) {
     // the trial's borders rewrote, so nothing beyond `nlocal` survives a
     // trial by itself).
     f.set_nlocal(nlocal_before_);
-    for (std::size_t k = 0; k < touched_.size(); ++k)
-        f.copy_row_from(patch_, touched_[k], static_cast<int>(k));
+    // Undo in reverse order so a row recorded twice recovers its first value.
+    for (std::size_t k = touched_.size(); k > 0; --k)
+        f.copy_row_from(patch_, touched_[k - 1], static_cast<int>(k - 1));
     if (box_recorded_)
         f.box = patch_.box;
 }
 
+double Transaction::require_log_proposal_ratio() const {
+    if (!log_proposal_ratio || std::isnan(*log_proposal_ratio)
+        || *log_proposal_ratio == std::numeric_limits<double>::infinity())
+        throw std::invalid_argument(
+            "MC proposal must declare a valid log proposal ratio (zero for the "
+            "reference move)");
+    return *log_proposal_ratio;
+}
+
 void Transaction::clear() {
     verb = Verb::None;
+    log_proposal_ratio.reset();
+    exchange_mass.reset();
+    connectivity_changed = false;
     touched_.clear();
     patch_.set_nlocal(0);
     nlocal_before_ = -1;

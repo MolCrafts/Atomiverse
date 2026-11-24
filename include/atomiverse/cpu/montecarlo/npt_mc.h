@@ -1,10 +1,10 @@
 /// @file cpu/montecarlo/npt_mc.h
-/// @brief cpu::mc::NptMetropolis + cpu::mc::NptMc — isothermal–isobaric
-///        Monte Carlo: the acceptance policy and the preset that installs it.
+/// @brief isothermal-isobaric Monte Carlo acceptance policy.
 #pragma once
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <stdexcept>
 
@@ -12,7 +12,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/outcome_policy.h"
-#include "atomiverse/cpu/montecarlo/mc_base.h"
 #include "atomiverse/cpu/montecarlo/transaction.h"
 
 namespace ATV {
@@ -31,18 +30,20 @@ namespace mc {
 class NptMetropolis : public OutcomePolicy {
   public:
     /// @brief Construct the NPT acceptance test.
-    /// @param temperature_K Ensemble temperature [temperature] (must be > 0).
+    /// @param temperature Ensemble temperature [temperature] (must be > 0).
     /// @param pressure External pressure in the run's pressure unit
     ///        (LAMMPS-standard sign: positive = compressive; the unit of the
     ///        MD barostats and of thermo `press`).
     /// @param rng The run's single RNG stream (shared with the Movers so one
     ///        seed reproduces one trajectory). Must outlive this policy.
-    /// @throws std::invalid_argument if `temperature_K <= 0`.
-    NptMetropolis(AccReal temperature_K, AccReal pressure, std::mt19937_64& rng)
-        : temperature_(temperature_K), pressure_(pressure), rng_(rng) {
-        if (!(temperature_K > AccReal(0)))
+    /// @throws std::invalid_argument if `temperature <= 0`.
+    NptMetropolis(AccReal temperature, AccReal pressure, std::mt19937_64& rng)
+        : temperature_(temperature), pressure_(pressure), rng_(rng) {
+        if (!std::isfinite(temperature) || temperature <= AccReal(0))
             throw std::invalid_argument(
-                "NptMetropolis: temperature must be > 0 K");
+                "NptMetropolis: temperature must be finite and positive");
+        if (!std::isfinite(pressure))
+            throw std::invalid_argument("NptMetropolis: pressure must be finite");
     }
 
     /// @brief Stable identifier, for diagnostics.
@@ -94,7 +95,9 @@ class NptMetropolis : public OutcomePolicy {
                 "(insert/delete need the muVT policy)");
         }
 
-        if (accept_(arg)) {
+        const double correction = txn->require_log_proposal_ratio();
+        if (correction != -std::numeric_limits<double>::infinity()
+            && accept_(arg - correction)) {
             e_cur_ = e_trial;
             v_cur_ = s.frame.box.volume();
             return Outcome::Commit;
@@ -117,46 +120,11 @@ class NptMetropolis : public OutcomePolicy {
         return u(rng_) < std::exp(-arg);
     }
 
-    AccReal temperature_;  ///< Ensemble temperature [K].
+    AccReal temperature_;  ///< Ensemble temperature in run units.
     AccReal pressure_;     ///< External pressure [style pressure].
     std::mt19937_64& rng_; ///< The run's RNG stream, shared with the Movers.
     AccReal e_cur_ = 0;    ///< Energy of the last accepted state [eV].
     double v_cur_ = 0;     ///< Volume of the last accepted state [Å³].
-};
-
-/// @brief Isothermal–isobaric Monte Carlo — a preset over the shared MC loop
-///        that attaches `NptMetropolis` in its constructor.
-///
-/// Pair it with a `MoveSelector` mixing `TranslateMove` and `VolumeMove`:
-/// @code{.cpp}
-///   cpu::mc::NptMc mc{300.0, /*P [style pressure]=*/1e-4, /*seed=*/7u};
-///   mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
-///   mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});
-///   mc.set_mover(cpu::mc::MoveSelector{}
-///                    .add(cpu::mc::TranslateMove{0.2}, 0.9)
-///                    .add(cpu::mc::VolumeMove{50.0}, 0.1));
-///   mc.build();
-///   mc.run(frame, 100000);
-/// @endcode
-class NptMc : public McBase {
-  public:
-    /// @brief Construct the NPT sampler.
-    /// @param temperature_K Ensemble temperature [K] (must be > 0).
-    /// @param pressure External pressure [style pressure].
-    /// @param seed Seed for the single reproducible RNG stream.
-    /// @throws std::invalid_argument if `temperature_K <= 0`.
-    NptMc(AccReal temperature_K, AccReal pressure, std::uint64_t seed)
-        : McBase(seed), policy_(this->set_outcome(
-                            NptMetropolis{temperature_K, pressure, rng_})) {}
-
-    /// @brief Energy [eV] of the current (last-accepted) configuration.
-    AccReal current_energy() const { return policy_.current_energy(); }
-
-    /// @brief Volume [Å³] of the current (last-accepted) configuration.
-    double current_volume() const { return policy_.current_volume(); }
-
-  private:
-    NptMetropolis& policy_; ///< The preset's own policy, for stat read-back.
 };
 
 } // namespace mc

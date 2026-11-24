@@ -40,7 +40,11 @@ struct PolicyHarness {
         return cpu::LoopState{iteration, frame, ctx, metrics};
     }
 
-    void stamp(Verb v) { txn.verb = v; }
+    void stamp(Verb v) {
+        txn.verb = v;
+        txn.log_proposal_ratio = 0.0;
+        txn.exchange_mass.reset();
+    }
 };
 
 } // namespace
@@ -114,6 +118,7 @@ TEST(GcmcMetropolis, InsertionPrefactorGovernsTheDecision) {
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
     h.stamp(Verb::Insert); // trial frame already holds N+1 = 4 atoms
+    h.txn.exchange_mass = 39.948;
     EXPECT_EQ(p.after_stages(h.state()), Outcome::Commit);
 }
 
@@ -125,8 +130,18 @@ TEST(GcmcMetropolis, HopelessInsertionIsRejected) {
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
     h.stamp(Verb::Insert);
+    h.txn.exchange_mass = 1.0;
     for (int k = 0; k < 100; ++k)
         EXPECT_EQ(p.after_stages(h.state()), Outcome::Rollback);
+}
+
+TEST(GcmcMetropolis, RejectsMismatchedReservoirMass) {
+    PolicyHarness h;
+    cpu::mc::GcmcMetropolis policy{120.0, 0.0, 39.948, h.rng};
+    policy.on_start(h.state());
+    h.stamp(Verb::Insert);
+    h.txn.exchange_mass = 1.0;
+    EXPECT_THROW(policy.after_stages(h.state()), std::invalid_argument);
 }
 
 TEST(GcmcMetropolis, DeletionPrefactorGovernsTheDecision) {
@@ -139,6 +154,7 @@ TEST(GcmcMetropolis, DeletionPrefactorGovernsTheDecision) {
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
     h.stamp(Verb::Delete);
+    h.txn.exchange_mass = 1.0;
     EXPECT_EQ(p.after_stages(h.state()), Outcome::Commit);
 }
 

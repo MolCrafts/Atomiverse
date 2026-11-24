@@ -1,5 +1,5 @@
 /// @file python/src/bindings/evaluator_setters.h
-/// @brief The eighteen `set_evaluator_*` methods shared by MD and Minimize.
+/// @brief Evaluator registration shared by MD, Minimize and MC.
 ///
 /// A force source is a force source: whatever drives molecular dynamics drives
 /// a geometry optimization, so both handles expose the SAME eighteen method
@@ -82,7 +82,12 @@ namespace nb = nanobind;
 /// @param cls        The bound handle class the methods are added to.
 /// @param pw_doc     Docstring for `set_evaluator_pw`, likewise. Unused on a
 ///                   build without `ATV_HAS_PW`.
-template <typename Handle>
+template <bool Direct>
+constexpr const char* evaluator_setter_name(const char* name) {
+    return Direct ? "set_evaluator" : name;
+}
+
+template <bool Direct = false, typename Handle>
 void bind_evaluator_setters(nb::class_<Handle>& cls,
                             [[maybe_unused]] const char* pw_doc) {
 #ifdef ATV_HAS_SEMIEMPIRICAL
@@ -136,7 +141,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
             nb::arg("comp"), nb::keep_alive<1, 2>());
 
     cls.def(
-        "set_evaluator_pair_lj_cut",
+        evaluator_setter_name<Direct>("set_evaluator_pair_lj_cut"),
         [](Handle& self, const ATV::cpu::task::PairLJCutParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::task::internal::make_pair_lj_cut(p));
@@ -147,7 +152,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "is >= the largest per-pair cutoff.");
 
     cls.def(
-        "set_evaluator_pair_lj_cut_coul_long",
+        evaluator_setter_name<Direct>("set_evaluator_pair_lj_cut_coul_long"),
         [](Handle& self, const ATV::cpu::task::PairLJCutCoulLongParams& p) {
             self.set_categorical(
                 "set_evaluator", p,
@@ -162,7 +167,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "[e] on the frame handed to run().");
 
     cls.def(
-        "set_evaluator_pair_coul_cut",
+        evaluator_setter_name<Direct>("set_evaluator_pair_coul_cut"),
         [](Handle& self, const ATV::cpu::task::PairCoulCutParams& p) {
             self.set_categorical(
                 "set_evaluator", p,
@@ -176,7 +181,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "run().");
 
     cls.def(
-        "set_evaluator_coul_long",
+        evaluator_setter_name<Direct>("set_evaluator_coul_long"),
         [](Handle& self, const ATV::cpu::task::CoulLongParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::CoulLong{p.alpha, p.cutoff});
@@ -189,7 +194,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "on the frame handed to run().");
 
     cls.def(
-        "set_evaluator_improper_cvff",
+        evaluator_setter_name<Direct>("set_evaluator_improper_cvff"),
         [](Handle& self, const ATV::cpu::task::ImproperCvffParams& p) {
             self.set_unmirrored_evaluator(ATV::cpu::ImproperCvff{p.K, p.d, p.n},
                                           "ImproperCvff", false);
@@ -200,7 +205,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "vectors. Not an MPI task-wire component.");
 
     cls.def(
-        "set_evaluator_kspace_ewald",
+        evaluator_setter_name<Direct>("set_evaluator_kspace_ewald"),
         [](Handle& self, const ATV::cpu::task::KSpaceEwaldParams& p) {
             self.set_unmirrored_evaluator(
                 ATV::cpu::KSpaceEwald{p.alpha, p.accuracy}, "KSpaceEwald",
@@ -213,7 +218,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 
 #ifdef ATV_HAS_KSPACE
     cls.def(
-        "set_evaluator_kspace_pme",
+        evaluator_setter_name<Direct>("set_evaluator_kspace_pme"),
         [](Handle& self, const ATV::cpu::task::KSpacePmeParams& p) {
             // Move-only (it owns FFTW plans): the prvalue goes straight into
             // the sink parameter, no named local to move from.
@@ -226,7 +231,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "requires exactly one real-space partner (CoulLong) at the SAME alpha "
         "[1/A]. Bound only on an extension built with ATV_BUILD_KSPACE=ON.");
     cls.def(
-        "set_evaluator_kspace_pppm",
+        evaluator_setter_name<Direct>("set_evaluator_kspace_pppm"),
         [](Handle& self, const ATV::cpu::task::KSpacePppmParams& p) {
             // Move-only (FFTW plans). Not a wire alternative: the handle
             // records the name and the charge requirement itself.
@@ -248,7 +253,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 
 #ifdef ATV_HAS_PW
     cls.def(
-        "set_evaluator_pw",
+        evaluator_setter_name<Direct>("set_evaluator_pw"),
         [](Handle& self, ATV::cpu::pw::PW& method) {
             self.set_local_evaluator(method, "PW");
         },
@@ -256,7 +261,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 #endif
 
     cls.def(
-        "set_evaluator_bond_harmonic",
+        evaluator_setter_name<Direct>("set_evaluator_bond_harmonic"),
         [](Handle& self, const ATV::cpu::task::BondHarmonicParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::BondHarmonic{p.K, p.r0});
@@ -266,7 +271,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "parameters are indexed by bond type.");
 
     cls.def(
-        "set_evaluator_angle_harmonic",
+        evaluator_setter_name<Direct>("set_evaluator_angle_harmonic"),
         [](Handle& self, const ATV::cpu::task::AngleHarmonicParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::AngleHarmonic{p.K, p.theta0});
@@ -276,7 +281,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "topology; parameters are indexed by angle type.");
 
     cls.def(
-        "set_evaluator_angle_cosine",
+        evaluator_setter_name<Direct>("set_evaluator_angle_cosine"),
         [](Handle& self, const ATV::cpu::task::AngleCosineParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::AngleCosine{p.K});
@@ -288,7 +293,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 
 #ifdef ATV_HAS_MD
     cls.def(
-        "set_evaluator_fix_efield",
+        evaluator_setter_name<Direct>("set_evaluator_fix_efield"),
         [](Handle& self, const ATV::cpu::task::FixEfieldParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::md::FixEfield{p.Ex, p.Ey, p.Ez});
@@ -302,7 +307,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
 #endif
 
     cls.def(
-        "set_evaluator_dihedral_multi_harmonic",
+        evaluator_setter_name<Direct>("set_evaluator_dihedral_multi_harmonic"),
         [](Handle& self, const ATV::cpu::task::DihedralMultiHarmonicParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::DihedralMultiHarmonic{p.Cn});
@@ -321,7 +326,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
     // Installing a NeighborList beside them changes nothing but the cost.
 
     cls.def(
-        "set_evaluator_pair_morse",
+        evaluator_setter_name<Direct>("set_evaluator_pair_morse"),
         [](Handle& self, const ATV::cpu::task::PairMorseParams& p) {
             self.set_categorical(
                 "set_evaluator", p,
@@ -338,7 +343,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "system.");
 
     cls.def(
-        "set_evaluator_pair_buck",
+        evaluator_setter_name<Direct>("set_evaluator_pair_buck"),
         [](Handle& self, const ATV::cpu::task::PairBuckParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::PairBuck{p.A, p.rho, p.C, p.cutoff});
@@ -353,7 +358,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "cures.");
 
     cls.def(
-        "set_evaluator_pair_born",
+        evaluator_setter_name<Direct>("set_evaluator_pair_born"),
         [](Handle& self, const ATV::cpu::task::PairBornParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::task::internal::make_pair_born(p));
@@ -378,7 +383,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "constructor.");
 
     cls.def(
-        "set_evaluator_pair_yukawa",
+        evaluator_setter_name<Direct>("set_evaluator_pair_yukawa"),
         [](Handle& self, const ATV::cpu::task::PairYukawaParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::PairYukawa{p.A, p.kappa, p.cutoff});
@@ -392,7 +397,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "charges use PairCoulCut, or CoulLong + KSpacePME.");
 
     cls.def(
-        "set_evaluator_pair_wca",
+        evaluator_setter_name<Direct>("set_evaluator_pair_wca"),
         [](Handle& self, const ATV::cpu::task::PairWcaParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::PairWCA{p.epsilon, p.sigma});
@@ -407,7 +412,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "small.");
 
     cls.def(
-        "set_evaluator_pair_dpd",
+        evaluator_setter_name<Direct>("set_evaluator_pair_dpd"),
         [](Handle& self, const ATV::cpu::task::PairDpdParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::PairDpd{p.a, p.gamma, p.temperature,
@@ -441,7 +446,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "both thermostat terms off and leaves the conservative half alone.");
 
     cls.def(
-        "set_evaluator_bond_fene",
+        evaluator_setter_name<Direct>("set_evaluator_bond_fene"),
         [](Handle& self, const ATV::cpu::task::BondFeneParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::BondFene{p.K, p.R0});
@@ -456,7 +461,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "what keeps chains from crossing through each other.");
 
     cls.def(
-        "set_evaluator_dihedral_charmm",
+        evaluator_setter_name<Direct>("set_evaluator_dihedral_charmm"),
         [](Handle& self, const ATV::cpu::task::DihedralCharmmParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::DihedralCharmm{p.K, p.n, p.delta});
@@ -473,7 +478,7 @@ void bind_evaluator_setters(nb::class_<Handle>& cls,
         "the torsion always contributes to the virial.");
 
     cls.def(
-        "set_evaluator_improper_harmonic",
+        evaluator_setter_name<Direct>("set_evaluator_improper_harmonic"),
         [](Handle& self, const ATV::cpu::task::ImproperHarmonicParams& p) {
             self.set_categorical("set_evaluator", p,
                                  ATV::cpu::ImproperHarmonic{p.K, p.chi0});

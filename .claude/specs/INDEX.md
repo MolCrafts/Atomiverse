@@ -4,6 +4,9 @@ Live specs under `.claude/specs/`. A spec is deleted when done; history is the
 git log. What is implemented where: `docs/roadmap/`. Unscheduled debt and open
 tickets: `.claude/notes/notes.md`.
 
+- [sampling-polymer-mc-kmc.md](sampling-polymer-mc-kmc.md) — polymer MC
+  acceptance, molecular moves, MC-to-MD workflow and a validated ion-hopping
+  kMC pilot.
 - [test-consolidation.md](test-consolidation.md) — one executable for unit
   tests, one for regressions, one regression case per method (census gates,
   CPU/CUDA folding, names, REFERENCE.md template, roadmap links).

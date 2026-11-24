@@ -3,6 +3,7 @@
 
 #include "atomiverse/cpu/montecarlo/insert_delete_move.h"
 
+#include <cmath>
 #include <random>
 #include <stdexcept>
 
@@ -14,15 +15,16 @@ namespace ATV {
 namespace cpu {
 namespace mc {
 
-InsertDeleteMove::InsertDeleteMove(int type, int atomic_number, double mass_amu)
-    : type_(type), atomic_number_(atomic_number), mass_amu_(mass_amu) {
+InsertDeleteMove::InsertDeleteMove(int type, int atomic_number, double mass)
+    : type_(type), atomic_number_(atomic_number), mass_(mass) {
     if (type <= 0)
         throw std::invalid_argument("InsertDeleteMove: type must be > 0");
     if (atomic_number < 0 || atomic_number > 118)
         throw std::invalid_argument(
             "InsertDeleteMove: atomic_number must be in 0..118");
-    if (!(mass_amu > 0.0))
-        throw std::invalid_argument("InsertDeleteMove: mass must be > 0 amu");
+    if (!std::isfinite(mass) || mass <= 0.0)
+        throw std::invalid_argument(
+            "InsertDeleteMove: mass must be finite and positive");
 }
 
 void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
@@ -37,11 +39,43 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
             "published — InsertDeleteMove must run under an MC preset");
     }
 
+    const auto& frame = ctx.frame;
+    const int count = frame.nlocal();
+    if (frame.has_bonded())
+        throw std::invalid_argument(
+            "InsertDeleteMove requires an unbonded single-species Frame");
+    const double volume = frame.box.volume();
+    if (!std::isfinite(volume) || volume <= 0.0)
+        throw std::invalid_argument(
+            "InsertDeleteMove requires a positive finite box volume");
+
+    const bool has_type = frame.has("atoms", kAtom_type.key);
+    const bool has_element = frame.has("atoms", kAtom_atomic_number.key);
+    if (!has_type && !has_element)
+        throw std::invalid_argument(
+            "InsertDeleteMove requires atom type or element identity");
+    const auto masses = frame.span(kAtom_mass);
+    const auto charges = frame.span(kAtom_charge);
+    const auto* types = has_type ? frame.span(kAtom_type).data() : nullptr;
+    const auto* elements =
+        has_element ? frame.span(kAtom_atomic_number).data() : nullptr;
+    for (int i = 0; i < count; ++i) {
+        if ((types && types[i] != type_)
+            || (elements && elements[i] != atomic_number_)
+            || masses[i] != static_cast<StorageReal>(mass_)
+            || charges[i] != 0.0)
+            throw std::invalid_argument(
+                "InsertDeleteMove requires all atoms to match the configured "
+                "neutral exchange species (type, element and mass)");
+    }
+
     std::uniform_real_distribution<double> u01(0.0, 1.0);
 
     if (u01(*rng) < 0.5) {
         // ── Insert at a uniform fractional position ─────────────────────
         txn->begin(Transaction::Verb::Insert, ctx.frame);
+        txn->log_proposal_ratio = 0.0;
+        txn->exchange_mass = mass_;
         const int nlocal = ctx.frame.nlocal();
         // The new owner row takes the first ghost slot (LAMMPS
         // AtomVec::create_atom); the trial's own exchange/borders rebuild the
@@ -103,7 +137,7 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
             nspecial(slot, 1) = 0;
             nspecial(slot, 2) = 0;
         }
-        sp_mass[slot] = static_cast<StorageReal>(mass_amu_);
+        sp_mass[slot] = static_cast<StorageReal>(mass_);
         if (sp_type)
             sp_type[slot] = type_;
         if (sp_species)
@@ -122,6 +156,8 @@ void InsertDeleteMove::launch(const cpu::LaunchContext& ctx) {
         std::uniform_int_distribution<int> pick(0, nlocal - 1);
         const int victim = pick(*rng);
         txn->begin(Transaction::Verb::Delete, ctx.frame);
+        txn->log_proposal_ratio = 0.0;
+        txn->exchange_mass = mass_;
         txn->record_touch(ctx.frame, victim); // full row, topology included
         // The compaction survivor's source row becomes the first ghost slot
         // once nlocal drops, and the trial's borders overwrite it with a

@@ -1,87 +1,106 @@
 /// @file cpu/montecarlo/mc.h
-/// @brief cpu::mc::MC — concrete canonical (NVT) Metropolis Monte Carlo driver.
+/// @brief CPU equilibrium Monte Carlo driver and shared sampling lifecycle.
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <optional>
+#include <random>
+#include <string>
+#include <type_traits>
+#include <utility>
 
-#include "atomiverse/core/precision.h"
-#include "atomiverse/cpu/driver/outcome_policy.h"
-#include "atomiverse/cpu/montecarlo/mc_base.h"
+#include "atomiverse/cpu/driver/driver.h"
+#include "atomiverse/cpu/montecarlo/transaction.h"
 
-namespace ATV {
-namespace cpu {
-namespace mc {
+namespace ATV::cpu::mc {
 
-/// @brief CPU canonical (NVT) Metropolis Monte Carlo — a **preset**, not a
-///        category.
-///
-/// It runs a budget of trial moves, each proposed by a `Mover` (e.g.
-/// `TranslateMove`), scored by any registered `Capability::Energy` evaluator
-/// (e.g. `PairLJCut`), and kept or discarded by an `OutcomePolicy`. It reuses
-/// the MD component set unchanged — energy evaluator, neighbor list, frame —
-/// and mirrors the shape of `cpu::md::MD`.
-///
-/// ## Accept/reject is not a termination
-///
-/// The loop has two orthogonal policy slots, and only MC uses the second:
-///
-///   - `Criterion`     — should the loop stop?      (MC attaches none; the
-///                                                   budget is it)
-///   - `OutcomePolicy` — does this iteration count? (this preset attaches
-///                                                   `Metropolis`, in its
-///                                                   constructor)
-///
-/// Swapping in a grand-canonical or isobaric acceptance rule is a different
-/// preset (`Gcmc`, `NptMc`) attaching a different policy — never a new driver
-/// category. The loop itself lives on `McBase`. @see cpu/mc/mc_base.h,
-/// cpu/driver/outcome_policy.h
-///
-/// Usage:
-/// @code{.cpp}
-///   cpu::mc::MC mc{/*T [K]=*/300.0, /*seed=*/12345u};
-///   mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
-///   mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});
-///   mc.set_mover(cpu::mc::TranslateMove{/*delta [Å]=*/0.2});
-///   mc.set_thermo(100);
-///   mc.build();
-///   mc.run(frame, 100000);            // 100k trial moves
-///   double e = mc.current_energy();   // [eV]; mc.acceptance_ratio() in [0,1]
-/// @endcode
-///
-/// @note For MC the neighbor list should rebuild whenever an accepted move
-///       displaces an atom past the skin — construct it with `delay = 0`
-///       (`NeighborList<>{cutoff, skin, 1, 0, true}`) so the displacement
-///       check is never deferred.
-class MC : public McBase {
+/// Runs equilibrium Monte Carlo trials using a mover and an outcome policy.
+class MC : public Driver<ATV::sampling::Phase> {
   public:
-    /// @brief Construct the NVT sampler.
-    /// @param temperature_K Ensemble temperature [K] (must be > 0).
-    /// @param seed Seed for the single reproducible RNG stream.
-    /// @throws std::invalid_argument if `temperature_K <= 0`.
-    MC(AccReal temperature_K, std::uint64_t seed)
-        : McBase(seed),
-          metropolis_(this->set_outcome(cpu::Metropolis{temperature_K, rng_})) {
+    explicit MC(std::uint64_t seed = 0);
+    MC(AccReal temperature_K, std::uint64_t seed);
+    ~MC() override;
+
+    MC& set_nvt(AccReal temperature_K);
+    MC& set_npt(AccReal temperature_K, AccReal pressure);
+    MC& set_gcmc(AccReal temperature_K, AccReal mu, AccReal mass);
+
+    template <typename P>
+    std::decay_t<P>& set_outcome(P&& policy) {
+        auto& installed =
+            Driver<ATV::sampling::Phase>::set_outcome(std::forward<P>(policy));
+        bootstrapped_ = false;
+        return installed;
     }
 
-    /// @brief Energy [eV] of the current (last-accepted) configuration.
-    AccReal current_energy() const { return metropolis_.current_energy(); }
+    /// Advance up to budget trials or kinetic events. Consecutive calls on
+    /// the same Frame continue the run. An absorbing state stops early.
+    BigInt run(cpu::Frame& frame, BigInt budget);
+    void build_on(cpu::Runtime& runtime) override;
+    int run_nested_erased(cpu::Context& ctx, cpu::Frame& frame,
+                          int budget) override;
 
-    /// @brief Total trial moves attempted across all `run()` calls.
-    long long attempts() const { return metropolis_.attempts(); }
+    /// Install one proposal generator. Use MoveSelector to mix moves.
+    template <typename M>
+        requires(!std::is_lvalue_reference_v<M>)
+    MC& set_mover(M&& mover) {
+        this->set_singular_default_owned_(std::forward<M>(mover), mover_set_,
+                                          "set_mover");
+        return *this;
+    }
 
-    /// @brief Total trial moves accepted across all `run()` calls.
-    long long accepts() const { return metropolis_.accepts(); }
+    template <typename M>
+    MC& set_mover_ref(M& mover) {
+        this->set_singular_default_ref_(mover, mover_set_, "set_mover_ref");
+        return *this;
+    }
 
-    /// @brief Accepted fraction of attempted moves, in [0,1] (0 if none).
-    double acceptance_ratio() const { return metropolis_.acceptance_ratio(); }
+    template <typename M>
+    MC& set_mover(M&) = delete;
+
+    bool changed_connectivity() const noexcept { return changed_connectivity_; }
+
+    virtual AccReal current_energy() const;
+    AccReal current_volume() const noexcept { return current_volume_; }
+    long long attempts() const;
+    long long accepts() const;
+    long long attempts(Transaction::Verb verb) const;
+    long long accepts(Transaction::Verb verb) const;
+    double acceptance_ratio() const;
+    double acceptance_ratio(Transaction::Verb verb) const;
+
+  protected:
+    /// Construct the shared loop without equilibrium stage components.
+    struct EmptyPlan {};
+    MC(std::uint64_t seed, EmptyPlan);
+
+    virtual void prepare_sampling_(cpu::Runtime& runtime, cpu::Frame& frame);
+    /// Return false to finish without consuming an iteration or observing it.
+    virtual bool advance_step_(cpu::Runtime& runtime, cpu::Frame& frame,
+                               BigInt step);
+    std::mt19937_64 rng_;
+    Transaction proposal_;
+
+    bool changed_connectivity_ = false;
+
+    virtual void require_trial_statistics_() const {}
+
+    void install_defaults() override;
+    void validate_components() const override;
+    bool phase_wants_forces(ATV::sampling::Phase phase) const override;
 
   private:
-    /// The acceptance policy, owned by the base's outcome slot. This
-    /// reference is how the preset reads back what its own policy decided
-    /// (energy, acceptance ratio).
-    cpu::Metropolis& metropolis_;
+    BigInt advance_(cpu::Runtime& runtime, cpu::Frame& frame, BigInt budget);
+    void score_(cpu::Runtime& runtime, BigInt step);
+
+    std::optional<std::string> mover_set_;
+    bool bootstrapped_ = false;
+    AccReal current_energy_ = 0;
+    AccReal current_volume_ = 0;
+    static constexpr std::size_t kNVerbs = 5;
+    std::array<long long, kNVerbs> attempts_{};
+    std::array<long long, kNVerbs> accepts_{};
 };
 
-} // namespace mc
-} // namespace cpu
-} // namespace ATV
+} // namespace ATV::cpu::mc

@@ -72,10 +72,13 @@ skip_module_unless("ATV_BUILD_MC", "ATV_BUILD_POTENTIALS")
 
 from atomiverse.montecarlo import (
     GCMC,
+    KMC,
     MC,
     InsertDeleteMove,
+    LinearKineticSolver,
     MoveSelector,
     NptMC,
+    StateTransitions,
     TranslateMove,
     VolumeMove,
 )
@@ -230,6 +233,63 @@ def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molpy.Frame":
 def _lj(cutoff: float) -> "LJCut":
     """The argon LJ pair style at *cutoff* [Å]."""
     return LJCut(_EPS_EV, _SIGMA_A, cutoff)
+
+
+def test_kmc_inherits_mc_run_and_stops_at_an_absorbing_state():
+    frame = _cubic_lattice_frame(1, 20.0)
+    frame.meta["kmc_state"] = 0
+    driver = KMC(seed=17)
+    assert isinstance(driver, MC)
+    assert not hasattr(MC, "set_event")
+    driver.set_event(StateTransitions([(0, 1, 2.0), (1, 2, 3.0)]))
+
+    with pytest.raises(RuntimeError, match="set_solver"):
+        driver.run(frame, 1)
+    driver.set_solver(LinearKineticSolver())
+    assert driver.run(frame, n_events=1) == 1
+    assert frame.meta["kmc_state"] == 1
+    assert frame.meta["kmc_event_id"] == 0
+    assert not frame.meta["kmc_has_displacement"]
+    assert frame.meta["kmc_waiting_time_ps"] == frame.meta["kmc_time_ps"]
+    first_event_time = frame.meta["kmc_time_ps"]
+    assert first_event_time > 0.0
+    assert driver.run(frame, 100) == 1
+    assert frame.meta["kmc_state"] == 2
+    assert frame.meta["kmc_event_id"] == 1
+    assert frame.meta["kmc_time_ps"] > first_event_time
+    final_time = frame.meta["kmc_time_ps"]
+    assert driver.run(frame, 100) == 0
+    assert frame.meta["kmc_time_ps"] == final_time
+    for statistic in (driver.attempts, driver.accepts, driver.acceptance_ratio):
+        with pytest.raises(RuntimeError, match="Trial statistics"):
+            statistic()
+
+    full_frame = _cubic_lattice_frame(1, 20.0)
+    full_frame.meta["kmc_state"] = 0
+    full = KMC(seed=17)
+    full.set_units("real")
+    full.set_event(StateTransitions([(0, 1, 2.0), (1, 2, 3.0)]))
+    full.set_solver(LinearKineticSolver())
+    assert full.run(full_frame, 100) == 2
+    assert full_frame.meta["kmc_time_ps"] == final_time
+
+
+def test_kmc_distinguishes_unknown_labels_from_isolated_states():
+    frame = _cubic_lattice_frame(1, 20.0)
+    frame.meta["kmc_state"] = 99
+    driver = KMC(seed=17)
+    driver.set_event(StateTransitions([(0, 1, 2.0)], states=[2]))
+    driver.set_solver(LinearKineticSolver())
+    with pytest.raises(ValueError, match="unknown kmc_state"):
+        driver.run(frame, n_events=1)
+
+    frame.meta["kmc_state"] = 2
+    frame.meta["kmc_time"] = 1.5
+    isolated = KMC(seed=17)
+    isolated.set_event(StateTransitions([], states=[2]))
+    isolated.set_solver(LinearKineticSolver())
+    assert isolated.run(frame, n_events=1) == 0
+    assert frame.meta["kmc_time_ps"] == 1.5
 
 
 # ── 1. Construction ─────────────────────────────────────────────────
@@ -729,3 +789,117 @@ class TestMcErrors:
         sim.run(argon_frame, 1)
         with pytest.raises(ValueError):
             sim.attempts("wiggle")
+
+
+def _linear_polymer_frame(chains):
+    import molpy
+
+    points = np.asarray([point for chain in chains for point in chain], dtype=np.float64)
+    atoms = molpy.Block()
+    for d, name in enumerate(("x", "y", "z")):
+        atoms.insert(name, points[:, d].copy())
+    atoms.insert("mass", np.ones(len(points), dtype=np.float64))
+
+    edges = []
+    base = 0
+    for chain in chains:
+        edges.extend((i, i + 1) for i in range(base, base + len(chain) - 1))
+        base += len(chain)
+    topology = np.asarray(edges, dtype=np.uint32)
+    bonds = molpy.Block()
+    bonds.insert("atomi", topology[:, 0].copy())
+    bonds.insert("atomj", topology[:, 1].copy())
+    bonds.insert("type_id", np.zeros(len(edges), dtype=np.uint32))
+    frame = molpy.Frame()
+    frame["atoms"] = atoms
+    frame["bonds"] = bonds
+    frame.box = molpy.Box.cube(30.0)
+    return frame
+
+
+def test_python_polymer_movers_compose_with_bonded_evaluator():
+    from atomiverse import BondHarmonic, CBMCMove, TorsionMove
+
+    frame = _linear_polymer_frame(
+        [[(4, 5, 6), (5, 5, 6), (5, 6, 6), (6, 6, 7)]]
+    )
+    mc = MC(1.0, 6203)
+    mc.set_evaluator(BondHarmonic([0.75], [1.0]))
+    mc.set_mover(
+        MoveSelector()
+        .add(TorsionMove(paths=[(1, 2)], max_angle=0.8), weight=1)
+        .add(
+            MoveSelector().add(
+                CBMCMove(paths=[(1, 2, 3)], trials=3, bond_sigma=0.7, bias_beta=1.0),
+                weight=1,
+            ),
+            weight=2,
+        )
+    )
+    assert mc.run(frame, 20) == 20
+    assert mc.attempts() == mc.attempts("displace") == 20
+    assert mc.accepts() > 0
+    assert list(frame["bonds"]["atomi"]) == [0, 1, 2]
+    assert np.isfinite(mc.current_energy())
+
+
+def test_generalized_reptation_writes_accepted_bonds_back():
+    from atomiverse import BondHarmonic, GeneralizedReptationMove
+
+    frame = _linear_polymer_frame(
+        [[(4, 5, 6), (5, 5, 6), (6, 5, 6)], [(4, 8, 6), (5, 8, 6), (6, 8, 6)]]
+    )
+    mc = MC(1.0, 755)
+    # With U(b)=0.5|b|^2 and sigma=1 at k_B T=1 LJ, the proposal
+    # density cancels the Boltzmann ratio for every admissible transfer.
+    mc.set_evaluator(BondHarmonic([0.5], [0.0]))
+    mc.set_mover(GeneralizedReptationMove(1.0))
+
+    def edges():
+        bonds = frame["bonds"]
+        return set(zip(bonds["atomi"].tolist(), bonds["atomj"].tolist()))
+
+    old_edges = edges()
+    for _ in range(20):
+        mc.run(frame, 1)
+        if mc.accepts():
+            break
+    assert mc.accepts() == 1
+    new_edges = edges()
+    assert len(new_edges) == len(old_edges)
+    assert len(old_edges - new_edges) == len(new_edges - old_edges) == 1
+    points = np.stack([frame["atoms"][key] for key in ("x", "y", "z")], axis=1)
+    delta = np.array([points[b] - points[a] for a, b in new_edges])
+    delta -= 30.0 * np.rint(delta / 30.0)
+    assert mc.current_energy() == pytest.approx(0.5 * np.sum(delta**2))
+
+
+@pytest.mark.parametrize("fixed_endpoint", [False, True])
+def test_single_candidate_cbmc_reference_density_cancels_matched_bond_energy(fixed_endpoint):
+    from atomiverse import BondHarmonic, CBMCMove, ExtendedCBMCMove
+
+    frame = _linear_polymer_frame([[(4, 5, 6), (5, 5, 6), (6, 5, 6)]])
+    driver = MC(1.0, 164)
+    driver.set_evaluator(BondHarmonic([0.5], [0.0]))
+    mover = ExtendedCBMCMove if fixed_endpoint else CBMCMove
+    driver.set_mover(mover(paths=[(0, 1, 2)], trials=1, bond_sigma=1.0, bias_beta=1.0))
+    assert driver.run(frame, 15) == 15
+    assert driver.accepts() == 15
+    assert frame["atoms"]["x"][0] == 4.0
+    if fixed_endpoint:
+        assert frame["atoms"]["x"][2] == 6.0
+
+
+def test_mc_constructors_use_explicit_or_current_unit_style():
+    import atomiverse as av
+
+    previous_style = av.units_style()
+    try:
+        av.set_units("metal")
+        assert MC(seed=1).units_style == "metal"
+        assert MC(300.0, 1, units="real").units_style == "real"
+        assert NptMC(300.0, 1.0, 1, units="real").units_style == "real"
+        assert GCMC(300.0, -1.0, 40.0, 1, units="lj").units_style == "lj"
+        assert KMC(seed=1, units="real").units_style == "real"
+    finally:
+        av.set_units(previous_style)

@@ -23,7 +23,7 @@
 #include "atomiverse/cpu/evaluate/evaluate.h"
 #include "atomiverse/cpu/frame/frame.h"
 #include "atomiverse/cpu/montecarlo/move_selector.h"
-#include "atomiverse/cpu/montecarlo/npt_mc.h"
+#include "atomiverse/cpu/montecarlo/mc.h"
 #include "atomiverse/cpu/montecarlo/translate_move.h"
 #include "atomiverse/cpu/montecarlo/volume_move.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
@@ -113,7 +113,8 @@ int run() {
     // observable, so it gets half the trials: the volume autocorrelation time
     // is what sets the error bar, and translations do not shorten it.
     const double dv_max = v_pred / std::sqrt(static_cast<double>(n_atoms));
-    cpu::mc::NptMc mc{temperature, pressure, /*seed=*/1337u};
+    cpu::mc::MC mc{/*seed=*/1337u};
+    mc.set_npt(temperature, pressure);
     mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     mc.set_neighbor(cpu::md::NeighborList<>{cutoff, /*skin=*/1.0, 1, 0, true});
     mc.set_mover(cpu::mc::MoveSelector{}

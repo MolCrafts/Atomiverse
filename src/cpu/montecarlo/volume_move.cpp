@@ -45,6 +45,7 @@ void VolumeMove::launch(const cpu::LaunchContext& ctx) {
 
     const double s = std::cbrt(v_new / v_old);
     txn->begin(Transaction::Verb::Box, ctx.frame);
+    txn->log_proposal_ratio = 0.0;
     txn->record_box(ctx.frame);
     // Hoisted once before the loop -- the 13.7x rule.
     StorageReal* __restrict sp_x = ctx.frame.span(kAtom_x);

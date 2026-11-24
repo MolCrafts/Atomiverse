@@ -27,6 +27,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 #include <cstdint>
 #include <random>
 #include <stdexcept>
@@ -89,7 +90,7 @@ class Metropolis : public OutcomePolicy {
     /// @throws std::invalid_argument if `temperature_K <= 0`.
     Metropolis(AccReal temperature_K, std::mt19937_64& rng)
         : temperature_(temperature_K), rng_(rng) {
-        if (!(temperature_K > AccReal(0)))
+        if (!std::isfinite(temperature_K) || temperature_K <= AccReal(0))
             throw std::invalid_argument(
                 "Metropolis: temperature must be > 0 K");
     }
@@ -109,12 +110,12 @@ class Metropolis : public OutcomePolicy {
 
     /// @brief Apply the acceptance test to the trial energy now in the frame.
     ///
-    /// `exp(-βΔE)` is the WHOLE acceptance rule only for a canonical trial —
+    /// `exp(-βΔE)` is the acceptance factor for a symmetric canonical trial —
     /// one that changes neither the volume nor the particle number. A `Box`
     /// trial carries the `P·ΔV` and `N·ln(V'/V)` terms and an `Insert`/`Delete`
     /// trial the `V/(Λ³N)` chemical-potential prefactor; judging either by the
     /// energy alone samples no defined ensemble, and a downhill draw would be
-    /// committed silently. Those verbs therefore throw, naming the preset that
+    /// committed silently. Those verbs therefore throw, naming the policy that
     /// does own them — the same guard `NptMetropolis` (`cpu/montecarlo/
     /// npt_mc.h`) and `GcmcMetropolis` (`cpu/montecarlo/gcmc.h`) already carry.
     ///
@@ -141,27 +142,26 @@ class Metropolis : public OutcomePolicy {
             ++n_attempts_;
             return Outcome::Rollback;
         case mc::Transaction::Verb::Displace:
-            // The one verb this ensemble owns: exp(-βΔE) is the whole rule.
             break;
         case mc::Transaction::Verb::Box:
             throw std::runtime_error(
                 "Metropolis: no canonical (NVT) acceptance rule for a Box "
-                "trial verb — volume moves need the NptMc preset, whose rule "
-                "carries the P*dV and N*ln(V'/V) terms this one does not have "
-                "(cpu::mc::NptMc, Python NptMC).");
+                "trial verb — configure MC with set_npt for the P*dV and "
+                "N*ln(V'/V) terms.");
         case mc::Transaction::Verb::Insert:
         case mc::Transaction::Verb::Delete:
             throw std::runtime_error(
                 "Metropolis: no canonical (NVT) acceptance rule for an "
-                "Insert/Delete trial verb — insertion moves need the Gcmc "
-                "preset, whose rule carries the V/(Lambda^3 N) chemical-"
-                "potential prefactor this one does not have (cpu::mc::Gcmc, "
-                "Python GCMC).");
+                "Insert/Delete trial verb — configure MC with set_gcmc for "
+                "the V/(Lambda^3 N) chemical-potential prefactor.");
         }
         const AccReal e_trial = s.frame.meta.get(kEnergy);
         const AccReal dE = e_trial - e_cur_;
+        const double correction = txn->require_log_proposal_ratio();
         ++n_attempts_;
-        if (accept_(dE, s.runtime.units.boltz)) {
+        const double beta = 1.0 / (s.runtime.units.boltz * temperature_);
+        if (correction != -std::numeric_limits<double>::infinity()
+            && accept_(correction - beta * dE)) {
             e_cur_ = e_trial; // the frame already holds the move
             ++n_accepts_;
             return Outcome::Commit;
@@ -189,17 +189,11 @@ class Metropolis : public OutcomePolicy {
     }
 
   private:
-    /// @brief The test itself.
-    /// @param dE Trial energy change [eV].
-    /// @return True to accept the trial move.
-    /// @param boltz The run's Boltzmann constant [energy/temperature].
-    bool accept_(AccReal dE, double boltz) {
-        if (dE <= AccReal(0))
+    bool accept_(double log_ratio) {
+        if (log_ratio >= 0.0)
             return true;
-        const double beta = 1.0 / (boltz * static_cast<double>(temperature_));
-        const double p = std::exp(-static_cast<double>(dE) * beta);
         std::uniform_real_distribution<double> u(0.0, 1.0);
-        return u(rng_) < p;
+        return u(rng_) < std::exp(log_ratio);
     }
 
     AccReal temperature_; ///< Ensemble temperature [K].
