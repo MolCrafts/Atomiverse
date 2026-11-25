@@ -101,6 +101,8 @@ using namespace ATV;
 using namespace ATV::cpu::pw::internal;
 using namespace primitive_values;
 namespace {
+constexpr double kCutoffRy = 8;
+
 void require(bool x, const char* m) {
     if (!x)
         throw std::runtime_error(m);
@@ -152,7 +154,8 @@ double primal(const cpu::Frame& f, const PWSetup& ref, const FinalBandState& s,
               bool spin, double scale, XCBuilder& xc) {
     PWSetup p;
     PWWorkspace ws;
-    setup_pw_problem_fixed_basis(f, ref.strain_reference(), 12, 1, p, ws);
+    setup_pw_problem_fixed_basis(f, ref.strain_reference(), kCutoffRy, 1, p,
+                                 ws);
     auto& w = ws;
     require(p.gv0.h == ref.gv0.h && p.gv0.k == ref.gv0.k && p.gv0.l == ref.gv0.l
                 && w.fft_nx == ref.gv0.nx && w.fft_ny == ref.gv0.ny
@@ -192,7 +195,7 @@ void run(bool spin) {
     auto f = pw_frozen::silicon();
     auto potential = std::make_shared<cpu::pw::GthPseudopotential>(
         molrs::Element::Si, "GTH-PBE-q4");
-    cpu::pw::PW m{{potential}, 12, 1, cpu::xc::XCType::PBEsol};
+    cpu::pw::PW m{{potential}, kCutoffRy, 1, cpu::xc::XCType::PBEsol};
     m.tol = 1e-10;
     m.spin_polarized = spin;
     m.multiplicity = 1;
@@ -202,7 +205,7 @@ void run(bool spin) {
     m.extra_bands = 2;
     PWSetup p;
     PWWorkspace ws;
-    setup_pw_problem(f, m.potentials, 12, 1, p, ws);
+    setup_pw_problem(f, m.potentials, kCutoffRy, 1, p, ws);
     if (spin) {
         ws.nspin = 2;
         ws.rho_spin_G = {.65 * ws.rho_G, .35 * ws.rho_G};
