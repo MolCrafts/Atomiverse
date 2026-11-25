@@ -72,7 +72,7 @@ class InsertDeleteMove : public cpu::Mover {
   private:
     int type_;          ///< Force-field type stamped on inserted atoms.
     int atomic_number_; ///< Species Z stamped on inserted atoms.
-    double mass_;   ///< Mass in the run unit system stamped on inserted atoms.
+    double mass_; ///< Mass in the run unit system stamped on inserted atoms.
 };
 
 } // namespace mc

@@ -113,7 +113,8 @@ struct McHandle {
     McHandle& operator=(McHandle&&) = delete;
 
     template <typename Params, typename Evaluator>
-    void set_categorical(const char* setter, const Params&, Evaluator evaluator) {
+    void set_categorical(const char* setter, const Params&,
+                         Evaluator evaluator) {
         require_configurable_(setter);
         driver->set_evaluator(std::move(evaluator));
     }
@@ -201,14 +202,16 @@ struct McHandle {
     /// @param verb Trial verb name, or `std::nullopt` for the aggregate.
     /// @return Attempt count across every `run()` call so far.
     long long attempts(const std::optional<std::string>& verb) const {
-        return verb ? driver->attempts(verb_from_name(*verb)) : driver->attempts();
+        return verb ? driver->attempts(verb_from_name(*verb))
+                    : driver->attempts();
     }
 
     /// @brief Accepted trials of one verb, or of every verb.
     /// @param verb Trial verb name, or `std::nullopt` for the aggregate.
     /// @return Accept count across every `run()` call so far.
     long long accepts(const std::optional<std::string>& verb) const {
-        return verb ? driver->accepts(verb_from_name(*verb)) : driver->accepts();
+        return verb ? driver->accepts(verb_from_name(*verb))
+                    : driver->accepts();
     }
 
     /// @brief Accepted fraction, in [0, 1].
@@ -274,8 +277,10 @@ struct McHandle {
     }
 
     static void validate_bond_annotations_(const nb::object& frame_obj) {
-        if (!nb::cast<bool>(frame_obj.attr("keys")().attr("__contains__")("bonds")))
-            throw std::invalid_argument("Connectivity-changing MC requires a bonds block");
+        if (!nb::cast<bool>(
+                frame_obj.attr("keys")().attr("__contains__")("bonds")))
+            throw std::invalid_argument(
+                "Connectivity-changing MC requires a bonds block");
         const nb::object bonds = frame_obj["bonds"];
         const auto np = nb::module_::import_("numpy");
         for (const auto& key : bonds.attr("keys")()) {
@@ -283,11 +288,12 @@ struct McHandle {
             if (name == "atomi" || name == "atomj")
                 continue;
             const nb::object values = np.attr("asarray")(bonds[key]);
-            if (nb::len(values) > 1 &&
-                !nb::cast<bool>(np.attr("all")(np.attr("equal")(values, values[0]))
-                                    .attr("item")()))
-                throw std::invalid_argument(
-                    "Connectivity-changing MC requires uniform bond annotations");
+            if (nb::len(values) > 1
+                && !nb::cast<bool>(
+                    np.attr("all")(np.attr("equal")(values, values[0]))
+                        .attr("item")()))
+                throw std::invalid_argument("Connectivity-changing MC requires "
+                                            "uniform bond annotations");
         }
     }
 
@@ -304,8 +310,10 @@ struct McHandle {
             }
         }
         auto bonds = frame_obj["bonds"].attr("copy")();
-        bonds.attr("insert")("atomi", numpy_column<std::uint32_t>(from.data(), from.size()));
-        bonds.attr("insert")("atomj", numpy_column<std::uint32_t>(to.data(), to.size()));
+        bonds.attr("insert")(
+            "atomi", numpy_column<std::uint32_t>(from.data(), from.size()));
+        bonds.attr("insert")("atomj",
+                             numpy_column<std::uint32_t>(to.data(), to.size()));
         frame_obj["bonds"] = std::move(bonds);
     }
 
@@ -374,17 +382,15 @@ void bind_mc_methods(nb::class_<McHandle>& cls) {
     ATV::python::bind_units(
         cls, [](Handle& h) -> cpu::mc::MC& { return *h.driver; },
         [](const Handle& h, const char* s) { h.require_configurable_(s); });
-    cls.def(
-            "set_neighbor",
-            &Handle::set_neighbor, nb::arg("comp"),
-            "Install the neighbor list, with a displacement check on every trial.")
+    cls.def("set_neighbor", &Handle::set_neighbor, nb::arg("comp"),
+            "Install the neighbor list, with a displacement check on every "
+            "trial.")
         .def("set_mover", &Handle::set_mover, nb::arg("mover"),
              "Install a mover. Use MoveSelector to draw from a weighted mix.")
-        .def(
-            "run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
-            "Advance a molpy.Frame by up to n_trials equilibrium trials, "
-            "including rejections. Returns the number of trials performed. "
-            "Consecutive calls continue the same chain.")
+        .def("run", &Handle::run, nb::arg("frame"), nb::arg("n_trials"),
+             "Advance a molpy.Frame by up to n_trials equilibrium trials, "
+             "including rejections. Returns the number of trials performed. "
+             "Consecutive calls continue the same chain.")
         .def(
             "current_energy",
             [](const Handle& self) {
@@ -503,35 +509,43 @@ void bind_mc(nb::module_& m) {
         .def(nb::init<>(),
              "Construct an empty selector; populate with add(). A selector "
              "that reaches run() with no child raises RuntimeError.")
-        .def("add", &cpu::mc::MoveSelector::add_child,
-             nb::arg("mover"), nb::arg("weight"), nb::rv_policy::reference,
+        .def("add", &cpu::mc::MoveSelector::add_child, nb::arg("mover"),
+             nb::arg("weight"), nb::rv_policy::reference,
              "Add a mover with a positive relative trial weight.");
 
     using TagPaths = std::vector<std::vector<TagInt>>;
-    nb::class_<cpu::mc::PolymerRotationMove, cpu::Mover>(m, "_PolymerRotationMove");
+    nb::class_<cpu::mc::PolymerRotationMove, cpu::Mover>(
+        m, "_PolymerRotationMove");
     nb::class_<cpu::mc::TorsionMove, cpu::mc::PolymerRotationMove>(
         m, "TorsionMove", "Rotate the moving fragment of a directed bond.")
         .def(nb::init<const std::vector<std::array<TagInt, 2>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
     nb::class_<cpu::mc::EndMerRotationMove, cpu::mc::PolymerRotationMove>(
-        m, "EndMerRotationMove", "Rotate the last bead of each candidate terminal path.")
+        m, "EndMerRotationMove",
+        "Rotate the last bead of each candidate terminal path.")
         .def(nb::init<const std::vector<std::array<TagInt, 3>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
     nb::class_<cpu::mc::LibrationMove, cpu::mc::PolymerRotationMove>(
-        m, "LibrationMove", "Rotate the interior bead and its branches between fixed anchors.")
+        m, "LibrationMove",
+        "Rotate the interior bead and its branches between fixed anchors.")
         .def(nb::init<const std::vector<std::array<TagInt, 3>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
     nb::class_<cpu::mc::DimerFlipMove, cpu::mc::PolymerRotationMove>(
-        m, "DimerFlipMove", "Rotate two interior beads and their branches between fixed anchors.")
+        m, "DimerFlipMove",
+        "Rotate two interior beads and their branches between fixed anchors.")
         .def(nb::init<const std::vector<std::array<TagInt, 4>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
     nb::class_<cpu::mc::PivotMove, cpu::mc::PolymerRotationMove>(
-        m, "PivotMove", "Rotate one side of a directed bond about an isotropic axis through the pivot.")
+        m, "PivotMove",
+        "Rotate one side of a directed bond about an isotropic axis through "
+        "the pivot.")
         .def(nb::init<const std::vector<std::array<TagInt, 2>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
-    nb::class_<cpu::mc::PolymerClosureMove, cpu::Mover>(m, "_PolymerClosureMove");
+    nb::class_<cpu::mc::PolymerClosureMove, cpu::Mover>(m,
+                                                        "_PolymerClosureMove");
     nb::class_<cpu::mc::ConRotMove, cpu::mc::PolymerClosureMove>(
-        m, "ConRotMove", "Local concerted rotation with fixed end positions and orientations.")
+        m, "ConRotMove",
+        "Local concerted rotation with fixed end positions and orientations.")
         .def(nb::init<const std::vector<std::array<TagInt, 8>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
     nb::class_<cpu::mc::ParallelRotationMove, cpu::mc::PolymerClosureMove>(
@@ -539,21 +553,27 @@ void bind_mc(nb::module_& m) {
         .def(nb::init<const std::vector<std::array<TagInt, 6>>&, double>(),
              nb::arg("paths"), nb::arg("max_angle"));
     nb::class_<cpu::mc::AtomIdentityExchangeMove, cpu::Mover>(
-        m, "AtomIdentityExchangeMove", "Exchange the locations of two unbonded atoms.")
+        m, "AtomIdentityExchangeMove",
+        "Exchange the locations of two unbonded atoms.")
         .def(nb::init<std::vector<std::array<TagInt, 2>>>(), nb::arg("pairs"));
     nb::class_<cpu::mc::ReptationMove, cpu::Mover>(
-        m, "ReptationMove", "Slithering-snake proposal on fully flexible linear homopolymers.")
-        .def(nb::init<TagPaths, double>(), nb::arg("chains"), nb::arg("bond_sigma"));
+        m, "ReptationMove",
+        "Slithering-snake proposal on fully flexible linear homopolymers.")
+        .def(nb::init<TagPaths, double>(), nb::arg("chains"),
+             nb::arg("bond_sigma"));
     nb::class_<cpu::mc::GeneralizedReptationMove, cpu::Mover>(
         m, "GeneralizedReptationMove",
-        "Transfer a terminal bead between equivalent linear chains in a variable-length ensemble.")
+        "Transfer a terminal bead between equivalent linear chains in a "
+        "variable-length ensemble.")
         .def(nb::init<double>(), nb::arg("bond_sigma"));
     nb::class_<cpu::mc::CBMCMove, cpu::Mover>(
-        m, "CBMCMove", "Terminal configurational-bias regrowth on a flexible path.")
+        m, "CBMCMove",
+        "Terminal configurational-bias regrowth on a flexible path.")
         .def(nb::init<TagPaths, int, double, double>(), nb::arg("paths"),
              nb::arg("trials"), nb::arg("bond_sigma"), nb::arg("bias_beta"));
     nb::class_<cpu::mc::ExtendedCBMCMove, cpu::mc::CBMCMove>(
-        m, "ExtendedCBMCMove", "Fixed-endpoint configurational-bias regrowth on a flexible path.")
+        m, "ExtendedCBMCMove",
+        "Fixed-endpoint configurational-bias regrowth on a flexible path.")
         .def(nb::init<TagPaths, int, double, double>(), nb::arg("paths"),
              nb::arg("trials"), nb::arg("bond_sigma"), nb::arg("bias_beta"));
 
@@ -568,47 +588,64 @@ void bind_mc(nb::module_& m) {
         "Sparse transition model on integer Frame.meta['kmc_state'] labels.")
         .def(nb::init<const std::vector<cpu::mc::StateTransitions::Edge>&,
                       const std::vector<std::int64_t>&>(),
-             nb::arg("transitions"), nb::arg("states") = std::vector<std::int64_t>{},
+             nb::arg("transitions"),
+             nb::arg("states") = std::vector<std::int64_t>{},
              "Transitions as (source, destination, rate in 1/ps) tuples. "
              "List isolated state labels in states.");
 
     nb::class_<McHandle> mc(m, "MC",
-        "Monte Carlo driver for equilibrium trials.");
+                            "Monte Carlo driver for equilibrium trials.");
     mc.def(nb::init<std::uint64_t, const std::optional<std::string>&>(),
            nb::arg("seed") = 0, nb::arg("units") = nb::none())
-        .def(nb::init<double, std::uint64_t, const std::optional<std::string>&>(),
+        .def(nb::init<double, std::uint64_t,
+                      const std::optional<std::string>&>(),
              nb::arg("temperature"), nb::arg("seed"),
-             nb::arg("units") = nb::none(), "Construct a driver with the NVT policy.")
-        .def("set_nvt", [](McHandle& self, double temperature) {
-            self.require_configurable_("set_nvt");
-            self.driver->set_nvt(temperature);
-        }, nb::arg("temperature"))
-        .def("set_npt", [](McHandle& self, double temperature, double pressure) {
-            self.require_configurable_("set_npt");
-            self.driver->set_npt(temperature, pressure);
-        }, nb::arg("temperature"), nb::arg("pressure"))
-        .def("set_gcmc", [](McHandle& self, double temperature, double mu,
-                            double mass) {
-            self.require_configurable_("set_gcmc");
-            self.driver->set_gcmc(temperature, mu, mass);
-        }, nb::arg("temperature"), nb::arg("mu"), nb::arg("mass"))
-        .def("current_volume", [](const McHandle& self) {
-            return static_cast<double>(self.driver->current_volume());
-        }, "Volume of the current configuration.");
+             nb::arg("units") = nb::none(),
+             "Construct a driver with the NVT policy.")
+        .def(
+            "set_nvt",
+            [](McHandle& self, double temperature) {
+                self.require_configurable_("set_nvt");
+                self.driver->set_nvt(temperature);
+            },
+            nb::arg("temperature"))
+        .def(
+            "set_npt",
+            [](McHandle& self, double temperature, double pressure) {
+                self.require_configurable_("set_npt");
+                self.driver->set_npt(temperature, pressure);
+            },
+            nb::arg("temperature"), nb::arg("pressure"))
+        .def(
+            "set_gcmc",
+            [](McHandle& self, double temperature, double mu, double mass) {
+                self.require_configurable_("set_gcmc");
+                self.driver->set_gcmc(temperature, mu, mass);
+            },
+            nb::arg("temperature"), nb::arg("mu"), nb::arg("mass"))
+        .def(
+            "current_volume",
+            [](const McHandle& self) {
+                return static_cast<double>(self.driver->current_volume());
+            },
+            "Volume of the current configuration.");
     bind_mc_methods(mc);
-    bind_evaluator_setters<true>(mc,
-        "Append a plane-wave evaluator for equilibrium trial energies.");
+    bind_evaluator_setters<true>(
+        mc, "Append a plane-wave evaluator for equilibrium trial energies.");
 
-    nb::class_<KmcHandle, McHandle>(m, "KMC", "Continuous-time kinetic Monte Carlo driver.")
+    nb::class_<KmcHandle, McHandle>(
+        m, "KMC", "Continuous-time kinetic Monte Carlo driver.")
         .def(nb::init<std::uint64_t, const std::optional<std::string>&>(),
              nb::arg("seed") = 0, nb::arg("units") = nb::none())
-        .def("run",
-             [](KmcHandle& self, nb::object frame, BigInt n_events) {
-                 return self.run(std::move(frame), n_events);
-             },
-             nb::arg("frame"), nb::arg("n_events"),
-             "Execute up to n_events kinetic events and return the number executed. "
-             "The clock is in Frame.meta['kmc_time_ps'].")
+        .def(
+            "run",
+            [](KmcHandle& self, nb::object frame, BigInt n_events) {
+                return self.run(std::move(frame), n_events);
+            },
+            nb::arg("frame"), nb::arg("n_events"),
+            "Execute up to n_events kinetic events and return the number "
+            "executed. "
+            "The clock is in Frame.meta['kmc_time_ps'].")
         .def("set_event", &KmcHandle::set_event, nb::arg("event"))
         .def("set_solver", &KmcHandle::set_solver, nb::arg("solver"));
 }

@@ -43,7 +43,8 @@ class NptMetropolis : public OutcomePolicy {
             throw std::invalid_argument(
                 "NptMetropolis: temperature must be finite and positive");
         if (!std::isfinite(pressure))
-            throw std::invalid_argument("NptMetropolis: pressure must be finite");
+            throw std::invalid_argument(
+                "NptMetropolis: pressure must be finite");
     }
 
     /// @brief Stable identifier, for diagnostics.

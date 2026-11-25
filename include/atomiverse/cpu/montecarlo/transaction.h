@@ -68,7 +68,7 @@ class Transaction {
     /// Negative infinity means the reverse proposal is impossible.
     std::optional<double> log_proposal_ratio;
     std::optional<double> exchange_mass; ///< Mass of the exchanged species.
-    bool connectivity_changed = false; ///< Trial changed the bond graph.
+    bool connectivity_changed = false;   ///< Trial changed the bond graph.
 
     double require_log_proposal_ratio() const;
 

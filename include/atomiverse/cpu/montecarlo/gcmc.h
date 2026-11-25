@@ -47,9 +47,11 @@ class GcmcMetropolis : public OutcomePolicy {
             throw std::invalid_argument(
                 "GcmcMetropolis: temperature must be finite and positive");
         if (!std::isfinite(mu))
-            throw std::invalid_argument("GcmcMetropolis: chemical potential must be finite");
+            throw std::invalid_argument(
+                "GcmcMetropolis: chemical potential must be finite");
         if (!std::isfinite(mass) || mass <= 0.0)
-            throw std::invalid_argument("GcmcMetropolis: mass must be finite and positive");
+            throw std::invalid_argument(
+                "GcmcMetropolis: mass must be finite and positive");
     }
 
     /// @brief Stable identifier, for diagnostics.
@@ -83,10 +85,11 @@ class GcmcMetropolis : public OutcomePolicy {
         if (txn->verb == Transaction::Verb::Insert
             || txn->verb == Transaction::Verb::Delete) {
             if (!txn->exchange_mass || *txn->exchange_mass != mass_)
-                throw std::invalid_argument(
-                    "GCMC mover and acceptance policy must use the same exchange mass");
+                throw std::invalid_argument("GCMC mover and acceptance policy "
+                                            "must use the same exchange mass");
             if (!std::isfinite(v) || v <= 0.0)
-                throw std::invalid_argument("GCMC requires a positive finite box volume");
+                throw std::invalid_argument(
+                    "GCMC requires a positive finite box volume");
         }
 
         // Acceptance probability written as exp(-arg): arg = βΔE − ln(prefactor).
@@ -148,7 +151,8 @@ class GcmcMetropolis : public OutcomePolicy {
     double lambda3_ = 0;   ///< Λ³ [style volume] at `temperature_`, set by
                            ///< `on_start` in the run's units.
     std::mt19937_64& rng_; ///< The run's RNG stream, shared with the Movers.
-    AccReal e_cur_ = 0;    ///< Energy of the last accepted state in run energy units.
+    AccReal e_cur_ =
+        0; ///< Energy of the last accepted state in run energy units.
 };
 
 } // namespace mc

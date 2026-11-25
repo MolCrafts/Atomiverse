@@ -379,8 +379,7 @@ TEST(MCUnit, FailedBootstrapCanBeRetriedWithoutObservingIt) {
     EXPECT_EQ(observer.calls, 0);
 }
 
-TEST(MCUnit,
-     NestedTrialUsesTheSameDecisionBoundaryAndRestoresParentServices) {
+TEST(MCUnit, NestedTrialUsesTheSameDecisionBoundaryAndRestoresParentServices) {
     cpu::Frame frame(1);
     frame.box = cpu::Box::cubic(10);
     TrialMover mover;
@@ -505,7 +504,8 @@ TEST(KMCUnit, EventFailureRestoresFrameAndClockThroughSharedRun) {
 
 namespace {
 Vec3 polymer_point(cpu::Frame& frame, int i) {
-    return {frame.span(kAtom_x)[i], frame.span(kAtom_y)[i], frame.span(kAtom_z)[i]};
+    return {frame.span(kAtom_x)[i], frame.span(kAtom_y)[i],
+            frame.span(kAtom_z)[i]};
 }
 
 void initialize_polymer(cpu::Frame& frame, const std::vector<Vec3>& points) {
@@ -541,7 +541,8 @@ struct CandidateEnergy : cpu::Potential {
         if (fail)
             throw std::runtime_error("candidate score failed");
         ctx.frame.meta.get(kEnergy) +=
-            (polymer_point(ctx.frame, 1) - polymer_point(ctx.frame, 0)).norm_squared();
+            (polymer_point(ctx.frame, 1) - polymer_point(ctx.frame, 0))
+                .norm_squared();
     }
 };
 } // namespace
@@ -558,8 +559,9 @@ TEST(PolymerMoveUnit, SelectorRunsOneLeafAndDoesNotRetryEmptyProposal) {
     left->add(CountingMover(a), 1);
     cpu::mc::MoveSelector mix;
     mix.add_child(left, 1).add(CountingMover(b), 3);
-    EXPECT_THROW(mix.add(CountingMover(b), std::numeric_limits<double>::infinity()),
-                 std::invalid_argument);
+    EXPECT_THROW(
+        mix.add(CountingMover(b), std::numeric_limits<double>::infinity()),
+        std::invalid_argument);
     for (int i = 0; i < 1000; ++i)
         mix.launch(launch);
     EXPECT_EQ(a + b, 1000);
@@ -568,8 +570,8 @@ TEST(PolymerMoveUnit, SelectorRunsOneLeafAndDoesNotRetryEmptyProposal) {
 
 TEST(PolymerMoveUnit, TorsionPreservesCrossBoundaryBondsAndRollsBack) {
     cpu::Frame frame(4);
-    initialize_polymer(frame,
-                       {{28, 15, 15}, {29.5, 15, 15}, {0.5, 16, 15}, {1.5, 16, 16}});
+    initialize_polymer(
+        frame, {{28, 15, 15}, {29.5, 15, 15}, {0.5, 16, 15}, {1.5, 16, 16}});
     const cpu::Frame before = frame;
     cpu::Context context;
     std::mt19937_64 rng(1232);
@@ -594,14 +596,21 @@ TEST(PolymerMoveUnit, TorsionPreservesCrossBoundaryBondsAndRollsBack) {
     for (int i = 0; i < frame.nlocal(); ++i) {
         EXPECT_EQ(frame.span(kAtom_z)[i], before.span(kAtom_z)[i]);
         for (int d = 0; d < 3; ++d)
-            EXPECT_EQ(frame.span(kAtom_image)(i, d), before.span(kAtom_image)(i, d));
+            EXPECT_EQ(frame.span(kAtom_image)(i, d),
+                      before.span(kAtom_image)(i, d));
     }
 }
 
 TEST(PolymerMoveUnit, ConRotClosesItsAnchorsAndPreservesAngles) {
     cpu::Frame frame(8);
-    initialize_polymer(frame, {{3, 6, 10}, {4, 6, 10}, {5, 7, 10}, {6, 7, 12},
-                               {7, 9, 13}, {8, 9, 12}, {9, 9, 13}, {10, 8, 12}});
+    initialize_polymer(frame, {{3, 6, 10},
+                               {4, 6, 10},
+                               {5, 7, 10},
+                               {6, 7, 12},
+                               {7, 9, 13},
+                               {8, 9, 12},
+                               {9, 9, 13},
+                               {10, 8, 12}});
     auto before = frame;
     cpu::Context context;
     std::mt19937_64 rng(973);
@@ -613,16 +622,20 @@ TEST(PolymerMoveUnit, ConRotClosesItsAnchorsAndPreservesAngles) {
     move.launch(launch);
     ASSERT_EQ(txn.size(), 4u);
     EXPECT_TRUE(std::isfinite(txn.require_log_proposal_ratio()));
-    EXPECT_GT((polymer_point(frame, 2) - polymer_point(before, 2)).norm(), 1e-6);
+    EXPECT_GT((polymer_point(frame, 2) - polymer_point(before, 2)).norm(),
+              1e-6);
     for (const int i : {0, 1, 6, 7})
-        EXPECT_DOUBLE_EQ((polymer_point(frame, i) - polymer_point(before, i)).norm(), 0);
+        EXPECT_DOUBLE_EQ(
+            (polymer_point(frame, i) - polymer_point(before, i)).norm(), 0);
     for (int i = 1; i < frame.nlocal(); ++i) {
         const auto b = polymer_point(frame, i) - polymer_point(frame, i - 1);
         const auto b0 = polymer_point(before, i) - polymer_point(before, i - 1);
         EXPECT_NEAR(b.norm(), b0.norm(), 1e-5);
         if (i + 1 < frame.nlocal()) {
-            const auto next = polymer_point(frame, i + 1) - polymer_point(frame, i);
-            const auto next0 = polymer_point(before, i + 1) - polymer_point(before, i);
+            const auto next =
+                polymer_point(frame, i + 1) - polymer_point(frame, i);
+            const auto next0 =
+                polymer_point(before, i + 1) - polymer_point(before, i);
             EXPECT_NEAR(b.normalized().dot(next.normalized()),
                         b0.normalized().dot(next0.normalized()), 1e-5);
         }
@@ -631,8 +644,13 @@ TEST(PolymerMoveUnit, ConRotClosesItsAnchorsAndPreservesAngles) {
 
 TEST(PolymerMoveUnit, ParallelRotationTranslatesOutgoingChain) {
     cpu::Frame frame(7);
-    initialize_polymer(frame, {{3, 6, 10}, {4, 6, 10}, {5, 7, 10}, {6, 7, 12},
-                               {7, 9, 13}, {8, 9, 12}, {9, 9, 13}});
+    initialize_polymer(frame, {{3, 6, 10},
+                               {4, 6, 10},
+                               {5, 7, 10},
+                               {6, 7, 12},
+                               {7, 9, 13},
+                               {8, 9, 12},
+                               {9, 9, 13}});
     auto before = frame;
     cpu::Context context;
     std::mt19937_64 rng(973);
@@ -668,16 +686,22 @@ TEST(PolymerMoveUnit, CBMCReplaysEnergyAndRollsBackFailedCandidate) {
     EXPECT_EQ(mc.attempts(), 0);
     energy.fail = false;
     EXPECT_EQ(mc.run(frame, 1), 1);
-    EXPECT_GE(energy.calls, 9); // bootstrap, failed score, two trial pools, final score
+    EXPECT_GE(energy.calls,
+              9); // bootstrap, failed score, two trial pools, final score
     const auto energy_ref =
         (polymer_point(frame, 1) - polymer_point(frame, 0)).norm_squared();
     EXPECT_NEAR(mc.current_energy(), energy_ref, 1e-10);
 }
 
-TEST(PolymerMoveUnit, GeneralizedReptationRestoresBondAndExclusionListsOnRollback) {
+TEST(PolymerMoveUnit,
+     GeneralizedReptationRestoresBondAndExclusionListsOnRollback) {
     cpu::Frame frame(6);
-    initialize_polymer(frame, {{3, 6, 10}, {4, 6, 10}, {5, 6, 10},
-                               {6, 9, 12}, {7, 9, 12}, {8, 9, 12}});
+    initialize_polymer(frame, {{3, 6, 10},
+                               {4, 6, 10},
+                               {5, 6, 10},
+                               {6, 9, 12},
+                               {7, 9, 12},
+                               {8, 9, 12}});
     // Split the chain after row 2. Its bond to row 3 is stored on row 2.
     frame.span(kAtom_num_bond)[2] = 0;
     frame.build_special_list();
@@ -698,8 +722,10 @@ TEST(PolymerMoveUnit, GeneralizedReptationRestoresBondAndExclusionListsOnRollbac
     EXPECT_TRUE(std::isfinite(txn.require_log_proposal_ratio()));
 
     const auto nspecial = frame.span(kAtom_nspecial);
-    EXPECT_EQ(std::accumulate(frame.span(kAtom_num_bond).data(),
-                              frame.span(kAtom_num_bond).data() + frame.nlocal(), 0), 4);
+    EXPECT_EQ(
+        std::accumulate(frame.span(kAtom_num_bond).data(),
+                        frame.span(kAtom_num_bond).data() + frame.nlocal(), 0),
+        4);
     int endpoints = 0;
     for (int i = 0; i < frame.nlocal(); ++i)
         endpoints += (nspecial(i, 0) == 1);
@@ -708,10 +734,13 @@ TEST(PolymerMoveUnit, GeneralizedReptationRestoresBondAndExclusionListsOnRollbac
     txn.rollback(frame);
     for (int i = 0; i < frame.nlocal(); ++i) {
         EXPECT_EQ(frame.span(kAtom_x)[i], before.span(kAtom_x)[i]);
-        EXPECT_EQ(frame.span(kAtom_num_bond)[i], before.span(kAtom_num_bond)[i]);
-        EXPECT_EQ(frame.span(kAtom_bond_atom)(i, 0), before.span(kAtom_bond_atom)(i, 0));
+        EXPECT_EQ(frame.span(kAtom_num_bond)[i],
+                  before.span(kAtom_num_bond)[i]);
+        EXPECT_EQ(frame.span(kAtom_bond_atom)(i, 0),
+                  before.span(kAtom_bond_atom)(i, 0));
         for (int col = 0; col < 3; ++col)
-            EXPECT_EQ(frame.span(kAtom_nspecial)(i, col), before.span(kAtom_nspecial)(i, col));
+            EXPECT_EQ(frame.span(kAtom_nspecial)(i, col),
+                      before.span(kAtom_nspecial)(i, col));
     }
 }
 
@@ -730,7 +759,8 @@ TEST(PolymerMoveUnit, ReptationAccountsForBothEndpointDensities) {
     ASSERT_EQ(txn.size(), 4u);
     double sum_squared = 0;
     for (int i = 1; i < 4; ++i)
-        sum_squared += (polymer_point(frame, i) - polymer_point(frame, i - 1)).norm_squared();
+        sum_squared += (polymer_point(frame, i) - polymer_point(frame, i - 1))
+                           .norm_squared();
     EXPECT_NEAR(txn.require_log_proposal_ratio(),
                 (sum_squared - 3.0) / (2 * sigma * sigma), 1e-5);
 }

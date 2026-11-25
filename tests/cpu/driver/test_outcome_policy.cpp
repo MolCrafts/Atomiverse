@@ -73,7 +73,7 @@ TEST(MetropolisPolicy, VolumeVerbNamesTheNptSetter) {
     cpu::Metropolis p{300.0, h.rng};
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
-    h.frame.box.scale_isotropic(1.05);     // trial box, as VolumeMove leaves it
+    h.frame.box.scale_isotropic(1.05); // trial box, as VolumeMove leaves it
     h.frame.meta.get(ATV::kEnergy) = -1.0;
     h.stamp(Verb::Box);
     try {
