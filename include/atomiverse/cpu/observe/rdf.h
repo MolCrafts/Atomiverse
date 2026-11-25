@@ -13,7 +13,6 @@
 /// (`rdf_write_curve` in observer/rdf_curve.h).
 ///
 /// @see cpu::VACF (observer/vacf.h) for the same streaming async pattern
-/// @see .claude/specs/parallel-md-engine.md  § B.4 (async observer pattern)
 #pragma once
 
 #include <string>

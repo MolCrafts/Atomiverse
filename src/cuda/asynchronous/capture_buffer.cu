@@ -3,7 +3,7 @@
 ///        and cuda::AsyncConsumer (host admission, eager / graph-captured
 ///        launch, worker-side delivery). Ledger semantics in
 ///        core/capture_ledger.cpp; iron law 10 in
-///        .claude/notes/cuda-only-no-dh.md.
+///        docs/developer/project-contract.md.
 
 #include "atomiverse/cuda/asynchronous/capture_buffer.cuh"
 

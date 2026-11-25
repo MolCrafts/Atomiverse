@@ -64,7 +64,7 @@ U = -\sum_i q_i\,\mathbf{E}\cdot\mathbf{r}_i^{\mathrm{u}}
   step overhead, not a neighbor/kspace-heavy EDL bench.
 - **Shared limitations.** Charges are inputs: the field Components do not
   induce or solve electrode charges. No `region` keyword, no dipole torque path.
-  The MetalWalls capability map is `.claude/notes/metalwalls-capability-map.md`
+  The MetalWalls capability map is [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md)
   (E3; "Displacement D-field", P2).
 
 ### References

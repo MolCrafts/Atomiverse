@@ -3,7 +3,6 @@
 ///        (parent self-launches mpiexec np=4; serial n=1 baseline).
 ///
 /// Out-of-library consumer: public GPW headers only (+ MPI when worker).
-/// Spec: `.claude/specs/mpi-gpw-scaling-4rank/`.
 ///
 /// Modes:
 ///   default (parent): serial SCF energy + wall; spawn

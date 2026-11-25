@@ -587,7 +587,6 @@ regression budget (a first-green band frozen after offline FD).
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-vdw-kpoint-forces/`
 - Deps: `gpw-vdw-kpoints` ✓, `gpw-vdw-scf-potential` ✓
 - Oracle family: **cp2k** (matched GTH-GPW + NON_LOCAL + KPOINTS ENERGY_FORCE)
 

@@ -345,4 +345,4 @@ throughput claim.
 - **Absolute energy is ATV-frozen, not CP2K-matched.**
 - No multi-system standing CP2K perf suite.
 
-Design record: git `72ebb870` (`.claude/specs/pw-smearing-al/`).
+Design record: git `72ebb870`.

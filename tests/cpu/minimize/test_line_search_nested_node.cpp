@@ -3,7 +3,6 @@
 ///
 /// Mirrors `src/cpu/minimize/lbfgs.cpp` (the `line_search` phase) and the
 /// replay it depends on, `Runtime::run_stage` → `Runtime::run_slot_`.
-/// Spec: `.claude/specs/esmm-contract-03-runslot-nested` — ac-002 (U5).
 ///
 /// `Minimize` publishes `reeval_forces` (`minimize.h`), and StrongWolfe — the
 /// DEFAULT mode for LBFGS and CG — calls it once per trial geometry to read

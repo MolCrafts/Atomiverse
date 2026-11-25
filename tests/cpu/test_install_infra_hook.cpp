@@ -7,7 +7,6 @@
 ///            so an injection can satisfy an otherwise-unsatisfied validation
 ///            rule.
 ///
-/// Acceptance: T1 + T2 of `.claude/specs/driver-infra-auto-injection.md`.
 ///
 /// arch-refactor-02-halo additions (`HaloParticipant` protocol scan):
 ///        (d) `Component::halo_participant()` defaults to `nullptr`; the

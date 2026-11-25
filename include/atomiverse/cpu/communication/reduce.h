@@ -15,7 +15,6 @@
 /// (`end_of_step` >= +10) capture the frame, so they see globally-reduced
 /// scalars.
 ///
-/// @see .claude/specs/parallel-md-engine.md  § A.4
 #pragma once
 
 #include <string>

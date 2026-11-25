@@ -49,7 +49,7 @@ Case: `ctest -R '^md/electrode-observables$'` — sources and oracle record in [
 - **Out of scope for all sections:** the electrode charge solve itself
   (`ConstPotBO`, E1–E2 of the MetalWalls map), Coulomb / Gaussian-electrode
   terms, and production electrolyte trajectories. The capability map is
-  `.claude/notes/metalwalls-capability-map.md` (E1 for charging work, E10 for
+  [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md) (E1 for charging work, E10 for
   the observers).
 
 A production MD run puts the BO charge update ahead of the observers:

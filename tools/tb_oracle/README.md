@@ -38,7 +38,7 @@ tools/tb_oracle/run_dftbplus_pin.sh tools/tb_oracle/inputs/dftbplus/h2_mio_scc m
 
 Smoke: H₂ / mio-1-1 / SCC @ 0.74 Å → **−18.36635052 eV** (= ATV
 `reg_dftb2-dftbplus-energy-pin`). Details: `molcrafts/software/README.md` and
-`.claude/notes/dftb-vs-dftbplus-cleanup.md`.
+[dftb-vs-dftbplus-cleanup.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/dftb-vs-dftbplus-cleanup.md).
 
 ## Layout
 

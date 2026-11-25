@@ -3,7 +3,6 @@
 ///        force / energy accumulator channels.
 ///
 /// Mirrors `src/cpu/vibration/hessian.cpp` (`ATV::cpu::vib::Hessian`).
-/// Spec: `.claude/specs/esmm-contract-01-zeroing` — ac-001.
 ///
 /// `Hessian::run()` replays `vib::Phase::force` `6N` times against ONE Frame.
 /// Force sources in this tree ACCUMULATE (`f[i] += ...`, `kEnergy += ...`), so

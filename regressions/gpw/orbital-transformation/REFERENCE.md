@@ -96,7 +96,7 @@ in-tree \(\|E_{\mathrm{OT}}-E_{\mathrm{DIIS}}\|\sim1\times10^{-12}\) Ha
 This file carries no wall numbers. The single binding fair-wall source for
 this twin — host, CP2K binary provenance, PRINT_LEVEL/timer convention,
 reproduction recipe, and the current \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) —
-is [`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+is [gpw-perf-baseline.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-perf-baseline.md).
 The fair twin is CP2K OT vs ATV OT-only; the full regression binary runs
 OT + DIIS and is not a fair wall. Case-local walls were last measured here
 2026-08-05 and are superseded by that note.
@@ -184,7 +184,7 @@ differences; OT/DIIS in-tree is the tight fixed-point gate.
 This file carries no wall numbers. The single binding fair-wall source —
 host, CP2K binary provenance, PRINT_LEVEL/timer convention, and the
 reproduction recipe — is
-[`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+[gpw-perf-baseline.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-perf-baseline.md).
 Case-local walls were last measured here 2026-08-05 and are superseded by
 that note.
 

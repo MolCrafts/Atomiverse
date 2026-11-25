@@ -274,7 +274,7 @@ struct GpwResult {
 /// **CUDA product freeze:** a full CUDA GPW method must present this same
 /// public shape (members + `build`/`run`/`last_result` + forces/stress family);
 /// stage footholds under `cuda/gpw/internal/` compose under it and are never
-/// the user API. Contract: `.claude/notes/cuda-gpw-public-shape.md`.
+/// the user API.
 class GpwDft : public cpu::Driver<ATV::gpw::Phase> {
   public:
     bool requires_full_frame() const override { return true; }

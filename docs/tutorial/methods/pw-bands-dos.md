@@ -313,7 +313,7 @@ the Γ→X gap and the occupied DOS integral to the VBM.
 
 ATV wall (informative): ~22 s (Release, 8 OMP, ecut 15 / k=2 + path + DOS k=4).
 
-Design record: git `034fed2e` (`.claude/specs/bands-dos-si/`).
+Design record: git `034fed2e`.
 
 ## bands-metallic-si — Metallic-occupation band structure of Si {#bands-metallic-si}
 

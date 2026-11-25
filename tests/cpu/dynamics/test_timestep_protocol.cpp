@@ -31,7 +31,6 @@
 /// no pushed dt, and `set_timestep` validation) is in
 /// tests/cpu/gpw/test_gpw_cpmd.cpp.
 ///
-/// Spec: `.claude/specs/esmm-cpmd-02-timestep-protocol/spec.md` (Design).
 
 #include "atomiverse/cpu/dynamics/barostat.h"
 #include "atomiverse/cpu/dynamics/berendsen.h"

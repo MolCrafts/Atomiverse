@@ -208,7 +208,6 @@ r ≤ 10 for analytic product vs fair ENERGY_FORCE twin).
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-uks-stress/`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-uks-stress/o2_uks_stress_num.inp`
 - Deps: `gpw-uks-forces` ✓, `gpw-analytic-stress` ✓
 - Energy digits: `regressions/gpw/uks/REFERENCE.md` (CP2K 2026.1)
@@ -358,7 +357,7 @@ ENERGY| Total FORCE_EVAL ( QS ) energy [hartree]            -31.769803499314250
 This file carries no wall numbers. The single binding fair-wall source for
 this twin — host, CP2K binary provenance, PRINT_LEVEL/timer convention,
 reproduction recipe, and the current \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}\) —
-is [`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+is [gpw-perf-baseline.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-perf-baseline.md).
 Case-local walls were last measured here 2026-07-23 and are superseded by
 that note.
 

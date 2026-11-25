@@ -15,9 +15,6 @@
 ///   - install_infra: the virial is cleared once, before the force phase
 ///   - install_infra: pair evaluator without set_neighbor throws at build
 ///
-/// Acceptance: T3 / T4 / T5 / T11 / T12 / T14 of
-/// `.claude/specs/driver-infra-auto-injection.md`; protocol migration per
-/// `.claude/specs/arch-refactor-03-neighbor.md`.
 
 #include <gtest/gtest.h>
 

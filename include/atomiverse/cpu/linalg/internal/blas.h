@@ -5,8 +5,7 @@
 ///
 /// Thread model: called outside OpenMP regions the OpenMP-flavour OpenBLAS
 /// threads internally; called inside a region it runs on the calling thread.
-/// Never set OMP_PROC_BIND / OMP_PLACES around these (see
-/// .claude/notes/openblas-thread-binding.md).
+/// Never set OMP_PROC_BIND / OMP_PLACES around these.
 #pragma once
 
 extern "C" {

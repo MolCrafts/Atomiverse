@@ -20,7 +20,6 @@
 /// On the pre-refactor tree this file fails to COMPILE — that is the
 /// intended RED state.
 ///
-/// Spec: `.claude/specs/arch-refactor-01-bindings.md` (Files E).
 
 #include <gtest/gtest.h>
 

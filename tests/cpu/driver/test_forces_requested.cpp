@@ -42,8 +42,6 @@
 /// fixed and only the acceptance policy draws from it), no wall clock, no
 /// filesystem, no network, no third-party oracle.
 ///
-/// Spec: `.claude/specs/esmm-contract-04-forces-requested/spec.md`
-/// (ac-001, ac-002, ac-005).
 
 #include <gtest/gtest.h>
 

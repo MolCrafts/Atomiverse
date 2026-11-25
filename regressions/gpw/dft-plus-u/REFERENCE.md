@@ -134,7 +134,7 @@ lives in `gpw-dftu-kpoint-forces`).
 
 U−J = 2 eV deliberately (same as multi-k force pin): at 4 eV this DZV s-shell
 toy is multi-branch under gross-Mulliken; see
-`.claude/notes/gpw-dftu-projector-divergence.md`.
+[gpw-dftu-projector-divergence.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-dftu-projector-divergence.md).
 
 #### Measured (first green 2026-08-01, Release, OMP=8)
 
@@ -184,7 +184,7 @@ Nα=13 / Nβ=11, PLUS_U Mulliken Ni d U−J = 6 eV.
 projects on the on-site **net** AO block \(q_{ab}=P_{ab}S_{ab}\)
 (geometry-independent ⇒ no occupation force), while ATV projects on the
 symmetrized **gross** product \(\tfrac12(PS+SP)|_\mathrm{block}\). Detail:
-`.claude/notes/gpw-dftu-projector-divergence.md`. Decisive force correctness
+[gpw-dftu-projector-divergence.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-dftu-projector-divergence.md). Decisive force correctness
 is the A2 full-6N FD dual gate.
 
 ### Performance
@@ -317,7 +317,6 @@ r ≤ 10 for analytic product vs fair ENERGY_FORCE twin).
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-dftu-stress/`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dftu-stress/nio_mol_pade_u_stress_num.inp`
 - Deps: `gpw-dftu-nio` ✓, `gpw-analytic-stress` ✓ / `gpw-uks-stress` ✓
 - Energy digits: `regressions/gpw/dft-plus-u/REFERENCE.md` (CP2K 2026.1)
@@ -584,7 +583,6 @@ DFT+U stress.
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-dftu-kpoint-stress/`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dftu-kpoint-stress/h2_uks_dftu_kpoint_stress.inp`
 - Related: `gpw-dftu-stress`, `gpw-dftu-kpoint-forces`, `gpw-kpoint-stress`
 - Citations: Dudarev *et al.*, PRB **57**, 1505 (1998); Nielsen & Martin, PRB **32**, 3780 (1985).

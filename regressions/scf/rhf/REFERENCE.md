@@ -157,7 +157,6 @@ Theory* §10 (molecular gradients); Hehre, Stewart, Pople, *J. Chem. Phys.*
 | ---- | ----- |
 | GH200 job id | **1039997** (node `n188`, NVIDIA GH200 120GB) — the committed tree |
 | Toolchain | `GPU/buildenv-gcccuda/2026.03-cu13.0`, nvcc **13.0.88** / GNU 14.3.0; cubins sm_75 + runtime PTX JIT to ISA 90 |
-| GH200 log path | `.claude/reg-cuda-grad-honesty-1039997.log` |
 | cpu leg | PASS — max element-wise err **3.870e-11** Ha/Bohr (gate 1e-6); ‖Σ_A g_A‖ 1.133e-14 (gate 1e-8) |
 | cuda leg | PASS — `path=device` (both residency flags asserted true); max element-wise err **3.867e-11** Ha/Bohr (gate 5e-6); ‖Σ_A g_A‖ 4.430e-14 (gate 1e-7) |
 | CUDA↔CPU parity | **3.200e-14** Ha/Bohr (gate 2e-6) |
@@ -228,7 +227,7 @@ Theory* §10(分子梯度)。
 ### Measurement log
 
 GH200 job **1039997** (node `n188`, `GPU/buildenv-gcccuda/2026.03-cu13.0`,
-nvcc 13.0.88; log `.claude/reg-cuda-grad-honesty-1039997.log`): cpu leg PASS
+nvcc 13.0.88): cpu leg PASS
 (max element-wise err 1.681e-09 Ha/Bohr, gate 1e-6; ‖Σ_A g_A‖ 3.195e-14);
 cuda leg was then a documented host-fallback. That fallback is **deleted**:
 out-of-coverage `cuda::scf::RHF::forces` now throws. Re-gate the throw on

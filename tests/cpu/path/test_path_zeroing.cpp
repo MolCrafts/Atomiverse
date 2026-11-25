@@ -3,7 +3,6 @@
 ///        force / energy accumulator channels.
 ///
 /// Mirrors `include/atomiverse/cpu/path/path_driver.h` (`ATV::cpu::PathDriver`).
-/// Spec: `.claude/specs/esmm-contract-01-zeroing` — ac-002.
 ///
 /// `PathDriver::run()` replays `path::Phase::force` once per replica, per band
 /// iteration, against that replica's own persistent Frame. Nothing in the loop

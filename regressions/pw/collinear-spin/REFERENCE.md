@@ -304,8 +304,6 @@ analytic forces (shared μ, \(f\in[0,1]\)). Dual-gate against same-settings
 | **1122874** (n416, exit 0) | same dual-gate numbers on pre-rebase tip |
 | prior **1122357** | first green on pre-rebase tip |
 
-Log path on staff tree: `.claude/cuda-claim-md-es-1357414.out` (gitignored `*.out`).
-
 ### Not claimed
 
 spin×smear analytic **stress**, multi-k spin, PBEsol/revPBE/RPBE, fair CP2K wall.

@@ -403,7 +403,6 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// override to apply category-specific rules. Called from `build()`
     /// before `validate_components()` so the auto-injected set counts
     /// toward validation.
-    /// @see .claude/specs/driver-infra-auto-injection.md
     virtual bool uses_electronic_frame() const { return false; }
     virtual void install_defaults() {}
 

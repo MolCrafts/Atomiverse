@@ -108,7 +108,7 @@ double brute_force_energy(const cpu::Frame& frame, double cutoff) {
 
 // ── narrow-subdomain (multi-hop) support ───────────────────────────────
 //
-// Spec `.claude/specs/comm-topology-02-multihop.md`: with the ghost shell
+// With the ghost shell
 // wider than one subdomain the halo must fill it by forwarding ghosts over
 // several rounds instead of refusing the decomposition.
 

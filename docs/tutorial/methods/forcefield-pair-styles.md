@@ -32,7 +32,7 @@ Case: `ctest -R '^forcefield/pair-styles$'` — sources and oracle record in [`r
 - **Oracle: LAMMPS** for every section — the styles exist in LAMMPS, so LAMMPS
   is the binding oracle (MetalWalls is reserved for MetalWalls-only physics; the
   styles belong to the electrochemical force-field slice E8 of
-  `.claude/notes/metalwalls-capability-map.md`). Version: **30 Mar 2026 -
+  [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md)). Version: **30 Mar 2026 -
   Development** (`develop` / `patch_30Mar2026-1074-g7f680de296`), local binary
   `/home/jicli594/.local/x86_64/bin/lmp`, `units metal` (eV, Å — the public
   Atomiverse surface), `run 0`, thermo PE + forces dumped with `%.16e`. Offline

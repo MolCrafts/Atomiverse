@@ -32,4 +32,4 @@ Never an oracle: Atomiverse's own earlier output ("golden", "first green",
 numpy re-implementation of the algorithm, or a "twin" with a different
 Hamiltonian (GTH-GPW numbers for NC-UPF plane waves). These may appear as
 *extra* consistency checks next to a real oracle, never instead of one. Full
-provenance rules: `.claude/notes/oracle-pin-provenance.md`.
+provenance rules: [oracle-pin-provenance.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/oracle-pin-provenance.md).

@@ -12,7 +12,6 @@
 /// Owned by `communication::DomainRuntime`; non-owning pointer on
 /// `ctx.md.dd`.
 ///
-/// @see .claude/specs/parallel-md-engine.md  § A.1
 #pragma once
 
 #include <array>
@@ -138,8 +137,7 @@ struct DomainDecomposition {
     /// Hamiltonian and accumulates to a step-1000 catastrophic ε̇
     /// runaway under MSU PE stage-2 NPT. (Do not bump `neighbor_generation`
     /// from the halo path: that interacts with `exchange` first_launch
-    /// handling on a Zarr-loaded state; see
-    /// `.claude/notes/msu_stage2_conserved_drift_2026-05-27.md`.)
+    /// handling on a Zarr-loaded state.)
     std::uint64_t halo_generation = 0;
 
     /// @brief Depth [Angstrom] of the ghost shell the halo actually builds:

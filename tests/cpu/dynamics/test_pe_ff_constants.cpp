@@ -13,7 +13,6 @@
 /// well-known smell). The deduplication refactor is `pe-ff-
 /// constants-extract`, intentionally out of scope.
 ///
-/// Spec: `.claude/specs/pe-ff-migrate-dreiding-ua.md` ac-002.
 
 #include <gtest/gtest.h>
 

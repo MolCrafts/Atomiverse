@@ -638,8 +638,7 @@ discussed in detail here:
   Berendsen barostat when you need rigorous NPT statistics.
 - **MPI sub-namespace under `cpu::md::mpi`** — domain decomposition,
   halo exchange, atom migration. Single-rank runs ship every MPI
-  component as a no-op via the `cpu::md::MD` constructor; the public
-  multi-rank API is described in `.claude/specs/parallel-md-engine.md`.
+  component as a no-op via the `cpu::md::MD` constructor.
 
 The next chapter
 ([Geometry Minimization](ch12-geometry-optimization.md)) reuses the same

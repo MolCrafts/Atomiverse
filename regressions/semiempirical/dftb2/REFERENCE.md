@@ -1284,7 +1284,7 @@ Public ATV: energy **eV**, positions **Å**, forces **eV/Å**, stress
 ## dftb-plus-u
 
 **oracle:** literature (formula)
-**oracle_version:** Dudarev PRB 57 1505 (1998); design `.claude/notes/dftb-plus-u.md`
+**oracle_version:** Dudarev PRB 57 1505 (1998); design [dftb-plus-u.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/dftb-plus-u.md)
 
 ### Method
 

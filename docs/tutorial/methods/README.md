@@ -33,7 +33,7 @@ Template: [`_TEMPLATE.md`](_TEMPLATE.md).
 
 Every number on a page is one an external program printed, a literature value
 or an analytic identity, with its provenance in the case `REFERENCE.md`
-(`.claude/notes/oracle-pin-provenance.md`). Oracles never run in ctest. By
+([oracle-pin-provenance.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/oracle-pin-provenance.md)). Oracles never run in ctest. By
 domain:
 
 - molecular Hartree–Fock, post-HF and response — **PySCF**

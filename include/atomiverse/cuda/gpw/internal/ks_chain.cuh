@@ -12,7 +12,7 @@
 /// **Not** a full GPW method product: no k-points, no vdW, no public
 /// `GpwDft` surface. Collinear UKS is an optional stage API (`run_uks`)
 /// composed under the product. Full CUDA GPW product public shape is frozen
-/// to equal CPU `GpwDft` (see `.claude/notes/cuda-gpw-public-shape.md`); this
+/// to equal CPU `GpwDft`; this
 /// stage unit is never promoted to user API.
 #pragma once
 

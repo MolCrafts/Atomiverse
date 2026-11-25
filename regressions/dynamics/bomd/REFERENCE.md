@@ -346,8 +346,7 @@ Note: single-point force wall vs CP2K already measured in
 
 | Gate | Result |
 | ---- | ------ |
-| Correctness | Regression `reg_gpw-bomd-water` asserts A4–A6 of
-  `.claude/specs/gpw-bomd-water/spec.md` |
+| Correctness | Regression `reg_gpw-bomd-water` asserts A4–A6 |
 | Speed | `perf_exempt=true` (no CP2K binary for AIMD twin wall) |
 
 **ATV wall (login-class, OMP=4, 2026-07-23):** ≈ **35 s** for 1 warm-up + 4
@@ -477,6 +476,5 @@ count / comparable settings and require \(T_{\mathrm{atv}}/T_{\mathrm{cp2k}}
 
 | Gate | Result |
 | ---- | ------ |
-| Correctness | Regression `reg_pw-bomd-h` asserts A4–A6 of
-  `.claude/specs/pw-bomd-h/spec.md` |
+| Correctness | Regression `reg_pw-bomd-h` asserts A4–A6 |
 | Speed | `perf_exempt=true` (no CP2K binary) |

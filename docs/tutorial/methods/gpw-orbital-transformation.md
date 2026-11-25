@@ -237,7 +237,7 @@ wall, so those variants are `perf_exempt` unless a DIIS-class wall is quoted.
 Fair walls report the **OT-only** time: the regression binaries also run the DIIS
 twin and must not be ratioed against CP2K OT alone. The binding fair-wall
 baseline (host, binary provenance, timer convention) is
-`.claude/notes/gpw-perf-baseline.md`.
+[gpw-perf-baseline.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-perf-baseline.md).
 
 ## Shared limitations
 

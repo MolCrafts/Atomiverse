@@ -29,7 +29,7 @@
 /// OpenMP is pinned to 1 thread (test_task_materializer convention) so the
 /// comparison sees no scheduler noise.
 ///
-/// Verifies (spec .claude/specs/mpi-launcher-embedded-python-03-protocol.md):
+/// Verifies:
 ///   - (a) dispatched ~10-atom LJ MD task ≡ direct run          [ac-002/003]
 ///   - (b) clean SHUTDOWN releases every worker, exit 0          [ac-004]
 ///   - (c) two sequential tasks in one session, worker loop-back [ac-005]
@@ -103,7 +103,7 @@ constexpr double kEps = 0.0104;  // [eV]
 constexpr double kSigma = 3.4;   // [Å]
 constexpr double kCutoff = 6.0;  // [Å]
 constexpr double kSkin = 0.3;    // [Å]
-constexpr double kDt = 1.0;      // [fs]
+constexpr double kDt = 0.001;    // [ps]
 constexpr double kSpacing = 3.8; // [Å] ≈ 2^(1/6)·σ, near the LJ minimum
 constexpr double kTinit = 10.0;  // [K]
 constexpr unsigned kSeed = 42u;
@@ -147,6 +147,13 @@ cpu::Frame make_lj_frame() {
     return frame;
 }
 
+/// @brief MD task in the fixture's units: LAMMPS `metal` (eV, Å, ps, amu, K).
+MDTask make_md_task(std::vector<MDComponentEntry> entries) {
+    MDTask task{std::move(entries), kNSteps};
+    task.units = ATV::units::Style::metal;
+    return task;
+}
+
 /// @brief The valid MD TaskSpec every happy-path scenario dispatches:
 ///        NeighborList + PairLJCut explicit at force (distinct orders),
 ///        VelocityVerlet + InitVelocity via default bindings, 5 steps.
@@ -160,7 +167,7 @@ TaskSpec make_lj_spec() {
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
     entries.push_back(
         MDComponentEntry{InitVelocityParams{kTinit, kSeed}, std::nullopt});
-    return TaskSpec(MDTask{std::move(entries), kNSteps});
+    return TaskSpec(make_md_task(std::move(entries)));
 }
 
 /// @brief Minimal typed Minimize task used only to exercise orchestration:
@@ -175,7 +182,9 @@ TaskSpec make_minimize_spec() {
         MinimizeBinding{ATV::minimizer::Phase::force, 0}});
     entries.push_back(
         MinimizeComponentEntry{LBFGSParams{5, 0.01, 1}, std::nullopt});
-    return TaskSpec(MinimizeTask{std::move(entries), 1, {}});
+    MinimizeTask task{std::move(entries), 1, {}};
+    task.units = ATV::units::Style::metal;
+    return TaskSpec(std::move(task));
 }
 
 /// @brief Run `spec` directly (no protocol) on a fresh fixture frame. A
@@ -392,7 +401,7 @@ TEST(MpiTaskProtocol, DispatchedMdTaskRecordsTheWholeSystemOnRankZero) {
     entries.push_back(MDComponentEntry{
         MrecRecorderParams{path, /*every=*/1, 0, /*durable=*/false},
         std::nullopt});
-    const TaskSpec spec(MDTask{std::move(entries), kNSteps});
+    const TaskSpec spec(make_md_task(std::move(entries)));
 
     if (world_rank() == 0) {
         TaskDispatcher dispatcher(MPI_COMM_WORLD);
@@ -529,7 +538,7 @@ TEST(MpiTaskProtocol, MaterializeFailurePropagatesAndSessionSurvives) {
     std::vector<MDComponentEntry> bad_entries;
     bad_entries.push_back(
         MDComponentEntry{VelocityVerletParams{kDt}, std::nullopt});
-    const TaskSpec bad_spec(MDTask{std::move(bad_entries), kNSteps});
+    const TaskSpec bad_spec(make_md_task(std::move(bad_entries)));
 
     // Determinism prerequisite, same point on every rank: this spec fails
     // to materialize locally (the failure dispatch() must propagate).

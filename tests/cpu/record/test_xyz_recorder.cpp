@@ -1,7 +1,7 @@
 /// @file tests/cpu/record/test_xyz_recorder.cpp
 /// @brief Unit tests for `cpu::XyzRecorder` — the MD-phase XYZ trajectory sink.
 ///
-/// Spec: .claude/specs/py-recorder-xyz (ac-003). One concern per test: the
+/// One concern per test: the
 /// stride gate (cadence), truncate-then-append across recorders, the content
 /// of a written frame, and the LAMMPS step convention (frame `s` is the state
 /// after `s` steps — checked against an independent driver that ran exactly

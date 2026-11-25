@@ -11,7 +11,6 @@
 ///
 /// Stops short of a parallel HDF5 / per-rank Zarr writer.
 ///
-/// @see .claude/specs/parallel-md-engine.md  § A.9
 #pragma once
 
 #include <cstddef>

@@ -33,4 +33,4 @@ ATV SCC-DFTB2 water at this geometry is **~−110.996 eV** (|Δ|≈0.037 eV vs
 this pin). `reg_h2o_dftb2_mio` gates |E − DFTB+| < 0.05 eV. Residual is
 open (Hubbard-U / mixer detail), not a missing SK table.
 
-See `.claude/notes/dftb-vs-dftbplus-cleanup.md` §1.
+See [dftb-vs-dftbplus-cleanup.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/dftb-vs-dftbplus-cleanup.md) §1.

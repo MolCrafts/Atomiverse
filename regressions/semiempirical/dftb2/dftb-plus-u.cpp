@@ -1,8 +1,8 @@
 /// @file regressions/semiempirical/dftb-plus-u/reg_dftb-plus-u.cpp
 /// @brief DFTB2+U: Dudarev E_U identity + analytic FD forces vs energy FD.
 ///
-/// Domain: Dudarev et al., Phys. Rev. B 57, 1505 (1998); design
-/// `.claude/notes/dftb-plus-u.md`. Driven via `cpu::Evaluate` only (Frame is
+/// Domain: Dudarev et al., Phys. Rev. B 57, 1505 (1998).
+/// Driven via `cpu::Evaluate` only (Frame is
 /// the sole I/O token). Exit non-zero on failure. Public API only. <= 60 s.
 #include <cmath>
 #include <cstdio>

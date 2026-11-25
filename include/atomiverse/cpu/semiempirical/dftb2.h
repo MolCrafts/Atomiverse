@@ -264,7 +264,6 @@ class DFTB2 : public cpu::Semiempirical,
     /// (mean occupation of \(N_A\) spin-orbitals). MioSketch Γ only.
     /// Forces: central FD of \(E_{\mathrm{SCC}}+E_U\) (re-SCC). Stress and
     /// multi-k throw when any \(U_{\mathrm{eff}}\) is nonzero.
-    /// See `.claude/notes/dftb-plus-u.md`.
     std::array<double, 96> u_eff{};
 
     /// @brief Per-element collinear spin constants \(W^A_{ll'}\)

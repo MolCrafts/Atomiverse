@@ -3,7 +3,6 @@
 ///        Gaussian method-driver as the band's force source.
 ///
 /// Mirrors `include/atomiverse/cpu/path/path_driver.h` (`cpu::PathDriver`).
-/// Spec: `.claude/specs/esmm-contract-02-validation-walks` — ac-002 / ac-004.
 ///
 /// `HF` is a pure polymorphic tag (`cpu/component/hf.h`), **not** a Component.
 /// `on(phase).add` copies `provides_force` onto the slot, so a band whose

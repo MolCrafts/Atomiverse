@@ -257,7 +257,6 @@ Si multi-k SCF job class).
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-dos-si/acceptance.md`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dos-si/si_gpw_dos.inp`
 - Sibling energy twin: `gpw-kpoints-si` (same geometry / cutoff / mesh)
 - PW pattern: `cpu::pw::Dos` / `reg_bands-dos-si`
@@ -388,7 +387,6 @@ Na multi-k FD SCF + DOS job class).
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-dos-metallic/` (deleted on close)
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dos-metallic/na_bcc_fd_dos.inp`
 - Sibling metallic forces: `reg_gpw-metallic-forces`
 - Sibling fixed-occ DOS: `reg_gpw-dos-si`
@@ -515,7 +513,6 @@ multi-k collinear UKS SCF job class).
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-dos-uks/acceptance.md`
 - Twin input: `tools/cp2k_oracle/inputs/gpw-dos-uks/si_gpw_dos_uks.inp`
 - Sibling RKS DOS: `gpw-dos-si`
 - Sibling multi-k UKS energy: `gpw-hirshfeld-uks-kpoints`

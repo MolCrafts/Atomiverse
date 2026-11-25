@@ -14,8 +14,7 @@ namespace ATV {
 namespace md {
 
 /// @brief Phase order for one molecular-dynamics step — LAMMPS-Verlet-granular
-///        so the whole timestep is legible from the enum (see
-///        `.claude/notes/cpu-md-execution-model.md`). Every phase is always
+///        so the whole timestep is legible from the enum. Every phase is always
 ///        walked even when empty; an empty phase is an explicit "nothing
 ///        happens here" for this run, not an absence to infer. Within a phase
 ///        components order by a small integer (negative = infrastructure first,

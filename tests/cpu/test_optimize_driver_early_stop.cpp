@@ -3,8 +3,6 @@
 ///        ConvergenceCheck-tagged component publishes satisfy the attached
 ///        `ForceConverged` criterion. Returns the iteration count actually run.
 ///
-/// Acceptance: ac-005 (Optimize half) in
-/// `.claude/specs/cpu-driver-taxonomy.acceptance.md`.
 
 #include <gtest/gtest.h>
 

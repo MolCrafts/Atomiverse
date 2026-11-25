@@ -383,7 +383,7 @@ Three questions, in order:
      organizing axis.
 
 If after applying this rubric you still are not sure, search
-`.claude/specs/` for a related spec. Several of the historical
+the git history for a related spec. Several of the historical
 extensions in this codebase have a written design rationale, and
 matching one of them is usually faster than improvising.
 

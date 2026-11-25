@@ -539,7 +539,6 @@ Supporting internal identities (unchanged):
 
 ### Provenance
 
-- Spec: `.claude/specs/gpw-kpoints-si/` (deleted on completion; git history)
 - MP mesh: Monkhorst & Pack, PRB **13**, 5188 (1976); CP2K KPOINTS convention
 - GTH: Goedecker–Teter–Hutter, PRB **54**, 1703 (1996); Krack, TCA **114**,
   145 (2005); MOLOPT: VandeVondele & Hutter, JCP **127**, 114105 (2007)
@@ -799,7 +798,7 @@ differentiates fixed-P strain energies; CP2K produces a closed-form tensor
 in its separate process. These environment requests and measurement
 boundaries do not establish a matched-width speedup. The main 150 Ry energy twin's
 fair-wall source remains
-[`.claude/notes/gpw-perf-baseline.md`](../../../.claude/notes/gpw-perf-baseline.md).
+[gpw-perf-baseline.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/gpw-perf-baseline.md).
 
 ### Citations
 

@@ -120,6 +120,6 @@ Workers in `metalwalls-method-loop` **must not** enable HF/PW/GPW/CUDA. See
 ## Relation to capability map
 
 Delivery slices **E1–E12**:
-`.claude/notes/metalwalls-capability-map.md`.
+[metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md).
 
 Loop product pages: `docs/tutorial/methods/<slug>.md`.

@@ -13,8 +13,7 @@
 /// source.
 ///
 /// **Not** Ohno–Klopman \f$1/\sqrt{R^2+\tau^2}\f$ — that form gave H₂O
-/// E² ≈ 0.65 eV vs DFTB+ 0.496 eV at the same Δq (see
-/// `.claude/notes/dftb-vs-dftbplus-cleanup.md`).
+/// E² ≈ 0.65 eV vs DFTB+ 0.496 eV at the same Δq.
 ///
 /// Maths are evaluated in Hartree/Bohr (DFTB+ native) then converted to the
 /// public eV/Å surface used by MioSketch paths.

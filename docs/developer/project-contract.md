@@ -45,8 +45,6 @@ so parallel machinery is **ported from LAMMPS, not independently derived**.
 | `benchmarks/` | Scientific benchmark framework (`python -m benchmarks`), native perf harnesses (`perf/`), cross-code comparisons (`compare/`); never registered with ctest; no results in git |
 | `examples/` | API examples by audience: `cpp/` (numbered), `python/`, `cli/`, `extensions/`; compiled by the unit gate, never run by it |
 | `docs/` | The manual. `docs/roadmap/` is the **only** place that states what is implemented on which backend |
-| `.claude/notes/` | Passive project knowledge (current understanding only) |
-| `.claude/specs/` | Live specs; deleted at `done` |
 | `app/`, `python/` | Installable apps, nanobind wheel |
 | `tools/` | Data generators, oracle pin scripts, debug harnesses, `cpu_job.sh` / `gpu_job.sh` batch templates |
 
@@ -95,9 +93,9 @@ bash -lc '
   and regressions. Mixed-layout binaries are not numerical acceptance evidence.
 - Never kill a `git commit` / `git push` mid-hook (pre-commit restores stashed
   unstaged changes only on a normal exit).
-- Machines and workbenches: [arrhenius-workbench.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/arrhenius-workbench.md).
+- Machines and workbenches: [arrhenius-workbench.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/arrhenius-workbench.md).
   Never set `OMP_PROC_BIND`/`OMP_PLACES` when timing BLAS-bound paths:
-  [openblas-thread-binding.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/openblas-thread-binding.md).
+  [openblas-thread-binding.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/openblas-thread-binding.md).
 
 | CMake option | Default | Enables |
 | --- | --- | --- |
@@ -239,7 +237,7 @@ byte budget is exhausted the stepping thread waits on a host condition
 variable (no CUDA sync call) in `Component::before_launch`, before enqueueing
 the step, until a consumer frees space — output is never dropped. Detail and
 open violations:
-[cuda-only-no-dh.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cuda-only-no-dh.md).
+[cuda-only-no-dh.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/cuda-only-no-dh.md).
 
 ## Design defaults
 
@@ -385,7 +383,7 @@ Phase enums all start at 0, so an `int` phase is ambiguous. Typed entry points:
 ### CPU MD execution
 
 Binding summary; mechanism and LAMMPS source mapping in
-[cpu-lammps-alignment.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cpu-lammps-alignment.md).
+[cpu-lammps-alignment.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/cpu-lammps-alignment.md).
 
 - **One rebuild boundary** (LAMMPS `Verlet::setup`/`run`): wrap → exchange →
   sort → borders → neighbor. Runtime does migration, borders and force reverse
@@ -432,7 +430,7 @@ Binding summary; mechanism and LAMMPS source mapping in
   Hamiltonian terms and force kernels do not gain artificial Drivers.
   Parameter/model variants with the same topology reuse one loop implementation,
   with independent state per calculation. Numerical library iterations do not
-  require an extra framework node. See `.claude/specs/es-extensibility.md`.
+  require an extra framework node. See [es-extensibility.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/specs/es-extensibility.md).
 - No generic "SCFSolver", no electronic-structure *category*. The concrete
   method — `RHF`, `UHF`, `RKS`, `UKS`, `AM1`, `RM1`, `MNDO`, `PM3`, `PW`, `GpwDft` — owns its
   Hamiltonian, density build and parameters as members.
@@ -606,7 +604,7 @@ ghost: `read_stable` / `read_each_step`) or **data flow** (ghost → owner:
   No third selector.
 - **CPU comm is LAMMPS `CommBrick`:** one swap at a time on tag 0 (standing
   `Irecv` → pack → blocking `Send` → `Wait`), `sendproc != recvproc` swap table,
-  the round only as forwarding unit. Detail: [md-comm.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/md-comm.md).
+  the round only as forwarding unit. Detail: [md-comm.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/md-comm.md).
 - **Only halo and migration compile a `PackPlan`** (`make_wire_plan`,
   `make_exchange_plan` on `kColExchange`). `gather_to_root` / `bcast_frame` move
   columns column-major via `Block::resolve_columns` +
@@ -659,7 +657,7 @@ ghost: `read_stable` / `read_each_step`) or **data flow** (ghost → owner:
   Physics, spatial predicates, fused topology/force packing stay domain kernels.
   Reserve hot-path scratch in build, keep stream order, key noise by seed,
   global tag, step and component domain. Detail:
-  [cuda-md-nvidia-libraries.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cuda-md-nvidia-libraries.md).
+  [cuda-md-nvidia-libraries.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/cuda-md-nvidia-libraries.md).
 - A separate track: not blocked by ES CPU priority, not frozen by ES CUDA freezes.
 
 ## Electronic structure optimization order
@@ -673,13 +671,13 @@ Architecture and shared algorithm shape before micro-perf; CPU before CUDA ES.
 3. **CUDA ES by method slice** — device-only, tiling, minimal H2D;
    **same-settings CPU is the correctness oracle** (plus external pins); no
    giant dual-backend kernel source; mid-path device↔host exchange is a defect
-   ([cuda-only-no-dh.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/cuda-only-no-dh.md)).
+   ([cuda-only-no-dh.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/cuda-only-no-dh.md)).
 4. **Large-system CUDA perf** — only after the slice is correct; small
    molecules are correctness-only, never the "CUDA wins" story.
 
 **CUDA ES validation** (per slice): current CPU checks and external pins
 green; public `run`/`forces` stable; CUDA↔CPU tolerances stated; perf claims
-only on large systems. Wave-local freezes live in `.claude/notes/`.
+only on large systems.
 
 **CUDA ES implementation ownership:** Atomiverse owns the complete scientific
 algorithm, data flow, execution scheduling and differentiation. After setup,
@@ -769,11 +767,11 @@ unnecessary splitting, transfers, intermediate storage or duplicate primitives.
 - **Nested electronic methods:** electronic propagators (CPMD, second-gen CP,
   XL-BOMD) on GPW run only through `GPWEvaluator`, which also duplicates the
   BO write-back of a mounted `GpwDft`; QM/MM drives its engine on a private
-  Context. Plan: `.claude/specs/es-unification.md`.
+  Context. Plan: [es-unification.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/specs/es-unification.md).
 - **Residual `int` step counters:** `Runtime::run(int)`, `Driver::run_nested`
   / `run_nested_erased` budgets, PhaseBuilder budgets,
   `Runtime::comm_refresh_(int slot, int step)` (truncates).
 - **ES public shapes** diverge across families:
-  [es-architecture-debt.md](https://github.com/MolCrafts/Atomiverse/blob/dev/.claude/notes/es-architecture-debt.md).
+  [es-architecture-debt.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/es-architecture-debt.md).
 - Namespaces are not aligned to directories; aligning them is a deliberate
   follow-up, not a drive-by.

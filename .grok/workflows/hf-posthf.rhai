@@ -137,7 +137,7 @@ if tests_scoped("ctest --test-dir build --output-on-failure -L cuda -LE regressi
 
 let law = "";
 law += "REPO: Atomiverse. Active branch is dev. Never commit to master. Never stage frequencies.tsv or any file you did not change for this slug. ";
-law += "Read CLAUDE.md, .claude/specs/es-unification.md, include/atomiverse/cpu/dynamics/md.h, and include/atomiverse/cuda/dynamics/md.cuh before editing. ";
+law += "Read CLAUDE.md, include/atomiverse/cpu/dynamics/md.h, and include/atomiverse/cuda/dynamics/md.cuh before editing. ";
 law += "ARCHITECTURE, copy the MD preset and do not restyle MD. cpu::md::MD is Driver<md::Phase>. cuda::md::MD is cuda::Driver<md::Phase>. Same phase enum, same Frame entry, infrastructure mounted with on(phase).add in the constructor. There is no DynamicsDriver category. An evaluator is a separate type the preset mounts; it writes the Frame and does not own a second time loop. CUDA matches that front and keeps its engines internal. ";
 law += "Apply that shape to this slug only. A mean-field method that iterates is Driver<scf::Phase> on CPU and, when a device path exists, on CUDA, plus the HF tag. Entries are run(Frame&), run(const Frame&), and forces(Frame&). Periodic stress(Frame&) only when the method already has stress. Parameters are constructor arguments, const after construction. Residuals go to ConvergenceMetrics. A Criterion decides. The method does not assign converged. ";
 law += "Outer MD or Minimize mounts the method with on(phase).add on the parent Runtime and accumulates energy and forces. No *Evaluator, no *Config, no private Runtime, no with_gradient flag. ";
@@ -164,7 +164,7 @@ while wave < max_waves {
     phase("Census");
     let census_prompt = law;
     census_prompt += "You are GapCensus for Gaussian HF and post-HF, wave " + wave.to_string() + ". ";
-    census_prompt += "Use grep and read_file. Read docs/roadmap/hartree-fock.md, docs/roadmap/post-hf.md, .claude/specs/es-unification.md, include/atomiverse/cpu/scf/mean_field_method.h, include/atomiverse/cpu/scf/post_hf.h, include/atomiverse/cpu/dynamics/md.h, include/atomiverse/cuda/scf/rhf.cuh. ";
+    census_prompt += "Use grep and read_file. Read docs/roadmap/hartree-fock.md, docs/roadmap/post-hf.md, include/atomiverse/cpu/scf/mean_field_method.h, include/atomiverse/cpu/scf/post_hf.h, include/atomiverse/cpu/dynamics/md.h, include/atomiverse/cuda/scf/rhf.cuh. ";
     census_prompt += "Find PySCF under " + pyscf_root + " (pyscf/scf, pyscf/mp, pyscf/cc, pyscf/mcscf, pyscf/fci). Name the files you opened in pyscf_files. ";
     census_prompt += "Pick ONE slug. Prefer a Gaussian HF or post-HF type whose public shape is not the MD preset (loop is not Driver<scf::Phase>, CUDA front missing run(const Frame&), post-HF run() does not overwrite kEnergy in eV, a free for-loop declares convergence). ";
     census_prompt += "If that shape is already in place for the open rows, pick one ○ cell on those two roadmap pages. A foothold is not closed. ";

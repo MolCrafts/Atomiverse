@@ -40,7 +40,6 @@ namespace md {
 /// contract (integrity components are exempt).
 ///
 /// @see cpu::md::ZeroLinearMomentum for the CPU reference implementation.
-/// @see .claude/specs/msu-pe-cuda-components-01-fidelity-and-momentum.md
 class ZeroMomentum : public Component {
   public:
     /// @brief Construct momentum-removal component.

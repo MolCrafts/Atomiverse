@@ -101,7 +101,7 @@ only — there is no long-range path for the induced-dipole field (pairing with
 - A. Marin-Laflèche et al., *J. Open Source Softw.* **5**(53), 2373 (2020) (MetalWalls), DOI [10.21105/joss.02373](https://doi.org/10.21105/joss.02373)
 - B. T. Thole, *Chem. Phys.* **59**, 341 (1981); van Duijnen & Swart, *J. Phys. Chem. A* **102**, 2399 (1998) (exponential damping)
 - J. Applequist, J. R. Carl, K.-K. Fung, *J. Am. Chem. Soc.* **94**, 2952 (1972) (isotropic damped point-dipole SCC)
-- Capability map: `.claude/notes/metalwalls-capability-map.md` (E4, §1, §2, §9)
+- Capability map: [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md) (E4, §1, §2, §9)
 
 ## pim-induced-dipole-bulk — Bulk PIM induced dipoles, two-site ion pair {#pim-induced-dipole-bulk}
 

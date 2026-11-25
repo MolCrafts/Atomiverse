@@ -327,7 +327,7 @@ Wave-5 pins \(4.6209\times10^{-3}\) / \(3.9346\times10^{-3}\) /
 \(3.5099\times10^{-3}\) came from `pin_voronoi_tf.py`, a numpy transcription
 of ATV's own truncated elastance at `xy_image_range = 40` — **~6.13 % high**
 vs the real binary (same defect as the pre-repin `thomas-fermi-electrode`
-numbers; see `.claude/notes/oracle-pin-provenance.md`).
+numbers; see [oracle-pin-provenance.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/oracle-pin-provenance.md)).
 
 ### Assertions
 

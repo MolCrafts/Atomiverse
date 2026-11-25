@@ -143,6 +143,7 @@ ArmRun run_arm(int fft_ranks, int order = kOrder) {
     cpu::KSpacePPPM kspace{kAlpha, kSpacing, order, fft_ranks};
 
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_integrator(cpu::md::VelocityVerlet{0.0});
     sim.set_neighbor(cpu::md::NeighborList<>{kCutoff, kSkin});
     sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kCutoff});
@@ -390,12 +391,17 @@ TEST(PppmSubcommParity, BrickArmsMatchReplicatedForOddAndEvenOrders) {
                     kEnergyRel * std::max(1.0, std::fabs(replicated.energy)));
         if (world_rank() != 0)
             continue;
-        ASSERT_EQ(brick.gathered.n_total, kNAtoms);
-        ASSERT_EQ(replicated.gathered.n_total, kNAtoms);
+        // Root-only checks stay non-fatal: the other ranks go on to the next
+        // order's collectives, so leaving the loop here would deadlock.
+        EXPECT_EQ(brick.gathered.n_total, kNAtoms);
+        EXPECT_EQ(replicated.gathered.n_total, kNAtoms);
+        if (brick.gathered.n_total != kNAtoms
+            || replicated.gathered.n_total != kNAtoms)
+            continue;
         double fmax = 0.0, dmax = 0.0;
         for (int i = 0; i < kNAtoms; ++i) {
             const std::size_t k = static_cast<std::size_t>(i);
-            ASSERT_EQ(brick.gathered.tag[k], replicated.gathered.tag[k]);
+            EXPECT_EQ(brick.gathered.tag[k], replicated.gathered.tag[k]);
             const double r[3] = {replicated.gathered.fx[k],
                                  replicated.gathered.fy[k],
                                  replicated.gathered.fz[k]};
@@ -406,7 +412,7 @@ TEST(PppmSubcommParity, BrickArmsMatchReplicatedForOddAndEvenOrders) {
                 dmax = std::max(dmax, std::fabs(b[d] - r[d]));
             }
         }
-        ASSERT_GT(fmax, 1e-3) << "reciprocal forces vanished; parity vacuous";
+        EXPECT_GT(fmax, 1e-3) << "reciprocal forces vanished; parity vacuous";
         EXPECT_LT(dmax, kForceAbs)
             << "brick arm changed the forces: max|ΔF| = " << dmax << " eV/Å";
     }
@@ -420,7 +426,8 @@ constexpr double kDriftSpacing = 1.0; ///< mesh spacing [Å] → K = 18
 constexpr double kDriftCutoff = 3.0;  ///< real-space cutoff [Å]
 constexpr double kDriftSkin = 5.0;    ///< skin [Å]: owned drift up to 2.5 Å
 constexpr double kDriftStart = 8.85;  ///< [Å], 0.15 Å inside the 9 Å cut
-constexpr double kDriftStep = 2.3;    ///< displacement in one 1 fs step [Å]
+constexpr double kDriftStep = 2.3;    ///< displacement in one step [Å]
+constexpr double kDriftDt = 0.001;    ///< time step [ps]
 
 /// @brief One MD step in which site 0 crosses a subdomain cut by 2.15 Å
 /// (2.15 mesh cells) without reneighbouring (2.3 Å < skin/2 = 2.5 Å,
@@ -433,10 +440,11 @@ ArmRun run_drift(int axis, int order) {
     StorageReal* v[3] = {frame.span(ATV::kAtom_vx), frame.span(ATV::kAtom_vy),
                          frame.span(ATV::kAtom_vz)};
     r[axis][0] = kDriftStart;
-    v[axis][0] = kDriftStep; // Å/fs, dt = 1 fs
+    v[axis][0] = kDriftStep / kDriftDt; // [Å/ps]
     cpu::KSpacePPPM kspace{kAlpha, kDriftSpacing, order};
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::VelocityVerlet{1.0});
+    sim.set_units("metal");
+    sim.set_integrator(cpu::md::VelocityVerlet{kDriftDt});
     sim.set_neighbor(cpu::md::NeighborList<>{kDriftCutoff, kDriftSkin,
                                              /*every=*/1, /*delay=*/0,
                                              /*check=*/true});
@@ -457,6 +465,7 @@ ArmRun run_drift(int axis, int order) {
 int cut_axis() {
     cpu::Frame frame = make_charges();
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_integrator(cpu::md::VelocityVerlet{0.0});
     sim.set_neighbor(cpu::md::NeighborList<>{kDriftCutoff, kDriftSkin});
     sim.on(md::Phase::force).add(cpu::CoulLong{kAlpha, kDriftCutoff});
@@ -509,11 +518,15 @@ TEST(PppmSubcommParity, OwnedAtomDriftingTwoCellsPastItsCutUsesSkinGhosts) {
                     kEnergyRel * std::max(1.0, std::fabs(replicated.energy)));
         if (world_rank() != 0)
             continue;
-        ASSERT_EQ(brick.gathered.n_total, kNAtoms);
+        EXPECT_EQ(brick.gathered.n_total, kNAtoms);
+        EXPECT_EQ(replicated.gathered.n_total, kNAtoms);
+        if (brick.gathered.n_total != kNAtoms
+            || replicated.gathered.n_total != kNAtoms)
+            continue; // non-fatal: other ranks are in the next collectives
         double dmax = 0.0, fmax = 0.0;
         for (int i = 0; i < kNAtoms; ++i) {
             const std::size_t k = static_cast<std::size_t>(i);
-            ASSERT_EQ(brick.gathered.tag[k], replicated.gathered.tag[k]);
+            EXPECT_EQ(brick.gathered.tag[k], replicated.gathered.tag[k]);
             const double rf[3] = {replicated.gathered.fx[k],
                                   replicated.gathered.fy[k],
                                   replicated.gathered.fz[k]};
@@ -524,7 +537,7 @@ TEST(PppmSubcommParity, OwnedAtomDriftingTwoCellsPastItsCutUsesSkinGhosts) {
                 dmax = std::max(dmax, std::fabs(bf[d] - rf[d]));
             }
         }
-        ASSERT_GT(fmax, 1e-3);
+        EXPECT_GT(fmax, 1e-3);
         EXPECT_LT(dmax, kForceAbs);
     }
 }
@@ -546,10 +559,11 @@ TEST(PppmSubcommParity, OutOfRangeAtomThrowsOnEveryRank) {
     StorageReal* v[3] = {frame.span(ATV::kAtom_vx), frame.span(ATV::kAtom_vy),
                          frame.span(ATV::kAtom_vz)};
     r[axis][0] = kDriftStart;
-    v[axis][0] = kDriftStep; // Å/fs, dt = 1 fs
+    v[axis][0] = kDriftStep / kDriftDt; // [Å/ps]
     cpu::KSpacePPPM kspace{kAlpha, kDriftSpacing, kOrder};
     cpu::md::MD sim;
-    sim.set_integrator(cpu::md::VelocityVerlet{1.0});
+    sim.set_units("metal");
+    sim.set_integrator(cpu::md::VelocityVerlet{kDriftDt});
     sim.set_neighbor(cpu::md::NeighborList<>{kDriftCutoff, /*skin=*/0.2,
                                              /*every=*/1000, /*delay=*/0,
                                              /*check=*/false});

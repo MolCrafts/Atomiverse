@@ -1,7 +1,6 @@
 /// @file tests/cpu/md/test_domain_decomposition.cpp
 /// @brief RED tests for single-rank `DomainDecomposition` state (Phase 1).
 ///
-/// Spec: .claude/specs/parallel-md-engine.md § A.1 + § B (Context fields).
 /// The `Backend` must expose a non-null `Context::dd` in single-rank mode with
 /// identity topology, zero ghosts, and an identity tag→local map.
 

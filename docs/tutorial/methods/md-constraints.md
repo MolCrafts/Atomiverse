@@ -105,7 +105,7 @@ constructor arguments; no Config bag.
 - Feenstra et al., *J. Comput. Chem.* **20**, 786 (1999) (virtual-site force partition).
 - LAMMPS `pair_style lj/cut/tip4p/cut` (metal).
 - Roadmap: `docs/roadmap/molecular-dynamics.md` (virtual sites / TIP4P–TIP5P);
-  capability map `.claude/notes/metalwalls-capability-map.md` → **E9**.
+  capability map [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md) → **E9**.
 
 ## virtual-site-multi-topology — General virtual sites: TIP4P dimer + TIP5P geometry (E9) {#virtual-site-multi-topology}
 

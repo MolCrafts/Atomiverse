@@ -66,7 +66,7 @@ within_10x: true. Host: same login node, single-thread, 2026-07-23.
 
 - LAMMPS docs: <https://docs.lammps.org/fix_efield.html>
 - Source: `src/fix_efield.cpp` (constant efield, charge interactions).
-- Map: `.claude/notes/metalwalls-capability-map.md` slice **E3**.
+- Map: [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md) slice **E3**.
 
 
 ## Reference — oscillating (AC) external E-field on MD charges
@@ -159,7 +159,7 @@ within_10x: true. Host: same login node, single-thread, 2026-07-24.
 
 - LAMMPS docs: <https://docs.lammps.org/fix_efield.html> (equal-style variable)
 - Source: `src/fix_efield.cpp` (variable path forces; potential keyword for \(U\))
-- Map: `.claude/notes/metalwalls-capability-map.md` slice **E3** (oscillating residual)
+- Map: [metalwalls-capability-map.md](https://github.com/MolCrafts/Atomiverse/blob/78e444926ce90bfb51985d702f1ecd644ab5c866/.claude/notes/metalwalls-capability-map.md) slice **E3** (oscillating residual)
 - Constant foothold: `regressions/md/electric-fields/`
 
 

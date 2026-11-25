@@ -74,7 +74,7 @@ export OPENBLAS_ROOT="${OPENBLASDIR:-${OPENBLAS_ROOT:-}}"
 # OpenBLAS flavour. The module points at the OpenMP build, which hangs in
 # threaded GEMM once the Python extension is dlopen'ed into CPython; the
 # runtime pick is the first LIBRARY_PATH directory, so the flavour is chosen
-# here (.claude/notes/openblas-thread-binding.md section 2). Default: pthread
+# here. Default: pthread
 # when the configure builds the Python extension, the module's flavour
 # otherwise.
 if [[ -z "${ATV_BLAS_FLAVOUR:-}" ]]; then

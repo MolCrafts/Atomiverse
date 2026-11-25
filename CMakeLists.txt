@@ -1219,9 +1219,7 @@ if(NOT ATV_DOCS_ONLY)
     #     `exp(-dt/2 · xi)`. Reordering moves the `exp(...)` argument
     #     and silently changes the conserved Hamiltonian.
     #
-    # **Policy** (keep this block in sync with
-    # `.claude/specs/parallel-md-engine.md` Architectural rules and
-    # `.claude/specs/parallel-md-engine.acceptance.md` ac-021):
+    # **Policy**:
     #
     #   - `atomiverse` library default = strict FP (no `-ffast-math`).
     #   - Per-file opt-in for FF kernels via

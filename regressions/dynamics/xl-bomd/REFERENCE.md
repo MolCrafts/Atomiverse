@@ -139,7 +139,7 @@ XL trajectory is not slower than the plain-BOMD twin.
 
 | Gate | Result |
 | ---- | ------ |
-| Correctness | Regression `reg_xl-bomd-water` asserts A7 of `.claude/specs/xl-bomd-water/acceptance.md`; unit pin A1–A6 in `test_cpu_gpw_xl_bomd` |
+| Correctness | Regression `reg_xl-bomd-water` asserts A7; unit pin A1–A6 in `test_cpu_gpw_xl_bomd` |
 | Speed | `perf_exempt=true` (no CP2K binary for AIMD twin wall) |
 
 **ATV wall (login-class, OMP=4, 2026-07-25):** measured at gate time — see
@@ -388,7 +388,7 @@ cold single points).
 
 | Gate | Result |
 | ---- | ------ |
-| Correctness | `reg_xl-bomd-rhf-water` asserts ac-004 of `.claude/specs/esmm-cpmd-05-scf-xlbomd/acceptance.md`; ac-001…ac-003 are pinned by `tests/cpu/scf/test_scf_xl_bomd.cpp`, the Table-I coefficients by `tests/cpu/electronic/test_xl_bomd.cpp` |
+| Correctness | `reg_xl-bomd-rhf-water` asserts ac-004; ac-001…ac-003 are pinned by `tests/cpu/scf/test_scf_xl_bomd.cpp`, the Table-I coefficients by `tests/cpu/electronic/test_xl_bomd.cpp` |
 | Speed | `perf_exempt=true` (no cross-engine wall twin for an iteration-count observable) |
 
 
@@ -867,6 +867,5 @@ B 5.12 s on this window).
 
 ### Provenance
 
-- Spec: `.claude/specs/xl-bomd-linearized-stress/` (delete on close)
 - Twin input: `tools/cp2k_oracle/inputs/xl-bomd-linearized-stress/h2_xl_linearized_stress_nve.inp`
 - Queue: `docs/developer/cp2k-method-queue.md` row `xl-bomd-linearized-stress`

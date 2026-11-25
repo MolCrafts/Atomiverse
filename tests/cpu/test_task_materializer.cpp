@@ -2,7 +2,7 @@
 /// @brief Unit tests for `cpu::task::TaskMaterializer` — the rank-agnostic
 ///        rebuilder that turns a TaskSpec into a runnable pipeline.
 ///
-/// Spec: .claude/specs/mpi-launcher-embedded-python-02-codec.md. The fidelity
+/// The fidelity
 /// contract under test: the driver materialized from a TaskSpec, consumed via
 /// the single task-kind-agnostic `run(frame)` entry, is THE SAME object a user
 /// would hand-build — so a 5-step LJ MD run, a 3-step AM1 BOMD run and an AM1

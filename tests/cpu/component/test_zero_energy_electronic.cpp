@@ -5,7 +5,6 @@
 ///
 /// Mirrors `src/cpu/component/zero.cpp` (`ATV::cpu::ZeroEnergy`) and, for the
 /// second case, the per-term write the five ES evaluators gain.
-/// Spec: `.claude/specs/esmm-contract-05-accumulate-switch` (U7b, U8).
 ///
 /// ## Why the key exists
 ///

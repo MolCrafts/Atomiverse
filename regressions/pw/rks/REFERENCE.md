@@ -233,7 +233,6 @@ Known cost asymmetry, recorded not excused: QE reduces the unshifted
 
 ### Provenance
 
-- Spec: `.claude/specs/pw-pbe-gga-si/spec.md`
 - Functional: PBE (1996); shared `cpu::scf::evaluate_xc` (libxc-parity tree)
 - Geometry: textbook Si diamond \(a=5.43\) Å
 - PP: Hamann ONCVPSP NC UPF shipped under `tests/data/pw/`
@@ -645,7 +644,6 @@ Hamiltonian.
 | ---- | ----- |
 | GH200 job id | **948152** (node type: NVIDIA GH200 120GB) — the committed tree |
 | Toolchain | `GPU/buildenv-gcccuda/2026.03-cu13.0`, nvcc **13.0.88** / GNU 14.3.0, `-DCMAKE_CUDA_ARCHITECTURES=90` |
-| GH200 log path | `.claude/cuda-pw-slice-948152.out` |
 | First green | job **948055** (node `n438`) on the same slice before the review-fix round; **bit-identical** numbers, which is the evidence that the fix round was behaviour-preserving |
 | Measured \(E_\mathrm{cpu}\) | **−15.67177311 Ry** (5 iterations) |
 | Measured \(E_\mathrm{cuda}\) | **−15.67177311 Ry** (5 iterations) |

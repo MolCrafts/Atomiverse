@@ -25,7 +25,6 @@
 /// follows the force body. Other force paths retain their host assembly.
 ///
 /// Unsupported members throw with a how-to (no silent CPU-SCF fallback).
-/// Contract: `.claude/notes/cuda-gpw-public-shape.md`.
 ///
 /// @code
 ///   cuda::gpw::GpwDft m({{el, basis, pot}}, /*cutoff_ry=*/100.0,

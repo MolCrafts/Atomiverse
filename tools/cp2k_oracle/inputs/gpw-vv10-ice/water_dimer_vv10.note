@@ -47,4 +47,4 @@ Do not treat rVV10@b=5.9 as stock VV10.
 ## Unblock
 
 Requires upstream CP2K stock VV10 (or loop policy allowing a non-CP2K
-offline oracle for this row). See `.claude/specs/gpw-vv10-ice/spec.md`.
+offline oracle for this row).
