@@ -72,12 +72,15 @@ Canonical deep path                   Top-level re-export         C++ symbol
 ``recorder.XYZ``                      ``XYZ``                     ``cpu::XyzRecorder``
 ``recorder.MrecRecorder``             ``MrecRecorder``            ``cpu::MrecRecorder``
 ``montecarlo.MC``                     ``MC``                      ``cpu::mc::MC``
-``montecarlo.NptMC``                  ``NptMC``                   ``cpu::mc::NptMc``
-``montecarlo.GCMC``                   ``GCMC``                    ``cpu::mc::Gcmc``
+``montecarlo.KMC``                    ``KMC``                     ``cpu::mc::KMC``
+``montecarlo.NptMC``                  ``NptMC``                   ``MC::set_npt``
+``montecarlo.GCMC``                   ``GCMC``                    ``MC::set_gcmc``
 ``montecarlo.TranslateMove``          ``TranslateMove``           ``cpu::mc::TranslateMove``
 ``montecarlo.VolumeMove``             ``VolumeMove``              ``cpu::mc::VolumeMove``
 ``montecarlo.InsertDeleteMove``       ``InsertDeleteMove``        ``cpu::mc::InsertDeleteMove``
 ``montecarlo.MoveSelector``           ``MoveSelector``            ``cpu::mc::MoveSelector``
+``montecarlo.StateTransitions``       ``StateTransitions``        ``cpu::mc::StateTransitions``
+``montecarlo.LinearKineticSolver``    ``LinearKineticSolver``     ``cpu::mc::LinearKineticSolver``
 ``pw.PW``                             ``PW``                      ``cpu::pw::PW``
 ``pw.PWResult``                       ``PWResult``                ``cpu::pw::PWResult``
 ``scf.RHF``                           ``RHF``                     ``cpu::scf::RHF``
@@ -109,7 +112,7 @@ Canonical deep path                   Top-level re-export         C++ symbol
 (self-consistent field) methods — restricted / unrestricted Hartree-Fock and
 Kohn-Sham DFT; ``help(atomiverse.scf)`` explains the naming and the units.
 
-``MC`` / ``NptMC`` / ``GCMC`` are the three Monte Carlo ensemble presets:
+``MC`` is the shared Monte Carlo driver. ``NptMC`` and ``GCMC`` configure it:
 canonical NVT (fixed particle number N, volume V, temperature T),
 isothermal-isobaric NPT (fixed N, pressure P, T — the volume is sampled)
 and grand-canonical muVT (fixed chemical potential mu, V, T — the particle
@@ -119,7 +122,7 @@ equations of motion, so a sampler takes a *mover* (``TranslateMove``,
 ``VolumeMove``, ``InsertDeleteMove``, or a weighted ``MoveSelector`` mix)
 where MD takes an integrator, and never produces forces.
 ``help(atomiverse.montecarlo)`` gives the acceptance rules and the units.
-These four movers and three presets are CPU-only and take no ``device=``.
+The driver, movers and kinetic event model run on the CPU.
 An extension built without ``mc`` raises ``AttributeError`` naming the flag
 for them, like the compile-optional rows below.
 
@@ -281,12 +284,27 @@ _COMPUTE_EXPORTS: dict[str, tuple[str, str]] = {
     "XYZ": ("atomiverse.recorder", "XYZ"),
     "MrecRecorder": ("atomiverse.recorder", "MrecRecorder"),
     "MC": ("atomiverse.montecarlo", "MC"),
+    "KMC": ("atomiverse.montecarlo", "KMC"),
     "NptMC": ("atomiverse.montecarlo", "NptMC"),
     "GCMC": ("atomiverse.montecarlo", "GCMC"),
     "TranslateMove": ("atomiverse.montecarlo", "TranslateMove"),
     "VolumeMove": ("atomiverse.montecarlo", "VolumeMove"),
     "InsertDeleteMove": ("atomiverse.montecarlo", "InsertDeleteMove"),
     "MoveSelector": ("atomiverse.montecarlo", "MoveSelector"),
+    "TorsionMove": ("atomiverse.montecarlo", "TorsionMove"),
+    "EndMerRotationMove": ("atomiverse.montecarlo", "EndMerRotationMove"),
+    "LibrationMove": ("atomiverse.montecarlo", "LibrationMove"),
+    "DimerFlipMove": ("atomiverse.montecarlo", "DimerFlipMove"),
+    "PivotMove": ("atomiverse.montecarlo", "PivotMove"),
+    "ReptationMove": ("atomiverse.montecarlo", "ReptationMove"),
+    "GeneralizedReptationMove": ("atomiverse.montecarlo", "GeneralizedReptationMove"),
+    "CBMCMove": ("atomiverse.montecarlo", "CBMCMove"),
+    "ExtendedCBMCMove": ("atomiverse.montecarlo", "ExtendedCBMCMove"),
+    "ConRotMove": ("atomiverse.montecarlo", "ConRotMove"),
+    "ParallelRotationMove": ("atomiverse.montecarlo", "ParallelRotationMove"),
+    "AtomIdentityExchangeMove": ("atomiverse.montecarlo", "AtomIdentityExchangeMove"),
+    "StateTransitions": ("atomiverse.montecarlo", "StateTransitions"),
+    "LinearKineticSolver": ("atomiverse.montecarlo", "LinearKineticSolver"),
     "AM1": ("atomiverse.semiempirical", "AM1"),
     "RM1": ("atomiverse.semiempirical", "RM1"),
     "MNDO": ("atomiverse.semiempirical", "MNDO"),
@@ -398,12 +416,27 @@ _PUBLIC: tuple[str, ...] = (
     "Thermo",
     "XYZ",
     "MC",
+    "KMC",
     "NptMC",
     "GCMC",
     "TranslateMove",
     "VolumeMove",
     "InsertDeleteMove",
     "MoveSelector",
+    "TorsionMove",
+    "EndMerRotationMove",
+    "LibrationMove",
+    "DimerFlipMove",
+    "PivotMove",
+    "ReptationMove",
+    "GeneralizedReptationMove",
+    "CBMCMove",
+    "ExtendedCBMCMove",
+    "ConRotMove",
+    "ParallelRotationMove",
+    "AtomIdentityExchangeMove",
+    "StateTransitions",
+    "LinearKineticSolver",
     "AM1",
     "RM1",
     "MNDO",

@@ -416,7 +416,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// Consulted once per phase at the end of `build()` and compiled into
     /// `StageSlot::forces_requested`, so a component never pays a branch for it.
     /// The default is `true` for every phase of every loop: force-writing
-    /// components keep writing forces unless a preset says otherwise. `McBase`
+    /// components keep writing forces unless a preset says otherwise. `MC`
     /// is the one override — its trial `energy` phase scores an energy the
     /// Metropolis test may discard, so every gradient assembled there is wasted
     /// work (and for a nested QM method, the whole cost of the sweep).

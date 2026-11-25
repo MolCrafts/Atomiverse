@@ -577,7 +577,7 @@ if(ATV_BUILD_MD)
 endif()
 # Mirrors include/atomiverse/cpu/driver/outcome_policy.h — cpu::Metropolis'
 # verb contract (the canonical policy owns Displace/None and refuses the
-# Box/Insert/Delete trials that need the NptMc / Gcmc presets). Formula-level,
+# Box/Insert/Delete trials that need the NPT / muVT policies). Formula-level,
 # hand-built LoopState, microseconds.
 if(ATV_BUILD_MC) # exercises mc::Transaction verbs
     atv_add_cpp_test(test_cpu_outcome_policy cpu/driver/test_outcome_policy.cpp)

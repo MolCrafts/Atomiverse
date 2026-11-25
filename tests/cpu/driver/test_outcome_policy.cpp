@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -52,7 +53,10 @@ struct PolicyHarness {
         return cpu::LoopState{iteration, frame, ctx, metrics};
     }
 
-    void stamp(Verb v) { txn.verb = v; }
+    void stamp(Verb v) {
+        txn.verb = v;
+        txn.log_proposal_ratio = 0.0;
+    }
 };
 
 bool message_mentions(const std::runtime_error& e, const std::string& needle) {
@@ -63,29 +67,24 @@ bool message_mentions(const std::runtime_error& e, const std::string& needle) {
 
 // ── cpu::Metropolis — the canonical (NVT) verb contract ────────────────────
 
-TEST(MetropolisPolicy, VolumeVerbThrowsNamingTheNptPreset) {
-    // A VolumeMove under `cpu::mc::MC` is currently judged by exp(-βΔE) with
-    // no P·ΔV and no N·ln(V'/V) term, and a downhill draw is silently
-    // committed — an undefined ensemble, not an approximation of NPT.
+TEST(MetropolisPolicy, VolumeVerbNamesTheNptSetter) {
+    // Reject an NPT trial even when its energy change is downhill.
     PolicyHarness h;
     cpu::Metropolis p{300.0, h.rng};
     h.frame.meta.get(ATV::kEnergy) = 0.0;
     p.on_start(h.state());
-    h.frame.box.scale_isotropic(1.05);     // trial box, as VolumeMove leaves it
-    h.frame.meta.get(ATV::kEnergy) = -1.0; // downhill ⇒ today: silent Commit
+    h.frame.box.scale_isotropic(1.05); // trial box, as VolumeMove leaves it
+    h.frame.meta.get(ATV::kEnergy) = -1.0;
     h.stamp(Verb::Box);
     try {
         p.after_stages(h.state());
         FAIL() << "expected throw — NVT Metropolis has no rule for a Box verb";
     } catch (const std::runtime_error& e) {
-        // Substring the message must carry: the preset that DOES own this
-        // verb, so the guidance is actionable. `NptMc` is the class name in
-        // include/atomiverse/cpu/montecarlo/npt_mc.h:140.
-        EXPECT_TRUE(message_mentions(e, "NptMc")) << e.what();
+        EXPECT_TRUE(message_mentions(e, "set_npt")) << e.what();
     }
 }
 
-TEST(MetropolisPolicy, InsertVerbThrowsNamingTheGcmcPreset) {
+TEST(MetropolisPolicy, InsertVerbNamesTheGcmcSetter) {
     // Same defect on the μVT side: an insertion judged without the
     // V/(Λ³·N) prefactor is not grand-canonical sampling.
     PolicyHarness h;
@@ -99,9 +98,7 @@ TEST(MetropolisPolicy, InsertVerbThrowsNamingTheGcmcPreset) {
         FAIL() << "expected throw — NVT Metropolis has no rule for an Insert "
                   "verb";
     } catch (const std::runtime_error& e) {
-        // `Gcmc` is the class name in
-        // include/atomiverse/cpu/montecarlo/gcmc.h:155.
-        EXPECT_TRUE(message_mentions(e, "Gcmc")) << e.what();
+        EXPECT_TRUE(message_mentions(e, "set_gcmc")) << e.what();
     }
 }
 
@@ -129,4 +126,23 @@ TEST(MetropolisPolicy, EmptyProposalDoesNotThrow) {
     p.on_start(h.state());
     h.stamp(Verb::None);
     EXPECT_NO_THROW((void)p.after_stages(h.state()));
+}
+
+TEST(MetropolisPolicy, RequiresProposalRatioAndAppliesBiasCorrection) {
+    PolicyHarness h;
+    cpu::Metropolis policy{1.0, h.rng};
+    h.frame.meta.set(kEnergy, 0.0);
+    policy.on_start(h.state());
+    h.stamp(Verb::Displace);
+    h.frame.meta.set(kEnergy, 1000.0);
+    h.txn.log_proposal_ratio.reset();
+    EXPECT_THROW(policy.after_stages(h.state()), std::invalid_argument);
+
+    // The positive proposal correction outweighs the uphill energy change.
+    h.txn.log_proposal_ratio = 1001.0;
+    EXPECT_EQ(policy.after_stages(h.state()), Outcome::Commit);
+
+    h.frame.meta.set(kEnergy, 0.0);
+    h.txn.log_proposal_ratio = -std::numeric_limits<double>::infinity();
+    EXPECT_EQ(policy.after_stages(h.state()), Outcome::Rollback);
 }

@@ -43,12 +43,12 @@ class InsertDeleteMove : public cpu::Mover {
     /// @param atomic_number Species Z stamped on inserted atoms (0..118, 0 =
     ///        no element; written when the Frame carries
     ///        `kAtom_atomic_number`).
-    /// @param mass_amu Mass [amu] stamped on inserted atoms (must be > 0;
+    /// @param mass Mass in the run unit system stamped on inserted atoms (must be > 0;
     ///        use the same species mass the `GcmcMetropolis` Λ was built
     ///        from).
     /// @throws std::invalid_argument on a non-positive type or mass, or Z
     ///         outside 0..118.
-    InsertDeleteMove(int type, int atomic_number, double mass_amu);
+    InsertDeleteMove(int type, int atomic_number, double mass);
 
     /// @brief Component identifier.
     /// @return "insert_delete".
@@ -72,7 +72,7 @@ class InsertDeleteMove : public cpu::Mover {
   private:
     int type_;          ///< Force-field type stamped on inserted atoms.
     int atomic_number_; ///< Species Z stamped on inserted atoms.
-    double mass_amu_;   ///< Mass [amu] stamped on inserted atoms.
+    double mass_; ///< Mass in the run unit system stamped on inserted atoms.
 };
 
 } // namespace mc

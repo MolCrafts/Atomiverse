@@ -13,18 +13,16 @@ it is called a **trial**:
 2. the registered energy sources score the whole changed configuration,
 3. the proposal is **accepted** (kept) or **rejected** (undone).
 
-The acceptance rule is what decides *which distribution* the visited
-configurations are drawn from. Metropolis acceptance,
-``min(1, exp(-dE / (k_B T)))`` — with ``dE`` [eV] the trial energy minus
-the energy of the last accepted configuration, ``k_B`` the Boltzmann
-constant and ``T`` [K] the temperature — makes them Boltzmann-distributed,
-so a plain average over the chain is a canonical ensemble average. Every
-downhill trial (``dE <= 0``) is accepted; an uphill one is accepted with
-probability ``exp(-dE/(k_B T))``, which is how the chain climbs out of a
-local minimum instead of getting stuck in it.
+For a symmetric NVT proposal, Metropolis acceptance is
+``min(1, exp(-dE / (k_B T)))``, where ``dE`` is the trial energy minus the
+last accepted energy, ``k_B`` is the Boltzmann constant and ``T`` is the
+temperature. Asymmetric proposals also need the reverse to forward
+proposal probability ratio. Equilibrium averages include the repeated
+state after a rejected trial.
 
-An *ensemble* is the set of macroscopic quantities held fixed. Three
-presets over one shared trial loop, plus the four movers they compose:
+An *ensemble* is the set of macroscopic quantities held fixed. Configure
+``MC(seed=...)`` with ``set_nvt(T)``, ``set_npt(T, P)`` or
+``set_gcmc(T, mu, m)``. The following constructors configure the same driver:
 
 ===========================  =================================================
 ``MC(T, seed)``              canonical NVT — fixed N, V, T
@@ -57,13 +55,14 @@ constructors.
 
 Units
 -----
-LAMMPS ``units``, like MD: each preset takes ``units=`` (default
-:func:`atomiverse.units_style`, i.e. ``"lj"`` unless
-:func:`atomiverse.set_units` chose another) and every quantity is in that
-style — temperature; pressure in the style's pressure unit (``real`` atm,
-``metal`` bar; LAMMPS sign, positive = compressive); chemical potential in
-the style's energy, total, including the ideal part (see *Chemical
-potential* below); mass; displacement; volume; energy.
+Equilibrium MC uses the selected LAMMPS ``units_style`` for temperature,
+pressure, chemical potential, mass, displacement, volume and energy.
+The ``units=`` argument selects the style, with the default taken from
+``atomiverse.units_style()`` (initially reduced ``lj``). For example,
+``metal`` uses K, bar, eV, g/mol and Å. Pressure is positive in compression.
+Chemical potential
+includes the ideal part. Kinetic rates and the KMC clock use ps-based
+units regardless of the Frame unit style.
 
 Shape
 -----
@@ -76,6 +75,7 @@ and no explicit ``build()``; the first ``run()`` compiles the plan::
     import atomiverse as av
 
     sim = av.MC(300.0, seed=42)
+    sim.set_units("metal")
     sim.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
     sim.set_neighbor(av.NeighborList(8.5, 1.0))
     sim.set_mover(av.TranslateMove(0.3))
@@ -97,14 +97,14 @@ checked.
 
 Acceptance rules
 ----------------
-One symbol set for all three: ``dE`` [eV] is the trial energy minus the
-last accepted energy, ``beta = 1/(k_B T)`` [1/eV], ``N`` the particle
-count, ``V`` the cell volume [A^3] and ``V'`` [A^3] the trial volume.
+One symbol set for all three: ``dE`` in run energy units is the trial energy minus the
+last accepted energy, ``beta = 1/(k_B T)``, ``N`` the particle
+count, ``V`` the cell volume and ``V'`` the trial volume.
 
 * NVT displacement — ``min(1, exp(-beta dE))``.
 * NPT volume move —
   ``min(1, exp(-beta [dE + P (V' - V) - N k_B T ln(V'/V)]))``. The middle
-  term is the work done against the external pressure P [eV/A^3]; the last
+  term is the work done against the external pressure P converted to energy per volume; the last
   one credits the free volume the N atoms gain, and it is what pairs with
   drawing the trial volume uniformly in V (``VolumeMove``) rather than in
   ln V.
@@ -113,22 +113,27 @@ count, ``V`` the cell volume [A^3] and ``V'`` [A^3] the trial volume.
 * muVT deletion, N -> N-1 —
   ``min(1, Lambda^3 N / V * exp(-beta (mu + dE)))``.
 
-These are Frenkel & Smit, *Understanding Molecular Simulation* (2nd ed.
+These reference moves declare zero extra proposal correction. Custom C++
+movers must set ``Transaction::log_proposal_ratio`` for every nonempty
+trial. It adds the log reverse/forward proposal ratio and any change of
+measure omitted from the reference acceptance factor.
+
+The reference formulas are from Frenkel & Smit, *Understanding Molecular Simulation* (2nd ed.
 2002) §5.4 and §5.6.1, and they are the rules the C++ policies implement
 in ``include/atomiverse/cpu/montecarlo/npt_mc.h`` and ``gcmc.h``.
 
 Chemical potential and the thermal wavelength
 ---------------------------------------------
-``mu`` [eV] passed to ``GCMC`` is the **total** chemical potential — the
+``mu`` [run energy units] passed to ``GCMC`` is the **total** chemical potential — the
 ideal-gas part included, not the excess part alone. It enters the two muVT
 rules only through the *activity* z (a letter clash: the ``z`` argument of
 ``InsertDeleteMove`` is an atomic number, nothing to do with this one)::
 
-    z = exp(beta mu) / Lambda**3        [1/A^3]
-    Lambda = h / sqrt(2 pi m k_B T)     [A]
+    z = exp(beta mu) / Lambda**3        [inverse volume]
+    Lambda = h / sqrt(2 pi m k_B T)     [length]
 
 ``Lambda`` is the thermal de Broglie wavelength, the quantum length scale
-of a free particle of mass m [amu] at temperature T [K]; it is what
+of a free particle of mass m at temperature T in the run unit system; it is what
 carries the "per unit volume" in z. For an ideal gas z *is* the number
 density, so ``mu = k_B T ln(z Lambda**3)`` converts a target density into
 the argument to pass. This is the convention of Frenkel & Smit eq. (5.6.9)
@@ -137,10 +142,9 @@ the Mayer activity expansion using exactly this relation.
 
 Because ``GCMC(T, mu, m, seed)`` builds ``Lambda`` from its ``m``, the
 ``InsertDeleteMove(type, atomic_number, m)`` that actually stamps atoms into
-the cell must
-carry the **same** mass. Two different masses mean the sampled chemical
-potential is not the requested one — a silent error, since nothing
-compares them.
+the cell must carry the same mass. The policy checks this match.
+``InsertDeleteMove`` checks that the Frame is unbonded and contains
+only the configured neutral species.
 
 Chain continuation
 ------------------
@@ -174,7 +178,7 @@ What comes back on the frame
 ---------------------------
 After every ``run()`` the same ``molpy.Frame`` holds the current
 configuration: positions [A], the box, and the last accepted energy in
-``frame.meta["energy"]`` [eV] (bit-identical to ``current_energy()`` — a
+``frame.meta["energy"]`` in run energy units (bit-identical to ``current_energy()`` — a
 rejected trial's energy never survives). Because the sampler scores
 energies and never assembles a gradient, ``fx``/``fy``/``fz`` come back
 **zeroed**; they are not physical forces. Velocities are left untouched
@@ -198,6 +202,26 @@ protocol, so ``run()`` raises ``RuntimeError`` under
 ``atomiverse-launcher`` rather than silently sampling one independent chain
 per rank.
 
+Kinetic Monte Carlo
+-------------------
+Configure ``KMC(seed=...)`` with ``set_event(StateTransitions(edges))`` and
+``set_solver(LinearKineticSolver())``.
+Each edge is ``(source, destination, rate)`` with a rate in inverse picoseconds.
+On a ``molpy.Frame``, set the integer initial label in ``meta["kmc_state"]``.
+The driver writes ``kmc_time_ps``, ``kmc_waiting_time_ps`` and
+``kmc_event_id`` to Frame metadata after each event. ``StateTransitions``
+uses the zero-based table row as its channel ID. A custom C++ Event can
+report an unwrapped ``kmc_displacement`` in Frame length units when
+``kmc_has_displacement`` is true. Collect output at each event to obtain
+event-resolved histories. The waiting time belongs to the state before
+the event, so use that state for residence-time averages.
+
+``run(frame, n_events)`` returns the number executed and can stop at an
+absorbing state. Supply isolated state labels via ``states``. KMC uses no
+trial acceptance statistics. The rates are constant between events. Their
+physical interpretation depends on the supplied model. The solver receives
+a full, freshly enumerated rate vector on each step.
+
 The quantitative ensemble physics is pinned in ``regressions/mc/`` —
 ``npt_lj`` for <V> and its exact NPT width, ``gcmc_lj`` for <N>(z) against
 the Mayer activity expansion.
@@ -209,18 +233,29 @@ from atomiverse._binding import _cpp, require_domain
 
 require_domain(__name__, "mc")
 
-#: Canonical NVT Metropolis — ``cpu::mc::MC(temperature, seed, units=None)``.
 MC = _cpp.MC
+KMC = _cpp.KMC
+StateTransitions = _cpp.StateTransitions
+LinearKineticSolver = _cpp.LinearKineticSolver
 
-#: Isothermal-isobaric MC —
-#: ``cpu::mc::NptMc(temperature, pressure [style pressure], seed,
-#: units=None)``.
-NptMC = _cpp.NptMC
 
-#: Grand-canonical muVT MC —
-#: ``cpu::mc::Gcmc(temperature, mu [style energy], mass, seed,
-#: units=None)``.
-GCMC = _cpp.GCMC
+def NptMC(
+    temperature: float, pressure: float, seed: int, units: str | None = None
+) -> MC:
+    """Construct an MC driver configured for isothermal-isobaric sampling."""
+    driver = MC(seed=seed, units=units)
+    driver.set_npt(temperature, pressure)
+    return driver
+
+
+def GCMC(
+    temperature: float, mu: float, mass: float, seed: int, units: str | None = None
+) -> MC:
+    """Construct an MC driver configured for grand-canonical sampling."""
+    driver = MC(seed=seed, units=units)
+    driver.set_gcmc(temperature, mu, mass)
+    return driver
+
 
 #: Single-particle displacement Mover —
 #: ``cpu::mc::TranslateMove(delta [A])``.
@@ -230,19 +265,47 @@ TranslateMove = _cpp.TranslateMove
 VolumeMove = _cpp.VolumeMove
 
 #: Grand-canonical insertion/deletion Mover —
-#: ``cpu::mc::InsertDeleteMove(z = atomic number, mass [amu])``.
+#: ``cpu::mc::InsertDeleteMove(type, atomic_number, mass)``.
 InsertDeleteMove = _cpp.InsertDeleteMove
 
 #: Weighted mix of Movers, one child per trial —
 #: ``cpu::mc::MoveSelector()``.
 MoveSelector = _cpp.MoveSelector
 
+ConRotMove = _cpp.ConRotMove
+ParallelRotationMove = _cpp.ParallelRotationMove
+TorsionMove = _cpp.TorsionMove
+AtomIdentityExchangeMove = _cpp.AtomIdentityExchangeMove
+EndMerRotationMove = _cpp.EndMerRotationMove
+LibrationMove = _cpp.LibrationMove
+DimerFlipMove = _cpp.DimerFlipMove
+PivotMove = _cpp.PivotMove
+ReptationMove = _cpp.ReptationMove
+GeneralizedReptationMove = _cpp.GeneralizedReptationMove
+CBMCMove = _cpp.CBMCMove
+ExtendedCBMCMove = _cpp.ExtendedCBMCMove
+
 __all__ = [
     "MC",
+    "KMC",
     "NptMC",
     "GCMC",
     "TranslateMove",
     "VolumeMove",
     "InsertDeleteMove",
     "MoveSelector",
+    "ConRotMove",
+    "ParallelRotationMove",
+    "TorsionMove",
+    "AtomIdentityExchangeMove",
+    "EndMerRotationMove",
+    "LibrationMove",
+    "DimerFlipMove",
+    "PivotMove",
+    "ReptationMove",
+    "GeneralizedReptationMove",
+    "CBMCMove",
+    "ExtendedCBMCMove",
+    "StateTransitions",
+    "LinearKineticSolver",
 ]

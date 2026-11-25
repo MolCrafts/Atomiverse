@@ -178,8 +178,8 @@ Current surface:
   registered force source) and `HessianResult` (wavenumbers, normal modes,
   RRHO thermochemistry). Present when the `vib` module is built
   (`python -m atomiverse config md vib …`).
-- **Monte Carlo** — the three ensemble presets `MC` (NVT), `NptMC` and
-  `GCMC` with their movers `TranslateMove`, `VolumeMove`,
+- **Monte Carlo** — the `MC` driver for NVT, NPT and μVT sampling,
+  with `TranslateMove`, `VolumeMove`,
   `InsertDeleteMove` and `MoveSelector`. Present when the `mc` module is
   built (`python -m atomiverse config md mc …`).
 - **Plane-wave DFT** — `PW` / `PWResult`, i.e. energy,
@@ -936,26 +936,27 @@ proposed from the previous one and from nothing else — and one step of it
 is a **trial**: a *mover* proposes a small random change, the registered
 energy sources score the changed configuration, and the proposal is either
 **accepted** (kept) or **rejected** (undone). Accepting with probability
-`min(1, exp(-ΔE / k_BT))` — the *Metropolis* rule, `ΔE` [eV] being the trial
+`min(1, exp(-ΔE / k_BT))` — the *Metropolis* rule for symmetric proposals, with `ΔE` the trial
 energy minus the last accepted energy — is what makes the visited
 configurations Boltzmann-distributed, so a plain average along the chain is
 an ensemble average. Downhill trials are always accepted; uphill ones are
 accepted often enough that the chain can climb out of a local minimum.
 
 An *ensemble* is the set of macroscopic quantities held fixed, and it is the
-acceptance rule that decides which one you are sampling: `MC` is canonical
-NVT (fixed particle number, volume, temperature), `NptMC` is
-isothermal-isobaric NPT (fixed N, pressure, temperature — the volume is
-sampled) and `GCMC` is grand-canonical μVT (fixed chemical potential μ,
-volume, temperature — the particle number is sampled).
+acceptance rule selects the ensemble. Configure `MC(seed=...)` with
+`set_nvt(temperature)`, `set_npt(temperature, pressure)` or
+`set_gcmc(temperature, mu, mass)`. The constructors `MC(temperature, seed)`,
+`NptMC(temperature, pressure, seed)` and `GCMC(temperature, mu, mass, seed)`
+return the same driver with the corresponding configuration.
 
 The handle takes the same categorical setters as MD, minus everything that
 only makes sense with dynamics: `set_evaluator` (plural — energy sources are
 summed), `set_neighbor`, and the MC-only `set_mover` (singular). There is no
 integrator, no thermostat, no `set_thermo`/`set_record`, and no explicit
-`build()`. Units are the package's own — temperature [K], pressure [eV/Å³]
-(LAMMPS sign, positive = compressive), chemical potential [eV], mass [amu],
-displacement [Å], volume [Å³], energy [eV].
+`build()`. Equilibrium MC follows the selected `units_style`, with reduced
+`lj` as the default. In `metal` style, temperature is in K, pressure in bar
+(positive in compression), energy and chemical potential in eV, mass in
+g/mol, and distance in Å. The following examples explicitly use `metal`.
 
 ```python
 import atomiverse as av
@@ -964,6 +965,7 @@ import atomiverse as av
 # 500 atoms in a cubic cell of L = 5 × 5.26 Å = 26.3 Å.
 cutoff, skin = 8.5, 1.0                            # [Å]
 sim = av.MC(300.0, seed=42)                        # temperature [K]
+sim.set_units("metal")
 sim.set_evaluator(av.PairLJCut(0.0104, 3.4, cutoff))
 sim.set_neighbor(av.NeighborList(cutoff, skin))
 sim.set_mover(av.TranslateMove(0.3))               # half-width [Å]
@@ -971,7 +973,7 @@ sim.set_mover(av.TranslateMove(0.3))               # half-width [Å]
 sim.run(frame, 20_000)                             # equilibrate
 sim.run(frame, 100_000)                            # sample — SAME chain
 
-print(sim.acceptance_ratio())    # aim for ~0.3-0.5; tune the half-width
+print(sim.acceptance_ratio())    # trial acceptance diagnostic
 print(sim.current_energy())      # [eV] == float(frame.meta["energy"])
 ```
 
@@ -1028,7 +1030,8 @@ not a Monte Carlo trial at all.
 
 ```python
 # NPT-MC: displacements + isotropic volume moves, 50/50.
-npt = av.NptMC(180.0, pressure=5.0e-5, seed=1337)   # P [eV/Å³]
+npt = av.NptMC(180.0, pressure=80.1088, seed=1337)  # P [bar]
+npt.set_units("metal")
 npt.set_evaluator(av.PairLJCut(0.0104, 3.4, 6.8))
 npt.set_neighbor(av.NeighborList(6.8, 1.0))
 npt.set_mover(
@@ -1043,13 +1046,14 @@ print(npt.acceptance_ratio("box"))                  # volume moves alone
 
 ```python
 # μVT (GCMC): displacements + insertion/deletion of one species.
-gcmc = av.GCMC(180.0, mu=-0.177, mass=39.948, seed=97)  # μ [eV], m [amu]
+gcmc = av.GCMC(180.0, mu=-0.177, mass=39.948, seed=97)  # μ [eV], m [g/mol]
+gcmc.set_units("metal")
 gcmc.set_evaluator(av.PairLJCut(0.0104, 3.4, 8.5))
 gcmc.set_neighbor(av.NeighborList(8.5, 1.0))
 gcmc.set_mover(
     av.MoveSelector()
     .add(av.TranslateMove(1.36), 0.5)
-    .add(av.InsertDeleteMove(1, 18, 39.948), 0.5)   # type 1, Z = 18 (Ar), m [amu]
+    .add(av.InsertDeleteMove(1, 18, 39.948), 0.5)   # type 1, Z = 18 (Ar), m [g/mol]
 )
 
 gcmc.run(frame, 50_000)                             # equilibrate
@@ -1071,9 +1075,10 @@ zσ³ = 0.05 for argon (m = 39.948 amu, σ = 3.4 Å) at T = 180 K. This is the
 convention of section `gcmc_lj` of case `mc/metropolis` (Frenkel & Smit
 eq. 5.6.9), which is what its ⟨N⟩(z) pin measures.
 
-**Match the mass.** The `InsertDeleteMove` mass **must** be the mass `GCMC`
-built Λ from — two different masses mean the sampled chemical potential is
-not the one you asked for, and nothing compares them.
+`InsertDeleteMove` requires a neutral, unbonded single-species Frame. Its
+type, element and mass must match the existing atoms where those identity
+fields exist. The acceptance policy checks that the mover and reservoir
+use the same mass.
 
 Because N fluctuates, `run()` **rebuilds** the frame's `atoms` block
 whenever the population changed: every column comes back at the new N,
@@ -1082,6 +1087,33 @@ including `mass` and whichever identity columns the frame carried
 inputs and never writes. `InsertDeleteMove(type, atomic_number, mass)`
 stamps each identity on an inserted atom only where the frame carries that
 column.
+
+### Kinetic Monte Carlo
+
+Construct `KMC`, which inherits the `MC` run interface, and attach an event component and a
+solver. `StateTransitions` takes
+`(source, destination, rate)` tuples with rates in ps⁻¹.
+
+```python
+frame.meta["kmc_state"] = 0
+kmc = av.KMC(seed=17)
+kmc.set_event(av.StateTransitions([(0, 1, 2.0), (1, 2, 3.0)]))
+kmc.set_solver(av.LinearKineticSolver())
+events = kmc.run(frame, n_events=100)  # 2 events, then state 2 is absorbing
+print(events, frame.meta["kmc_state"], frame.meta["kmc_time_ps"])  # time in ps
+```
+
+C++ models can implement `cpu::mc::Event` to enumerate rates from the
+current `Frame` and apply the selected event. `KMC` advances the clock
+and calls the end-of-step observers after successful events. The latest event
+ID and waiting time are in `kmc_event_id` and `kmc_waiting_time_ps`. The
+waiting time belongs to the pre-event state. A custom `Event` can report
+`kmc_displacement`, an unwrapped vector in Frame length units, with
+`kmc_has_displacement` set to true. Observe every event to retain the full
+history. Rates stay in ps⁻¹ across Frame unit styles.
+
+The driver enumerates all rates again after each event. The solver operates
+on this full vector. Kinetic runs have no trial acceptance ratio.
 
 Monte Carlo is single-rank by design — no MC task exists in the MPI
 launcher protocol — so `run()` raises `RuntimeError` under

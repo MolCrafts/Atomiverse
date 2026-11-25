@@ -38,6 +38,7 @@ struct MoverHarness {
             frame.span(ATV::kAtom_z)[i] = 3.0 + i;
             frame.span(ATV::kAtom_mass)[i] = 39.948;
             frame.span(ATV::kAtom_type)[i] = 1;
+            frame.span(ATV::kAtom_atomic_number)[i] = 18;
         }
         frame.box.set_cell(Mat3::diagonal(10.0, 10.0, 10.0));
         ctx.mc.proposal = &txn;
@@ -126,9 +127,23 @@ TEST(InsertDeleteMove, RejectsBadConstruction) {
                  std::invalid_argument);
 }
 
+TEST(InsertDeleteMove, RejectsMixedAndBondedFramesBeforeMutation) {
+    MoverHarness h{3};
+    cpu::mc::InsertDeleteMove mover{1, 18, 39.948};
+    h.frame.span(kAtom_type)[1] = 2;
+    EXPECT_THROW(mover.launch(h.launch()), std::invalid_argument);
+    EXPECT_EQ(h.frame.nlocal(), 3);
+    EXPECT_EQ(h.txn.verb, Verb::None);
+
+    h.frame.span(kAtom_type)[1] = 1;
+    h.frame.ensure_bonded_storage();
+    EXPECT_THROW(mover.launch(h.launch()), std::invalid_argument);
+    EXPECT_EQ(h.frame.nlocal(), 3);
+}
+
 TEST(InsertDeleteMove, InsertionAppendsAZeroedRowInsideTheCell) {
     MoverHarness h{3};
-    cpu::mc::InsertDeleteMove mv{2, 18, 39.948};
+    cpu::mc::InsertDeleteMove mv{1, 18, 39.948};
     // Drive until an insertion happens (coin is 50/50).
     while (true) {
         const int n_before = h.frame.nlocal();
@@ -145,7 +160,7 @@ TEST(InsertDeleteMove, InsertionAppendsAZeroedRowInsideTheCell) {
             EXPECT_EQ(h.frame.span(kAtom_charge)[slot], 0.0);
             EXPECT_EQ(h.frame.span(kAtom_num_bond)[slot], 0);
             EXPECT_EQ(h.frame.span(kAtom_mass)[slot], StorageReal(39.948));
-            EXPECT_EQ(h.frame.span(kAtom_type)[slot], 2);
+            EXPECT_EQ(h.frame.span(kAtom_type)[slot], 1);
             EXPECT_EQ(h.frame.span(kAtom_atomic_number)[slot], 18);
             EXPECT_EQ(h.frame.span(kAtom_tag)[slot], 3);
             break;
@@ -157,12 +172,12 @@ TEST(InsertDeleteMove, InsertionAppendsAZeroedRowInsideTheCell) {
 TEST(InsertDeleteMove, InsertionStampsOnlyTheIdentityColumnsTheFrameCarries) {
     MoverHarness h{3};
     h.frame.block("atoms").erase(kAtom_atomic_number.key);
-    cpu::mc::InsertDeleteMove mv{2, 18, 39.948};
+    cpu::mc::InsertDeleteMove mv{1, 18, 39.948};
     while (true) {
         const int n_before = h.frame.nlocal();
         mv.launch(h.launch());
         if (h.txn.verb == Verb::Insert) {
-            EXPECT_EQ(h.frame.span(kAtom_type)[n_before], 2);
+            EXPECT_EQ(h.frame.span(kAtom_type)[n_before], 1);
             EXPECT_FALSE(h.frame.has("atoms", "atomic_number"));
             break;
         }
@@ -275,7 +290,7 @@ TEST(MoveSelector, FiresExactlyOneChildPerSweepAtConfiguredProbabilities) {
     EXPECT_NEAR(p, 0.75, 4.0 * sigma);
 }
 
-#include "atomiverse/cpu/montecarlo/gcmc.h"
+#include "atomiverse/cpu/montecarlo/mc.h"
 #include "atomiverse/cpu/neighbor/neighbor_list.h"
 #include "atomiverse/cpu/potentials/pair_lj_cut.h"
 
@@ -287,7 +302,8 @@ TEST(MoveSelector, TemporaryChainIsOwnedByTheDriver) {
     // (release builds jumped to address 0). The ref-qualified `add` overloads
     // keep the chain an rvalue, forcing the owning branch. This test drives
     // exactly that temporary-chain path through build().
-    cpu::mc::Gcmc mc{120.0, -0.1, 39.948, 1u};
+    cpu::mc::MC mc{1u};
+    mc.set_gcmc(120.0, -0.1, 39.948);
     mc.set_evaluator(cpu::PairLJCut{0.0104, 3.4, 8.5});
     mc.set_neighbor(cpu::md::NeighborList<>{8.5, 1.0, 1, 0, true});
     mc.set_mover(cpu::mc::MoveSelector{}

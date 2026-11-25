@@ -137,12 +137,27 @@ _CANONICAL_ALL: frozenset[str] = frozenset(
         "Thermo",
         "XYZ",
         "MC",
+        "KMC",
         "NptMC",
         "GCMC",
         "TranslateMove",
         "VolumeMove",
         "InsertDeleteMove",
         "MoveSelector",
+        "TorsionMove",
+        "EndMerRotationMove",
+        "LibrationMove",
+        "DimerFlipMove",
+        "PivotMove",
+        "ReptationMove",
+        "GeneralizedReptationMove",
+        "CBMCMove",
+        "ExtendedCBMCMove",
+        "ConRotMove",
+        "ParallelRotationMove",
+        "AtomIdentityExchangeMove",
+        "StateTransitions",
+        "LinearKineticSolver",
         "AM1",
         "RM1",
         "MNDO",
@@ -225,16 +240,30 @@ _PAIR_STYLE_NAMES: tuple[str, ...] = (
     "ImproperHarmonic",
 )
 
-#: The Monte Carlo surface (spec py-mc): three ensemble presets + four
-#: movers, all unconditional.
+#: Public Monte Carlo driver, convenience constructors, movers and event model.
 _MC_NAMES: tuple[str, ...] = (
     "MC",
+    "KMC",
     "NptMC",
     "GCMC",
     "TranslateMove",
     "VolumeMove",
     "InsertDeleteMove",
     "MoveSelector",
+    "TorsionMove",
+    "EndMerRotationMove",
+    "LibrationMove",
+    "DimerFlipMove",
+    "PivotMove",
+    "ReptationMove",
+    "GeneralizedReptationMove",
+    "CBMCMove",
+    "ExtendedCBMCMove",
+    "ConRotMove",
+    "ParallelRotationMove",
+    "AtomIdentityExchangeMove",
+    "StateTransitions",
+    "LinearKineticSolver",
 )
 
 #: The vibrational-analysis surface (spec py-vib): the finite-difference
@@ -323,7 +352,7 @@ class TestCanonicalSurface:
 
     def test_public_names_are_the_honest_surface(self) -> None:
         """The public candidate list is fixed; availability filters __all__."""
-        assert len(_CANONICAL_ALL) == 93
+        assert len(_CANONICAL_ALL) == 108
         assert set(av._PUBLIC) == set(_CANONICAL_ALL)
 
     def test_all_is_the_carried_subset(self) -> None:
@@ -578,7 +607,7 @@ class TestMonteCarloSurface:
         montecarlo = importlib.import_module("atomiverse.montecarlo")
         assert getattr(av, name) is getattr(montecarlo, name)
 
-    def test_montecarlo_module_exports_the_seven_names(self) -> None:
+    def test_montecarlo_module_exports_the_public_names(self) -> None:
         """``atomiverse.montecarlo.__all__`` is exactly the presets +
         movers — no policy classes, no transaction bag."""
         montecarlo = importlib.import_module("atomiverse.montecarlo")

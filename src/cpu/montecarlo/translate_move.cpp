@@ -69,6 +69,7 @@ void TranslateMove::launch(const cpu::LaunchContext& ctx) {
     const int i = pick(*rng);
     // Snapshot the row into the patch BEFORE mutating it.
     txn->begin(Transaction::Verb::Displace, ctx.frame);
+    txn->log_proposal_ratio = 0.0;
     txn->record_touch(ctx.frame, i);
 
     double nx = static_cast<double>(sp_x[i]) + disp(*rng);

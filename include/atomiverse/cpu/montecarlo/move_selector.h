@@ -2,10 +2,16 @@
 /// @brief cpu::mc::MoveSelector — draws ONE trial-move type per trial.
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <concepts>
+#include <exception>
 #include <memory>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -35,7 +41,7 @@ namespace mc {
 /// comes from the run's single RNG stream (`ctx.mc.rng`), interleaved with
 /// the child's own draws — one seed, one trajectory. Per-verb
 /// attempt/acceptance tallies are reported by the driver
-/// (`McBase::attempts(verb)` / `accepts(verb)`), which sees each trial's verb
+/// (`MC::attempts(verb)` / `accepts(verb)`), which sees each trial's verb
 /// on the proposal.
 ///
 /// Children are held by `shared_ptr` so the selector stays copyable through
@@ -60,15 +66,19 @@ class MoveSelector : public cpu::Mover {
     /// @return `*this`, for chaining.
     /// @throws std::invalid_argument on a non-positive weight or a non-Mover.
     template <typename M>
+        requires std::derived_from<std::decay_t<M>, Mover>
     MoveSelector& add(M&& m, double weight) & {
-        add_(std::forward<M>(m), weight);
+        add_child(std::make_shared<std::decay_t<M>>(std::forward<M>(m)),
+                  weight);
         return *this;
     }
 
     /// @brief Rvalue-chain overload of `add` (see above).
     template <typename M>
+        requires std::derived_from<std::decay_t<M>, Mover>
     MoveSelector&& add(M&& m, double weight) && {
-        add_(std::forward<M>(m), weight);
+        add_child(std::make_shared<std::decay_t<M>>(std::forward<M>(m)),
+                  weight);
         return std::move(*this);
     }
 
@@ -92,8 +102,28 @@ class MoveSelector : public cpu::Mover {
             throw std::runtime_error(
                 "MoveSelector: no child movers — add(mover, weight) at least "
                 "one");
-        for (auto& [w, child] : children_)
-            child->build(ctx);
+        if (active_)
+            throw std::logic_error("MoveSelector: already active in a run");
+        std::unordered_set<const Mover*> seen;
+        validate_tree_(seen);
+        std::size_t built = 0;
+        try {
+            for (const auto& entry : children_) {
+                entry.second->build(ctx);
+                ++built;
+            }
+        } catch (...) {
+            while (built > 0) {
+                try {
+                    children_[--built].second->destroy(
+                        {ctx.runtime, ctx.frame});
+                } catch (...) {
+                    // Keep the original build error.
+                }
+            }
+            throw;
+        }
+        active_ = true;
     }
 
     /// @brief Draw one child by weight and fire it (nothing on the bootstrap
@@ -122,26 +152,91 @@ class MoveSelector : public cpu::Mover {
 
     /// @brief Forward teardown to every child.
     void destroy(const cpu::DestroyContext& ctx) override {
-        for (auto& [w, child] : children_)
-            child->destroy(ctx);
+        std::exception_ptr failure;
+        for (auto it = children_.rbegin(); it != children_.rend(); ++it) {
+            try {
+                it->second->destroy(ctx);
+            } catch (...) {
+                if (!failure)
+                    failure = std::current_exception();
+            }
+        }
+        active_ = false;
+        if (failure)
+            std::rethrow_exception(failure);
+    }
+
+    bool changes_connectivity() const override {
+        return std::ranges::any_of(children_, [](const auto& entry) {
+            return entry.second->changes_connectivity();
+        });
+    }
+
+    bool requires_full_frame() const override {
+        return std::ranges::any_of(children_, [](const auto& entry) {
+            return entry.second->requires_full_frame();
+        });
+    }
+
+    bool requires_tag_index() const override {
+        return std::ranges::any_of(children_, [](const auto& entry) {
+            return entry.second->requires_tag_index();
+        });
+    }
+
+    /// Register a polymorphic mover with shared ownership.
+    MoveSelector& add_child(std::shared_ptr<Mover> child, double weight) {
+        if (active_)
+            throw std::logic_error(
+                "MoveSelector: cannot add movers during a run");
+        if (!child || contains_(child.get())
+            || (dynamic_cast<const MoveSelector*>(child.get()) != nullptr
+                && static_cast<const MoveSelector&>(*child).contains_(this)))
+            throw std::invalid_argument(
+                "MoveSelector: a mover must be non-null and may not be "
+                "repeated or create a cycle");
+        const double total = total_weight_ + weight;
+        if (!std::isfinite(total) || !(total > total_weight_))
+            throw std::invalid_argument(
+                "MoveSelector: weight must be finite, positive and "
+                "representable in the sum");
+        children_.emplace_back(total, std::move(child));
+        total_weight_ = total;
+        return *this;
     }
 
   private:
-    /// @brief Shared body of the two ref-qualified `add` overloads.
-    template <typename M>
-    void add_(M&& m, double weight) {
-        if (!(weight > 0.0))
-            throw std::invalid_argument("MoveSelector: weight must be > 0");
-        auto child = std::make_shared<std::decay_t<M>>(std::forward<M>(m));
-        if (dynamic_cast<const Mover*>(child.get()) == nullptr)
+    void validate_tree_(std::unordered_set<const Mover*>& seen) const {
+        if (!seen.insert(this).second)
             throw std::invalid_argument(
-                "MoveSelector: child must be a cpu::Mover");
-        total_weight_ += weight;
-        children_.emplace_back(total_weight_, std::move(child));
+                "MoveSelector: repeated selector instance");
+        for (const auto& entry : children_) {
+            const auto* child = entry.second.get();
+            if (const auto* selector = dynamic_cast<const MoveSelector*>(child))
+                selector->validate_tree_(seen);
+            else if (!seen.insert(child).second)
+                throw std::invalid_argument(
+                    "MoveSelector: repeated mover instance");
+        }
     }
 
-    /// Children with their CUMULATIVE weight (draw < cumulative selects).
-    std::vector<std::pair<double, std::shared_ptr<cpu::Component>>> children_;
+    bool contains_(const Mover* needle) const {
+        if (needle == this)
+            return true;
+        for (const auto& entry : children_) {
+            const auto* child = entry.second.get();
+            if (child == needle)
+                return true;
+            const auto* selector = dynamic_cast<const MoveSelector*>(child);
+            if (selector && selector->contains_(needle))
+                return true;
+        }
+        return false;
+    }
+
+    /// Children with their cumulative weight (draw < cumulative selects).
+    std::vector<std::pair<double, std::shared_ptr<Mover>>> children_;
+    bool active_ = false;
     double total_weight_ = 0.0; ///< Sum of all registered weights.
 };
 

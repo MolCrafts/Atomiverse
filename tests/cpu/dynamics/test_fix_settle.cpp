@@ -372,7 +372,6 @@ TEST(FixSettle, AttributesThreeConstraintsToTheOxygenType) {
     cpu::Context ctx;
     std::vector<BigInt> by_type;
     settle.count_constraints_by_type(ctx, f, by_type);
-    ASSERT_GE(by_type.size(), 2u);
-    EXPECT_EQ(by_type[1], 3);
-    EXPECT_EQ(by_type[2], 0);
+    // The tally ends at the highest type that owns a constraint.
+    EXPECT_EQ(by_type, (std::vector<BigInt>{0, 3}));
 }

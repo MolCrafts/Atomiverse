@@ -1,10 +1,10 @@
 /// @file cpu/montecarlo/gcmc.h
-/// @brief cpu::mc::GcmcMetropolis + cpu::mc::Gcmc — grand-canonical (μVT)
-///        Monte Carlo: the acceptance policy and the preset that installs it.
+/// @brief grand-canonical Monte Carlo acceptance policy.
 #pragma once
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <stdexcept>
 
@@ -12,7 +12,6 @@
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/component/context.h"
 #include "atomiverse/cpu/driver/outcome_policy.h"
-#include "atomiverse/cpu/montecarlo/mc_base.h"
 #include "atomiverse/cpu/montecarlo/transaction.h"
 
 namespace ATV {
@@ -32,23 +31,27 @@ namespace mc {
 class GcmcMetropolis : public OutcomePolicy {
   public:
     /// @brief Construct the μVT acceptance test.
-    /// @param temperature_K Ensemble temperature [K] (must be > 0).
-    /// @param mu_ev Chemical potential μ [eV] (total, including the ideal
+    /// @param temperature Ensemble temperature in run units (must be > 0).
+    /// @param mu Chemical potential μ in run energy units (total, including the ideal
     ///        part — the same convention as the NIST SRSW LJ μVT tables once
     ///        converted from reduced units).
-    /// @param mass_amu Mass of the (single) insertable species [amu]
+    /// @param mass Mass of the (single) insertable species in run mass units
     ///        (must be > 0; sets Λ).
     /// @param rng The run's single RNG stream (shared with the Movers).
     ///        Must outlive this policy.
     /// @throws std::invalid_argument on a non-positive temperature or mass.
-    GcmcMetropolis(AccReal temperature_K, AccReal mu_ev, double mass_amu,
+    GcmcMetropolis(AccReal temperature, AccReal mu, double mass,
                    std::mt19937_64& rng)
-        : temperature_(temperature_K), mu_(mu_ev), mass_(mass_amu), rng_(rng) {
-        if (!(temperature_K > AccReal(0)))
+        : temperature_(temperature), mu_(mu), mass_(mass), rng_(rng) {
+        if (!std::isfinite(temperature) || temperature <= AccReal(0))
             throw std::invalid_argument(
-                "GcmcMetropolis: temperature must be > 0 K");
-        if (!(mass_amu > 0.0))
-            throw std::invalid_argument("GcmcMetropolis: mass must be > 0 amu");
+                "GcmcMetropolis: temperature must be finite and positive");
+        if (!std::isfinite(mu))
+            throw std::invalid_argument(
+                "GcmcMetropolis: chemical potential must be finite");
+        if (!std::isfinite(mass) || mass <= 0.0)
+            throw std::invalid_argument(
+                "GcmcMetropolis: mass must be finite and positive");
     }
 
     /// @brief Stable identifier, for diagnostics.
@@ -79,6 +82,16 @@ class GcmcMetropolis : public OutcomePolicy {
         const double mu = static_cast<double>(mu_);
         const double v = s.frame.box.volume();
 
+        if (txn->verb == Transaction::Verb::Insert
+            || txn->verb == Transaction::Verb::Delete) {
+            if (!txn->exchange_mass || *txn->exchange_mass != mass_)
+                throw std::invalid_argument("GCMC mover and acceptance policy "
+                                            "must use the same exchange mass");
+            if (!std::isfinite(v) || v <= 0.0)
+                throw std::invalid_argument(
+                    "GCMC requires a positive finite box volume");
+        }
+
         // Acceptance probability written as exp(-arg): arg = βΔE − ln(prefactor).
         double arg;
         switch (txn->verb) {
@@ -108,17 +121,19 @@ class GcmcMetropolis : public OutcomePolicy {
                 "(a volume move needs the NPT policy)");
         }
 
-        if (accept_(arg)) {
+        const double correction = txn->require_log_proposal_ratio();
+        if (correction != -std::numeric_limits<double>::infinity()
+            && accept_(arg - correction)) {
             e_cur_ = e_trial;
             return Outcome::Commit;
         }
         return Outcome::Rollback;
     }
 
-    /// @brief Energy [eV] of the current (last-accepted) configuration.
+    /// @brief Energy in run units of the current (last-accepted) configuration.
     AccReal current_energy() const { return e_cur_; }
 
-    /// @brief Λ³ [Å³] at the ensemble temperature (for tests/diagnostics).
+    /// @brief Λ³ in run volume units at the ensemble temperature (for tests/diagnostics).
     double lambda_cubed() const { return lambda3_; }
 
   private:
@@ -130,49 +145,14 @@ class GcmcMetropolis : public OutcomePolicy {
         return u(rng_) < std::exp(-arg);
     }
 
-    AccReal temperature_;  ///< Ensemble temperature [K].
-    AccReal mu_;           ///< Chemical potential [eV].
+    AccReal temperature_;  ///< Ensemble temperature in run units.
+    AccReal mu_;           ///< Chemical potential in run energy units.
     double mass_;          ///< Particle mass [style mass].
     double lambda3_ = 0;   ///< Λ³ [style volume] at `temperature_`, set by
                            ///< `on_start` in the run's units.
     std::mt19937_64& rng_; ///< The run's RNG stream, shared with the Movers.
-    AccReal e_cur_ = 0;    ///< Energy of the last accepted state [eV].
-};
-
-/// @brief Grand-canonical (μVT) Monte Carlo — a preset over the shared MC
-///        loop that attaches `GcmcMetropolis` in its constructor.
-///
-/// Pair it with a `MoveSelector` mixing displacements and insert/delete:
-/// @code{.cpp}
-///   cpu::mc::Gcmc mc{/*T=*/120.0, /*mu [eV]=*/-0.1, /*mass [amu]=*/39.948,
-///                    /*seed=*/7u};
-///   mc.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
-///   mc.set_neighbor(cpu::md::NeighborList<>{cutoff, skin, 1, 0, true});
-///   mc.set_mover(cpu::mc::MoveSelector{}
-///                    .add(cpu::mc::TranslateMove{0.2}, 0.5)
-///                    .add(cpu::mc::InsertDeleteMove{18, 39.948}, 0.5));
-///   mc.build();
-///   mc.run(frame, 200000);
-///   double n_avg = ...; // observe frame.nlocal() along the chain
-/// @endcode
-class Gcmc : public McBase {
-  public:
-    /// @brief Construct the μVT sampler (single insertable species).
-    /// @param temperature_K Ensemble temperature [K] (must be > 0).
-    /// @param mu_ev Chemical potential μ [eV].
-    /// @param mass_amu Mass of the insertable species [amu] (sets Λ).
-    /// @param seed Seed for the single reproducible RNG stream.
-    /// @throws std::invalid_argument on a non-positive temperature or mass.
-    Gcmc(AccReal temperature_K, AccReal mu_ev, double mass_amu,
-         std::uint64_t seed)
-        : McBase(seed), policy_(this->set_outcome(GcmcMetropolis{
-                            temperature_K, mu_ev, mass_amu, rng_})) {}
-
-    /// @brief Energy [eV] of the current (last-accepted) configuration.
-    AccReal current_energy() const { return policy_.current_energy(); }
-
-  private:
-    GcmcMetropolis& policy_; ///< The preset's own policy, for stat read-back.
+    AccReal e_cur_ =
+        0; ///< Energy of the last accepted state in run energy units.
 };
 
 } // namespace mc

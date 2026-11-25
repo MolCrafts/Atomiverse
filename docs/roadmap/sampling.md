@@ -2,8 +2,9 @@
 
 Tutorial: [Sampling and free energy](../tutorial/sampling.md).
 
-Monte Carlo: three CPU presets over one trial loop (`MC`, `NptMc`, `Gcmc`) —
-outcome policy + mover, no category driver. Enhanced sampling is a textbook
+The CPU `MC` driver uses an equilibrium outcome policy and a mover.
+The `KMC` driver derives from `MC` and composes event and solver components.
+Enhanced sampling is a textbook
 suite, not a PLUMED replacement. Legend: [Roadmap index](index.md).
 
 ## 1. Monte Carlo
@@ -13,7 +14,15 @@ suite, not a PLUMED replacement. Legend: [Roadmap index](index.md).
 | NVT Metropolis | ✓ | ○ | Single rank; O(N) trial energy |
 | NPT-MC | ✓ | ○ | |
 | GCMC (μVT) | ✓ | ○ | Single insertable species |
-| Gibbs / CBMC / Wang–Landau / … | ○ | ○ | |
+| Continuous-time kMC | ✓ | ○ | Direct scheduler, user-supplied rates, discrete-state model |
+| Weighted mover composition | ✓ | ○ | One fixed-weight draw per trial, including nested selectors |
+| Local polymer rotations, pivot, reptation | ✓ | ○ | Tag-selected paths, ordinary reptation uses linear homopolymers |
+| CBMC / fixed-endpoint CBMC | ◐ | ○ | Flexible branch-free growth paths and full-energy candidate scores |
+| ConRot / parallel rotation | ◐ | ○ | Reversible local closure branch with Jacobian correction |
+| Intra-chain / inter-chain concerted rotation for semicrystalline interphases | ○ | ○ | Requires a defined topology and interphase ensemble |
+| Generalized reptation | ◐ | ○ | Bond-only linear homopolymers with variable chain lengths |
+| Atom identity exchange | ◐ | ○ | Fixed-composition site swaps between unbonded particles |
+| Gibbs / Wang–Landau | ○ | ○ | |
 
 ## 2. Enhanced sampling
 

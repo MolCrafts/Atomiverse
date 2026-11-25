@@ -198,6 +198,11 @@ struct SamplingServices {
     /// stream. A `Mover` draws atom picks and displacements from it so the
     /// whole trajectory is reproducible from the driver's one seed.
     std::mt19937_64* rng = nullptr;
+
+    /// Re-evaluate the current trial coordinates through the energy phase.
+    /// Available only while a proposal is being generated. The mover must
+    /// record the changed rows before its first evaluation.
+    const std::function<AccReal()>* evaluate_trial = nullptr;
 };
 
 /// @brief Optimizer line-search services (publishers: `cpu::minimizer::Minimize::run`
