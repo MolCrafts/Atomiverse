@@ -103,7 +103,8 @@ TEST(Remd, ReplicasAreThermostattedAtTheirSlotTemperature) {
 
     const double ke = f.meta.get(ATV::kKinetic); // slot 0
     const double ndof = 3.0 * f.nlocal() - 3.0;
-    const double t_meas = 2.0 * ke / (ndof * units::UnitSystem::lj().boltz);
+    const double t_meas =
+        2.0 * ke / (ndof * units::UnitSystem::lj().boltzmann_constant());
 
     // sqrt(2/Ndof) = 10% instantaneous spread at 189 DOF; 25% is a couple of
     // those and nowhere near the factor 2.9 a constant-energy replica shows.

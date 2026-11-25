@@ -86,6 +86,7 @@ def _make_ch4_frame() -> "molpy.Frame":
     H along the body diagonals) — the geometry the MOPAC pin was taken at,
     also spelled out in regressions/launcher/lj_parity/atv_am1.py:17."""
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, _H, -_H, -_H, _H], dtype=np.float64))
     atoms.insert("y", np.array([0.0, _H, -_H, _H, -_H], dtype=np.float64))
@@ -167,6 +168,7 @@ def _make_water_frame(coords: "np.ndarray", box_angstrom: float) -> "molpy.Frame
     @return molpy.Frame with x/y/z/mass/atomic_number columns.
     """
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     for axis, key in enumerate(("x", "y", "z")):
         atoms.insert(key, np.ascontiguousarray(coords[:, axis], dtype=np.float64))
@@ -593,6 +595,7 @@ class TestUnsupportedElement:
         """Z=99 has no AM1 parameters — single_point raises RuntimeError
         across the binding boundary (no fallback, no crash)."""
         frame = molpy.Frame()
+        frame.meta["units_style"] = "electronic"
         atoms = molpy.Block()
         atoms.insert("x", np.array([0.0], dtype=np.float64))
         atoms.insert("y", np.array([0.0], dtype=np.float64))
@@ -655,6 +658,7 @@ class TestImpossibleGeometry:
 
     def test_h2_bond_length_is_legal(self) -> None:
         frame = molpy.Frame()
+        frame.meta["units_style"] = "electronic"
         atoms = molpy.Block()
         atoms.insert("x", np.array([0.0, 0.74]))
         atoms.insert("y", np.zeros(2))
@@ -697,6 +701,7 @@ def _sqm_monomer() -> tuple["molpy.Frame", "np.ndarray"]:
     rows = [line.split() for line in deck[deck.index(" /") + 1 :] if line.strip()]
     xyz = np.array([[float(v) for v in row[2:5]] for row in rows])
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     for axis, column in zip("xyz", xyz.T):
         atoms.insert(axis, column.copy())
@@ -754,6 +759,7 @@ def _make_acetate_frame(with_bonds: bool = True) -> "molpy.Frame":
     *with_bonds* is False, the bonds block AM1-BCC types from."""
     xyz = np.array(_ACETATE_XYZ, dtype=np.float64)
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     for axis, key in enumerate(("x", "y", "z")):
         atoms.insert(key, np.ascontiguousarray(xyz[:, axis]))

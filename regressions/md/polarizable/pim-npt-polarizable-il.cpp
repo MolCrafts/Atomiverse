@@ -102,7 +102,7 @@ int run() {
     // Offline pins were eV (qqr2e = units::coulomb). The engine multiplies
     // qqrd2e, so energy, virial and the pressure made from that virial scale.
     const double e_scale =
-        ATV::units::from_style(ATV::units::Style::metal).qqrd2e()
+        ATV::units::from_style(ATV::units::Style::metal).coulomb_constant()
         / ATV::units::coulomb;
     const double E_pol_pin = -8.695749870555906 * e_scale;
     const double W_pin[6] = {

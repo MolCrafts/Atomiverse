@@ -81,7 +81,8 @@ void SteepestDescent::launch(const LaunchContext& ctx) {
     sd_step<<<grid, block, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.fx, a.fy, a.fz, a.mass,
         a.image, frame.force_fault, a.tag, ctx.step, ctx.runtime.host_box,
-        mixed_t(alpha_), mixed_t(ctx.runtime.units.ftm2v), n);
+        mixed_t(alpha_), mixed_t(ctx.runtime.units.velocity_impulse.scale()),
+        n);
     ++step_;
 }
 

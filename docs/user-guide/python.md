@@ -211,6 +211,7 @@ n = len(positions)
 xs, ys, zs = (np.array(c, dtype=np.float64) for c in zip(*positions))
 
 frame = molpy.Frame()
+frame.meta["units_style"] = "lj"
 atoms = molpy.Block()
 atoms.insert("x", xs)
 atoms.insert("y", ys)
@@ -611,6 +612,7 @@ r_oh, half = 0.95, 0.5 * math.radians(104.5)        # Å, half of ∠HOH
 hx, hz = r_oh * math.sin(half), r_oh * math.cos(half)
 
 frame = molpy.Frame()
+frame.meta["units_style"] = "electronic"
 atoms = molpy.Block()
 atoms.insert("x", np.array([0.0, hx, -hx]))
 atoms.insert("y", np.zeros(3))
@@ -828,6 +830,7 @@ eps, sigma, cutoff = 0.0104, 3.4, 8.5        # [eV], [Å], [Å]
 r_min = 2.0 ** (1.0 / 6.0) * sigma           # 3.81637 Å
 
 frame = molpy.Frame()
+frame.meta["units_style"] = "electronic"
 atoms = molpy.Block()
 atoms.insert("x", np.zeros(2))
 atoms.insert("y", np.zeros(2))
@@ -1235,7 +1238,7 @@ own.
 | `set_evaluator` | `BondFene(K, R0)` | Kremer-Grest FENE bond `−½KR₀²ln(1 − (r/R₀)²)`; `r ≥ R0` raises `RuntimeError` rather than reporting an infinite energy. `K` [eV/Å²], `R0` [Å], per bond type |
 | `set_evaluator` | `AngleHarmonic(K, θ0)` | Angle bending `K(θ − θ₀)²`. `K` [eV/rad²], `θ0` [rad], per angle type |
 | `set_evaluator` | `AngleCosine(K)` | LAMMPS `angle_style cosine` `K(1 + cos θ)`, minimum at θ = π (Kremer–Grest bending). `K` [eV], per angle type. Also on `MD(device="cuda")`, where the angle slot holds one style |
-| `set_evaluator` | `FixEfield(Ex, Ey, Ez)` | Uniform electric field (LAMMPS `fix efield`): `F = q E qe2f`, `E` in the run's field unit (V/Å for `real` and `metal`), so 1 e in 1 V/Å is 23.060549 kcal/mol/Å in `real` and 1 eV/Å in `metal`. Energy `−Σ q qe2f E·r^u` on unwrapped coordinates (image flags); no virial. Needs a `charge` column; also on `MD(device="cuda")` |
+| `set_evaluator` | `FixEfield(Ex, Ey, Ez)` | Uniform electric field (LAMMPS `fix efield`): `F = q E qe2f`, `E` in the run's field unit (V/Å for `real` and `metal`), so 1 e in 1 V/Å is 23.06055 kcal/mol/Å in `real` and 1 eV/Å in `metal`. Energy `−Σ q qe2f E·r^u` on unwrapped coordinates (image flags); no virial. Needs a `charge` column; also on `MD(device="cuda")` |
 | `set_evaluator` | `DihedralMultiHarmonic(Cn)` | Dihedral `Σₙ Cₙ cosⁿφ`. `Cn` [eV], one coefficient list per dihedral type |
 | `set_evaluator` | `DihedralCharmm(K, n, delta)` | CHARMM periodic torsion `K(1 + cos(nφ − δ))`. `K` [eV], `n` an integer multiplicity ≥ 1 (minima per full turn), `delta` [rad], per dihedral type |
 | `set_evaluator` | `ImproperHarmonic(K, chi0)` | Harmonic out-of-plane torsion `K(χ − χ₀)²`; reads the frame's `impropers` block. `K` [eV/rad²], `chi0` [rad], per improper type |

@@ -104,7 +104,8 @@ TEST(GcmcMetropolis, DisplacementAcceptanceMatchesBoltzmannFactor) {
             ASSERT_EQ(p.after_stages(h.state()), Outcome::Commit);
         }
     }
-    const double expected = std::exp(-dE / (units::UnitSystem::lj().boltz * T));
+    const double expected =
+        std::exp(-dE / (units::UnitSystem::lj().boltzmann_constant() * T));
     const double observed = static_cast<double>(commits) / n_trials;
     const double sigma = std::sqrt(expected * (1.0 - expected) / n_trials);
     EXPECT_NEAR(observed, expected, 4.0 * sigma);

@@ -133,6 +133,7 @@ def _si2_frame(stretch: float, with_box: bool = True) -> "molpy.Frame":
     @return molpy.Frame with x/y/z [Å], mass [amu] and atomic_number columns.
     """
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, _A / 4.0 + stretch], dtype=np.float64))
     atoms.insert("y", np.array([0.0, _A / 4.0], dtype=np.float64))
@@ -175,6 +176,7 @@ def _si2_bomd_method() -> "PW":
 def _h_atom_frame() -> "molpy.Frame":
     """One H atom at the origin of a 6 Å cube (reg_pw-bomd-h.cpp:28-38)."""
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.zeros(1, dtype=np.float64))
     atoms.insert("y", np.zeros(1, dtype=np.float64))
@@ -631,7 +633,7 @@ class TestPwBomd:
 
         frame = _si2_frame(_STRETCH)
         x_before = np.asarray(frame["atoms"]["x"], dtype=np.float64).copy()
-        sim = MD()
+        sim = MD(units="real")
         sim.set_integrator(VelocityVerlet(_BOMD_DT_FS))
         sim.set_evaluator(_si2_bomd_method())
         sim.run(frame, _BOMD_STEPS)
@@ -644,7 +646,7 @@ class TestPwBomd:
         from atomiverse.md import MD
         from atomiverse.md.integrator import VelocityVerlet
 
-        sim = MD()
+        sim = MD(units="real")
         sim.set_integrator(VelocityVerlet(_BOMD_DT_FS))
         sim.set_evaluator(_si2_bomd_method())
 

@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/scf/tdhf.cpp
 /// @brief TDHFPack plus the response objects that are not mean-field
 ///        methods: `TDA` (`pyscf.tdscf.rhf.TDA` / `rks.TDA` / `uks.TDA`),
@@ -788,6 +789,19 @@ ExcitedStatesResult TDDFT<RKS>::run(int n_states,
 template <>
 std::vector<double> TDA<RHF>::forces(cpu::Frame& frame, int state, double h,
                                      bool analytic) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion length(source.length(), native.length());
+        auto result = units::evaluate_in(frame, "electronic", [&](Frame& work) {
+            return forces(work, state, length(h), analytic);
+        });
+        const units::Conversion force(native.force(), source.force());
+        for (auto& value : result)
+            value = force(value);
+        return result;
+    }
     const RHF& src = *mf_;
 
     auto make_rhf = [&src]() {
@@ -851,6 +865,20 @@ std::vector<double> TDA<RHF>::forces(cpu::Frame& frame, int state, double h,
 template <>
 std::vector<double> TDA<RHF>::nac_vectors(cpu::Frame& frame, int state_i,
                                           int state_j) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto native = units::PhysicalUnits::from_style("electronic");
+        auto result = units::evaluate_in(frame, "electronic", [&](Frame& work) {
+            return nac_vectors(work, state_i, state_j);
+        });
+        const auto one = native.length() / native.length();
+        const units::Conversion inverse_length(one / native.length(),
+                                               one / source.length());
+        for (auto& value : result)
+            value = inverse_length(value);
+        return result;
+    }
     const RHF& src = *mf_;
 
     if (state_i == state_j)

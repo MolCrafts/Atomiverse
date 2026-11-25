@@ -51,12 +51,12 @@ namespace {
 
 /// @brief Approximate kinetic temperature from frame.meta.get(ATV::kKinetic).
 ///        T = 2·KE / (n_dof · kB), with COM removed (n_dof = 3·N - 3).
-double temperature_K(const cpu::Frame& frame) {
+double temperature_K(const cpu::Frame& frame, const units::UnitSystem& run) {
     const int n_dof = 3 * frame.nlocal() - 3;
     if (n_dof <= 0)
         return 0.0;
     return 2.0 * static_cast<double>(frame.meta.get(ATV::kKinetic))
-           / (n_dof * units::UnitSystem::lj().boltz);
+           / (n_dof * run.boltzmann_constant());
 }
 
 } // namespace
@@ -73,14 +73,16 @@ int main() {
     // molecule by minimum image before each integral build.
     auto frame = examples::h2(0.74);
 
-    const double dt = 0.5; // fs
+    const double dt = 0.0005; // metal time: ps (0.5 fs)
     const double T_target =
-        100.0;                // K — well below RHF/STO-3G unphysical barrier
-    const double tau = 200.0; // fs (loose coupling — H2 has only 3 DOFs)
-    const int n_steps = 100;  // 50 fs total — captures ~7 vib periods (~7.6 fs)
+        100.0; // K — well below RHF/STO-3G unphysical barrier
+    const double tau =
+        0.2; // metal time: ps (200 fs) (loose coupling — H2 has only 3 DOFs)
+    const int n_steps = 100; // 50 fs total — captures ~7 vib periods (~7.6 fs)
 
     // Concrete RHF method as the force component (ASPC density warm-start).
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_observer(cpu::md::InitVelocity{T_target, /*seed=*/42u});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});
     sim.set_thermostat(cpu::md::NoseHoover{T_target, tau, dt});
@@ -93,7 +95,7 @@ int main() {
     sim.run(frame, 1);
     const double E_init = static_cast<double>(frame.meta.get(ATV::kEnergy));
     const double KE_init = static_cast<double>(frame.meta.get(ATV::kKinetic));
-    const double T_init = temperature_K(frame);
+    const double T_init = temperature_K(frame, sim.units());
     ATV_INFO("[aimd] step=1   PE_eV={:>10.4f}  KE_eV={:>8.4f}  T_K={:>7.2f}",
              E_init, KE_init, T_init);
 
@@ -101,7 +103,7 @@ int main() {
 
     const double E_final = static_cast<double>(frame.meta.get(ATV::kEnergy));
     const double KE_final = static_cast<double>(frame.meta.get(ATV::kKinetic));
-    const double T_final = temperature_K(frame);
+    const double T_final = temperature_K(frame, sim.units());
     ATV_INFO("[aimd] step={:<3d} PE_eV={:>10.4f}  KE_eV={:>8.4f}  T_K={:>7.2f}",
              n_steps, E_final, KE_final, T_final);
 

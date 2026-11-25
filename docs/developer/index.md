@@ -118,3 +118,5 @@ not markup: `[project.extra.molcrafts].accent` in `zensical.toml`.
 The generated C++ API reference is still produced by Doxygen (`doxygen Doxyfile`
 → `build/doxygen/html`) and is not yet part of this site; `docs/api/index.md` is
 the hand-written map into it.
+
+- [Unit preparation contract](unit-contract.md)

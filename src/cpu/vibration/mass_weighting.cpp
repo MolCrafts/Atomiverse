@@ -7,6 +7,7 @@
 #include <cmath>
 
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/core/units.h"
 #include "atomiverse/cpu/vibration/atomic_masses.h"
 #include "atomiverse/cpu/vibration/nist_constants.h"
 
@@ -19,6 +20,16 @@ void MassWeighting::launch(const cpu::LaunchContext& ctx) {
     const int dim = 3 * n;
     if (ctx.step < 2 * dim)
         return; // not the finalize pass yet.
+
+    const auto& source = ctx.runtime.units.physical();
+    const auto native = units::PhysicalUnits::from_style("electronic");
+    const units::Conversion length(source.length(), native.length());
+    const units::Conversion hessian(source.force() / source.length(),
+                                    native.force() / native.length());
+    for (auto& value : ws_->r0)
+        value = length(value);
+    for (auto& value : ws_->hessian)
+        value = hessian(value);
 
     // Fetch IUPAC-2013 atomic masses from each atom's atomic number.
     // mass_amu() throws on an unsupported element (no fallback).

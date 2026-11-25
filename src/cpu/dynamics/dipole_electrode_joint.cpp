@@ -165,7 +165,7 @@ void DipoleElectrodeJoint::collect_electrodes_(const cpu::Frame& frame) {
             if (static_cast<int>(type[i]) == groups_[g].type) {
                 elec_atoms_.push_back(i);
                 elec_group_.push_back(static_cast<int>(g));
-                psi_vec_.push_back(v2e_ * groups_[g].psi);
+                psi_vec_.push_back(potential_units_(groups_[g].psi));
                 is_elec_[static_cast<std::size_t>(i)] = 1;
                 break;
             }
@@ -545,8 +545,9 @@ double DipoleElectrodeJoint::scc_mu_(const Spans& s) {
 }
 
 void DipoleElectrodeJoint::build(const BuildContext& ctx) {
-    qqrd2e_ = ctx.runtime.units.qqrd2e();
-    v2e_ = ctx.runtime.units.qe2f; // Ψ [V] → energy per charge (A's unit)
+    qqrd2e_ = ctx.runtime.units.coulomb_constant();
+    potential_units_ = ctx.runtime.units.electric_potential;
+    field_units_ = ctx.runtime.units.electric_field;
     if (groups_.empty())
         throw std::runtime_error(
             "DipoleElectrodeJoint: add at least one electrode via "

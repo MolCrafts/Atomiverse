@@ -66,8 +66,9 @@ TEST(PppmCoul, MadelungNaCl) {
         cpu::KSpacePPPM(alpha, /*spacing=*/0.5, /*order=*/5));
 
     const int N = n * n * n;
-    const double e_expected =
-        -0.5 * N * kMadelungNaCl * ATV::units::UnitSystem::lj().qqrd2e() / d;
+    const double e_expected = -0.5 * N * kMadelungNaCl
+                              * ATV::units::UnitSystem::lj().coulomb_constant()
+                              / d;
     EXPECT_NEAR(e / e_expected, 1.0, 1e-3)
         << "E=" << e << " expected=" << e_expected;
 }

@@ -13,10 +13,13 @@
 #include "atomiverse/cpu/evaluate/single_point.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
+#include "atomiverse/cpu/units/frame.h"
 #include "atv_source_stamp.h"
 #include "molpy_frame_bridge.h"
 #include "units_binding.h"
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/array.h>
+#include <nanobind/stl/optional.h>
 #ifdef ATV_HAS_SEMIEMPIRICAL
 #include "atomiverse/cpu/semiempirical/am1_solver.h"
 #include "atomiverse/cpu/semiempirical/dftb2.h"
@@ -61,6 +64,87 @@ void bind_cuda_scf(nb::module_& m);
 #endif
 
 NB_MODULE(_atomiverse, m) {
+    nb::class_<ATV::units::UnitSystem>(m, "_UnitSystem")
+        .def_prop_ro("style",
+                     [](const ATV::units::UnitSystem& u) {
+                         return std::string(u.name());
+                     })
+        .def_prop_ro("boltzmann_constant",
+                     &ATV::units::UnitSystem::boltzmann_constant)
+        .def_prop_ro("planck_constant",
+                     &ATV::units::UnitSystem::planck_constant)
+        .def_prop_ro("coulomb_constant",
+                     &ATV::units::UnitSystem::coulomb_constant)
+        .def("thermal_energy", &ATV::units::UnitSystem::thermal_energy,
+             nb::arg("temperature"));
+    m.def("_units_from_style", [](const std::string& style) {
+        return ATV::units::from_style(style);
+    });
+    const auto reference =
+        [](const std::optional<std::array<double, 3>>& values,
+           const std::string& identity)
+        -> std::optional<ATV::units::ReducedReference> {
+        if (!values)
+            return {};
+        ATV::units::ReducedReference ref{identity, (*values)[0], (*values)[1],
+                                         (*values)[2]};
+        ref.validate();
+        return ref;
+    };
+    m.def(
+        "_unit_scales",
+        [reference](const std::string& source, const std::string& target,
+                    const std::optional<std::array<double, 3>>& scales,
+                    const std::string& identity) {
+            if (source != "electronic")
+                (void)ATV::units::parse_style(source);
+            if (target != "electronic")
+                (void)ATV::units::parse_style(target);
+            if (source == target)
+                return std::array<double, 5>{1., 1., 1., 1., 1.};
+            const auto ref = reference(scales, identity);
+            const auto a = ATV::units::PhysicalUnits::from_style(source, ref);
+            const auto b = ATV::units::PhysicalUnits::from_style(target, ref);
+            using ATV::units::convert;
+            return std::array<double, 5>{convert(1., a.energy(), b.energy()),
+                                         convert(1., a.length(), b.length()),
+                                         convert(1., a.charge(), b.charge()),
+                                         convert(1., a.mass(), b.mass()),
+                                         convert(1., a.time(), b.time())};
+        },
+        nb::arg("source"), nb::arg("target"), nb::arg("reference") = nb::none(),
+        nb::arg("identity") = "");
+    m.def(
+        "_convert_frame_units",
+        [reference](nb::object obj, const std::string& target,
+                    const std::optional<std::array<double, 3>>& scales,
+                    const std::string& identity) {
+            auto frame = borrow_molpy_frame(obj);
+            auto work =
+                ATV::units::convert(ATV::cpu::from_molpy(*frame), target,
+                                    reference(scales, identity));
+            ATV::cpu::to_molpy(work, *frame, false);
+        },
+        nb::arg("frame"), nb::arg("target"), nb::arg("reference") = nb::none(),
+        nb::arg("identity") = "");
+    m.def("_validate_unit_reference",
+          [reference](const std::optional<std::array<double, 3>>& scales,
+                      const std::string& identity) {
+              (void)reference(scales, identity);
+          });
+
+    m.def("_frame_run_style", [](nb::object obj) {
+        auto frame = borrow_molpy_frame(obj);
+        const auto entry = molrs::frame_get_meta(*frame, "units_style");
+        if (entry.dtype != molrs::MetaType::String)
+            throw std::invalid_argument("units_style must be a string");
+        const std::string style(entry.string_value.data(),
+                                entry.string_value.size());
+        if (style == "electronic")
+            return std::string("metal");
+        (void)ATV::units::parse_style(style);
+        return style;
+    });
     m.doc() = "Atomiverse: molecular simulation compute backend";
     // The source revision this extension was built from
     // (cmake/AtvSourceStamp.cmake): a 40-hex commit or "unknown", and
@@ -148,7 +232,8 @@ NB_MODULE(_atomiverse, m) {
                     throw std::runtime_error(
                         "Evaluate has no MPI task payload; run locally");
                 auto frame = borrow_molpy_frame(obj);
-                auto work = ATV::cpu::from_molpy(*frame);
+                auto work =
+                    ATV::cpu::from_molpy_for_run(*frame, self.units().name());
                 {
                     nb::gil_scoped_release release;
                     self.run(work);

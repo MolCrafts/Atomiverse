@@ -599,7 +599,7 @@ void DistanceConstraints::launch(const LaunchContext& ctx) {
                             stream>>>(
             s.lambda, s.ref, s.n_constraints,
             (velocity_projection_ ? 2.0 : 1.0)
-                / (dt_ * dt_ * ctx.runtime.units.ftm2v),
+                / (dt_ * dt_ * ctx.runtime.units.velocity_impulse.scale()),
             f.scalars->stress, f.force_fault);
     else if (ctx.at(ATV::md::Phase::final_integrate))
         rattle_velocities<<<cuda::grid_size(s.n_clusters, block), block, 0,
@@ -620,8 +620,8 @@ void DistanceConstraints::solve_shake_forces_(const LaunchContext& ctx,
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     const int block = cuda::kDefaultBlock;
     const Positions pos{a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr};
-    const double dtfsq =
-        (initial ? 0.5 : 1.0) * dt_ * dt_ * ctx.runtime.units.ftm2v;
+    const double dtfsq = (initial ? 0.5 : 1.0) * dt_ * dt_
+                         * ctx.runtime.units.velocity_impulse.scale();
     rattle_snapshot<<<cuda::grid_size(s.n_constraints, block), block, 0,
                       stream>>>(pos, s.pair, s.ref, s.lambda, s.n_constraints,
                                 ctx.runtime.host_box, f.force_fault);
@@ -662,10 +662,11 @@ void DistanceConstraints::initialize_forces(const LaunchContext& ctx) {
                       stream>>>(pos, s.pair, s.ref, s.lambda, s.n_constraints,
                                 ctx.runtime.host_box, f.force_fault);
     initial_reactions<<<cuda::grid_size(s.n_clusters, block), block, 0,
-                        stream>>>(
-        s.offset, s.pair, s.imi, s.imj, s.ref, s.lambda, s.acceleration, a.fx,
-        a.fy, a.fz, a.vx, a.vy, a.vz, s.n_clusters, ctx.runtime.units.ftm2v,
-        tol_, max_iter_, f.force_fault);
+                        stream>>>(s.offset, s.pair, s.imi, s.imj, s.ref,
+                                  s.lambda, s.acceleration, a.fx, a.fy, a.fz,
+                                  a.vx, a.vy, a.vz, s.n_clusters,
+                                  ctx.runtime.units.velocity_impulse.scale(),
+                                  tol_, max_iter_, f.force_fault);
     constraint_virial<<<cuda::grid_size(s.n_constraints, block), block, 0,
                         stream>>>(s.lambda, s.ref, s.n_constraints, 1.0,
                                   f.scalars->stress, f.force_fault);

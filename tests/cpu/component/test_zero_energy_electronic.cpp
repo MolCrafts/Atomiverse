@@ -185,6 +185,7 @@ TEST(ZeroEnergyElectronic, CoBoundPassLeavesOnlyTheQmShareInElectronicTerm) {
     rhf.with_gradient(false);
 
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.on(evaluate::Phase::evaluate).add_ref(stub, /*order=*/0);
     eval.on(evaluate::Phase::evaluate).add_ref(rhf, /*order=*/10);
     eval.set_threads(1);
@@ -222,6 +223,7 @@ TEST(ZeroEnergyElectronic, SoleSourceRhfWritesTheWholeEnergyAsElectronic) {
     rhf.with_gradient(false);
 
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.on(evaluate::Phase::evaluate).add_ref(rhf, /*order=*/0);
     eval.set_threads(1);
     eval.build();

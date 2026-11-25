@@ -1,11 +1,10 @@
 """Every unit-bearing MD component under LAMMPS ``units real`` and ``units
 metal``, on the CPU and the CUDA driver.
 
-Each expectation is a closed form evaluated with the LAMMPS factors of
-``Update::set_units`` (``src/update.cpp``), written out below rather than read
-back from the engine:
+Each expectation is a closed form evaluated with factors derived below from
+CODATA constants and the style's definition, not read back from the engine:
 
-* ``FixEfield``: F = q E qe2f (real: 23.060549 kcal/mol/Å per e·V/Å; metal:
+* ``FixEfield``: F = q E qe2f (real: 23.0605478 kcal/mol/Å per e·V/Å; metal:
   1 eV/Å), U = −Σ q qe2f E·r, and the velocity a lone ion gains,
   v = F t / (m mvv2e);
 * the Coulomb energy of one pair, qqr2e q_i q_j / r (``PairCoulCut``) and
@@ -52,31 +51,42 @@ DEVICES = [
 ]
 STYLES = ["real", "metal"]
 
-#: LAMMPS ``Update::set_units`` (src/update.cpp), copied, not read back.
-LAMMPS = {
-    "real": {
-        "boltz": 0.0019872067,
-        "mvv2e": 48.88821291 * 48.88821291,
-        "nktv2p": 68568.415,
-        "qqr2e": 332.06371,
-        "qe2f": 23.060549,
-    },
-    "metal": {
-        "boltz": 8.617343e-5,
-        "mvv2e": 1.0364269e-4,
-        "nktv2p": 1.6021765e6,
-        "qqr2e": 14.399645,
-        "qe2f": 1.0,
-    },
+#: CODATA 2018 / exact SI constants; every factor below is derived from these
+#: and the definition of the style, independently of the engine.
+_NA = 6.02214076e23
+_KB = 1.380649e-23  # J/K
+_E = 1.602176634e-19  # C
+_KE = 8.9875517923e9  # N m^2 / C^2
+_KCAL_MOL = 4184.0 / _NA  # J per particle
+_AMU = 1.0e-3 / _NA  # kg
+
+
+def _factors(energy: float, time: float, pressure: float) -> dict[str, float]:
+    """Conversions of a style with Å, amu, e and K, the energy [J], time [s]
+    and pressure [Pa] units given."""
+    return {
+        "boltz": _KB / energy,
+        "mvv2e": _AMU * (1.0e-10 / time) ** 2 / energy,
+        "nktv2p": energy / 1.0e-30 / pressure,
+        "qqr2e": _KE * _E * _E / 1.0e-10 / energy,
+        "qe2f": _E / energy,
+    }
+
+
+#: The LAMMPS names of the factors, at the physical definitions the engine
+#: uses (LAMMPS rounds its ``Update::set_units`` table; they agree to 1.2e-6).
+FACTORS = {
+    "real": _factors(_KCAL_MOL, 1.0e-15, 101325.0),
+    "metal": _factors(_E, 1.0e-12, 1.0e5),
 }
 
 #: The same physics in both styles: one style-unit of each quantity per
-#: real-style unit (kcal/mol, fs, atm, Å/fs). 1 eV = 23.060549 kcal/mol
-#: (the LAMMPS factors agree on it to 5e-8); 1 atm = 1.01325 bar.
+#: real-style unit (kcal/mol, fs, atm, Å/fs). 1 eV = 23.0605478 kcal/mol;
+#: 1 atm = 1.01325 bar.
 SCALE = {
     "real": {"energy": 1.0, "time": 1.0, "pressure": 1.0, "velocity": 1.0},
     "metal": {
-        "energy": 1.0 / 23.060549,
+        "energy": _KCAL_MOL / _E,
         "time": 1.0e-3,
         "pressure": 1.01325,
         "velocity": 1.0e3,
@@ -91,7 +101,9 @@ def _block(columns: dict) -> "molpy.Block":
     return block
 
 
-def _atoms_frame(pos, mass, box, *, vel=None, charge=None, types=None) -> "molpy.Frame":
+def _atoms_frame(
+    pos, mass, box, *, style: str, vel=None, charge=None, types=None
+) -> "molpy.Frame":
     pos = np.asarray(pos, dtype=np.float64)
     n = len(pos)
     vel = np.zeros_like(pos) if vel is None else np.asarray(vel, dtype=np.float64)
@@ -107,6 +119,7 @@ def _atoms_frame(pos, mass, box, *, vel=None, charge=None, types=None) -> "molpy
     )
     cols["atomic_number"] = np.full(n, 18, dtype=np.uint32)
     frame = molpy.Frame()
+    frame.meta["units_style"] = style
     frame["atoms"] = _block(cols)
     frame.box = molpy.Box.cube(box)
     return frame
@@ -132,7 +145,7 @@ def _temperature(frame, style: str, *, dof: int | None = None, types=None) -> fl
         m, v = m[sel], v[sel]
         v = v - (m[:, None] * v).sum(axis=0) / m.sum()
     n_f = 3 * m.size - 3 if dof is None else dof
-    u = LAMMPS[style]
+    u = FACTORS[style]
     return float(np.sum(m[:, None] * v * v) * u["mvv2e"] / (n_f * u["boltz"]))
 
 
@@ -154,10 +167,10 @@ def test_efield_force_is_charge_field_qe2f(device: str, style: str) -> None:
     q = np.array([1.0, -0.5])
     m = 10.0
     pos = np.array([[10.0, 10.0, 10.0], [25.0, 12.0, 11.0]])
-    u = LAMMPS[style]
+    u = FACTORS[style]
     dt = 1.0 * SCALE[style]["time"]
 
-    frame = _atoms_frame(pos, m, 40.0, charge=q)
+    frame = _atoms_frame(pos, m, 40.0, charge=q, style=style)
     sim = MD(device=device, units=style)
     sim.set_neighbor(NeighborList(5.0, 1.0))
     sim.set_integrator(VelocityVerlet(dt))
@@ -168,7 +181,7 @@ def test_efield_force_is_charge_field_qe2f(device: str, style: str) -> None:
     want_u = -float(np.sum(q[:, None] * u["qe2f"] * E[None, :] * pos))
     assert float(frame.meta["energy"]) == pytest.approx(want_u, rel=1e-9)
 
-    frame = _atoms_frame(pos, m, 40.0, charge=q)
+    frame = _atoms_frame(pos, m, 40.0, charge=q, style=style)
     sim = MD(device=device, units=style)
     sim.set_neighbor(NeighborList(5.0, 1.0))
     sim.set_integrator(VelocityVerlet(dt))
@@ -179,16 +192,18 @@ def test_efield_force_is_charge_field_qe2f(device: str, style: str) -> None:
     np.testing.assert_allclose(v, want_v, rtol=1e-9, atol=1e-14)
 
 
-def test_efield_real_force_is_lammps_value() -> None:
+def test_efield_real_force_is_converted() -> None:
     """The number from the bug report: 1 e in 1 V/Å under units real is
-    23.060549 kcal/mol/Å (LAMMPS ``fix efield``), not 1."""
-    frame = _atoms_frame([[5.0, 5.0, 5.0]], 10.0, 30.0, charge=[1.0])
+    23.0605478 kcal/mol/Å, not 1."""
+    frame = _atoms_frame([[5.0, 5.0, 5.0]], 10.0, 30.0, charge=[1.0], style="real")
     sim = MD(units="real")
     sim.set_neighbor(NeighborList(5.0, 1.0))
     sim.set_integrator(VelocityVerlet(1.0))
     sim.set_evaluator(FixEfield(1.0, 0.0, 0.0))
     sim.run(frame, 0)
-    assert float(np.asarray(frame["atoms"]["fx"])[0]) == pytest.approx(23.060549, rel=1e-12)
+    assert float(np.asarray(frame["atoms"]["fx"])[0]) == pytest.approx(
+        FACTORS["real"]["qe2f"], rel=1e-9
+    )
 
 
 # ── Coulomb pair energy: qqr2e ───────────────────────────────────────────
@@ -198,13 +213,13 @@ def test_efield_real_force_is_lammps_value() -> None:
 def test_coul_cut_pair_energy_is_qqr2e_qq_over_r(style: str) -> None:
     r = 3.0
     q = [1.0, -0.5]
-    frame = _atoms_frame([[5.0, 5.0, 5.0], [5.0 + r, 5.0, 5.0]], 10.0, 30.0, charge=q)
+    frame = _atoms_frame([[5.0, 5.0, 5.0], [5.0 + r, 5.0, 5.0]], 10.0, 30.0, charge=q, style=style)
     sim = MD(units=style)
     sim.set_neighbor(NeighborList(8.0, 1.0))
     sim.set_integrator(VelocityVerlet(SCALE[style]["time"]))
     sim.set_evaluator(av.PairCoulCut(8.0))
     sim.run(frame, 0)
-    want = LAMMPS[style]["qqr2e"] * q[0] * q[1] / r
+    want = FACTORS[style]["qqr2e"] * q[0] * q[1] / r
     assert float(frame.meta["energy"]) == pytest.approx(want, rel=1e-12)
     fx = _cols(frame, ("fx",))[:, 0]
     # F_1 = -dU/dx_1 = qqr2e q_0 q_1 / r²: toward atom 0 (attraction).
@@ -243,19 +258,19 @@ def _ewald(pos, q, box: float, alpha: float, cutoff: float) -> float:
 def test_lj_cut_coul_long_pppm_pair_is_qqr2e_ewald(device: str, style: str) -> None:
     """LJ switched off (ε = 0): fused lj/cut/coul/long + PPPM on one ±1 e
     pair is qqr2e times the Ewald sum (real + reciprocal + self) of the
-    pair, 332.06371 × −0.334 kcal/mol in real, 14.399645 × −0.334 eV in
+    pair, 332.06371 × −0.334 kcal/mol in real, 14.3996455 × −0.334 eV in
     metal."""
     r, alpha, cut, box = 3.0, 0.3, 9.0, 30.0
     q = [1.0, -1.0]
     pos = [[10.0, 10.0, 10.0], [10.0 + r, 10.0, 10.0]]
-    frame = _atoms_frame(pos, 10.0, box, charge=q)
+    frame = _atoms_frame(pos, 10.0, box, charge=q, style=style)
     sim = MD(device=device, units=style)
     sim.set_neighbor(NeighborList(cut, 1.0))
     sim.set_integrator(VelocityVerlet(SCALE[style]["time"]))
     sim.set_evaluator(av.PairLJCutCoulLong([av.LJTypeCoeff(1, 1, 0.0, 3.0)], alpha, cut))
     sim.set_evaluator(av.KSpacePPPM(alpha, 0.5, 5))
     sim.run(frame, 0)
-    want = LAMMPS[style]["qqr2e"] * _ewald(pos, q, box, alpha, cut)
+    want = FACTORS[style]["qqr2e"] * _ewald(pos, q, box, alpha, cut)
     assert float(frame.meta["energy"]) == pytest.approx(want, rel=1e-5)
 
 
@@ -267,7 +282,7 @@ _AR_SIGMA = 3.405  # [Å]
 _AR_CUT = 8.5  # [Å]
 
 
-def _argon(cells: int = 4, a: float = 5.6) -> "molpy.Frame":
+def _argon(style: str, cells: int = 4, a: float = 5.6) -> "molpy.Frame":
     """fcc argon, 4 cells³ (256 atoms) at 5.6 Å — a dense liquid at 120 K."""
     basis = np.array([[0, 0, 0], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5]])
     pts = [
@@ -280,7 +295,7 @@ def _argon(cells: int = 4, a: float = 5.6) -> "molpy.Frame":
     pos = np.asarray(pts) + 0.25
     n = len(pos)
     types = np.where(np.arange(n) % 2 == 0, 1, 2)
-    return _atoms_frame(pos, _AR_MASS, cells * a, types=types)
+    return _atoms_frame(pos, _AR_MASS, cells * a, types=types, style=style)
 
 
 def _argon_md(device: str, style: str, dt_fs: float = 4.0) -> MD:
@@ -301,7 +316,7 @@ def _argon_md(device: str, style: str, dt_fs: float = 4.0) -> MD:
 @pytest.mark.parametrize("device", DEVICES)
 @pytest.mark.parametrize("style", STYLES)
 def test_init_velocity_sets_the_requested_temperature(device: str, style: str) -> None:
-    frame = _argon()
+    frame = _argon(style)
     sim = _argon_md(device, style)
     sim.set_observer(InitVelocity(250.0, 4242))
     sim.run(frame, 0)
@@ -334,7 +349,7 @@ def test_thermostat_holds_the_setpoint(device: str, style: str, kind: str) -> No
     """Start at 60 K, set 120 K: after 4 ps the velocity temperature
     averaged over the next 6 ps is within 4 % of 120 K (a boltz or mvv2e of
     the wrong style is off by orders of magnitude)."""
-    frame = _argon()
+    frame = _argon(style)
     sim = _argon_md(device, style)
     sim.set_observer(InitVelocity(60.0, 99))
     for th in _thermostat(kind, style):
@@ -363,12 +378,12 @@ def test_npt_ideal_gas_volume_follows_the_target_pressure(device: str, style: st
     at 300 K; a target read in the other style's unit is 1.3 % off, in
     eV/Å³ or Pa orders of magnitude off."""
     n, T, p_atm = 4000, 300.0, 200.0
-    s, u = SCALE[style], LAMMPS[style]
+    s, u = SCALE[style], FACTORS[style]
     p_target = p_atm * s["pressure"]
     v_want = n * u["boltz"] * T * u["nktv2p"] / p_target
     side = v_want ** (1.0 / 3.0)
     rng = np.random.default_rng(3)
-    frame = _atoms_frame(rng.uniform(0.0, side, size=(n, 3)), _AR_MASS, side)
+    frame = _atoms_frame(rng.uniform(0.0, side, size=(n, 3)), _AR_MASS, side, style=style)
     sim = MD(device=device, units=style)
     sim.set_neighbor(NeighborList(2.0, 1.0))
     sim.set_evaluator(av.PairLJCut(0.0, 1.0, 2.0))  # no interactions
@@ -431,10 +446,10 @@ def _molecules() -> "molpy.Frame":
     types = np.asarray(types)
     mass = np.array([{1: 14.027, 2: 12.011, 3: 1.008, 4: 22.99}[int(t)] for t in types])
     # 300 K Maxwell-Boltzmann in real units (Å/fs), zero net momentum.
-    sig = np.sqrt(LAMMPS["real"]["boltz"] * 300.0 / (mass * LAMMPS["real"]["mvv2e"]))
+    sig = np.sqrt(FACTORS["real"]["boltz"] * 300.0 / (mass * FACTORS["real"]["mvv2e"]))
     vel = rng.normal(size=xyz.shape) * sig[:, None]
     vel -= (mass[:, None] * vel).sum(axis=0) / mass.sum()
-    frame = _atoms_frame(xyz, mass, _BOX, vel=vel, charge=charge, types=types)
+    frame = _atoms_frame(xyz, mass, _BOX, vel=vel, charge=charge, types=types, style="real")
     for name, rows, tids in (
         ("bonds", bonds, btypes),
         ("angles", angles, [1] * len(angles)),
@@ -450,7 +465,8 @@ def _molecules() -> "molpy.Frame":
 
 
 def _in_style(frame, style: str) -> "molpy.Frame":
-    """The same state with velocities in the style's unit."""
+    """The same (real) state with velocities in the style's unit."""
+    frame.meta["units_style"] = style
     a = frame["atoms"]
     for k in ("vx", "vy", "vz"):
         a[k] = np.asarray(a[k], dtype=np.float64) * SCALE[style]["velocity"]
@@ -503,7 +519,7 @@ def _pressure(frame, style: str) -> float:
     w = np.asarray(frame.meta["stress"], dtype=np.float64) + np.asarray(
         frame.meta["stress_kinetic"], dtype=np.float64
     )
-    return float((w[0] + w[1] + w[2]) / 3.0 / _volume(frame) * LAMMPS[style]["nktv2p"])
+    return float((w[0] + w[1] + w[2]) / 3.0 / _volume(frame) * FACTORS[style]["nktv2p"])
 
 
 @needs_kspace

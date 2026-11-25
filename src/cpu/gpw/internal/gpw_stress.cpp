@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/gpw/internal/gpw_stress.cpp
 /// @brief GPW cell stress: Hellmann–Feynman fixed-P product path + multi-SCF FD.
 ///
@@ -27,8 +28,8 @@
 /// Off-diagonal shear remains 0 (orthorhombic GPW cell only). Sign matches
 /// CP2K STRESS_TENSOR: σ_aa = −(1/Ω) ∂E/∂ε_aa.
 
-#include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 #include "atomiverse/cpu/gpw/internal/gpw_geometry.h"
+#include "atomiverse/cpu/gpw/internal/gpw_stress.h"
 
 #include <array>
 #include <cmath>
@@ -1323,6 +1324,19 @@ method_at_frame(const Frame& frame, const GpwDft& method) {
 
 std::array<double, 6> gpw_stress_fd(const Frame& frame, const GpwDft& method,
                                     double h, const std::array<bool, 3>& axes) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        auto result = gpw_stress_fd(native, method, h, axes);
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto e = units::PhysicalUnits::from_style("electronic");
+        const units::Conversion scale(
+            e.energy() / (e.length() * e.length() * e.length()),
+            source.pressure());
+        for (auto& v : result)
+            v = scale(v);
+        return result;
+    }
     auto [m, atoms] = method_at_frame(frame, method);
     std::array<double, 6> sigma =
         internal::gpw_stress_fd_impl(atoms, m, h, axes);
@@ -1332,6 +1346,19 @@ std::array<double, 6> gpw_stress_fd(const Frame& frame, const GpwDft& method,
 }
 
 std::array<double, 6> GpwDft::stress(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto source = units::PhysicalUnits::from_style(
+            units::frame_profile(frame), units::reduced_reference(frame));
+        const auto e = units::PhysicalUnits::from_style("electronic");
+        auto result = units::evaluate_in(
+            frame, "electronic", [&](Frame& native) { return stress(native); });
+        const units::Conversion scale(
+            e.energy() / (e.length() * e.length() * e.length()),
+            source.pressure());
+        for (auto& v : result)
+            v = scale(v);
+        return result;
+    }
     internal::validate_stress_probe(stress_strain_h, stress_axes,
                                     "GpwDft::stress");
     const GpwResult& scf = run(std::as_const(frame));
@@ -1351,6 +1378,16 @@ std::array<double, 6> GpwDft::stress(Frame& frame) {
         st[k] = sigma[k] * vol;
     }
     frame.meta.get(kEnergy) = scf.e_total * units::kHartreeInEv;
+    if (ATV::units::has_frame_units(frame)) {
+        const auto source = ATV::units::PhysicalUnits::from_style(
+            ATV::units::frame_profile(frame),
+            ATV::units::reduced_reference(frame));
+        const auto native = ATV::units::PhysicalUnits::from_style("electronic");
+        const ATV::units::Conversion pressure(native.pressure(),
+                                              source.pressure());
+        for (auto& value : sigma)
+            value = pressure(value);
+    }
     return sigma;
 }
 

@@ -131,8 +131,8 @@ class MD:
         LAMMPS ``units`` style of the run (``"lj"``, ``"real"``,
         ``"metal"``, ``"si"``, ``"cgs"``, ``"electron"``, ``"micro"``,
         ``"nano"``). Every parameter, ``dt``, temperature, pressure and the
-        frame are taken in that style and every result is reported in it;
-        nothing is converted. Default: :func:`atomiverse.units_style`
+        numeric parameters use that style. Annotated Frame data is adapted
+        at import and results are written back in its source units. Default: :func:`atomiverse.units_style`
         (``"lj"`` unless :func:`atomiverse.set_units` chose another).
     capture_buffer_bytes : int, optional
         Byte budget [bytes, >= 1] of the driver's ONE shared asynchronous
@@ -654,10 +654,10 @@ FixRattle = _cpp.FixRattle
 
 #: Constant uniform electric field (LAMMPS ``fix efield``) —
 #: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in the
-#: run's LAMMPS field unit (V/Å for ``real`` and ``metal``); register it with
-#: :meth:`MD.set_evaluator`. F = q E qe2f in the run's force unit (real:
-#: 23.060549 kcal/mol/Å per e·V/Å, metal: 1 eV/Å); the energy is
-#: −Σ q qe2f E·r^u on unwrapped coordinates and no virial is added.
+#: run's electric-field unit (V/Å for ``real`` and ``metal``); register it with
+#: :meth:`MD.set_evaluator`. F = qE in the run's force unit (real:
+#: 23.06055 kcal/mol/Å per e·V/Å, metal: 1 eV/Å); the energy is
+#: −Σ q E·r^u on unwrapped coordinates and no virial is added.
 FixEfield = _cpp.FixEfield
 
 def ConfigurationalTemperature(every: int = 1, *, device: str = "cpu"):

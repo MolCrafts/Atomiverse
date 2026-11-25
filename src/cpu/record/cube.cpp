@@ -11,6 +11,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/units/frame.h"
 
 namespace ATV {
 namespace cpu {
@@ -82,11 +83,19 @@ void write_cube(const std::string& filename, const std::string& title1,
     const StorageReal* py = frame.span(kAtom_y);
     const StorageReal* pz = frame.span(kAtom_z);
     const LocalInt* type = frame.span(kAtom_atomic_number);
+    const auto profile =
+        units::has_frame_units(frame)
+            ? units::PhysicalUnits::from_style(units::frame_profile(frame),
+                                               units::reduced_reference(frame))
+            : units::PhysicalUnits::from_style("electronic");
+    const units::Conversion length(
+        profile.length(), units::Unit{units::length_dimension,
+                                      1.e-10 * units::kBohrInAngstrom, 0});
     for (int i = 0; i < natm; ++i) {
         const int Z = static_cast<int>(type[i]);
-        const double xb = static_cast<double>(px[i]) * units::kAngstromInBohr;
-        const double yb = static_cast<double>(py[i]) * units::kAngstromInBohr;
-        const double zb = static_cast<double>(pz[i]) * units::kAngstromInBohr;
+        const double xb = length(static_cast<double>(px[i]));
+        const double yb = length(static_cast<double>(py[i]));
+        const double zb = length(static_cast<double>(pz[i]));
         std::fprintf(fp, "%5d %12.6f %12.6f %12.6f %12.6f\n", Z,
                      static_cast<double>(Z), xb, yb, zb);
     }

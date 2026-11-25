@@ -747,7 +747,7 @@ void KSpacePME::build(const BuildContext& ctx) {
             net_charge += double(q);
     }
     background_coef_ = -longrange::background_energy(
-        net_charge, 1.0, alpha_, ctx.runtime.units.qqrd2e());
+        net_charge, 1.0, alpha_, ctx.runtime.units.coulomb_constant());
 
     if (pppm) {
         double gf_b[12] = {};
@@ -892,7 +892,7 @@ void KSpacePME::enqueue_(const LaunchContext& ctx, bool want_energy,
     geom.K[1] = K_[1];
     geom.K[2] = K_[2];
     geom.order = order_;
-    geom.qqrd2e = ctx.runtime.units.qqrd2e();
+    geom.qqrd2e = ctx.runtime.units.coulomb_constant();
 
     const double self_pref =
         longrange::self_energy_prefactor(alpha_, geom.qqrd2e);

@@ -2,12 +2,17 @@
 /// @brief cpu::vib::Phonon — supercell FD phonon driver run loop.
 
 #include "atomiverse/cpu/vibration/phonon.h"
+#include "atomiverse/cpu/units/frame.h"
 
 namespace ATV {
 namespace cpu {
 namespace vib {
 
 PhononResult Phonon::run(cpu::Frame& unit) {
+    if (units::has_frame_units(unit)
+        && units::frame_profile(unit) != this->units().name())
+        return units::evaluate_in(unit, this->units().name(),
+                                  [&](Frame& work) { return run(work); });
     if (na < 1 || nb < 1 || nc < 1)
         throw std::invalid_argument(
             "Phonon::run: supercell factors na,nb,nc must be ≥ 1");

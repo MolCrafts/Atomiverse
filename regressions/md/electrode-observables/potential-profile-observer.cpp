@@ -66,8 +66,9 @@ bool check(const char* name, double got, double want, double tol) {
 } // namespace
 
 int run() {
-    const double kPinEGap =
-        4.0 * units::pi * units::UnitSystem::lj().qqrd2e() * (1.0 / 100.0);
+    const double kPinEGap = 4.0 * units::pi
+                            * units::UnitSystem::lj().coulomb_constant()
+                            * (1.0 / 100.0);
     const double kPinPsiDrop = -kPinEGap * 9.0;
     bool ok = true;
 

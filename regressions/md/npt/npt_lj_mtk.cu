@@ -110,7 +110,9 @@ Out run_on_device(Device dev, int steps = 80, bool projected = false) {
         sim.set_evaluator(cpu::PairLJCut{1.0, 1.0, kCut});
         // T* = 1 with ε = 1 eV → T = 1/kB [K]. Same deterministic kick
         // on both backends (InitVelocity RNGs differ, so not used here).
-        const double T = projected ? 1.0 : 1.0 / units::UnitSystem::lj().boltz;
+        const double T =
+            projected ? 1.0
+                      : 1.0 / units::UnitSystem::lj().boltzmann_constant();
         sim.set_integrator(cpu::md::NoseHooverNPT{T, 0.1, 0.0, 1.0, kDt});
         sim.enable_timing(false);
         sim.build();
@@ -119,7 +121,9 @@ Out run_on_device(Device dev, int steps = 80, bool projected = false) {
         cuda::md::MD sim;
         sim.set_neighbor(cuda::NeighborList{kCut, kSkin});
         sim.set_evaluator(cuda::PairLJCut{1.0, 1.0, kCut});
-        const double T = projected ? 1.0 : 1.0 / units::UnitSystem::lj().boltz;
+        const double T =
+            projected ? 1.0
+                      : 1.0 / units::UnitSystem::lj().boltzmann_constant();
         sim.set_integrator(cuda::md::NoseHooverNPT{T, 0.1, 0.0, 1.0, kDt});
         sim.build();
         sim.run(frame, steps);

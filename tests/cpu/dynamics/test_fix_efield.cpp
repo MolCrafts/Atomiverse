@@ -111,3 +111,23 @@ TEST(FixEfield, TriclinicUnwrapUsesEveryLatticeVector) {
     EXPECT_NEAR(f.span(kAtom_fy)[0], Ey, 1e-15);
     EXPECT_NEAR(f.span(kAtom_fz)[1], -Ez, 1e-15);
 }
+
+TEST(FixEfield, EveryRunStyleUsesPreparedForceAndEnergyUnits) {
+    const double expected[] = {1., 23.060547830619026,     1.,    1.,
+                               1., 1.9446903812113616e-10, 1000., 160.2176634};
+    for (int style = 0; style < units::kStyleCount; ++style) {
+        auto f = two_ions();
+        cpu::Context ctx;
+        ctx.units = units::from_style(static_cast<units::Style>(style));
+        cpu::md::FixEfield field(.03, 0., 0.);
+        field.build({ctx, f});
+        field.launch({ctx, f, 0, 0});
+        const double force = .03 * expected[style];
+        EXPECT_NEAR(f.span(kAtom_fx)[0], force, std::abs(force) * 1e-12);
+        EXPECT_NEAR(field.last_energy(), 2 * force, std::abs(force) * 1e-12);
+        // Public field mutation must not reuse stale prepared parameters.
+        field.Ex = .06;
+        field.launch({ctx, f, 0, 1});
+        EXPECT_NEAR(field.last_energy(), 4 * force, std::abs(force) * 1e-12);
+    }
+}

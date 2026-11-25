@@ -35,8 +35,8 @@ template <class Constraint>
 void initial_pressure(const char* style) {
     cpu::Context ctx;
     ctx.units = units::from_style(style);
-    auto f = rotor(1 / std::sqrt(ctx.units.mvv2e));
-    const double dt = 0.01 * std::sqrt(ctx.units.mvv2e);
+    auto f = rotor(1 / std::sqrt(ctx.units.kinetic_energy.scale()));
+    const double dt = 0.01 * std::sqrt(ctx.units.kinetic_energy.scale());
     Constraint fix(dt, 1e-13);
     fix.constrain_bond(0, 1);
     fix.build({ctx, f});
@@ -46,9 +46,9 @@ void initial_pressure(const char* style) {
     double lambda = -0.75 * 0.01;
     if constexpr (std::is_same_v<Constraint, cpu::md::FixShake>) {
         // SHAKE's bootstrap force predicts one full drift with dt^2/2.
-        const double v2 = 0.01 / ctx.units.mvv2e;
+        const double v2 = 0.01 / ctx.units.kinetic_energy.scale();
         lambda = -2 * 0.75 * v2 / (1 + std::sqrt(1 - dt * dt * v2))
-                 / ctx.units.ftm2v;
+                 / ctx.units.velocity_impulse.scale();
     }
     const double r[3] = {1.0 / 3, 2.0 / 3, 2.0 / 3};
     const double expected[6] = {r[0] * r[0], r[1] * r[1], r[2] * r[2],

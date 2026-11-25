@@ -114,9 +114,9 @@ bool madelung_virial() {
     eval.build();
     eval.run(f);
     const int n = f.nlocal();
-    const double expected = -0.5 * n * kMadelung
-                            * units::from_style(units::Style::metal).qqrd2e()
-                            / kD;
+    const double expected =
+        -0.5 * n * kMadelung
+        * units::from_style(units::Style::metal).coulomb_constant() / kD;
     const double e = f.meta.get(kEnergy);
     const auto& w = f.meta.get(kStress);
     double diag = 0, off = 0;

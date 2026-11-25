@@ -2,6 +2,8 @@
 /// @brief Implementation of the GPW energy evaluator component (see header).
 
 #include "atomiverse/cpu/gpw/gpw_evaluator.h"
+#include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <cmath>
 #include <complex>
@@ -125,6 +127,12 @@ void GPWEvaluator::set_timestep(double dt_fs) {
 }
 
 void GPWEvaluator::build(const cpu::BuildContext& ctx) {
+    if (units::needs_conversion(ctx.frame, "electronic")) {
+        auto native = units::convert(ctx.frame, "electronic");
+        build({ctx.runtime, native});
+        return;
+    }
+
     if (ctx.runtime.exec.serial_on_replica && ctx.runtime.mpi_size > 1)
         throw std::runtime_error("GPWEvaluator: independent serial replicas "
                                  "under multi-rank MPI are "
@@ -339,6 +347,17 @@ void GPWEvaluator::build(const cpu::BuildContext& ctx) {
 }
 
 void GPWEvaluator::launch(const cpu::LaunchContext& ctx) {
+    if (units::needs_conversion(ctx.frame, "electronic")) {
+        units::evaluate_in(ctx.frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (ctx.runtime.exec.runtime)
+                binding.emplace(*ctx.runtime.exec.runtime, native);
+            launch({ctx.runtime, native, ctx.stage, ctx.step,
+                    ctx.forces_requested, ctx.stress_requested});
+        });
+        return;
+    }
+
     if (ctx.runtime.exec.serial_on_replica && ctx.runtime.mpi_size > 1)
         throw std::runtime_error("GPWEvaluator: independent serial replicas "
                                  "under multi-rank MPI are "

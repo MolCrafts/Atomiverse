@@ -27,7 +27,7 @@ constexpr std::size_t kFirstComponentIdOffset = 10;
 constexpr std::size_t kFirstPhaseOffset = 13;
 // SinglePoint carries no entry-count word: its single component ID follows
 // the task-kind byte directly (magic 4 + kind 1).
-constexpr std::size_t kSinglePointComponentIdOffset = 5;
+constexpr std::size_t kSinglePointComponentIdOffset = 6;
 
 template <typename T>
 void write_scalar(std::vector<std::byte>& bytes, std::size_t offset, T value) {
@@ -598,6 +598,13 @@ TEST(TaskCodec, MinimizeCriterionRoundtripCoversEveryAlternative) {
 TEST(TaskCodec, UnitsStyleRoundTripsAndUnknownStylesAreRejected) {
     for (const auto style : {units::Style::lj, units::Style::real,
                              units::Style::metal, units::Style::nano}) {
+        SinglePointTask single{AM1Params{}};
+        single.units = style;
+        const auto single_bytes = pack(TaskSpec(single));
+        EXPECT_EQ(unpack(single_bytes.data(), single_bytes.size())
+                      .single_point()
+                      .units,
+                  style);
         MDTask md{{}, 3};
         md.units = style;
         const auto md_bytes = pack(TaskSpec(md));

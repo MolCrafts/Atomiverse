@@ -54,11 +54,11 @@ cpu::Frame make_argon(int n_side, double density_per_A3) {
     double mvx = 0, mvy = 0, mvz = 0;
     for (int i = 0; i < n; ++i) {
         frame.span(ATV::kAtom_vx)[i] =
-            0.002 * (double(std::rand()) / RAND_MAX - 0.5);
+            2.0 * (double(std::rand()) / RAND_MAX - 0.5);
         frame.span(ATV::kAtom_vy)[i] =
-            0.002 * (double(std::rand()) / RAND_MAX - 0.5);
+            2.0 * (double(std::rand()) / RAND_MAX - 0.5);
         frame.span(ATV::kAtom_vz)[i] =
-            0.002 * (double(std::rand()) / RAND_MAX - 0.5);
+            2.0 * (double(std::rand()) / RAND_MAX - 0.5);
         mvx += frame.span(ATV::kAtom_vx)[i];
         mvy += frame.span(ATV::kAtom_vy)[i];
         mvz += frame.span(ATV::kAtom_vz)[i];
@@ -79,7 +79,8 @@ double total_energy(const cpu::Frame& f) {
 
 int main() {
     // Argon LJ: epsilon = 0.0104 eV, sigma = 3.4 Å, cutoff = 8.5 Å.
-    const double eps = 0.0104, sigma = 3.4, cutoff = 8.5, skin = 0.5, dt = 1.0;
+    const double eps = 0.0104, sigma = 3.4, cutoff = 8.5, skin = 0.5,
+                 dt = 0.001;
 
     cpu::Frame frame =
         make_argon(/*n_side=*/6, /*density=*/0.0177); // 216 atoms
@@ -88,6 +89,7 @@ int main() {
 
     // Build the driver from components via the categorical setters.
     cpu::md::MD sim;
+    sim.set_units("metal");
     sim.set_evaluator(cpu::PairLJCut{eps, sigma, cutoff});
     sim.set_neighbor(cpu::md::NeighborList<>{cutoff, skin});
     sim.set_integrator(cpu::md::VelocityVerlet{dt});

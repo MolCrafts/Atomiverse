@@ -343,7 +343,7 @@ void KSpaceEwald::build(const BuildContext& ctx) {
     for (const force_t q : charge)
         net_charge += double(q);
     background_coef_ = -longrange::background_energy(
-        net_charge, 1.0, alpha_, ctx.runtime.units.qqrd2e());
+        net_charge, 1.0, alpha_, ctx.runtime.units.coulomb_constant());
 }
 
 void KSpaceEwald::compute(const LaunchContext& ctx) {
@@ -354,7 +354,7 @@ void KSpaceEwald::compute(const LaunchContext& ctx) {
         return;
 
     const cuda::Box& box = ctx.runtime.host_box;
-    const double qqrd2e = ctx.runtime.units.qqrd2e();
+    const double qqrd2e = ctx.runtime.units.coulomb_constant();
     const double self_pref = longrange::self_energy_prefactor(alpha_, qqrd2e);
     const double inv4a2 = 1.0 / (4.0 * alpha_ * alpha_);
     auto* tables = static_cast<EwaldTables*>(d_tables_);
@@ -405,8 +405,8 @@ void KSpaceEwald::add_curvature(const LaunchContext& ctx,
         d_ky_, d_kz_, d_tr_, d_ti_);
     kernels::ewald_curvature<<<grid_size(rows.n), kDefaultBlock, 0, stream>>>(
         a.x, a.y, a.z, a.charge, d_kx_, d_ky_, d_kz_, d_kw_, d_sr_, d_si_,
-        d_tr_, d_ti_, ng_, ctx.runtime.host_box, ctx.runtime.units.qqrd2e(),
-        rows);
+        d_tr_, d_ti_, ng_, ctx.runtime.host_box,
+        ctx.runtime.units.coulomb_constant(), rows);
     ATV_CUDA_CHECK(cudaGetLastError());
 }
 

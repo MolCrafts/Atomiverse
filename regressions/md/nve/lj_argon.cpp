@@ -32,7 +32,8 @@ using namespace ATV;
 int run() {
     // ── Rahman (1964) liquid argon ───────────────────────────────────────
     // eps/kB = 120 K, sigma = 3.4 A, number density 0.02071 A^-3, T = 94.4 K.
-    const double eps = 120.0 * units::UnitSystem::lj().boltz; // 0.010341 eV
+    const double eps =
+        120.0 * units::UnitSystem::lj().boltzmann_constant(); // 0.010341 eV
     const double sigma = 3.4;                                 // [A]
     const double cutoff = 2.5 * sigma;     // 8.5 A, the textbook LJ cutoff
     const double skin = 0.5;               // [A]

@@ -346,7 +346,7 @@ struct MdHandle {
             driver.capture_buffer_bytes(), driver.units().style});
         auto fref = borrow_molpy_frame(frame_obj);
         require_charge_column(*fref);
-        cpu::Frame work = cpu::from_molpy(*fref);
+        cpu::Frame work = cpu::from_molpy_for_run(*fref, driver.units().name());
         const int n_import = work.nlocal();
         std::vector<TagInt> import_tags(
             static_cast<std::size_t>(std::max(n_import, 0)));
@@ -401,7 +401,8 @@ struct MdHandle {
     void run_local_(nb::object frame_obj, std::int64_t n_steps) {
         auto frame = borrow_molpy_frame(frame_obj);
         require_charge_column(*frame);
-        cpu::Frame incoming = cpu::from_molpy(*frame);
+        cpu::Frame incoming =
+            cpu::from_molpy_for_run(*frame, driver.units().name());
         const bool continued = work && frame_owner.is(frame_obj);
         std::unique_ptr<cpu::Frame> fresh;
         if (!continued) {
@@ -447,8 +448,10 @@ struct MdHandle {
         out.restore_import_order(import_tags.data(),
                                  static_cast<int>(import_tags.size()));
         cpu::to_molpy(out, *frame);
-        written_back.capture(cpu::from_molpy(*frame),
-                             cpu::FrameInputSnapshot::state_input);
+        // As the next call will read it (converted to the run units).
+        written_back.capture(
+            cpu::from_molpy_for_run(*frame, driver.units().name()),
+            cpu::FrameInputSnapshot::state_input);
 #ifdef ATV_HAS_IO
         for (auto& rec : mrec_owned)
             rec->flush();
@@ -551,12 +554,12 @@ void bind_md(nb::module_& m) {
 
     nb::class_<cpu::task::FixEfieldParams>(
         m, "FixEfield",
-        "Constant uniform electric field (LAMMPS `fix efield Ex Ey Ez`).\n\n"
-        "A force source for MD.set_evaluator on CPU and CUDA: "
-        "F_i += q_i E qe2f, with E in the run's LAMMPS field unit (V/A for "
-        "units real and metal) and qe2f the run's LAMMPS factor (real: "
-        "23.060549 kcal/mol/A per e V/A; metal: 1 eV/A per e V/A). "
-        "The energy U = -sum_i q_i qe2f E . r_i^u uses unwrapped coordinates "
+        "Constant uniform electric field (LAMMPS `fix efield Ex Ey Ez`, "
+        "run units).\n\n"
+        "A force source for MD.set_evaluator on CPU and CUDA: F_i += q_i E, "
+        "with E in the run's electric-field unit (V/A for units real and "
+        "metal). "
+        "The energy U = -sum_i q_i E . r_i^u uses unwrapped coordinates "
         "r^u = r + H n through the frame's image flags (LAMMPS fsum[0]); it "
         "drifts by the work the field does on migrating ions and is not a "
         "bounded potential under PBC. No virial is added (LAMMPS "
@@ -568,14 +571,14 @@ void bind_md(nb::module_& m) {
                 new (p) cpu::task::FixEfieldParams{Ex, Ey, Ez};
             },
             nb::arg("Ex"), nb::arg("Ey"), nb::arg("Ez"),
-            "Construct with the field components Ex, Ey, Ez [field unit of "
-            "the run's style; V/A for real and metal].")
+            "Construct with the field components Ex, Ey, Ez [run electric "
+            "field].")
         .def_ro("Ex", &cpu::task::FixEfieldParams::Ex,
-                "Field x [style field unit].")
+                "Field x [run electric field].")
         .def_ro("Ey", &cpu::task::FixEfieldParams::Ey,
-                "Field y [style field unit].")
+                "Field y [run electric field].")
         .def_ro("Ez", &cpu::task::FixEfieldParams::Ez,
-                "Field z [style field unit].");
+                "Field z [run electric field].");
 
     nb::class_<cpu::md::GaussThermostat>(
         m, "GaussThermostat",

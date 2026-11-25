@@ -6,6 +6,7 @@
 /// (`FixEfield::post_force`), checkout SHA e8c4c278a8. LAMMPS: Copyright
 /// (2003) Sandia Corporation, GNU General Public License.
 #pragma once
+#include "atomiverse/core/unit_system.h"
 
 #include <cstdint>
 #include <string>
@@ -29,11 +30,9 @@ namespace md {
 ///     \qquad \mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n
 ///   \]
 ///
-/// \(\mathbf E\) in the run's LAMMPS field unit (V/Å for `real` and
-/// `metal`), \(q\) in the style's charge unit, `qe2f` the run's
-/// `ctx.runtime.units.qe2f` (23.060549 for real, 1 for metal), so
-/// \(\mathbf F\) and \(U\) are in the style's force and energy units.
-/// \(H\) is the current device cell (lattice vectors in
+/// Field, charge, force and energy follow the run unit profile; `qe2f` is its
+/// `electric_field` conversion, prepared in `build()`. \(H\) is the current
+/// device cell (lattice vectors in
 /// columns, any shape) and \(\mathbf n\) the device image flags, which the
 /// CUDA integrators advance on every wrap. Same energy convention as the CPU
 /// class (LAMMPS `fsum[0]`, `fix_modify energy yes`): unbounded under PBC,
@@ -50,14 +49,13 @@ namespace md {
 /// `default_bindings()`, at `post_force @ +100` like the CPU class.
 class FixEfield : public cuda::Potential, public cuda::ExternalDrive {
   public:
-    /// @param Ex Field x-component [style field unit; V/Å for real/metal].
-    /// @param Ey Field y-component [style field unit].
-    /// @param Ez Field z-component [style field unit].
+    /// @param Ex Field x-component [run electric field].
+    /// @param Ey Field y-component [run electric field].
+    /// @param Ez Field z-component [run electric field].
     FixEfield(double Ex, double Ey, double Ez) noexcept
         : Ex(Ex), Ey(Ey), Ez(Ez) {}
 
-    /// Field components [style field unit] — public members, as on
-    /// `cpu::md::FixEfield`.
+    /// Field components [run electric field] — public members, as on `cpu::md::FixEfield`.
     double Ex = 0.0;
     double Ey = 0.0;
     double Ez = 0.0;
@@ -71,6 +69,9 @@ class FixEfield : public cuda::Potential, public cuda::ExternalDrive {
     }
 
     void launch(const LaunchContext& ctx) override;
+    void build(const BuildContext& ctx) override {
+        field_units_ = ctx.runtime.units.electric_field;
+    }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
 
     const cuda::ExternalDrive* as_external_drive() const override {
@@ -81,6 +82,9 @@ class FixEfield : public cuda::Potential, public cuda::ExternalDrive {
     void subtract_drive_force(const LaunchContext& ctx, int n, double* fx,
                               double* fy, double* fz) const override;
     std::uint64_t drive_epoch() const override { return graph_epoch(); }
+
+  private:
+    units::Conversion field_units_;
 };
 
 } // namespace md

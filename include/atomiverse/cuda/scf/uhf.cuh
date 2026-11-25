@@ -60,6 +60,7 @@ class UHF : public cuda::Driver<ATV::scf::Phase>,
             public cuda::DriverNode,
             public cuda::HF {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Basis set (set at construction only).
     const cpu::scf::BasisSet basis;
     /// @brief Alpha electrons (occupation 1 on the lowest α eigenvectors).

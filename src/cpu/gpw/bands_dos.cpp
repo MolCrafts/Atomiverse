@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/gpw/bands_dos.cpp
 /// @brief Band-structure and multi-k DOS post-processing on GPW.
 
@@ -248,6 +249,10 @@ void Bands::set_diamond_path(int n_seg) {
 }
 
 BandsResult Bands::compute(GpwDft& method, Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return compute(method, native);
+        });
     internal::GpwDftAccess::set_cell(method,
                                      internal::cell_from_box(frame.box));
     const std::vector<GpwAtom> atoms =
@@ -622,6 +627,10 @@ void flatten_spectrum(const std::vector<std::vector<double>>& evals,
 } // namespace
 
 DosResult Dos::compute(GpwDft& method, Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return compute(method, native);
+        });
     internal::GpwDftAccess::set_cell(method,
                                      internal::cell_from_box(frame.box));
     const std::vector<GpwAtom> atoms =

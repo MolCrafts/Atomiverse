@@ -64,7 +64,8 @@ TEST(PairCoulSoft, LambdaOneMatchesShiftedHardCoulomb) {
     // PairCoulCut is unshifted; λ=1 soft uses shifted hard Coulomb:
     // V = k qi qj (1/r − 1/rc), F_r = k |qi qj| / r²
     const double r = 3.0, rc = 10.0;
-    const double qq = units::UnitSystem::lj().qqrd2e() * (1.0) * (-1.0);
+    const double qq =
+        units::UnitSystem::lj().coulomb_constant() * (1.0) * (-1.0);
     const double E_ref = qq * (1.0 / r - 1.0 / rc);
     const double Fr_ref = std::fabs(qq) / (r * r);
 
@@ -89,7 +90,7 @@ TEST(PairCoulSoft, IntermediateLambdaClosedForm) {
     const double r = 3.0, rc = 10.0, lam = 0.5, alpha = 0.5, p = 1.0, sc = 1.0;
     // Beutler goldens were evaluated at qqr2e = units::coulomb. The engine
     // multiplies qqrd2e.
-    const double scale = units::UnitSystem::lj().qqrd2e() / units::coulomb;
+    const double scale = units::UnitSystem::lj().coulomb_constant() / 14.399645;
     const double E_ref = -1.6798214399374538 * scale;
     const double Fr_ref = 0.799660331374428 * scale; // |F|
 

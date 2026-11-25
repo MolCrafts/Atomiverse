@@ -1,4 +1,5 @@
 #include "atomiverse/cpu/linalg/pulay.h"
+#include "atomiverse/cpu/units/frame.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -5782,6 +5783,12 @@ gpw_forces_fd(const Frame& frame, const GpwDft& method, double h) {
 // ── GpwDft — Frame entries ──────────────────────────────────────────────────
 
 void GpwDft::build(const Frame& reference) {
+    if (units::needs_conversion(reference, "electronic")) {
+        const auto native = units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
+
     cell_ = internal::cell_from_box(reference.box);
     const std::vector<GpwAtom> atoms =
         internal::GpwDftAccess::atoms_from_frame(*this, reference);
@@ -5803,6 +5810,11 @@ void GpwDft::build(const Frame& reference) {
 }
 
 GpwResult& GpwDft::run(const Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return run(native);
+    }
+
     if (solving_)
         throw std::logic_error("GpwDft: reentrant SCF execution is forbidden");
     if (host_runtime_)
@@ -5820,12 +5832,22 @@ GpwResult& GpwDft::run(const Frame& frame) {
 }
 
 GpwResult& GpwDft::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic",
+            [&](Frame& native) -> GpwResult& { return run(native); });
+
     GpwResult& res = run(std::as_const(frame));
     frame.meta.get(kEnergy) = res.e_total * units::kHartreeInEv;
     return res;
 }
 
 GpwResult& GpwDft::forces(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(
+            frame, "electronic",
+            [&](Frame& native) -> GpwResult& { return forces(native); });
+
     GpwResult& res = run(std::as_const(frame));
     if (!res.converged)
         throw std::runtime_error(

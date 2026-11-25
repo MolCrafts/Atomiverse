@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/record/mrec_recorder.cu
 /// @brief cuda::MrecRecorder -- a `cuda::AsyncConsumer` of the driver's shared
 ///        capture buffer that converts each captured slot to a `cpu::Frame`
@@ -203,6 +204,14 @@ void MrecRecorder::on_build(const BuildContext& ctx) {
     s.has_type = ctx.frame.atoms.type != nullptr;
     s.has_z = ctx.frame.atoms.atomic_number != nullptr;
     s.host_frame = cpu::Frame(n);
+    units::annotate(s.host_frame, ctx.runtime.units.name());
+    if (ctx.runtime.units.style == units::Style::lj) {
+        // The source annotation belongs to the CPU input. The run keeps
+        // the complete reduced reference when one was provided.
+        if (ctx.runtime.units.reference())
+            units::annotate_reduced_reference(s.host_frame,
+                                              *ctx.runtime.units.reference());
+    }
     if (!s.has_type)
         s.host_frame.block("atoms").erase(kAtom_type.key);
     if (!s.has_z)

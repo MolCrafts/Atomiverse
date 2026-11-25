@@ -44,6 +44,7 @@ TEST(EvaluateDriver, EnergyOnlyEvaluatorAcceptedByEvaluate) {
     rhf.with_gradient(false);
 
     cpu::Evaluate eval;
+    eval.set_units("metal");
     eval.on(evaluate::Phase::evaluate).add(std::move(rhf));
     EXPECT_NO_THROW({
         eval.build();

@@ -175,6 +175,7 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
     def run():
         _ = limits  # Keep the configured runtime controller alive for every call.
         frame = molpy.Frame()
+        frame.meta["units_style"] = "electronic"
         atoms = molpy.Block()
         xyz = np.asarray(system.positions_angstrom, dtype=np.float64)
         for index, key in enumerate(["x", "y", "z"]):

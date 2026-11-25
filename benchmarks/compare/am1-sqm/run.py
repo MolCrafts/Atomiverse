@@ -40,6 +40,7 @@ z, xyz, charge = json.loads(sys.stdin.read())
 xyz = np.asarray(xyz, dtype=float)
 frame = mp.Frame({"atoms": {"atomic_number": np.asarray(z, dtype=np.int64),
                             "x": xyz[:, 0], "y": xyz[:, 1], "z": xyz[:, 2]}})
+frame.meta["units_style"] = "electronic"
 method = av.AM1(charge=charge)
 start = time.perf_counter()
 av.single_point(frame, method)

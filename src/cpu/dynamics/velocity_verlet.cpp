@@ -31,7 +31,7 @@ void VelocityVerlet::launch(const cpu::LaunchContext& ctx) {
     const AccReal* __restrict sp_fy = f.span(kAtom_fy);
     const AccReal* __restrict sp_fz = f.span(kAtom_fz);
     const double dt = dt_;
-    const double dtf = 0.5 * dt * ctx.runtime.units.ftm2v;
+    const double dtf = ctx.runtime.units.velocity_impulse(0.5 * dt);
     // The team only once two workers each get enough owned rows to
     // amortize its overhead (`device::team_for`).
     constexpr int kRowsPerThread = 4096;

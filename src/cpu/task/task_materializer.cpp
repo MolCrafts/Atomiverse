@@ -676,6 +676,7 @@ TaskMaterializer::TaskMaterializer(const TaskSpec& spec) : kind_(spec.kind()) {
 #elif defined(ATV_HAS_SEMIEMPIRICAL)
         const auto& p = spec.single_point().evaluator;
         eval_.emplace();
+        eval_->set_units(units::style_name(spec.single_point().units));
         eval_->set_serial_on_replica();
         eval_->on(ATV::evaluate::Phase::evaluate)
             .add(semiempirical::AM1{p.charge, p.multiplicity, p.max_iter,

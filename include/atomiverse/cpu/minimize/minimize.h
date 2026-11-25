@@ -123,7 +123,7 @@ class Minimize : public Driver<ATV::minimizer::Phase> {
     /// @return Number of iterations actually executed (≤ `max_iter`).
 #ifdef ATV_HAS_MOLPY
     BigInt run(molrs::FrameRef& frame, BigInt max_iter) {
-        cpu::Frame work = cpu::from_molpy(frame);
+        cpu::Frame work = cpu::from_molpy_for_run(frame, this->units().name());
         const BigInt iters = run(work, max_iter);
         cpu::to_molpy(work, frame);
         return iters;

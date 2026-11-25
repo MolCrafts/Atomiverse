@@ -192,8 +192,8 @@ void PistonElectrode::enforce_rigid_(cpu::Frame& f, bool update_positions) {
 }
 
 void PistonElectrode::build(const cpu::BuildContext& ctx) {
-    ftm2v_ = ctx.runtime.units.ftm2v;
-    nktv2p_ = ctx.runtime.units.nktv2p;
+    ftm2v_ = ctx.runtime.units.velocity_impulse.scale();
+    nktv2p_ = ctx.runtime.units.pressure.scale();
     const int n = owned_count(ctx);
     resolve_rows_(ctx.frame, n);
     if (rows_.empty())

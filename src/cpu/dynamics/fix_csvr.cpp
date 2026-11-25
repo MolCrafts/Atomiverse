@@ -161,15 +161,15 @@ void FixCSVR::launch(const cpu::LaunchContext& ctx) {
     s.mvv = sums[4];
     s.mvv_all = sums[5];
 
-    const double mvv2e = ctx.runtime.units.mvv2e;
+    const double mvv2e = ctx.runtime.units.kinetic_energy.scale();
     const double ke = 0.5 * mvv2e * ATV::md::csvr_group_mvv(s, bias_);
     // No kinetic energy yet (velocities not initialized): the rescale is
     // undefined (K in the denominator). Skip — no fudge.
     if (!(ke > 0.0))
         return;
 
-    const double ke_bar =
-        0.5 * static_cast<double>(n_dof_) * ctx.runtime.units.boltz * T_live_;
+    const double ke_bar = 0.5 * static_cast<double>(n_dof_)
+                          * ctx.runtime.units.thermal_energy(T_live_);
     const ATV::md::CsvrNoise noise =
         ATV::md::csvr_noise(seed_, ctx.step, n_dof_);
     const double alpha2 = ATV::md::csvr_alpha2(

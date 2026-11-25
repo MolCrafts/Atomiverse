@@ -133,7 +133,8 @@ void InitVelocity::build(const BuildContext& ctx) {
 
     // sigma^2 = kB * T / (mvv2e * m)  =>  pass kB*T/mvv2e as common factor
     const mixed_t kbt_over_mvv2e = static_cast<mixed_t>(
-        ctx.runtime.units.boltz * temperature_ / ctx.runtime.units.mvv2e);
+        ctx.runtime.units.boltzmann_constant() * temperature_
+        / ctx.runtime.units.kinetic_energy.scale());
 
     // 1. The CPU draw (Gaussian, by tag) on the host, scaled on the device.
     std::vector<std::int64_t> tags(static_cast<std::size_t>(n));
@@ -213,9 +214,9 @@ void InitVelocity::build(const BuildContext& ctx) {
                                        stream));
         ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
         if (ke > 0) {
-            const mixed_t factor =
-                mixed_t(sqrt(temperature_ * double(ctx.runtime.md.n_dof_global)
-                             * ctx.runtime.units.boltz / (2 * ke)));
+            const mixed_t factor = mixed_t(
+                sqrt(temperature_ * double(ctx.runtime.md.n_dof_global)
+                     * ctx.runtime.units.boltzmann_constant() / (2 * ke)));
             cublasHandle_t handle = nullptr;
             if (cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS)
                 throw std::runtime_error("InitVelocity: cublasCreate failed");

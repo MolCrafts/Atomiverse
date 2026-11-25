@@ -42,7 +42,7 @@ namespace cpu {
 ///        shells + optional c2s), read after the method ran.
 /// @param frame   Geometry (positions [Å], species Z in the atomic_number
 ///        column) — supplies the AO → atom map and the Z_A.
-/// @return Per-atom Löwdin net charges [e], indexed by Frame atom order.
+/// @return Per-atom Löwdin net charges in Frame charge units, indexed by Frame atom order.
 /// @throws std::invalid_argument when the handle is null or not ready.
 /// @throws std::runtime_error when a shell center matches no atom position.
 std::vector<double> lowdin_charge(const scf::MeanFieldOutputs& outputs,
@@ -54,7 +54,7 @@ std::vector<double> lowdin_charge(const scf::MeanFieldOutputs& outputs,
 ///
 /// @param outputs A mean-field method's `result_handle()`.
 /// @param frame   Geometry — supplies the AO → atom map.
-/// @return Per-atom Löwdin spin densities [e], indexed by Frame atom order.
+/// @return Per-atom Löwdin spin populations [electrons], indexed by Frame atom order.
 /// @throws std::invalid_argument when the handle is null or not ready.
 /// @throws std::runtime_error when a shell center matches no atom position.
 std::vector<double> lowdin_spin(const scf::MeanFieldOutputs& outputs,

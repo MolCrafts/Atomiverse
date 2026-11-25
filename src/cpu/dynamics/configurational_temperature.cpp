@@ -91,7 +91,8 @@ ConfigurationalSample CurvatureAssembly::evaluate(const LaunchContext& ctx) {
         laplacian += lap_[i];
     last_.force_sq = force_sq;
     last_.laplacian = laplacian;
-    last_.temperature = force_sq / (ctx.runtime.units.boltz * laplacian);
+    last_.temperature =
+        force_sq / (ctx.runtime.units.boltzmann_constant() * laplacian);
     return last_;
 }
 
@@ -192,7 +193,8 @@ void ConfigurationalTemperature::launch(const LaunchContext& ctx) {
     mean_.force_sq = sum_force_sq_ / n;
     mean_.laplacian = sum_laplacian_ / n;
     mean_.temperature =
-        mean_.force_sq / (ctx.runtime.units.boltz * mean_.laplacian);
+        mean_.force_sq
+        / (ctx.runtime.units.boltzmann_constant() * mean_.laplacian);
 }
 
 } // namespace cpu

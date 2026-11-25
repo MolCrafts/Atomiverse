@@ -49,8 +49,9 @@ namespace {
 
 // ── Rahman (1964) liquid argon — shared by every leg ─────────────────────
 // eps/kB = 120 K, sigma = 3.4 A, number density 0.02071 A^-3, T = 94.4 K.
-const double kEps = 120.0 * units::UnitSystem::lj().boltz; // 0.010341 eV
-constexpr double kSigma = 3.4;                             // [A]
+const double kEps =
+    120.0 * units::UnitSystem::lj().boltzmann_constant(); // 0.010341 eV
+constexpr double kSigma = 3.4;                            // [A]
 const double kCutoff = 2.5 * kSigma;       // 8.5 A, the textbook LJ cutoff
 constexpr double kSkin = 0.5;              // [A]
 constexpr double kNumberDensity = 0.02071; // [A^-3]

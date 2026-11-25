@@ -173,6 +173,7 @@ class TestMDRunOnMolpyFrame:
     def test_missing_required_field_raises(self):
         """A molpy.Frame without atom positions fails loud."""
         frame = molpy.Frame()
+        frame.meta["units_style"] = "lj"
         sim = MD(dt=0.001)
         sim.set_neighbor(NeighborList(8.5))
         sim.set_evaluator(LJCut(0.0104, 3.4, 8.5))
@@ -228,6 +229,7 @@ class TestPairLJSetters:
         atoms.insert("mass", np.full(2, 39.948, dtype=np.float64))
         atoms.insert("atomic_number", np.full(2, 18, dtype=np.uint32))
         frame = molpy.Frame()
+        frame.meta["units_style"] = "lj"
         frame["atoms"] = atoms
         frame.box = molpy.Box.cube(20.0)
         typed = LJCut([av.LJTypeCoeff(18, 18, 0.0104, 3.4)], 8.5)
@@ -449,6 +451,7 @@ def _independent_argon_frame(reference: "molpy.Frame") -> "molpy.Frame":
         atoms.insert(key, np.array(src[key], dtype=np.float64))
     atoms.insert("atomic_number", np.array(src["atomic_number"], dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = reference.meta["units_style"]
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(float(np.asarray(reference.box.lengths)[0]))
     return frame
@@ -477,6 +480,10 @@ _FS: float = 1.0e-3
 
 
 class TestThermostatsAndNpt:
+    @pytest.fixture(autouse=True)
+    def physical_units(self, argon_frame):
+        argon_frame.meta["units_style"] = "metal"
+
     """NVT via Langevin/CSVR and NPT via NoseHooverNPT (LAMMPS `fix npt`).
 
     The argon recipe is in LAMMPS ``units metal``: temperatures in K,
@@ -744,6 +751,7 @@ def _nacl_frame(d: float = _NACL_D) -> "molpy.Frame":
     atoms.insert("mass", np.array(masses, dtype=np.float64))
     atoms.insert("atomic_number", np.array(numbers, dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_NACL_SIDE * d)
     return frame
@@ -885,6 +893,7 @@ class TestCoulombPme:
         atoms.insert("mass", np.full(n, 1.0))
         atoms.insert("atomic_number", np.full(n, 3, dtype=np.uint32))
         frame = molpy.Frame()
+        frame.meta["units_style"] = "metal"
         frame["atoms"] = atoms
         frame.box = molpy.Box.ortho(lengths)
 
@@ -995,6 +1004,7 @@ def _pair_frame(r: float) -> "molpy.Frame":
     atoms.insert("atomic_number", np.full(2, _PAIR_Z, dtype=np.uint32))
     atoms.insert("type_id", np.full(2, _PAIR_TYPE, dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_PAIR_BOX)
     return frame
@@ -1544,6 +1554,7 @@ class TestXyzRecorder:
         atoms.insert("mass", np.full(2, 1.0, dtype=np.float64))
         atoms.insert("type_id", np.array([1, 2], dtype=np.uint32))
         frame = molpy.Frame()
+        frame.meta["units_style"] = "lj"
         frame["atoms"] = atoms
         frame.box = molpy.Box.cube(20.0)
         sim = _lj_md_with_record(XYZ(str(tmp_path / "cg.xyz"), _XYZ_FREQ))
@@ -1590,6 +1601,7 @@ def _h2_frame() -> "molpy.Frame":
     """
     half = 0.5 * _H2_BOND_ANGSTROM
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     atoms = molpy.Block()
     atoms.insert("x", np.zeros(2, dtype=np.float64))
     atoms.insert("y", np.zeros(2, dtype=np.float64))
@@ -1623,7 +1635,7 @@ class TestAm1Bomd:
 
         frame = _h2_frame()
         z_before = np.asarray(frame["atoms"]["z"], dtype=np.float64).copy()
-        sim = MD()
+        sim = MD(units="metal")
         sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
         sim.set_observer(InitVelocity(_AM1_BOMD_T0, _AM1_BOMD_SEED))
         sim.set_evaluator(
@@ -1644,7 +1656,7 @@ class TestAm1Bomd:
         it is checked without running so the failure is unambiguous."""
         from atomiverse.semiempirical import AM1
 
-        sim = MD()
+        sim = MD(units="metal")
         sim.set_integrator(VelocityVerlet(_AM1_BOMD_DT))
         sim.set_evaluator(AM1())
 
@@ -1701,7 +1713,7 @@ class TestAm1Bomd:
         """Growing the dispatch table must not turn it into an accept-all:
         an unsupported object still raises, and the message names the
         supported types (which now include AM1)."""
-        sim = MD()
+        sim = MD(units="metal")
         with pytest.raises(TypeError, match="AM1"):
             sim.set_evaluator(object())
 
@@ -1808,6 +1820,7 @@ def _cuda_argon_frame() -> "molpy.Frame":
     x, y, z = (c.ravel() for c in np.meshgrid(grid, grid, grid, indexing="ij"))
     n = x.size
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     atoms.insert("x", x.astype(np.float64))
     atoms.insert("y", y.astype(np.float64))

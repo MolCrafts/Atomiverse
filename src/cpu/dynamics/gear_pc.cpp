@@ -118,7 +118,7 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
     const Frame& f = ctx.frame;
     const AccReal* force[3] = {f.span(kAtom_fx).data(), f.span(kAtom_fy).data(),
                                f.span(kAtom_fz).data()};
-    const double ftm2v = ctx.runtime.units.ftm2v;
+    const double ftm2v = ctx.runtime.units.velocity_impulse.scale();
     for (int d = 0; d < 3; ++d)
         for (int i = 0; i < n_; ++i) {
             rate_[d * n_ + i] = state_[(3 + d) * n_ + i];
@@ -134,7 +134,8 @@ void GearPC::rates_(const cpu::LaunchContext& ctx) {
                 + std::to_string(sample.laplacian));
         t_c1_ = sample.temperature;
         const double t0 = configurational_->temperature;
-        assembly_.temperature_gradient(ctx.runtime.units.boltz, grad_t_);
+        assembly_.temperature_gradient(ctx.runtime.units.boltzmann_constant(),
+                                       grad_t_);
         const double gain = xi_[0] / t0;
         for (int k = 0; k < 3 * n_; ++k)
             rate_[k] += gain * grad_t_[k];
@@ -200,8 +201,9 @@ void GearPC::start_(const cpu::LaunchContext& ctx) {
             throw std::runtime_error(
                 "GearPC: the Gaussian thermostat constrains no degree of "
                 "freedom");
-        k0_twice_ = static_cast<double>(dof) * ctx.runtime.units.boltz
-                    * gauss_->temperature / ctx.runtime.units.mvv2e;
+        k0_twice_ =
+            static_cast<double>(dof) * ctx.runtime.units.boltzmann_constant()
+            * gauss_->temperature / ctx.runtime.units.kinetic_energy.scale();
         project_(ctx);
     }
     for (double& z : xi_)

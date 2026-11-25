@@ -298,8 +298,8 @@ TEST(EwaldSumMath, TwoIonCubicKTableAndReciprocalEnergy) {
 
     const double e_self = sum.self_energy(q[0] * q[0] + q[1] * q[1]);
     // −k_C · α/√π · Σq² with Σq² = 2.
-    const double e_self_pin = -ATV::units::UnitSystem::lj().qqrd2e() * alpha
-                              / std::sqrt(ATV::units::pi) * 2.0;
+    const double e_self_pin = -ATV::units::UnitSystem::lj().coulomb_constant()
+                              * alpha / std::sqrt(ATV::units::pi) * 2.0;
     EXPECT_DOUBLE_EQ(e_self, e_self_pin);
 
     // Neutral cell → net-charge term is exactly zero.

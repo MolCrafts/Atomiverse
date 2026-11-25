@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file src/cpu/semiempirical/rm1_solver.cpp
 #include "atomiverse/cpu/semiempirical/rm1_solver.h"
 #include <stdexcept>
@@ -32,6 +33,11 @@ void RM1::sync_engine_() {
     engine_ = std::make_unique<NDDOSolver>(c);
 }
 void RM1::build(const cpu::Frame& reference) {
+    if (units::needs_conversion(reference, "electronic")) {
+        auto native = units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
     sync_engine_();
     engine_->build(reference);
 }

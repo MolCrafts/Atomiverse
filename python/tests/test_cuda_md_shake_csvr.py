@@ -32,8 +32,8 @@ from atomiverse.potentials.pair import LJCut
 _HAS_CUDA_MD: bool = extension_available() and hasattr(_cpp, "_CudaMD")
 needs_cuda = pytest.mark.skipif(not _HAS_CUDA_MD, reason="needs ATV_BUILD_CUDA")
 
-_KB = 8.617343e-5  # [eV/K] (metal)
-_MVV2E = 1.0364269e-4  # amu Å²/ps² → eV
+_KB = 8.617333262145179e-5  # [eV/K] (metal)
+_MVV2E = 1.0364269656262175e-4  # amu Å²/ps² → eV
 _SIDE = 4
 _SPACING = 5.0  # [Å]
 _BOND = 1.09  # [Å]
@@ -67,6 +67,7 @@ def _mixture(seed: int = 5) -> "molpy.Frame":
     atoms.insert("type_id", types)
     atoms.insert("atomic_number", np.where(types == 2, 1, np.where(types == 1, 6, 3)).astype(np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     b = np.asarray(bonds, dtype=np.uint32)
     block = molpy.Block()

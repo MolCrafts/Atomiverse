@@ -36,6 +36,7 @@ namespace scf {
 /// term. No device path. The method does not assign convergence.
 class DHF : public cpu::Driver<ATV::scf::Phase>, public HF {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Basis set. Fixed at construction.
     const BasisSet basis;
     /// @brief Molecular charge [e]. Electrons = ΣZ − charge.

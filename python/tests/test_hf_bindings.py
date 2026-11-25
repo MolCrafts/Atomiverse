@@ -16,6 +16,7 @@ scf = pytest.importorskip("atomiverse.scf")
 
 def h2_frame():
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", np.array([0.0, 0.0], dtype=np.float64))
     atoms.insert("y", np.array([0.0, 0.0], dtype=np.float64))

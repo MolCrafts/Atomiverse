@@ -282,8 +282,8 @@ void FixCSVR::launch(const LaunchContext& ctx) {
     p.n_dof = static_cast<double>(n_dof_);
     p.dt = dt_;
     p.tau = tau_;
-    p.boltz = ctx.runtime.units.boltz;
-    p.mvv2e = ctx.runtime.units.mvv2e;
+    p.boltz = ctx.runtime.units.boltzmann_constant();
+    p.mvv2e = ctx.runtime.units.kinetic_energy.scale();
     p.bias = bias_;
 
     // `sums` is the leading member: clear it without touching the rest.

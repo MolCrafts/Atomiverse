@@ -43,7 +43,7 @@ int run() {
     const double r_oh = 0.9572;
     const double theta = 104.52 * units::kDegreeInRad;
     const double qdist = 0.15;
-    const double eps = cpu::kcal_per_mol_to_ev(0.1550);
+    const double eps = 0.1550; // real energy: kcal/mol
     const double sigma = 3.15365;
     const double cut = 10.0;
     const double qM = -1.04, qH = 0.52;
@@ -145,7 +145,7 @@ int run() {
     coul.set_special_bonds(0.0, 0.0, 0.0);
 
     cpu::Evaluate eval;
-    eval.set_units("metal"); // eV / Å inputs and pins (LAMMPS units metal)
+    eval.set_units("real");
     eval.on(evaluate::Phase::prepare).add_ref(place, +100);
     eval.set_neighbor(cpu::md::NeighborList<>{cut, 0.3, 1, 0, true});
     eval.set_evaluator(std::move(lj));
@@ -155,7 +155,15 @@ int run() {
     eval.build();
     eval.run(f);
 
-    const double E = f.meta.get(kEnergy);
+    const auto oracle_profile =
+        units::PhysicalUnits::from_style(units::Style::metal);
+    const auto run_profile =
+        units::PhysicalUnits::from_style(units::Style::real);
+    const units::Conversion oracle_energy(run_profile.energy(),
+                                          oracle_profile.energy());
+    const units::Conversion oracle_force(run_profile.force(),
+                                         oracle_profile.force());
+    const double E = oracle_energy(f.meta.get(kEnergy));
     std::printf("TIP4P dimer (VirtualSites) E=%.16e eV (pin=%.16e)\n", E,
                 E_pin);
     if (!(std::fabs(E - E_pin) <= 1e-8)) {
@@ -168,9 +176,9 @@ int run() {
     bool ok = true;
     for (int k = 0; k < 6; ++k) {
         const int i = row_of(f, parent_tag[k]);
-        const double fx = f.span(kAtom_fx)[i];
-        const double fy = f.span(kAtom_fy)[i];
-        const double fz = f.span(kAtom_fz)[i];
+        const double fx = oracle_force(f.span(kAtom_fx)[i]);
+        const double fy = oracle_force(f.span(kAtom_fy)[i]);
+        const double fz = oracle_force(f.span(kAtom_fz)[i]);
         std::printf("F_parent%d  % .16e % .16e % .16e\n", k + 1, fx, fy, fz);
         if (!(std::fabs(fx - fx_pin[k]) <= 1e-6) || !(std::fabs(fy) <= 1e-10)
             || !(std::fabs(fz - fz_pin[k]) <= 1e-6)) {

@@ -272,11 +272,11 @@ PppmAccuracyResult pppm_from_accuracy(const PppmAccuracyRequest& req) {
     // KSpace::two_charge and PPPM::qsum_qsq for the request's units row.
     const units::UnitSystem& us = req.unit_system;
     const double two_charge_force = us.two_charge_force();
-    if (!(two_charge_force > 0.0) || !(us.qqrd2e() > 0.0))
+    if (!(two_charge_force > 0.0) || !(us.coulomb_constant() > 0.0))
         throw std::invalid_argument(
             "pppm_from_accuracy: unit system two_charge_force and qqrd2e "
             "must be > 0");
-    s.q2 = req.qsqsum * us.qqrd2e();
+    s.q2 = req.qsqsum * us.coulomb_constant();
     s.accuracy = req.accuracy * two_charge_force;
 
     // PPPM::init: initial α estimate.

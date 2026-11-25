@@ -295,6 +295,41 @@ std::vector<long long> steps_of(const std::vector<std::vector<double>>& rows) {
 } // namespace
 
 // A fresh 6-step run at every 2 prints steps 0, 2, 4, 6.
+TEST(CudaRecorderStepConvention,
+     ThermoRetainsCapturedRunsUnitsDuringNativeSolve) {
+    // Drive the consumer deterministically after the producer has entered a
+    // fixed-convention electronic solver, as an async worker is allowed to do.
+    struct Consumer : cuda::Thermo {
+        using cuda::Thermo::consume;
+        using cuda::Thermo::on_build;
+        using cuda::Thermo::on_destroy;
+        using cuda::Thermo::Thermo;
+    };
+    const auto path = fresh_tmp("atv_cuda_thermo_native_units.dat");
+    cuda::Context runtime;
+    runtime.units = units::from_style(units::Style::real);
+    runtime.md.n_dof_global = 3;
+    cuda::Frame device_frame;
+    Consumer recorder{1, {"temp", "press"}, path};
+    recorder.on_build({runtime, device_frame});
+    SystemScalars scalars;
+    scalars.kinetic = 1.5 * 300.0 * 1.380649e-23 * 6.02214076e23 / 4184.;
+    scalars.stress[0] = 3.;
+    const double cell[] = {1., 0., 0., 0., 1., 0., 0., 0., 1.};
+    cuda::CaptureView capture;
+    capture.cell = cell;
+    capture.scalars = &scalars;
+    runtime.units = units::UnitSystem::electronic();
+    recorder.consume(capture);
+    recorder.on_destroy({runtime, device_frame});
+    const auto rows = read_rows(path);
+    ASSERT_EQ(rows.size(), 1u);
+    ASSERT_EQ(rows[0].size(), 2u);
+    EXPECT_NEAR(rows[0][0], 300., 1.e-5);
+    EXPECT_NEAR(rows[0][1], 4184. / (6.02214076e23 * 1.e-30 * 101325.), .01);
+    remove_file(path);
+}
+
 TEST(CudaRecorderStepConvention, ThermoFreshRunPrintsZeroThroughN) {
     const std::string path = fresh_tmp("atv_cuda_thermo_fresh.dat");
     const auto rows = thermo_rows(2, {6}, path);
@@ -368,8 +403,8 @@ TEST(CudaRecorderStepConvention, PressureSeriesRowsAreTheStateAfterTheirStep) {
         for (int a = 0; a < 6; ++a)
             stress[a] = ref.meta.get(kStress)[a];
         for (int i = 0; i < kN; ++i) {
-            const double m =
-                ref.span(kAtom_mass)[i] * units::UnitSystem::lj().mvv2e;
+            const double m = ref.span(kAtom_mass)[i]
+                             * units::UnitSystem::lj().kinetic_energy.scale();
             const double v[3] = {ref.span(kAtom_vx)[i], ref.span(kAtom_vy)[i],
                                  ref.span(kAtom_vz)[i]};
             kinetic[0] += m * v[0] * v[0];

@@ -96,7 +96,7 @@ void Barostat::launch(const LaunchContext& ctx) {
 
     berendsen_dilation_k<<<1, 1, 0, stream>>>(
         f.box, f.scalars, P_target_, dt_, tau_p_, bulk_modulus_,
-        ctx.runtime.units.nktv2p, state_->d_mu);
+        ctx.runtime.units.pressure.scale(), state_->d_mu);
     berendsen_scale_k<<<std::max(1, grid), block, 0, stream>>>(
         f.atoms.x, f.atoms.y, f.atoms.z, f.atoms.x_corr, f.atoms.y_corr,
         f.atoms.z_corr, f.box, state_->d_mu, n, f.force_fault);

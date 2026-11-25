@@ -174,7 +174,8 @@ double constrained_temperature(const cpu::Frame& f, GaussKind kind) {
     const double dof = kind == GaussKind::Kinetic ? 3 * n - 3
                        : kind == GaussKind::Flow  ? 3 * n - 4
                                                   : 2 * n - 2;
-    return sum * metal.mvv2e / (metal.boltz * dof);
+    return sum * metal.kinetic_energy.scale()
+           / (metal.boltzmann_constant() * dof);
 }
 
 class CudaGearPC : public testing::TestWithParam<Scheme> {};

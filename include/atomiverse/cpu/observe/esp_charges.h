@@ -39,7 +39,9 @@
 /// exactly invariant under the molecular point group.
 #pragma once
 
+#include "atomiverse/core/quantity.h"
 #include <array>
+#include <optional>
 #include <vector>
 
 #include "atomiverse/cpu/frame/frame.h"
@@ -68,7 +70,7 @@ class MKCharges {
     /// @param outputs A method's `result_handle()` (determinant + shells +
     ///        c2s), read after the method ran.
     /// @param frame   Geometry (positions [Å], species Z in `kAtom_atomic_number`).
-    /// @return Per-atom fitted charges [e], Frame atom order; the total
+    /// @return Per-atom fitted charges in Frame charge units, Frame atom order; the total
     ///         charge constraint Σq = Z_tot − N_el holds by construction.
     /// @throws std::invalid_argument on a null / not-ready handle or an
     ///         element without a Bondi radius.
@@ -78,16 +80,18 @@ class MKCharges {
     /// @brief Constrained LSQ fit from an externally supplied potential —
     ///        the shared kernel behind `fit()`, public so the fit path is
     ///        testable without a determinant.
-    /// @param V     Potential samples [Hartree/e], one per grid point.
-    /// @param grid_ang Grid points [Å] (e.g. from `grid()`).
+    /// @param V     Potential samples in the declared unit (default: Frame potential), one per grid point.
+    /// @param grid_ang Grid points in the declared unit (default: Frame length).
     /// @param frame Geometry — supplies the charge sites R_A.
-    /// @param q_tot Total-charge constraint Σq [e].
-    /// @return Per-atom fitted charges [e], Frame atom order.
+    /// @param q_tot Total-charge constraint in Frame charge units.
+    /// @return Per-atom fitted charges in Frame charge units, Frame atom order.
     /// @throws std::invalid_argument when V and grid sizes differ.
     std::vector<double>
     fit_potential(const std::vector<double>& V,
                   const std::vector<std::array<double, 3>>& grid_ang,
-                  const Frame& frame, double q_tot) const;
+                  const Frame& frame, double q_tot,
+                  std::optional<units::Unit> potential_unit = {},
+                  std::optional<units::Unit> grid_unit = {}) const;
 };
 
 /// @brief CHELPG ESP charges on a cubic grid over the padded bounding box.
@@ -109,7 +113,7 @@ class ChelpgCharges {
     /// @brief Fit ESP charges from a converged mean-field wavefunction.
     /// @param outputs A method's `result_handle()`.
     /// @param frame   Geometry (positions [Å], species Z in `kAtom_atomic_number`).
-    /// @return Per-atom fitted charges [e], Frame atom order; Σq equals the
+    /// @return Per-atom fitted charges in Frame charge units, Frame atom order; Σq equals the
     ///         molecular net charge by construction.
     /// @throws std::invalid_argument on a null / not-ready handle or an
     ///         element without a Bondi radius.
@@ -118,16 +122,18 @@ class ChelpgCharges {
 
     /// @brief Constrained LSQ fit from an externally supplied potential
     ///        (same kernel and contract as `MKCharges::fit_potential`).
-    /// @param V     Potential samples [Hartree/e], one per grid point.
-    /// @param grid_ang Grid points [Å] (e.g. from `grid()`).
+    /// @param V     Potential samples in the declared unit (default: Frame potential), one per grid point.
+    /// @param grid_ang Grid points in the declared unit (default: Frame length).
     /// @param frame Geometry — supplies the charge sites R_A.
-    /// @param q_tot Total-charge constraint Σq [e].
-    /// @return Per-atom fitted charges [e], Frame atom order.
+    /// @param q_tot Total-charge constraint in Frame charge units.
+    /// @return Per-atom fitted charges in Frame charge units, Frame atom order.
     /// @throws std::invalid_argument when V and grid sizes differ.
     std::vector<double>
     fit_potential(const std::vector<double>& V,
                   const std::vector<std::array<double, 3>>& grid_ang,
-                  const Frame& frame, double q_tot) const;
+                  const Frame& frame, double q_tot,
+                  std::optional<units::Unit> potential_unit = {},
+                  std::optional<units::Unit> grid_unit = {}) const;
 };
 
 } // namespace cpu

@@ -52,6 +52,7 @@ def typed():
     typifier = molpy.ff.typifier.GaffTypifier(parameter_set="gaff2")
     typed = typifier.typify(labelled)
     frame = typed.to_frame()
+    frame.meta["units_style"] = "real"
     charges = np.asarray(molpy.ff.charge.GasteigerModel().assign(typed), dtype=np.float64)
     frame["atoms"].insert("charge", charges)
     xyz = _xyz(frame)

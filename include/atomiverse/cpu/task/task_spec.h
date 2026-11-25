@@ -1037,14 +1037,13 @@ inline bool operator==(const AngleCosineParams& a, const AngleCosineParams& b) {
 /// atom, and \(U \mathrel{+}= -\sum_i q_i\,\texttt{qe2f}\,\mathbf E\cdot
 /// \mathbf r_i^{\mathrm u}\) with unwrapped coordinates
 /// \(\mathbf r^{\mathrm u} = \mathbf r + H\,\mathbf n\) (image flags
-/// \(\mathbf n\)). Field in the run's LAMMPS field unit (V/Å for real and
-/// metal); `qe2f` is the run's (real 23.060549, metal 1). No virial: LAMMPS
-/// adds one only under `fix_modify virial yes`. Reads the per-atom charge
-/// column.
+/// \(\mathbf n\)). Field, charge, force and energy follow the run unit
+/// profile; `qe2f` is its `electric_field` conversion. No virial: LAMMPS adds
+/// one only under `fix_modify virial yes`. Reads the per-atom charge column.
 struct FixEfieldParams {
-    double Ex = 0.0; ///< Field x-component [style field unit].
-    double Ey = 0.0; ///< Field y-component [style field unit].
-    double Ez = 0.0; ///< Field z-component [style field unit].
+    double Ex = 0.0; ///< Field x-component [run electric field].
+    double Ey = 0.0; ///< Field y-component [run electric field].
+    double Ez = 0.0; ///< Field z-component [run electric field].
 };
 inline bool operator==(const FixEfieldParams& a, const FixEfieldParams& b) {
     return a.Ex == b.Ex && a.Ey == b.Ey && a.Ez == b.Ez;
@@ -1760,9 +1759,10 @@ inline bool operator==(const MDTask& a, const MDTask& b) {
 
 struct SinglePointTask {
     AM1Params evaluator;
+    units::Style units = units::Style::metal;
 };
 inline bool operator==(const SinglePointTask& a, const SinglePointTask& b) {
-    return a.evaluator == b.evaluator;
+    return a.evaluator == b.evaluator && a.units == b.units;
 }
 
 /// @brief One launcher-dispatchable geometry optimization: what to build,

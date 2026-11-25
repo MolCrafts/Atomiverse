@@ -58,8 +58,8 @@ from atomiverse.potentials.pair import Born
 SIDE = 8  # 8^3 simple-cubic sites with alternating charge
 MASS_NA, MASS_CL = 22.9898, 35.453  # [g/mol]
 TYPE_NA, TYPE_CL = 1, 2
-BOLTZ = 8.617343e-5  # [eV/K], LAMMPS units metal
-MVV2E = 1.0364269e-4  # [eV per g/mol A^2/ps^2]
+BOLTZ = 8.617333262145179e-5  # [eV/K], units metal
+MVV2E = 1.0364269656262175e-4  # [eV per g/mol A^2/ps^2]
 SKIN = 2.0  # [A]
 EWALD_ACCURACY = 1.4947e-5  # e^(-100/9): |k| <= 6 * 2 pi / L
 CONFIGURATIONAL_Q = 100.0  # [A^2/ps^2]
@@ -107,6 +107,7 @@ def rock_salt(state: StatePoint, seed: int) -> molpy.Frame:
     atoms.insert("atomic_number", np.where(sodium, 11, 17).astype(np.uint32))
     atoms.insert("type_id", np.where(sodium, TYPE_NA, TYPE_CL).astype(np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(state.length)
     return frame

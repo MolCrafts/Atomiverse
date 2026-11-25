@@ -119,14 +119,15 @@ void NVELimit::launch(const LaunchContext& ctx) {
     auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     const int n = ctx.frame.n_atoms();
     if (ctx.at(ATV::md::Phase::initial_integrate))
-        launch_nve_limit_initial(ctx.frame, n, ctx.runtime.host_box,
-                                 mixed_t(dt_), mixed_t(ctx.runtime.units.ftm2v),
-                                 mixed_t(xmax_), ctx.step, stream,
-                                 ctx.runtime.device_step);
+        launch_nve_limit_initial(
+            ctx.frame, n, ctx.runtime.host_box, mixed_t(dt_),
+            mixed_t(ctx.runtime.units.velocity_impulse.scale()), mixed_t(xmax_),
+            ctx.step, stream, ctx.runtime.device_step);
     else
-        launch_nve_limit_final(ctx.frame, n, mixed_t(dt_),
-                               mixed_t(ctx.runtime.units.ftm2v), mixed_t(xmax_),
-                               ctx.step, stream, ctx.runtime.device_step);
+        launch_nve_limit_final(
+            ctx.frame, n, mixed_t(dt_),
+            mixed_t(ctx.runtime.units.velocity_impulse.scale()), mixed_t(xmax_),
+            ctx.step, stream, ctx.runtime.device_step);
 }
 
 } // namespace md

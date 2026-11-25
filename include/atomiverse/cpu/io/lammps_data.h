@@ -26,6 +26,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 namespace ATV {
 namespace cpu {
@@ -39,6 +40,11 @@ class Frame;
 /// @throws std::runtime_error if the file cannot be opened, the header is
 ///         inconsistent, a section is unsupported, or a row is malformed.
 Frame load_lammps_data(const std::string& path);
+
+/// Explicit source-unit declaration for files without unit metadata. A
+/// conflicting declaration in the file is rejected; numbers are unchanged.
+Frame load_lammps_data(const std::string& path,
+                       std::string_view source_profile);
 
 } // namespace cpu
 } // namespace ATV

@@ -81,7 +81,7 @@ void Widom::reset() {
 }
 
 void Widom::build(const BuildContext& ctx) {
-    boltz_ = ctx.runtime.units.boltz;
+    boltz_ = ctx.runtime.units.boltzmann_constant();
     validate_params_();
     reset();
 }

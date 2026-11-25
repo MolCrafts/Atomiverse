@@ -36,8 +36,8 @@ CoulLong::CoulLong(CoulLong&&) noexcept = default;
 CoulLong& CoulLong::operator=(CoulLong&&) noexcept = default;
 
 void CoulLong::build(const BuildContext& ctx) {
-    const potentials::CoulKernel kernel{ctx.runtime.units.qqrd2e(), alpha_,
-                                        cutoff_ * cutoff_};
+    const potentials::CoulKernel kernel{ctx.runtime.units.coulomb_constant(),
+                                        alpha_, cutoff_ * cutoff_};
     state_->tiles.build(ctx, tile::Coulomb{kernel, ctx.frame.atoms.charge},
                         /*extra_partials=*/0);
 }

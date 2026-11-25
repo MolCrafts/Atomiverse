@@ -10,12 +10,30 @@
 
 #include "atomiverse/core/units.h"
 #include "atomiverse/cpu/scf/internal/one_electron.h"
+#include "atomiverse/cpu/units/frame.h"
 
 namespace ATV {
 namespace cpu {
 
 MultipoleObserver::MultipoleObserver(scf::MeanFieldOutputs handle)
-    : handle_(std::move(handle)) {}
+    : handle_(std::move(handle)) {
+    prepare_units_(units::PhysicalUnits::from_style("electronic"));
+}
+void MultipoleObserver::build(const BuildContext& ctx) {
+    prepare_units_(ctx.runtime.units.physical());
+}
+void MultipoleObserver::prepare_units_(const units::PhysicalUnits& run) {
+    const units::Unit bohr{units::length_dimension,
+                           1.e-10 * units::kBohrInAngstrom, 0};
+    const units::Unit electron{units::charge_dimension,
+                               units::elementary_charge_si, 0};
+    position_to_bohr_ = units::Conversion(run.length(), bohr);
+    dipole_to_run_ =
+        units::Conversion(electron * bohr, run.charge() * run.length());
+    quadrupole_to_run_ = units::Conversion(
+        electron * bohr * bohr, run.charge() * run.length() * run.length());
+    origin_to_run_ = units::Conversion(bohr, run.length());
+}
 
 void MultipoleObserver::launch(const LaunchContext& ctx) {
     if (!handle_.ready || !*handle_.ready)
@@ -23,7 +41,6 @@ void MultipoleObserver::launch(const LaunchContext& ctx) {
     const auto& det = *handle_.result;
     const auto& shells = *handle_.shells;
     auto& frame = ctx.frame;
-
     // Origin: center of nuclear charge [Bohr].
     const int natm = frame.nlocal();
     const auto x = frame.span(kAtom_x);
@@ -34,9 +51,9 @@ void MultipoleObserver::launch(const LaunchContext& ctx) {
     for (int i = 0; i < natm; ++i) {
         const double zi = static_cast<double>(type[i]);
         zsum += zi;
-        origin[0] += zi * x[i] * units::kAngstromInBohr;
-        origin[1] += zi * y[i] * units::kAngstromInBohr;
-        origin[2] += zi * z[i] * units::kAngstromInBohr;
+        origin[0] += zi * position_to_bohr_(x[i]);
+        origin[1] += zi * position_to_bohr_(y[i]);
+        origin[2] += zi * position_to_bohr_(z[i]);
     }
     for (double& c : origin)
         c /= zsum;
@@ -68,9 +85,9 @@ void MultipoleObserver::launch(const LaunchContext& ctx) {
     double n1[3] = {}, n2[6] = {};
     for (int i = 0; i < natm; ++i) {
         const double zi = static_cast<double>(type[i]);
-        const double r[3] = {x[i] * units::kAngstromInBohr - origin[0],
-                             y[i] * units::kAngstromInBohr - origin[1],
-                             z[i] * units::kAngstromInBohr - origin[2]};
+        const double r[3] = {position_to_bohr_(x[i]) - origin[0],
+                             position_to_bohr_(y[i]) - origin[1],
+                             position_to_bohr_(z[i]) - origin[2]};
         for (int a = 0; a < 3; ++a)
             n1[a] += zi * r[a];
         const int pk[6][2] = {{0, 0}, {0, 1}, {0, 2}, {1, 1}, {1, 2}, {2, 2}};
@@ -92,17 +109,23 @@ void MultipoleObserver::launch(const LaunchContext& ctx) {
         quad_au_[k] = 0.5 * (3.0 * q_ab - tr);
     }
 
-    // Frame meta (Debye / D·Å / Å).
-    // First launch inserts the keys; later launches overwrite in place.
-    if (!frame.meta.contains(kDipole.key)) {
-        frame.meta.insert(kDipole, dipole_debye());
-        frame.meta.insert(kQuadrupole, quadrupole_buckingham());
-        frame.meta.insert(kMultipoleOrigin, origin_ang_);
-    } else {
-        frame.meta.set(kDipole, dipole_debye());
-        frame.meta.set(kQuadrupole, quadrupole_buckingham());
-        frame.meta.set(kMultipoleOrigin, origin_ang_);
+    MetaF64x3 dipole{}, frame_origin{};
+    MetaF64x6 quadrupole{};
+    for (int a = 0; a < 3; ++a) {
+        dipole[a] = dipole_to_run_(dipole_au_[a]);
+        frame_origin[a] = origin_to_run_(origin[a]);
     }
+    for (int a = 0; a < 6; ++a)
+        quadrupole[a] = quadrupole_to_run_(quad_au_[a]);
+    auto put = [&]<class T>(MetaKey<T> key, const T& value) {
+        if (frame.meta.contains(key.key))
+            frame.meta.set(key, value);
+        else
+            frame.meta.insert(key, value);
+    };
+    put(kDipole, dipole);
+    put(kQuadrupole, quadrupole);
+    put(kMultipoleOrigin, frame_origin);
 }
 
 std::array<double, 3> MultipoleObserver::dipole_debye() const {

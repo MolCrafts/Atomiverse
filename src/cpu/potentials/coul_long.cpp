@@ -141,7 +141,7 @@ void CoulLong::launch(const LaunchContext& ctx) {
     kernel.special = any_special_ ? &special_ : nullptr;
     kernel.rc_sq = cutoff_sq_;
     kernel.alpha = alpha_;
-    kernel.qqr2e = ctx.runtime.units.qqrd2e();
+    kernel.qqr2e = ctx.runtime.units.coulomb_constant();
     const md::PairTotals sums = loop_.run(ctx, md::PairRows::of(pairs), kernel);
 
     f.meta.get(kEnergy) += sums.energy;
@@ -224,7 +224,7 @@ void CoulLong::add_curvature(const LaunchContext& ctx,
     kernel.special = any_special_ ? &special_ : nullptr;
     kernel.rc_sq = cutoff_sq_;
     kernel.alpha = alpha_;
-    kernel.qqr2e = ctx.runtime.units.qqrd2e();
+    kernel.qqr2e = ctx.runtime.units.coulomb_constant();
     curvature_.run(ctx, rows, /*use_list=*/true, "CoulLong", kernel);
 }
 

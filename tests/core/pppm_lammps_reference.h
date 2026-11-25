@@ -395,10 +395,11 @@ inline Result solve(const double* cell, const std::vector<double>& frac,
                     field[a][u] = std::complex<double>(0.0, 2 * pi * k[a])
                                   * (G / volume) * rhat[u];
             }
-    r.energy = ATV::units::UnitSystem::lj().qqrd2e() / (2.0 * volume) * esum;
+    r.energy =
+        ATV::units::UnitSystem::lj().coulomb_constant() / (2.0 * volume) * esum;
     for (int c = 0; c < 6; ++c)
-        r.virial[c] =
-            ATV::units::UnitSystem::lj().qqrd2e() / (2.0 * volume) * vsum[c];
+        r.virial[c] = ATV::units::UnitSystem::lj().coulomb_constant()
+                      / (2.0 * volume) * vsum[c];
     for (auto& f : field)
         dft(f, +1.0);
     // fieldforce_ik: F = −k_e q Σ W · Re(field).
@@ -413,8 +414,8 @@ inline Result solve(const double* cell, const std::vector<double>& frac,
                                       * w[(3 * i + 2) * order + c];
                     for (int d = 0; d < 3; ++d)
                         r.force[3 * i + d] -=
-                            ATV::units::UnitSystem::lj().qqrd2e() * q[i] * wt
-                            * field[d][g].real();
+                            ATV::units::UnitSystem::lj().coulomb_constant()
+                            * q[i] * wt * field[d][g].real();
                 }
     return r;
 }

@@ -19,6 +19,7 @@ class AM1 : public cuda::Driver<ATV::nddo::Phase>,
             public cuda::DriverNode,
             public EvaluationHistory {
   public:
+    bool uses_electronic_frame() const override { return true; }
     const int charge, multiplicity;
     int max_iter;
     double density_tol, energy_tol;

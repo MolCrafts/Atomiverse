@@ -63,7 +63,7 @@ int run() {
     cpu::Frame f = make_ch4();
     cpu::semiempirical::IPEA ipea;
     ipea.with_forces = true;
-    cpu::vib::Hessian hess(298.15, 101325.0, 1, 1, "", "");
+    cpu::vib::Hessian hess(298.15, 1.01325, 1, 1, "", "");
     hess.on(vib::Phase::force).add(std::move(ipea));
     hess.build();
     const auto t0 = std::chrono::steady_clock::now();

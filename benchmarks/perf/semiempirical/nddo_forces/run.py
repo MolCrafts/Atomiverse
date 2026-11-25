@@ -31,6 +31,7 @@ def make_frame(nwater):
         for i in range(nwater)
     ])
     frame = molpy.Frame()  # Zero cell, matching the native isolated CUDA path.
+    frame.meta["units_style"] = "electronic"
     block = molpy.Block()
     for axis, key in enumerate(('x', 'y', 'z')):
         block.insert(key, xyz[:, axis].copy())

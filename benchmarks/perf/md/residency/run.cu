@@ -77,7 +77,8 @@ cpu::Frame make_liquid(int n_side, double density, bool charged) {
     std::mt19937_64 rng(20261029);
     std::normal_distribution<double> normal(0.0, 1.0);
     const double sigma_v =
-        std::sqrt(kUnits.boltz * 2.0 * kTemperature / (kUnits.mvv2e * kMass));
+        std::sqrt(kUnits.boltzmann_constant() * 2.0 * kTemperature
+                  / (kUnits.kinetic_energy.scale() * kMass));
     double p[3] = {};
     int i = 0;
     for (int ix = 0; ix < n_side; ++ix)
@@ -114,7 +115,6 @@ cpu::Frame make_liquid(int n_side, double density, bool charged) {
 // ── Constrained molecular liquids (2 fs step, PME) ───────────────────────
 
 /// Molecular cases are units metal too: one fs is 1e-3 ps; charges in e.
-constexpr double kFs = 1.0e-3;
 constexpr double kMolCutoff = 9.0, kMolAlpha = 0.3;
 constexpr double kMolTemperature = 300.0; // [K]
 constexpr double kDOH = 0.9572, kDHH = 1.5139;
@@ -159,8 +159,9 @@ cpu::Frame molecular_lattice(int side, double spacing,
                     const auto r =
                         rotate(body[static_cast<std::size_t>(s)], a, b, c);
                     const double m = mass[static_cast<std::size_t>(s)];
-                    const double sv = std::sqrt(kUnits.boltz * kMolTemperature
-                                                / (kUnits.mvv2e * m));
+                    const double sv =
+                        std::sqrt(kUnits.boltzmann_constant() * kMolTemperature
+                                  / (kUnits.kinetic_energy.scale() * m));
                     const double v[3] = {normal(rng) * sv, normal(rng) * sv,
                                          normal(rng) * sv};
                     f.span(kAtom_x)[i] = std::fmod(com[0] + r[0] + L, L);
@@ -361,7 +362,7 @@ int main(int argc, char** argv) try {
     sim.set_neighbor_ref(neighbor);
     const bool lj = name.rfind("lj-", 0) == 0;
     if (water || ethane) {
-        const double dt = 2.0 * kFs;
+        const double dt = 0.002; // metal time unit: ps
         sim.set_integrator(cuda::md::VelocityVerlet{dt});
         sim.on(md::Phase::force).add(cuda::KSpacePME{kMolAlpha, 1.0, 5}, 100);
         if (water) {

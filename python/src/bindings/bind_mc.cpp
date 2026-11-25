@@ -186,7 +186,7 @@ struct McHandle {
         if (!materialized_) {
             if (mover_ && mover_->changes_connectivity())
                 validate_bond_annotations_(frame_obj);
-            work_ = cpu::from_molpy(*fref);
+            work_ = cpu::from_molpy_for_run(*fref, driver->units().name());
             materialized_ = true;
         }
         BigInt completed;

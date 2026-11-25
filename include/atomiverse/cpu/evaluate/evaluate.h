@@ -129,7 +129,7 @@ class Evaluate : public Driver<ATV::evaluate::Phase> {
     /// @param frame molpy.Frame handle (input geometry + output sink).
 #ifdef ATV_HAS_MOLPY
     void run(molrs::FrameRef& frame) {
-        cpu::Frame work = cpu::from_molpy(frame);
+        cpu::Frame work = cpu::from_molpy_for_run(frame, this->units().name());
         run(work);
         cpu::to_molpy(work, frame);
     }

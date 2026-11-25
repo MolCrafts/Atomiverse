@@ -72,8 +72,8 @@ ParrinelloRahmanNPT::ParrinelloRahmanNPT(double T_target, double P_target,
 void ParrinelloRahmanNPT::build(const cpu::BuildContext& ctx) {
     // Driver publishes the constraint-aware global DOF count before build.
     n_dof_ = ctx.runtime.md.n_dof_global;
-    kT_ = ctx.runtime.units.boltz * T_target_;
-    nktv2p_ = ctx.runtime.units.nktv2p;
+    kT_ = ctx.runtime.units.boltzmann_constant() * T_target_;
+    nktv2p_ = ctx.runtime.units.pressure.scale();
 
     Q_t_.assign(static_cast<std::size_t>(mtchain_), 0.0);
     Q_b_.assign(static_cast<std::size_t>(mpchain_), 0.0);
@@ -118,7 +118,7 @@ ParrinelloRahmanNPT::compute_global_KE(const cpu::LaunchContext& ctx) const {
             sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
         ke_local += sp_mass[i] * v2;
     }
-    ke_local *= 0.5 * ctx.runtime.units.mvv2e;
+    ke_local = .5 * ctx.runtime.units.kinetic_energy(ke_local);
 
     double ke = ke_local;
 #ifdef ATV_HAS_MPI
@@ -147,9 +147,9 @@ ParrinelloRahmanNPT::compute_axis_KE(const cpu::LaunchContext& ctx) const {
         ky += m * sp_vy[i] * sp_vy[i];
         kz += m * sp_vz[i] * sp_vz[i];
     }
-    double ke[3] = {0.5 * ctx.runtime.units.mvv2e * kx,
-                    0.5 * ctx.runtime.units.mvv2e * ky,
-                    0.5 * ctx.runtime.units.mvv2e * kz};
+    double ke[3] = {.5 * ctx.runtime.units.kinetic_energy(kx),
+                    .5 * ctx.runtime.units.kinetic_energy(ky),
+                    .5 * ctx.runtime.units.kinetic_energy(kz)};
 #ifdef ATV_HAS_MPI
     if (ctx.runtime.mpi_size > 1 && ctx.runtime.md.dd
         && ctx.runtime.md.dd->cart_comm != MPI_COMM_NULL) {
@@ -433,7 +433,7 @@ void ParrinelloRahmanNPT::kick_v_by_force(const cpu::LaunchContext& ctx,
                                           double half_dt) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
-    const double dtf = half_dt * ctx.runtime.units.ftm2v;
+    const double dtf = ctx.runtime.units.velocity_impulse(half_dt);
 
     const StorageReal* __restrict sp_mass = f.span(kAtom_mass);
     StorageReal* __restrict sp_vx = f.span(kAtom_vx);

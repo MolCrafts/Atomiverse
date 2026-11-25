@@ -1,6 +1,7 @@
 /// @file tests/test_molpy/test_frame_exchange.cpp
 /// @brief Drift fence for cpu::from_molpy / cpu::to_molpy (ATV's Frame boundary).
 
+#include "atomiverse/cpu/units/frame.h"
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -17,8 +18,15 @@
 
 namespace {
 
-::rust::Box<molrs::FrameRef> make_h2_molpy() {
+::rust::Box<molrs::FrameRef> make_h2_molpy(bool declared = true) {
     auto fr = molrs::frame_new();
+    if (declared) {
+        molrs::KeyedMetaValue units{};
+        units.key = "units_style";
+        units.dtype = molrs::MetaType::String;
+        units.string_value = "electronic";
+        molrs::frame_set_meta(*fr, std::move(units));
+    }
     const std::vector<double> x = {0.0, 0.74};
     const std::vector<double> y = {0.0, 0.0};
     const std::vector<double> z = {0.0, 0.0};
@@ -69,6 +77,11 @@ TEST(MolpyFrameExchange, ToMolpyWritesBackPositions) {
 
 TEST(MolpyFrameExchange, MissingAtomsBlockThrows) {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue units{};
+    units.key = "units_style";
+    units.dtype = molrs::MetaType::String;
+    units.string_value = "electronic";
+    molrs::frame_set_meta(*fr, std::move(units));
     EXPECT_THROW(ATV::cpu::from_molpy(*fr), std::runtime_error);
 }
 
@@ -78,6 +91,11 @@ TEST(MolpyFrameExchange, MissingAtomsBlockThrows) {
 // kAtom_atomic_number. Symbols are never read as types either.
 TEST(MolpyFrameExchange, ElementSymbolsNeedTheExplicitConversion) {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue units{};
+    units.key = "units_style";
+    units.dtype = molrs::MetaType::String;
+    units.string_value = "electronic";
+    molrs::frame_set_meta(*fr, std::move(units));
     const std::vector<double> x = {0.0, 0.96};
     const std::vector<double> zero = {0.0, 0.0};
     molrs::frame_set_column_f64(
@@ -162,4 +180,47 @@ TEST(MolpyFrameExchange, RejectsUnsupportedBoxOriginAndPartialPeriodicity) {
                          {zero.data(), zero.size()},
                          {slab.data(), slab.size()});
     EXPECT_NE(conversion_error().find("periodicity"), std::string::npos);
+}
+
+TEST(MolpyFrameExchange, UnitAnnotationRoundTripsThroughTypedMetadata) {
+    auto fr = make_h2_molpy();
+    auto frame = ATV::cpu::from_molpy(*fr);
+    ATV::units::annotate(frame, "real");
+    ATV::cpu::to_molpy(frame, *fr, false);
+    auto restored = ATV::cpu::from_molpy(*fr);
+    EXPECT_EQ(ATV::units::frame_style(restored), ATV::units::Style::real);
+}
+
+TEST(MolpyFrameExchange, UnitAwareImportAndExportKeepOriginalUnits) {
+    auto fr = make_h2_molpy();
+    auto annotated = ATV::cpu::from_molpy(*fr);
+    ATV::units::annotate(annotated, "real");
+    annotated.span(ATV::kAtom_vx)[0] = .5;
+    ATV::cpu::to_molpy(annotated, *fr, false);
+    auto work = ATV::cpu::from_molpy(*fr, "metal");
+    EXPECT_NEAR(work.span(ATV::kAtom_vx)[0], 500., 1e-10);
+    work.span(ATV::kAtom_vx)[0] = 1000.;
+    work.meta.get(ATV::kEnergy) = 1.;
+    ATV::cpu::to_molpy(work, *fr);
+    auto output = ATV::cpu::from_molpy(*fr);
+    EXPECT_EQ(ATV::units::frame_profile(output), "real");
+    EXPECT_NEAR(output.span(ATV::kAtom_vx)[0], 1., 1e-12);
+    EXPECT_NEAR(output.meta.get(ATV::kEnergy), 23.060547830619, 1e-10);
+}
+TEST(MolpyFrameExchange, StrictUnitAwareImportRejectsMissingAnnotation) {
+    auto fr = make_h2_molpy(false);
+    EXPECT_THROW(ATV::cpu::from_molpy(*fr, "metal"), std::invalid_argument);
+    EXPECT_THROW(ATV::cpu::from_molpy_for_run(*fr, "metal"),
+                 std::invalid_argument);
+}
+
+TEST(MolpyFrameExchange, LjExportRejectsMissingDestinationReference) {
+    auto fr = make_h2_molpy();
+    auto destination = ATV::cpu::from_molpy(*fr);
+    ATV::units::annotate(destination, "lj");
+    ATV::cpu::to_molpy(destination, *fr, false);
+    auto source = destination;
+    ATV::units::annotate_reduced_reference(
+        source, {"material", 1.e-26, 1.e-10, 1.e-21});
+    EXPECT_THROW(ATV::cpu::to_molpy(source, *fr), std::invalid_argument);
 }

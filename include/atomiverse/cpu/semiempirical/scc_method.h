@@ -39,6 +39,8 @@ struct SccOutcome {
 /// driver). The stages do not request forces or stress.
 class SccDriver : public cpu::Driver<ATV::scc::Phase> {
   public:
+    bool uses_electronic_frame() const override { return true; }
+
     /// @brief Zero-argument body of one SCC stage.
     using Step = std::function<void()>;
 

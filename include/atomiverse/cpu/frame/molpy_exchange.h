@@ -58,6 +58,15 @@ namespace cpu {
 /// has another dtype than this boundary reads (named by molpy).
 Frame from_molpy(const molrs::FrameRef& src);
 
+/// Unit-aware import: requires source units and prepares a private copy in
+/// target_profile. Export to the original Frame restores its original units.
+Frame from_molpy(const molrs::FrameRef& src, std::string_view target_profile);
+
+/// Transitional run boundary: annotated inputs convert automatically;
+/// unannotated legacy inputs retain their old run-relative interpretation.
+Frame from_molpy_for_run(const molrs::FrameRef& src,
+                         std::string_view target_profile);
+
 /// @brief Export a cpu::Frame into an existing molpy.Frame.
 ///
 /// Round-trip field contract (arch-refactor-06-frame; the golden test in
@@ -96,7 +105,8 @@ Frame from_molpy(const molrs::FrameRef& src);
 /// @param dst molpy.Frame to update in place (must be the same frame that
 ///            was materialized, or any frame with a compatible atom count).
 /// @throws std::runtime_error when an atom tag does not fit i32.
-void to_molpy(const Frame& src, molrs::FrameRef& dst);
+void to_molpy(const Frame& src, molrs::FrameRef& dst,
+              bool restore_original_units = true);
 
 } // namespace cpu
 } // namespace ATV

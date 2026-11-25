@@ -70,7 +70,8 @@ inline ATV::cpu::Frame nacl(double temperature, unsigned seed,
                 const bool na = (i + j + k) % 2 == 0;
                 const double m = na ? kMassNa : kMassCl;
                 const double sd =
-                    std::sqrt(metal.boltz * temperature / (m * metal.mvv2e));
+                    std::sqrt(metal.boltzmann_constant() * temperature
+                              / (m * metal.kinetic_energy.scale()));
                 f.span(kAtom_x)[row] = i * kSpacing + shift();
                 f.span(kAtom_y)[row] = j * kSpacing + shift();
                 f.span(kAtom_z)[row] = k * kSpacing + shift();

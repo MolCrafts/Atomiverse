@@ -94,6 +94,13 @@ class QmSubsystem {
     const Frame* private_frame() const { return qm_frame_.get(); }
     QmEngine* engine() const { return engine_; }
 
+    double native_position_to_run(double value) const {
+        return length_to_qm_.inverse(value);
+    }
+    double native_charge_to_run(double value) const {
+        return charge_to_qm_.inverse(value);
+    }
+
   private:
     void resolve_mask_(const Frame& frame);
     void allocate_private_frame_();
@@ -122,6 +129,10 @@ class QmSubsystem {
     std::vector<int> site_user_rows_; ///< User-frame row per collected site.
 
     std::array<double, 3> force_residual_{{0, 0, 0}};
+    units::Conversion length_to_qm_;
+    units::Conversion charge_to_qm_;
+    units::Conversion energy_from_qm_;
+    units::Conversion force_from_qm_;
     bool built_ = false;
 };
 

@@ -29,6 +29,8 @@ class NDDOSolver;
 class NddoMethod : public cpu::Driver<ATV::nddo::Phase>,
                    private EvaluationHistory {
   public:
+    bool uses_electronic_frame() const override { return true; }
+
     bool requires_full_frame() const override { return true; }
     ~NddoMethod() override;
     void invalidate_inputs(InputChange changes, cpu::Runtime& runtime) override;

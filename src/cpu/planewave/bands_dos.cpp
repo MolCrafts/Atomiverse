@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cpu/planewave/bands_dos.cpp
 /// @brief Band structure / DOS post-processing on frozen PW \(V_\mathrm{eff}\).
 
@@ -411,6 +412,10 @@ void Bands::set_diamond_path(int n_seg) {
 }
 
 BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return compute(method, native);
+    }
     if (n_bands < 2)
         throw std::invalid_argument("Bands::compute: n_bands must be >= 2");
 
@@ -570,6 +575,10 @@ BandsResult Bands::compute(const PW& method, const cpu::Frame& frame) const {
 }
 
 DosResult Dos::compute(const PW& method, const cpu::Frame& frame) const {
+    if (units::needs_conversion(frame, "electronic")) {
+        const auto native = units::convert(frame, "electronic");
+        return compute(method, native);
+    }
     if (n_bands < 2)
         throw std::invalid_argument("Dos::compute: n_bands must be >= 2");
     if (k_mesh < 1)

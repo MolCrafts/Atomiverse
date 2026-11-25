@@ -1,7 +1,9 @@
 /// @brief Native CUDA Python boundaries; scientific scheduling stays in Drivers.
+#include "atomiverse/cpu/frame/input_snapshot.h"
 #include "atomiverse/cpu/frame/molpy_exchange.h"
 #include "atomiverse/cpu/task/launcher_gate.h"
 #include "atomiverse/cpu/task/task_spec.h"
+#include "atomiverse/cpu/units/frame.h"
 #include "atomiverse/cuda/evaluate/evaluate.cuh"
 #include "capture_stats.h"
 #include "molpy_frame_bridge.h"
@@ -82,7 +84,7 @@ struct CudaEvaluateHandle {
     void run(nb::object obj) {
         require_local_cuda();
         auto frame = borrow_molpy_frame(obj);
-        auto work = cpu::from_molpy(*frame);
+        auto work = cpu::from_molpy_for_run(*frame, driver.units().name());
         {
             nb::gil_scoped_release release;
             driver.run(work);
@@ -263,6 +265,8 @@ struct CudaMdHandle {
     // temperature-ramp span from the first run's step budget.
     nb::object frame_owner;
     std::unique_ptr<cpu::Frame> work;
+    cpu::FrameInputSnapshot written_back; ///< the molpy.Frame as run() left it
+    bool written_back_valid = false;      ///< only when its units differ
     std::optional<cuda::md::FixLangevin> langevin;
     std::optional<cuda::md::NoseHooverNPT> npt;
 #ifdef ATV_HAS_IO
@@ -284,7 +288,7 @@ struct CudaMdHandle {
         if (steps < 0)
             throw std::invalid_argument("MD step budget must be nonnegative");
         auto frame = borrow_molpy_frame(obj);
-        auto incoming = cpu::from_molpy(*frame);
+        auto incoming = cpu::from_molpy_for_run(*frame, driver.units().name());
         // The same molpy.Frame continues its trajectory; another one is an
         // independent simulation (cuda::md::MD::run on another host frame
         // tears the previous run down), as on the CPU driver. The previous
@@ -303,8 +307,15 @@ struct CudaMdHandle {
             }
         } else {
             // Update the existing boundary object; native MD detects host
-            // input edits and invalidates device/force/electronic state.
-            *work = std::move(incoming);
+            // input edits and invalidates device/force/electronic state. A
+            // unit round trip (run → source → run) is not bitwise, so a Frame
+            // in other units counts as edited only against what the previous
+            // run wrote back.
+            if (!written_back_valid
+                || written_back.changes(incoming,
+                                        cpu::FrameInputSnapshot::state_input)
+                       != InputChange::None)
+                *work = std::move(incoming);
         }
         cpu::Frame& target = fresh ? *fresh : *work;
         {
@@ -341,6 +352,13 @@ struct CudaMdHandle {
             frame_owner = obj;
         }
         cpu::to_molpy(*work, *frame);
+        const auto returned = cpu::from_molpy(*frame);
+        written_back_valid =
+            units::frame_profile(returned) != driver.units().name();
+        if (written_back_valid)
+            written_back.capture(
+                cpu::from_molpy_for_run(*frame, driver.units().name()),
+                cpu::FrameInputSnapshot::state_input);
         ran = true;
     }
 };
@@ -431,7 +449,7 @@ struct CudaMinimizeHandle {
     cpu::task::TaskResult run(nb::object obj, BigInt steps) {
         require_local_cuda();
         auto frame = borrow_molpy_frame(obj);
-        auto work = cpu::from_molpy(*frame);
+        auto work = cpu::from_molpy_for_run(*frame, driver.units().name());
         BigInt iterations;
         {
             nb::gil_scoped_release release;

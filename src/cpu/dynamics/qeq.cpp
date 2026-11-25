@@ -85,12 +85,12 @@ void cholesky_substitute(int n, const std::vector<double>& L,
 
 QEq::QEq(double cutoff_in) : cutoff(cutoff_in) {
     if (!(cutoff > 0.0))
-        throw std::invalid_argument("QEq: cutoff must be > 0 [Å]");
+        throw std::invalid_argument("QEq: cutoff must be > 0 [length]");
 }
 
 QEq& QEq::set_type(int type, double chi, double eta) & {
     if (!(eta > 0.0))
-        throw std::invalid_argument("QEq: eta must be > 0 [eV/e²]");
+        throw std::invalid_argument("QEq: eta must be > 0 [energy/charge²]");
     for (auto& p : params_) {
         if (p.type == type) {
             p.chi = chi;
@@ -108,11 +108,12 @@ QEq QEq::set_type(int type, double chi, double eta) && {
 }
 
 void QEq::build(const BuildContext& ctx) {
+    coulomb_ = ctx.runtime.units.coulomb_constant();
     if (params_.empty())
         throw std::runtime_error(
             "QEq: register per-type parameters via set_type(type, chi, eta)");
     if (!(cutoff > 0.0))
-        throw std::invalid_argument("QEq: cutoff must be > 0 [Å]");
+        throw std::invalid_argument("QEq: cutoff must be > 0 [length]");
     collect_params_(ctx.frame);
 }
 
@@ -181,8 +182,8 @@ void QEq::build_matrix_(const cpu::Frame& frame) {
             const double r_sq = dx * dx + dy * dy + dz * dz;
             if (r_sq > rc_sq)
                 continue;
-            // LAMMPS fix qeq/point kernel: bare 1/r, no qqrd2e prefactor.
-            const double inv_r = 1.0 / std::sqrt(r_sq);
+            // Convert the Coulomb interaction into the selected energy/charge².
+            const double inv_r = coulomb_ / std::sqrt(r_sq);
             H_[static_cast<std::size_t>(i) * n + j] = inv_r;
             H_[static_cast<std::size_t>(j) * n + i] = inv_r;
         }

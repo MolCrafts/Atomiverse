@@ -1,6 +1,8 @@
 /// @file src/cpu/semiempirical/gfn0.cpp
 /// GFN0-xTB energy + analytic nuclear gradient (H/C/N/O): Pracht 2019.
 #include "atomiverse/cpu/semiempirical/gfn0.h"
+#include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <array>
@@ -1027,6 +1029,17 @@ double energy_gfn0(const Frame& f, const StorageReal* x, const StorageReal* y,
 void GFN0::build(const BuildContext& /*ctx*/) {}
 
 void GFN0::launch(const LaunchContext& ctx) {
+    if (units::needs_conversion(ctx.frame, "electronic")) {
+        units::evaluate_in(ctx.frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (ctx.runtime.exec.runtime)
+                binding.emplace(*ctx.runtime.exec.runtime, native);
+            launch({ctx.runtime, native, ctx.stage, ctx.step,
+                    ctx.forces_requested, ctx.stress_requested});
+        });
+        return;
+    }
+
     auto& f = ctx.frame;
     const int n_at = f.nlocal();
     if (n_at < 1)

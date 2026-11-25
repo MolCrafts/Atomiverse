@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/scf/uhf.cu
 /// @brief cuda::scf::UHF — device unrestricted HF.
 ///
@@ -420,6 +421,11 @@ void UHF::destroy_on(cuda::Context& ctx, cuda::Frame& frame) {
 }
 
 void UHF::run(cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic")) {
+        ATV::units::evaluate_in(frame, "electronic",
+                                [&](cpu::Frame& native) { run(native); });
+        return;
+    }
     energy_available_ = false;
     cache_host_types(frame);
     try {

@@ -50,8 +50,9 @@ TEST(CudaBrownian, DriftMatchesMobility) {
     const double force = 0.1;
     const double mobility = cuda::md::brownian_mobility(D, temperature, 1.0);
     const double noise = cuda::md::brownian_noise_amplitude(D, dt);
-    EXPECT_DOUBLE_EQ(mobility,
-                     D / (units::UnitSystem::lj().boltz * temperature));
+    EXPECT_DOUBLE_EQ(
+        mobility,
+        D / (units::UnitSystem::lj().boltzmann_constant() * temperature));
     EXPECT_DOUBLE_EQ(noise, std::sqrt(2.0 * D * dt));
     const double x =
         cuda::md::brownian_advance(1.25, force, true, mobility, dt, noise, 0.0);

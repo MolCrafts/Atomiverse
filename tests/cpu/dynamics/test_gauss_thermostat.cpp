@@ -208,7 +208,8 @@ Temperatures measure(const cpu::Frame& f) {
         const double wx = v[0][i] - species[type[i]];
         sum_flow_x += mass[i] * wx * wx;
     }
-    const double to_t = metal.mvv2e / metal.boltz;
+    const double to_t =
+        metal.kinetic_energy.scale() / metal.boltzmann_constant();
     Temperatures t;
     t.kinetic = (sum_bary[0] + sum_bary[1] + sum_bary[2]) * to_t / (3 * n - 3);
     t.flow = (sum_flow_x + sum_bary[1] + sum_bary[2]) * to_t / (3 * n - 4);

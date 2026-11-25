@@ -86,6 +86,7 @@ def build_dimer_frame(separation: float) -> "molpy.Frame":
     atoms.insert("atomic_number", np.full(2, _Z_AR, dtype=np.uint32))
 
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_BOX)
     return frame
@@ -115,7 +116,7 @@ def main() -> int:
     frame = build_dimer_frame(_R_START)
     print(f"=== L-BFGS on an Ar2 Lennard-Jones dimer, start r = {_R_START:.6f} Å ===")
 
-    opt = av.Minimize()
+    opt = av.Minimize(units="metal")
     opt.set_optimizer(av.LBFGS(memory=10, alpha0=0.05, max_ls=20))
     # Tolerances belong to the criterion, never to the optimizer: all five
     # must hold at once (max/RMS force [eV/Å], max/RMS step [Å], ΔE [eV]).

@@ -83,7 +83,7 @@ energy (``u_tot``, ``h_tot``, ``s_*``, ``g_tot``, ``g_thermal``).
 Four constructor arguments configure it, all defaulted::
 
     av.Hessian(temperature=298.15,   # [K]
-               pressure=101325.0,    # [Pa] = 1 atm
+               pressure=1.01325,    # [bar], default metal style: 1 atm
                multiplicity=1,       # 2S+1; 1 = closed-shell singlet
                symmetry_number=1)    # rotational σ — SEE BELOW
 
@@ -128,7 +128,7 @@ littered the interpreter's working directory would do so on import-and-run.
 Units
 -----
 Frequencies [cm⁻¹]; Hessian [eV/Å²]; energies (ZPE, U, H, G) [Hartree];
-entropies [Hartree/K]; temperature [K]; pressure [Pa]; positions [Å];
+entropies [Hartree/K]; temperature [run temperature]; pressure [run pressure]; positions [Å];
 forces [eV/Å]; masses [amu]. The thermochemistry is in atomic units because
 it is a faithful port of PySCF's ``thermo()``; 1 Hartree = 27.211386 eV.
 (The Hessian stays in the engine's own eV/Å² — the mass-weighting step
@@ -154,7 +154,7 @@ from atomiverse._binding import _cpp, require_domain
 require_domain(__name__, "vib")
 
 #: Central finite-difference Hessian driver — ``cpu::vib::Hessian``.
-#: ``Hessian(temperature=298.15 [K], pressure=101325.0 [Pa],
+#: ``Hessian(temperature=298.15 [K], pressure=1.01325 [bar],
 #: multiplicity=1, symmetry_number=1, frequency_tsv="", mode_xyz_prefix="")``
 #: — all defaulted; the two empty paths mean "write no files".
 Hessian = _cpp.Hessian

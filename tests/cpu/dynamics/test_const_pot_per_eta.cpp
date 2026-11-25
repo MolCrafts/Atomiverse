@@ -114,7 +114,7 @@ TEST(ConstPotPerEta, VacuumPairAnalyticCharge) {
     conp.electroneutrality = true;
     run_once(conp, f);
 
-    const double k = units::UnitSystem::lj().qqrd2e();
+    const double k = units::UnitSystem::lj().coulomb_constant();
     const double a11 = k * kSqrt2OverPi * eta1;
     const double a22 = k * kSqrt2OverPi * eta2;
     const double eta12 = eta1 * eta2 / std::sqrt(eta1 * eta1 + eta2 * eta2);
@@ -156,7 +156,7 @@ TEST(ConstPotPerEta, ElectrodeForceMatchesRhsKernelGradient) {
     conp.write_electrode_forces = true;
     run_once(conp, f);
 
-    const double k = units::UnitSystem::lj().qqrd2e();
+    const double k = units::UnitSystem::lj().coulomb_constant();
     constexpr double kSqrtPi = 1.7724538509055160273;
     const double ar = eta_g * r;
     const double dPhi_dr = k * qj

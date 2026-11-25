@@ -142,8 +142,9 @@ TEST(CudaFixEfield, RequestsGateForceAndEnergyIndependently) {
 
 namespace {
 
-/// LAMMPS `force->qe2f` (src/update.cpp), written out rather than read back
-/// from the engine: real 23.060549 kcal/mol/Å per e·V/Å, metal 1 eV/Å.
+/// Force per charge and field at the CODATA values, written out rather than
+/// read back from the engine: real 23.0605478 kcal/mol/Å per e·V/Å, metal
+/// 1 eV/Å.
 struct StyleQe2f {
     const char* style;
     double qe2f;
@@ -159,6 +160,7 @@ TEST_P(CudaFixEfieldUnits, ForceAndEnergyScaleByTheStyleQe2f) {
     DeviceInput input(host);
     input.context.units = units::from_style(style);
     ATV::cuda::md::FixEfield field(kEx, kEy, kEz);
+    field.build({input.context, input.frame});
     field.launch({input.context, input.frame, 0, 0});
     ATV_CUDA_CHECK(cudaDeviceSynchronize());
     ATV::cuda::to_cpu(input.frame, host);
@@ -181,6 +183,7 @@ TEST_P(CudaFixEfieldUnits, ForceAndEnergyScaleByTheStyleQe2f) {
     cpu::Context cpu_ctx;
     cpu_ctx.units = units::from_style(style);
     cpu::md::FixEfield cpu_field(kEx, kEy, kEz);
+    cpu_field.build({cpu_ctx, reference});
     cpu_field.launch({cpu_ctx, reference, 0, 0});
     EXPECT_NEAR(reference.span(kAtom_fx)[0], kEx * qe2f, 1e-12) << style;
     EXPECT_NEAR(reference.meta.get(kEnergy), qe2f * (u0 + u1), 1e-11) << style;
@@ -213,9 +216,103 @@ TEST_P(CudaFixEfieldUnits, ForceAndEnergyScaleByTheStyleQe2f) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Styles, CudaFixEfieldUnits,
-                         testing::Values(StyleQe2f{"real", 23.060549},
+                         testing::Values(StyleQe2f{"real", 23.060547830619},
                                          StyleQe2f{"metal", 1.0},
                                          StyleQe2f{"lj", 1.0}),
                          [](const auto& info) {
                              return std::string(info.param.style);
                          });
+
+TEST(CudaFixEfield, RealUnitsPrepareFieldBeforeDeviceLaunch) {
+    cpu::Frame host = charged_pair();
+    DeviceInput input(host);
+    input.context.units = units::from_style("real");
+    ATV::cuda::md::FixEfield field(.03, 0., 0.);
+    field.build({input.context, input.frame});
+    field.launch({input.context, input.frame, 0, 0});
+    ATV_CUDA_CHECK(cudaDeviceSynchronize());
+    ATV::cuda::to_cpu(input.frame, host);
+    EXPECT_NEAR(host.span(kAtom_fx)[0], .6918164349185708, kForceTol);
+    EXPECT_NEAR(host.span(kAtom_fx)[1], -.3459082174592854, kForceTol);
+}
+
+#include "atomiverse/cpu/units/frame.h"
+#include "atomiverse/cuda/frame/precision.cuh"
+#include "atomiverse/cuda/units/electronic_frame.cuh"
+namespace {
+__global__ void native_solver_result(cuda::Frame frame) {
+    frame.scalars->energy = 3.;
+    frame.scalars->stress[0] = 4.;
+    cuda::encode_force(2., frame.atoms.fx[0]);
+    frame.atoms.charge[0] = -.25;
+}
+} // namespace
+TEST(CudaUnitBoundary,
+     ElectronicAdapterConvertsOnDeviceAndPreservesParentAllocations) {
+    auto reference = charged_pair();
+    units::annotate(reference, "electronic");
+    for (const auto* style :
+         {"metal", "real", "si", "cgs", "electron", "micro", "nano"}) {
+        SCOPED_TRACE(style);
+        auto source = units::convert(reference, style);
+        DeviceInput input(source);
+        input.context.units = units::from_style(style);
+        auto* const parent_force = input.frame.atoms.fx;
+        cuda::unit_boundary::ElectronicFrame adapter;
+        adapter.configure(input.context, input.frame, true);
+        {
+            cuda::unit_boundary::ElectronicFrame::Scope scope(
+                adapter, input.context, input.frame);
+            auto native = reference;
+            ATV_CUDA_CHECK(cudaDeviceSynchronize());
+            cuda::to_cpu(scope.frame(), native);
+            EXPECT_NEAR(native.span(kAtom_x)[0], 1., 1.e-10);
+            EXPECT_NEAR(native.span(kAtom_charge)[0], 1., 1.e-10);
+            EXPECT_NEAR(native.box.cell()(0, 0), 20., 1.e-10);
+            native_solver_result<<<1, 1>>>(scope.frame());
+            scope.publish();
+        }
+        EXPECT_EQ(parent_force, input.frame.atoms.fx);
+        ATV_CUDA_CHECK(cudaDeviceSynchronize());
+        cuda::to_cpu(input.frame, source);
+        auto result = units::convert(source, "electronic");
+        EXPECT_NEAR(result.meta.get(kEnergy), 3., 1.e-10);
+        EXPECT_NEAR(result.meta.get(kStress)[0], 4., 1.e-10);
+        EXPECT_NEAR(result.span(kAtom_charge)[0], -.25, 1.e-10);
+        const auto u = units::PhysicalUnits::from_style(style);
+        const auto e = units::PhysicalUnits::from_style("electronic");
+        const double resolution = units::Conversion(u.force(), e.force())(
+            cuda::kForceFixedResolution);
+        EXPECT_NEAR(result.span(kAtom_fx)[0], 2., 2. * resolution + 1.e-9);
+    }
+}
+#ifdef ATV_HAS_HF
+#include "atomiverse/cpu/scf/methods.h"
+#include "atomiverse/cuda/evaluate/evaluate.cuh"
+#include "atomiverse/cuda/scf/rhf.cuh"
+TEST(CudaUnitBoundary, NestedRhfPublishesEnergyAndForcesInRunUnits) {
+    cpu::Frame reference(2);
+    units::annotate(reference, "electronic");
+    reference.span(kAtom_x)[1] = .8;
+    for (int i = 0; i < 2; ++i) {
+        reference.span(kAtom_mass)[i] = 1.008;
+        reference.span(kAtom_atomic_number)[i] = 1;
+    }
+    reference.box = cpu::Box::cubic(20.);
+    cpu::scf::RHF cpu_method{cpu::scf::BasisSet::STO3G};
+    cpu_method.forces(reference);
+    auto work = units::convert(reference, "real");
+    cuda::Evaluate evaluation;
+    evaluation.set_units("real");
+    cuda::scf::RHF method{cpu::scf::BasisSet::STO3G};
+    method.set_units("real");
+    evaluation.on(evaluate::Phase::evaluate).add(std::move(method));
+    evaluation.build();
+    evaluation.run(work);
+    auto result = units::convert(work, "electronic");
+    EXPECT_NEAR(result.meta.get(kEnergy), reference.meta.get(kEnergy), 1.e-7);
+    for (int i = 0; i < 2; ++i)
+        EXPECT_NEAR(result.span(kAtom_fx)[i], reference.span(kAtom_fx)[i],
+                    1.e-6);
+}
+#endif

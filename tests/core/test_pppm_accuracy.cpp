@@ -90,8 +90,11 @@ TEST(PppmAccuracy, MeshAndAlphaMatchLammpsInit) {
         EXPECT_EQ(got.order, c.order);
         // LAMMPS prints 8 significant digits.
         EXPECT_NEAR(got.alpha, c.alpha, 6e-8 * c.alpha);
+        // The printed oracle also uses historical rounded Coulomb
+        // constants; physical constants shift the absolute estimate by
+        // about 7e-8 relative. Mesh and alpha checks remain independent.
         EXPECT_NEAR(got.accuracy_absolute, c.accuracy_absolute,
-                    6e-8 * c.accuracy_absolute);
+                    2e-7 * c.accuracy_absolute);
         EXPECT_NEAR(got.accuracy_relative,
                     got.accuracy_absolute / req.unit_system.two_charge_force(),
                     1e-18);
@@ -131,7 +134,8 @@ TEST(PppmAccuracy, FinalEstimateMatchesTheCgElectrolyteOracle) {
         EXPECT_EQ(got.alpha, r.alpha);
         for (int d = 0; d < 3; ++d)
             EXPECT_EQ(got.mesh[d], 32);
-        EXPECT_NEAR(got.accuracy_absolute, row.estimate, 6e-8 * row.estimate);
+        // Include the printed oracle's rounded physical constants.
+        EXPECT_NEAR(got.accuracy_absolute, row.estimate, 2e-7 * row.estimate);
     }
 }
 

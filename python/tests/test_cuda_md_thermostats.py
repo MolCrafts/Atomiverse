@@ -34,6 +34,7 @@ from _domains import skip_module_unless
 
 skip_module_unless("ATV_BUILD_MD")
 
+from atomiverse import units
 from atomiverse.md import MD, InitVelocity
 from atomiverse.md.barostat import BerendsenBarostat
 from atomiverse.md.integrator import (
@@ -54,9 +55,9 @@ needs_kspace = pytest.mark.skipif(
 )
 
 #: LAMMPS ``units metal`` (eV, Å, ps, amu, K), the style every MD here
-#: runs in: k_B [eV/K] and 1 amu·Å²/ps² in eV (``Update::set_units``).
-_KB = 8.617343e-5
-_MVV2E = 1.0364269e-4
+#: runs in: k_B [eV/K] and 1 amu·Å²/ps² in eV (CODATA 2018).
+_KB = 8.617333262145179e-5
+_MVV2E = 1.0364269656262175e-4
 
 #: Ar Lennard-Jones (LAMMPS-style metal units).
 _EPS = 0.0104  # [eV]
@@ -104,6 +105,7 @@ def _ar_frame(
         ijk = np.indices((_SIDE,) * 3).reshape(3, -1).sum(axis=0)
         atoms.insert("charge", np.where(ijk % 2 == 0, charge, -charge))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     edge = _SIDE * spacing
     if tilt == 0.0:
@@ -323,6 +325,40 @@ def test_the_draw_follows_the_tags_not_the_rows(device: str) -> None:
     np.testing.assert_allclose(
         _velocities(shuffled), want, rtol=0, atol=1e-13 * np.abs(want).max()
     )
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_a_frame_in_other_units_continues_its_trajectory(device: str) -> None:
+    """The Frame is in ``real``, the run in ``metal``: each run() converts in
+    and out, which is not bitwise, and still extends one trajectory (the
+    Nosé–Hoover chain is not restarted); an edit between runs is used."""
+    if device == "cuda" and not _HAS_CUDA_MD:
+        pytest.skip("needs ATV_BUILD_CUDA")
+
+    def nvt_md() -> MD:
+        sim = _lj_md(device)
+        sim.set_integrator(VelocityVerlet(0.004))
+        sim.set_thermostat(NoseHoover(50.0, 0.05, 0.004))
+        return sim
+
+    def real_frame() -> "molpy.Frame":
+        return units.convert(_ar_frame(3.8, 200.0), "real")
+
+    chunked, once = real_frame(), real_frame()
+    sim = nvt_md()
+    for _ in range(4):
+        sim.run(chunked, 10)
+    nvt_md().run(once, 40)
+    assert chunked.meta["units_style"] == "real"
+    np.testing.assert_allclose(
+        _velocities(chunked), _velocities(once), rtol=0, atol=1e-13
+    )
+
+    for key in ("vx", "vy", "vz"):
+        chunked["atoms"][key] = 0.5 * _columns(chunked, key)
+    edited = _velocities(chunked)
+    sim.run(chunked, 0)
+    np.testing.assert_allclose(_velocities(chunked), edited, rtol=1e-12, atol=0)
 
 
 @pytest.mark.parametrize("device", ["cpu", "cuda"])

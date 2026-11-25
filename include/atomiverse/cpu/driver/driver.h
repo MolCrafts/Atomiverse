@@ -55,6 +55,7 @@
 ///   5. The categorical setter API (`set_evaluator` / `set_neighbor` / …
 ///      `set_thermo`). Plan primitive is only `on(phase).add`.
 #pragma once
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <cmath>
@@ -403,6 +404,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// before `validate_components()` so the auto-injected set counts
     /// toward validation.
     /// @see .claude/specs/driver-infra-auto-injection.md
+    virtual bool uses_electronic_frame() const { return false; }
     virtual void install_defaults() {}
 
     /// @brief Subclass hook — validate the component set and throw on
@@ -558,6 +560,18 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
     /// Resets outer_status before the run so a stale flag from a prior
     /// invocation cannot leak into this one.
     void setup_pass(cpu::Frame& frame) {
+        if (!units::has_frame_units(frame))
+            units::annotate(frame, uses_electronic_frame()
+                                       ? "electronic"
+                                       : this->units_.name());
+        if (ATV::units::has_frame_units(frame)) {
+            if (uses_electronic_frame()) {
+                if (units::needs_conversion(frame, "electronic"))
+                    throw std::invalid_argument("electronic driver requires a "
+                                                "prepared electronic Frame");
+            } else
+                units::require_frame_units(frame, this->units_.style);
+        }
         if (!this->backend_)
             this->backend_ = std::make_unique<typename Base::BackendT>();
         this->backend_->enable_driver_unwind();
@@ -565,8 +579,12 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             this->backend_->init();
             // LAMMPS `units`: one style for the run, on the Context before
             // any component builds (components read it in build()/launch()).
-            this->backend_->context().units = this->units_;
+            this->backend_->context().units =
+                uses_electronic_frame() ? units::UnitSystem::electronic()
+                                        : units::for_frame(this->units_, frame);
             this->units_bound_ = true;
+            if constexpr (std::is_same_v<PhaseEnum, ATV::md::Phase>)
+                negotiate_timestep_(&this->backend_->context().units);
             this->backend_->capture().set_budget(this->capture_buffer_bytes_);
             this->backend_->load(this->plan_);
             this->backend_->set_frame(frame);
@@ -651,6 +669,11 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             built_plugins_.clear();
         }
         if (live_) {
+            if (this->units_.style == units::Style::lj
+                && units::reduced_reference(frame)
+                       != this->backend_->context().units.reference())
+                throw std::invalid_argument(
+                    "units: LJ reference changed during a continued run");
             validate_long_range_contract_();
             validate_components();
             flush_new_mounts_();
@@ -858,7 +881,9 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
         if (attached_runtime_ || live_)
             throw std::logic_error(
                 "driver is already attached to a live Runtime");
-        this->adopt_parent_units_(rt.context().units);
+        this->adopt_parent_units_(rt.context().exec.inherited_units
+                                      ? *rt.context().exec.inherited_units
+                                      : rt.context().units);
         compile();
         const int parent_dof = rt.context().md.n_dof_global;
         struct RestoreDof {
@@ -1594,7 +1619,7 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
             cc->set_curvature_terms(sources, drives);
     }
 
-    void negotiate_timestep_() {
+    void negotiate_timestep_(const units::UnitSystem* prepared = nullptr) {
         // ── The nuclear timestep is single-sourced from the integrator ────
         //
         // The integrator owns the clock. Anything that must advance on the
@@ -1693,7 +1718,20 @@ class Driver : public ATV::Driver<PhaseEnum, cpu::device_tag>,
                     // opt-in means opt-in: never push an unasked-for dt
                     continue;
                 }
-                pc.consumer->set_timestep(published[0].dt_fs);
+                const auto& clock = prepared ? *prepared : this->units_;
+                // LJ physical clocks become available only after binding the
+                // serialized reference from the execution Frame.
+                if (!prepared && clock.style == units::Style::lj
+                    && pc.consumer->timestep_in_femtoseconds())
+                    continue;
+                if (pc.consumer->timestep_in_femtoseconds()
+                    && clock.style == units::Style::lj)
+                    (void)clock.physical();
+                pc.consumer->set_timestep(
+                    pc.consumer->timestep_in_femtoseconds()
+                        ? clock.time_from_femtoseconds.inverse(
+                              published[0].dt_fs)
+                        : published[0].dt_fs);
             }
         }
     }

@@ -159,7 +159,7 @@ class Metropolis : public OutcomePolicy {
         const AccReal dE = e_trial - e_cur_;
         const double correction = txn->require_log_proposal_ratio();
         ++n_attempts_;
-        const double beta = 1.0 / (s.runtime.units.boltz * temperature_);
+        const double beta = 1.0 / s.runtime.units.thermal_energy(temperature_);
         if (correction != -std::numeric_limits<double>::infinity()
             && accept_(correction - beta * dE)) {
             e_cur_ = e_trial; // the frame already holds the move

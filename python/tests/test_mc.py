@@ -219,6 +219,7 @@ def _cubic_lattice_frame(n_atoms: int, box_len: float) -> "molpy.Frame":
         coords[i, 1] = ((i // side) % side + 0.5) * spacing
         coords[i, 2] = (i // (side * side) + 0.5) * spacing
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     atoms.insert("x", np.ascontiguousarray(coords[:, 0]))
     atoms.insert("y", np.ascontiguousarray(coords[:, 1]))
@@ -266,6 +267,7 @@ def test_kmc_inherits_mc_run_and_stops_at_an_absorbing_state():
 
     full_frame = _cubic_lattice_frame(1, 20.0)
     full_frame.meta["kmc_state"] = 0
+    full_frame.meta["units_style"] = "real"
     full = KMC(seed=17)
     full.set_units("real")
     full.set_event(StateTransitions([(0, 1, 2.0), (1, 2, 3.0)]))
@@ -811,6 +813,7 @@ def _linear_polymer_frame(chains):
     bonds.insert("atomj", topology[:, 1].copy())
     bonds.insert("type_id", np.zeros(len(edges), dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     frame["atoms"] = atoms
     frame["bonds"] = bonds
     frame.box = molpy.Box.cube(30.0)

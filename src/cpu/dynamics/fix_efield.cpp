@@ -15,13 +15,9 @@ void FixEfield::launch(const cpu::LaunchContext& ctx) {
     auto& f = ctx.frame;
     const int n = owned_count(ctx);
 
-    // LAMMPS FixEfield::init: the field is given in the style's field unit
-    // (V/Å for real and metal) and scaled once by qe2f, so q E is a force in
-    // the run's force unit (real: 23.060549 kcal/mol/Å per e·V/Å).
-    const double qe2f = ctx.runtime.units.qe2f;
-    const double ex = qe2f * Ex;
-    const double ey = qe2f * Ey;
-    const double ez = qe2f * Ez;
+    const double ex = field_units_(Ex);
+    const double ey = field_units_(Ey);
+    const double ez = field_units_(Ez);
 
     // Unwrapped coordinates r^u = r + H n with H's columns the lattice
     // vectors (LAMMPS Domain::unmap, orthorhombic and triclinic alike).
@@ -74,10 +70,9 @@ void FixEfield::launch(const cpu::LaunchContext& ctx) {
 void FixEfield::subtract_drive_force(const cpu::LaunchContext& ctx, int n,
                                      double* fx, double* fy, double* fz) const {
     const StorageReal* q = ctx.frame.span(kAtom_charge).data();
-    const double qe2f = ctx.runtime.units.qe2f;
-    const double ex = qe2f * Ex;
-    const double ey = qe2f * Ey;
-    const double ez = qe2f * Ez;
+    const double ex = field_units_(Ex);
+    const double ey = field_units_(Ey);
+    const double ez = field_units_(Ez);
     for (int i = 0; i < n; ++i) {
         const double qi = static_cast<double>(q[i]);
         fx[i] -= qi * ex;

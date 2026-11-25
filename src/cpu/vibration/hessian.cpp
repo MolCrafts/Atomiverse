@@ -2,6 +2,7 @@
 /// @brief cpu::vib::Hessian — constructor wiring and run() implementation.
 
 #include "atomiverse/cpu/vibration/hessian.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <stdexcept>
 #include <string>
@@ -59,6 +60,7 @@ void Hessian::wire_full_chain_(HessianWorkspace* ws, double temperature,
                                int symmetry_number,
                                const std::string& frequency_tsv,
                                const std::string& mode_xyz_prefix) {
+    this->set_units("metal");
     wire_zeroing(*this);
     // default_bindings → protected bind_defaults (no public Driver::add)
     this->bind_defaults(ReferenceGeometry{ws});
@@ -75,8 +77,8 @@ void Hessian::wire_full_chain_(HessianWorkspace* ws, double temperature,
 
 Hessian::Hessian() {
     // Default thermochemistry: standard conditions, closed-shell singlet.
-    wire_full_chain_(workspace_.get(), 298.15, 101325.0, 1, 1,
-                     "frequencies.tsv", "mode");
+    wire_full_chain_(workspace_.get(), 298.15, 1.01325, 1, 1, "frequencies.tsv",
+                     "mode");
 }
 
 Hessian::Hessian(double temperature, double pressure, int multiplicity,
@@ -102,6 +104,10 @@ Hessian::Hessian(WithoutAccumulator /*tag*/) {
 }
 
 HessianResult Hessian::run(cpu::Frame& frame) {
+    if (units::has_frame_units(frame)
+        && units::frame_profile(frame) != this->units().name())
+        return units::evaluate_in(frame, this->units().name(),
+                                  [&](Frame& work) { return run(work); });
     // Size the shared workspace from the frame before the component loop
     // runs — no allocation happens inside any component launch().
     const int n_atoms = frame.nlocal();
@@ -148,6 +154,7 @@ namespace {
 /// Cartesian Hessian is already known (no FD loop). Library-internal only.
 class CartesianFinalize : public Driver<ATV::vib::Phase> {
   public:
+    bool uses_electronic_frame() const override { return true; }
     explicit CartesianFinalize(HessianWorkspace* ws) : mw_(ws), diag_(ws) {
         this->on(ATV::vib::Phase::diagonalize).add_ref(mw_, /*order=*/0);
         this->on(ATV::vib::Phase::diagonalize).add_ref(diag_, /*order=*/+1);
@@ -173,6 +180,10 @@ class CartesianFinalize : public Driver<ATV::vib::Phase> {
 HessianResult
 Hessian::run_from_cartesian(cpu::Frame& frame,
                             xt::xtensor<double, 2> hessian_ev_ang2) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](Frame& native) {
+            return run_from_cartesian(native, std::move(hessian_ev_ang2));
+        });
     const int n = static_cast<int>(frame.nlocal());
     if (n < 1)
         throw std::invalid_argument("Hessian::run_from_cartesian: empty frame");

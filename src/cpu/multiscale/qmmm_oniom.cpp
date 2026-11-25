@@ -22,7 +22,7 @@ void QmmmOniom::launch(const LaunchContext& ctx) {
     sub_.launch(ctx, e_high_);
 
     // E_low(real) − E_low(model), with matching force signs.
-    const double qqrd2e = ctx.runtime.units.qqrd2e();
+    const double qqrd2e = ctx.runtime.units.coulomb_constant();
     e_low_real_ = low_.launch(ctx.frame, /*rows=*/{}, ctx.forces_requested,
                               qqrd2e, /*force_sign=*/+1.0);
     e_low_model_ = low_.launch(ctx.frame, sub_.qm_rows(), ctx.forces_requested,

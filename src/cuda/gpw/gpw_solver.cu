@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/gpw/gpw_solver.cu
 /// @brief `cuda::gpw::GpwDft` — Γ and multi-k RKS/UKS DIIS.
 ///
@@ -1552,6 +1553,11 @@ GpwDft::assemble_geometry_(std::vector<GpwAtom> atoms) const {
 }
 
 void GpwDft::build(const cpu::Frame& reference) {
+    if (ATV::units::needs_conversion(reference, "electronic")) {
+        auto native = ATV::units::convert(reference, "electronic");
+        build(native);
+        return;
+    }
     prepare_(reference);
     built_ = true;
 }
@@ -1562,6 +1568,11 @@ GpwResult& GpwDft::standalone_(const cpu::Frame& geometry,
                                const RealMatrix* guess_P_beta,
                                std::vector<std::array<double, 3>>* force,
                                std::array<double, 6>* stress) {
+    if (ATV::units::needs_conversion(geometry, "electronic")) {
+        auto native = ATV::units::convert(geometry, "electronic");
+        return standalone_(native, guess_C, guess_P, guess_P_beta, force,
+                           stress);
+    }
     if (stress)
         cpu::gpw::internal::validate_stress_probe(stress_strain_h, stress_axes,
                                                   "cuda::gpw::GpwDft::stress");
@@ -1614,11 +1625,20 @@ GpwResult& GpwDft::run(const cpu::Frame& frame, const RealMatrix* guess_C,
 GpwResult& GpwDft::run(cpu::Frame& frame, const RealMatrix* guess_C,
                        const RealMatrix* guess_P,
                        const RealMatrix* guess_P_beta) {
+    if (ATV::units::needs_conversion(frame, "electronic"))
+        return ATV::units::evaluate_in(
+            frame, "electronic", [&](cpu::Frame& native) -> GpwResult& {
+                return run(native, guess_C, guess_P, guess_P_beta);
+            });
     standalone_(frame, guess_C, guess_P, guess_P_beta, nullptr, nullptr);
     frame.meta.get(kEnergy) = result_.e_total * units::kHartreeInEv;
     return result_;
 }
 GpwResult& GpwDft::forces(cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic"))
+        return ATV::units::evaluate_in(
+            frame, "electronic",
+            [&](cpu::Frame& native) -> GpwResult& { return forces(native); });
     std::vector<std::array<double, 3>> force;
     standalone_(frame, nullptr, nullptr, nullptr, &force, nullptr);
     auto fx = frame.span(kAtom_fx), fy = frame.span(kAtom_fy),
@@ -1632,12 +1652,37 @@ GpwResult& GpwDft::forces(cpu::Frame& frame) {
     return result_;
 }
 std::array<double, 6> GpwDft::stress(cpu::Frame& frame) {
+    if (ATV::units::needs_conversion(frame, "electronic")) {
+        const auto source = ATV::units::PhysicalUnits::from_style(
+            ATV::units::frame_profile(frame),
+            ATV::units::reduced_reference(frame));
+        const auto e = ATV::units::PhysicalUnits::from_style("electronic");
+        auto result = ATV::units::evaluate_in(
+            frame, "electronic",
+            [&](cpu::Frame& native) { return stress(native); });
+        const ATV::units::Conversion scale(
+            e.energy() / (e.length() * e.length() * e.length()),
+            source.pressure());
+        for (auto& v : result)
+            v = scale(v);
+        return result;
+    }
     std::array<double, 6> sigma{};
     standalone_(frame, nullptr, nullptr, nullptr, nullptr, &sigma);
     frame.meta.get(kEnergy) = result_.e_total * units::kHartreeInEv;
     auto& virial = frame.meta.get(kStress);
     for (std::size_t k = 0; k < 6; ++k)
         virial[k] = sigma[k] * frame.box.volume();
+    if (ATV::units::has_frame_units(frame)) {
+        const auto source = ATV::units::PhysicalUnits::from_style(
+            ATV::units::frame_profile(frame),
+            ATV::units::reduced_reference(frame));
+        const auto native = ATV::units::PhysicalUnits::from_style("electronic");
+        const ATV::units::Conversion pressure(native.pressure(),
+                                              source.pressure());
+        for (auto& value : sigma)
+            value = pressure(value);
+    }
     return sigma;
 }
 void GpwDft::build_on(cuda::Context& ctx, cuda::Frame& frame) {

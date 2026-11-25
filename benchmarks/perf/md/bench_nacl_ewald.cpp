@@ -122,7 +122,8 @@ cpu::Frame rock_salt(const StatePoint& sp, unsigned seed) {
                 const int type = (i + j + k) % 2;
                 const double m = kMass[type];
                 const double sd =
-                    std::sqrt(metal.boltz * sp.temperature / (m * metal.mvv2e));
+                    std::sqrt(metal.boltzmann_constant() * sp.temperature
+                              / (m * metal.kinetic_energy.scale()));
                 f.span(kAtom_x)[row] = (i + 0.25) * spacing;
                 f.span(kAtom_y)[row] = (j + 0.25) * spacing;
                 f.span(kAtom_z)[row] = (k + 0.25) * spacing;

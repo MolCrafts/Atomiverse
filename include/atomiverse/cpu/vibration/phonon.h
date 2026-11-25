@@ -67,6 +67,7 @@ class Phonon : public Driver<ATV::vib::Phase> {
     /// @param nb_ Repeats along b [dimensionless].
     /// @param nc_ Repeats along c [dimensionless].
     Phonon(int na_, int nb_, int nc_) : na(na_), nb(nb_), nc(nc_) {
+        this->set_units("metal");
         if (na < 1 || nb < 1 || nc < 1)
             throw std::invalid_argument(
                 "Phonon: supercell factors na,nb,nc must be ≥ 1");

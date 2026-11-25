@@ -182,6 +182,7 @@ def atv_adapter(row: Row, system: System, participant: Participant, threads: int
         _ = limits
         xyz = np.asarray(system.positions_angstrom, dtype=np.float64)
         frame = molpy.Frame()
+        frame.meta["units_style"] = "electronic"
         atoms = molpy.Block()
         for axis, name in enumerate(["x", "y", "z"]):
             atoms.insert(name, xyz[:, axis].copy())

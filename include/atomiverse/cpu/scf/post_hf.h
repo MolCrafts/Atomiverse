@@ -169,6 +169,7 @@ class CASCI {
 template <typename Method>
 class CASSCF : public cpu::Driver<ATV::mc::Phase> {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Bind a mean-field reference. `orb_tol` is
     ///        `max(mf.tol, 1e-8)` [Hartree] and the macro cap is 50.
     /// @param mf Mean-field method (not copied).
@@ -319,6 +320,7 @@ class NEVPT2 {
 template <typename Method>
 class CCSD : public cpu::Driver<ATV::cc::Phase> {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Bind a mean-field reference.
     /// @param mf Mean-field method (not copied).
     /// @param diis_in Amplitude DIIS. False = Jacobi, same fixed point.
@@ -498,6 +500,7 @@ class CCSD : public cpu::Driver<ATV::cc::Phase> {
 template <typename Method>
 class CC2 : public cpu::Driver<ATV::cc::Phase> {
   public:
+    bool uses_electronic_frame() const override { return true; }
     /// @brief Bind a mean-field reference.
     /// @param mf Mean-field method (not copied).
     /// @param diis_in Amplitude DIIS. False = Jacobi, same fixed point.

@@ -192,7 +192,7 @@ TEST(ConstPotBO, ThomasFermiHardnessAnalyticTwoSite) {
     constexpr double kLtf = 1.0;
     constexpr double kD = 0.1;
     constexpr double kSep = 5.0; // Å along z
-    const double ke = units::UnitSystem::lj().qqrd2e();
+    const double ke = units::UnitSystem::lj().coulomb_constant();
     const double a0 = ke * kEta * std::sqrt(2.0 / 3.14159265358979323846);
     const double a01 = ke * std::erf(kEta / std::sqrt(2.0) * kSep) / kSep;
     const double h = 4.0 * 3.14159265358979323846 * ke * kLtf * kLtf * kD;

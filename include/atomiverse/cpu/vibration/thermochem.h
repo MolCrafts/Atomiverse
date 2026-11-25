@@ -45,8 +45,8 @@ class Thermochem : public cpu::Observer {
   public:
     /// @brief Temperature [K]. Default: standard ambient 298.15 K.
     double temperature = 298.15;
-    /// @brief Pressure [Pa]. Default: 1 atm.
-    double pressure = 101325.0;
+    /// @brief Pressure in the run units. Default: 1 atm.
+    double pressure = 1.01325;
     /// @brief Electronic spin multiplicity `2S+1` (1 = closed-shell singlet).
     int multiplicity = 1;
     /// @brief Rotational symmetry number sigma (not auto-detected).
@@ -60,7 +60,7 @@ class Thermochem : public cpu::Observer {
     /// @brief Construct with thermochemistry inputs as constructor args.
     /// @param ws Non-owning workspace pointer (may be null).
     /// @param temperature Temperature [K].
-    /// @param pressure Pressure [Pa].
+    /// @param pressure Pressure in the run units.
     /// @param multiplicity Spin multiplicity `2S+1`.
     /// @param symmetry_number Rotational sigma.
     Thermochem(HessianWorkspace* ws, double temperature, double pressure,

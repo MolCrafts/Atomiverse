@@ -15,6 +15,7 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/mat3.h"
 #include "atomiverse/cpu/frame/frame.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <cctype>
 #include <cmath>
@@ -241,7 +242,7 @@ void read_atoms(DataReader& in, const std::string& path, Frame& frame,
 
 } // namespace
 
-Frame load_lammps_data(const std::string& path) {
+static Frame read_lammps_data(const std::string& path) {
     DataReader in(path);
     std::string line;
     const Header h = read_header(in, path, line);
@@ -373,6 +374,25 @@ Frame load_lammps_data(const std::string& path) {
 
     // Build 1-2 / 1-3 / 1-4 exclusion list once topology is scattered.
     frame.build_special_list();
+    return frame;
+}
+
+Frame load_lammps_data(const std::string& path) {
+    auto frame = read_lammps_data(path);
+    throw std::runtime_error("load_lammps_data: a data file has no units; pass "
+                             "the source style explicitly");
+}
+
+Frame load_lammps_data(const std::string& path,
+                       std::string_view source_profile) {
+    if (source_profile != "electronic")
+        (void)units::parse_style(source_profile);
+    auto frame = read_lammps_data(path);
+    if (ATV::units::has_frame_units(frame)
+        && ATV::units::frame_profile(frame) != source_profile)
+        throw std::invalid_argument(
+            "load_lammps_data: source units conflict with file metadata");
+    ATV::units::annotate(frame, source_profile);
     return frame;
 }
 

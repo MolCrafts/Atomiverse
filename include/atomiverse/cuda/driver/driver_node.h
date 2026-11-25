@@ -18,6 +18,7 @@ class Frame;
 class DriverNode {
   public:
     virtual ~DriverNode() = default;
+    virtual bool uses_electronic_frame() const { return false; }
 
     /// @brief Prepare this loop's Plan and workspace using the parent execution.
     /// Geometry-dependent values are refreshed when the loop runs.

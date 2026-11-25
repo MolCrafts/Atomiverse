@@ -36,12 +36,14 @@ int run() {
     // The engine's PairLJCut is cut-and-shifted, so B₂ below is computed for
     // exactly that potential — convention-exact, no long-range correction.
     const double eps =
-        120.0 * units::UnitSystem::lj().boltz; // ε/k_B = 120 K [eV]
-    const double sigma = 3.4;                  // [Å]
-    const double cutoff = 2.5 * sigma;         // [Å]
-    const double t_red = 1.5;                  // supercritical vapor
-    const double temperature = t_red * 120.0;  // 180 K
-    const double kT = units::UnitSystem::lj().boltz * temperature; // [eV]
+        120.0
+        * units::UnitSystem::lj().boltzmann_constant(); // ε/k_B = 120 K [eV]
+    const double sigma = 3.4;                           // [Å]
+    const double cutoff = 2.5 * sigma;                  // [Å]
+    const double t_red = 1.5;                           // supercritical vapor
+    const double temperature = t_red * 120.0;           // 180 K
+    const double kT =
+        units::UnitSystem::lj().boltzmann_constant() * temperature; // [eV]
     const double mass = 39.948;                        // argon [amu]
     const double box_len = 12.0 * sigma;               // 40.8 Å; > 2 rc
     const double volume = box_len * box_len * box_len; // [Å³]

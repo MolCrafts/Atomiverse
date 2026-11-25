@@ -90,9 +90,9 @@ void FixLangevin::launch(const LaunchContext& ctx) {
         frame.force_fault, seed_, step_ptr, static_cast<long long>(ctx.step),
         ctx.initializing_forces, T_start_, T_stop_, nfirst_, nlast_,
         static_cast<mixed_t>(damp_), static_cast<mixed_t>(dt_),
-        static_cast<mixed_t>(ctx.runtime.units.ftm2v),
-        static_cast<mixed_t>(ctx.runtime.units.boltz),
-        static_cast<mixed_t>(ctx.runtime.units.mvv2e), n);
+        static_cast<mixed_t>(ctx.runtime.units.velocity_impulse.scale()),
+        static_cast<mixed_t>(ctx.runtime.units.boltzmann_constant()),
+        static_cast<mixed_t>(ctx.runtime.units.kinetic_energy.scale()), n);
 }
 
 } // namespace md

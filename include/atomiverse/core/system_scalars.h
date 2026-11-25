@@ -12,32 +12,33 @@ namespace ATV {
 
 /// @brief Per-frame system scalar results, shared by every backend Frame.
 ///
-/// All values are device-resident on the owning Frame's device. Units are
-/// the MD-internal set (eV, Angstrom, fs, amu, K) -- see `core/units.h`.
+/// All values are device-resident on the owning Frame's device. Units follow
+/// the selected run style -- see `core/unit_system.h`. Virial and kinetic
+/// stress are extensive energies; pressure conversion belongs to the consumer.
 struct SystemScalars {
     double energy =
-        0; ///< Potential energy [eV] — sum of all evaluator contributions.
+        0; ///< Potential energy [run energy] — sum of all evaluator contributions.
 
-    /// @brief Pair (non-bonded) potential energy [eV].
+    /// @brief Pair (non-bonded) potential energy [run energy].
     ///
     /// Accumulated by `cpu::PairLJCut` (and any future pair evaluator)
     /// alongside `energy`; cleared by `ZeroEnergy` each step. Mirrors
     /// LAMMPS `thermo_style epair` (`thermo.cpp`, keyword `epair`).
     double energy_pair = 0;
 
-    /// @brief Bond (2-body bonded) potential energy [eV].
+    /// @brief Bond (2-body bonded) potential energy [run energy].
     ///
     /// Accumulated by `cpu::BondHarmonic` (and any future bond evaluator)
     /// alongside `energy`. Mirrors LAMMPS `thermo_style ebond`.
     double energy_bond = 0;
 
-    /// @brief Angle (3-body bonded) potential energy [eV].
+    /// @brief Angle (3-body bonded) potential energy [run energy].
     ///
     /// Accumulated by `cpu::AngleHarmonic` (and any future angle evaluator)
     /// alongside `energy`. Mirrors LAMMPS `thermo_style eangle`.
     double energy_angle = 0;
 
-    /// @brief Dihedral (4-body bonded) potential energy [eV].
+    /// @brief Dihedral (4-body bonded) potential energy [run energy].
     ///
     /// Accumulated by `cpu::DihedralMultiHarmonic` (and any future dihedral
     /// evaluator) alongside `energy`. Mirrors LAMMPS `thermo_style edihed`.
@@ -48,15 +49,15 @@ struct SystemScalars {
     /// `energy` and its term-specific field on the same `+=` line.
     double energy_dihedral = 0;
 
-    /// @brief Improper (out-of-plane / harmonic) potential energy [eV].
+    /// @brief Improper (out-of-plane / harmonic) potential energy [run energy].
     ///
     /// Accumulated by `cpu::ImproperHarmonic` alongside `energy`. Mirrors
     /// LAMMPS `thermo_style eimp`.
     double energy_improper = 0;
 
-    double kinetic = 0; ///< Kinetic energy [eV].
+    double kinetic = 0; ///< Kinetic energy [run energy].
 
-    /// @brief Integrator's conserved quantity [eV].
+    /// @brief Integrator's conserved quantity [run energy].
     ///
     /// For an extended-Lagrangian integrator this is the conserved
     /// *extended* Hamiltonian — e.g. `NoseHooverNPT` writes the full
@@ -68,7 +69,7 @@ struct SystemScalars {
     /// `Thermo` logs it as a column.
     double conserved = 0;
 
-    /// @brief Pair / bonded virial tensor Σ r·F [eV], Voigt order xx yy zz xy xz yz.
+    /// @brief Pair / bonded virial tensor Σ r·F [run energy], Voigt order xx yy zz xy xz yz.
     ///
     /// Written by pair potentials (LJ, Coulomb, ...) and bonded
     /// evaluators at `post_force`. **Does not** include the kinetic
@@ -81,7 +82,7 @@ struct SystemScalars {
     /// convention (positive ⇔ compressive).
     double stress[6] = {};
 
-    /// @brief Kinetic stress tensor Σ m·v·v [eV], Voigt order xx yy zz xy xz yz.
+    /// @brief Kinetic stress tensor Σ m·v·v [run energy], Voigt order xx yy zz xy xz yz.
     ///
     /// Written with the kinetic energy by MD's `KineticEnergy` at
     /// `end_of_step`, from the velocities of the state the step leaves

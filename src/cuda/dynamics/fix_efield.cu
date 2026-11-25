@@ -113,25 +113,22 @@ void FixEfield::launch(const LaunchContext& ctx) {
         return;
     const auto stream = static_cast<cudaStream_t>(ctx.runtime.stream);
     const auto& a = f.atoms;
-    // LAMMPS FixEfield::init: E in the style's field unit, scaled by qe2f
-    // into force per charge (real: 23.060549 kcal/mol/Å per e·V/Å).
-    const double qe2f = ctx.runtime.units.qe2f;
     efield_k<<<grid_size(n), kDefaultBlock, 0, stream>>>(
         a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.charge, a.image, a.fx,
         a.fy, a.fz, f.force_fault,
         ctx.energy_requested ? &f.scalars->energy : nullptr,
-        ctx.runtime.host_box, qe2f * Ex, qe2f * Ey, qe2f * Ez,
-        ctx.forces_requested, n);
+        ctx.runtime.host_box, field_units_(Ex), field_units_(Ey),
+        field_units_(Ez), ctx.forces_requested, n);
 }
 
 void FixEfield::subtract_drive_force(const LaunchContext& ctx, int n,
                                      double* fx, double* fy, double* fz) const {
     if (n == 0)
         return;
-    const double qe2f = ctx.runtime.units.qe2f;
     efield_subtract_k<<<grid_size(n), kDefaultBlock, 0,
                         static_cast<cudaStream_t>(ctx.runtime.stream)>>>(
-        ctx.frame.atoms.charge, fx, fy, fz, qe2f * Ex, qe2f * Ey, qe2f * Ez, n);
+        ctx.frame.atoms.charge, fx, fy, fz, field_units_(Ex), field_units_(Ey),
+        field_units_(Ez), n);
 }
 
 } // namespace md

@@ -70,6 +70,7 @@ def _chains() -> "molpy.Frame":
     atoms.insert("type_id", np.full(n, 1, dtype=np.uint32))
     atoms.insert("atomic_number", np.full(n, 6, dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     for name, rows in (("bonds", bonds), ("angles", angles), ("dihedrals", dihedrals)):
         rows = np.asarray(rows, dtype=np.uint32)

@@ -122,18 +122,18 @@ struct Style {
 
     double time(double x) const { return x * t; }
     double rate(double x) const { return x / t; }
-    double T(double kT) const { return kT / u.boltz; }
+    double T(double kT) const { return kT / u.boltzmann_constant(); }
     double P(double energy_per_volume) const {
-        return energy_per_volume * u.nktv2p;
+        return energy_per_volume * u.pressure.scale();
     }
     double q(double lj_charge) const {
-        return lj_charge / std::sqrt(u.qqrd2e());
+        return lj_charge / std::sqrt(u.coulomb_constant());
     }
 };
 
 Style style(const char* name) {
     const auto u = units::from_style(name);
-    return {name, u, std::sqrt(u.mvv2e)};
+    return {name, u, std::sqrt(u.kinetic_energy.scale())};
 }
 
 const Style& lj_style() {

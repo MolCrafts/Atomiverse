@@ -12,8 +12,8 @@ namespace md {
 
 void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
     if (!(period > 0.0) || !(dt > 0.0)) {
-        throw std::runtime_error(
-            "FixOscillatingEfield: period and dt must be > 0 [style time]");
+        throw std::runtime_error("FixOscillatingEfield: period and dt must be "
+                                 "> 0 in run time units");
     }
 
     auto& f = ctx.frame;
@@ -22,12 +22,10 @@ void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
     last_Ex_ = field_x(ctx.step);
     last_Ey_ = field_y(ctx.step);
     last_Ez_ = field_z(ctx.step);
-    // E in the style's LAMMPS field unit; qe2f makes q E a force in the
-    // run's force unit (LAMMPS FixEfield, real: 23.060549, metal: 1).
-    const double qe2f = ctx.runtime.units.qe2f;
-    const double ex = qe2f * last_Ex_;
-    const double ey = qe2f * last_Ey_;
-    const double ez = qe2f * last_Ez_;
+    const double oscillation = std::cos(omega_t(ctx.step));
+    const double force_ex = field_units_(Ex0) * oscillation;
+    const double force_ey = field_units_(Ey0) * oscillation;
+    const double force_ez = field_units_(Ez0) * oscillation;
 
     // Unwrapped energy needs orthorhombic image · L (LAMMPS domain->unmap).
     if (!f.box.is_orthorhombic()) {
@@ -54,9 +52,9 @@ void FixOscillatingEfield::launch(const cpu::LaunchContext& ctx) {
 #pragma omp parallel for reduction(+ : u) schedule(static)
     for (int i = 0; i < n; ++i) {
         const double qi = static_cast<double>(q[i]);
-        const double fxi = qi * ex;
-        const double fyi = qi * ey;
-        const double fzi = qi * ez;
+        const double fxi = qi * force_ex;
+        const double fyi = qi * force_ey;
+        const double fzi = qi * force_ez;
         if (want_force) {
             fx[i] += fxi;
             fy[i] += fyi;

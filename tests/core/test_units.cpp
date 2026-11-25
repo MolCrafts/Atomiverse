@@ -37,5 +37,5 @@ TEST(Units, ThermalDeBroglieUsesTheRunsRow) {
     EXPECT_NEAR(units::lambda_thermal(1.008, 300.0, units::from_style("metal")),
                 1.003942, 1e-5);
     EXPECT_NEAR(units::lambda_thermal(1.008, 300.0, units::from_style("real")),
-                1.003271, 1e-5);
+                1.0039428976952161, 1e-12);
 }

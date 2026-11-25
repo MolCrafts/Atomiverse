@@ -621,8 +621,9 @@ void GearPC::build(const BuildContext& ctx) {
     if (dof <= 0)
         throw std::runtime_error(
             "GearPC: the Gaussian thermostat constrains no degree of freedom");
-    g.k0_twice = static_cast<double>(dof) * ctx.runtime.units.boltz
-                 * gauss_->temperature / ctx.runtime.units.mvv2e;
+    g.k0_twice = static_cast<double>(dof)
+                 * ctx.runtime.units.boltzmann_constant() * gauss_->temperature
+                 / ctx.runtime.units.kinetic_energy.scale();
 }
 
 void GearPC::destroy(const DestroyContext&) {
@@ -639,8 +640,8 @@ void GearPC::measure_(const LaunchContext& ctx, bool with_force,
     const int n = ctx.frame.n_local();
     const State& st = *state_;
     gauss_measure<<<grid_size(n, kGearBlock), kGearBlock, 0, stream>>>(
-        columns_of(ctx), st.gauss, st.scalars, ctx.runtime.units.ftm2v,
-        with_force, n);
+        columns_of(ctx), st.gauss, st.scalars,
+        ctx.runtime.units.velocity_impulse.scale(), with_force, n);
     gauss_finalize<<<1, 1, 0, stream>>>(st.gauss, st.scalars,
                                         ctx.frame.force_fault, projection);
 }
@@ -685,13 +686,15 @@ void GearPC::start_(const LaunchContext& ctx) {
         assembly_.evaluate(ctx);
         configurational_rate<<<1, 1, 0, stream>>>(
             assembly_.sums(), st.scalars, ctx.frame.force_fault,
-            ctx.runtime.units.boltz, configurational_->temperature,
-            configurational_->Q, dt_, /*start=*/true);
+            ctx.runtime.units.boltzmann_constant(),
+            configurational_->temperature, configurational_->Q, dt_,
+            /*start=*/true);
     }
     gear_start<<<grid_size(n), kDefaultBlock, 0, stream>>>(
         columns_of(ctx), st.gauss, st.scalars, assembly_.rows(),
-        assembly_.sums(), ctx.runtime.units.boltz, st.hist, st.stride, dt_,
-        ctx.runtime.units.ftm2v, configurational_.has_value(), n);
+        assembly_.sums(), ctx.runtime.units.boltzmann_constant(), st.hist,
+        st.stride, dt_, ctx.runtime.units.velocity_impulse.scale(),
+        configurational_.has_value(), n);
     ATV_CUDA_CHECK(cudaGetLastError());
     GearScalars host{};
     ATV_CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -730,13 +733,15 @@ void GearPC::launch(const LaunchContext& ctx) {
         assembly_.evaluate(ctx);
         configurational_rate<<<1, 1, 0, stream>>>(
             assembly_.sums(), st.scalars, ctx.frame.force_fault,
-            ctx.runtime.units.boltz, configurational_->temperature,
-            configurational_->Q, dt_, /*start=*/false);
+            ctx.runtime.units.boltzmann_constant(),
+            configurational_->temperature, configurational_->Q, dt_,
+            /*start=*/false);
     }
     gear_correct_step<<<grid_size(n, kGearBlock), kGearBlock, 0, stream>>>(
         columns_of(ctx), ctx.runtime.host_box, st.gauss, st.scalars,
-        assembly_.rows(), assembly_.sums(), ctx.runtime.units.boltz, st.hist,
-        st.stride, dt_, ctx.runtime.units.ftm2v, configurational, n);
+        assembly_.rows(), assembly_.sums(),
+        ctx.runtime.units.boltzmann_constant(), st.hist, st.stride, dt_,
+        ctx.runtime.units.velocity_impulse.scale(), configurational, n);
     if (gauss_)
         project_(ctx);
     ATV_CUDA_CHECK(cudaGetLastError());

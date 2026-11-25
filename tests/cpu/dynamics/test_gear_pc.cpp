@@ -154,7 +154,7 @@ TEST(GearPC, IntegratesTheEquationsOfMotionWithTheCoreLaw) {
         frame.span(kAtom_z).data(),  frame.span(kAtom_vx).data(),
         frame.span(kAtom_vy).data(), frame.span(kAtom_vz).data()};
     for (int i = 0; i < 3; ++i) {
-        const double w2 = kSpring * metal.ftm2v
+        const double w2 = kSpring * metal.velocity_impulse.scale()
                           / static_cast<double>(start.span(kAtom_mass)[i]);
         const double w = std::sqrt(w2);
         const double t = kSteps * kDt;

@@ -41,7 +41,7 @@ NoseHoover::NoseHoover(double T_start, double tau_T, double dt)
 void NoseHoover::build(const cpu::BuildContext& ctx) {
     // Driver publishes the constraint-aware global DOF count before build.
     n_dof_global_ = ctx.runtime.md.n_dof_global;
-    boltz_ = ctx.runtime.units.boltz;
+    boltz_ = ctx.runtime.units.boltzmann_constant();
     // Initial chain mass at the ramp anchor `T_start_`; `launch()`
     // retunes it each step to the live setpoint (LAMMPS recomputes
     // `eta_mass[0] = tdof·boltz·t_target/t_freq²` in nhc_temp_integrate).
@@ -126,7 +126,7 @@ void NoseHoover::launch(const cpu::LaunchContext& ctx) {
                 sp_vx[i] * sp_vx[i] + sp_vy[i] * sp_vy[i] + sp_vz[i] * sp_vz[i];
             ke_local += sp_mass[i] * v2;
         }
-        ke_local *= double(0.5) * ctx.runtime.units.mvv2e;
+        ke_local = .5 * ctx.runtime.units.kinetic_energy(ke_local);
 
         // Phase 0.5: under multi-rank reduce KE across the Cartesian comm so
         // the thermostat couples to the *global* bath rather than this

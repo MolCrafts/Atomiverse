@@ -31,6 +31,7 @@ def _molpy_argon_frame() -> "molpy.Frame":
                     mass=39.948,
                 )
     frame = system.to_frame()
+    frame.meta["units_style"] = "lj"
     frame.box = molpy.Box.cube(2 * scale)
     return frame
 

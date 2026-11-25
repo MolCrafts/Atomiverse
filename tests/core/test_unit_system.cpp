@@ -5,107 +5,109 @@
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 #include "atomiverse/core/unit_system.h"
 #include "atomiverse/core/units.h"
 
 using namespace ATV;
 
-TEST(UnitSystem, LjRowIsTheDefault) {
-    const auto lj = units::UnitSystem::lj();
-    EXPECT_STREQ(lj.name(), "lj");
-    EXPECT_DOUBLE_EQ(lj.boltz, 1.0);
-    EXPECT_DOUBLE_EQ(lj.mvv2e, 1.0);
-    EXPECT_DOUBLE_EQ(lj.ftm2v, 1.0);
-    EXPECT_DOUBLE_EQ(lj.qqr2e, 1.0);
-    EXPECT_DOUBLE_EQ(lj.nktv2p, 1.0);
-    EXPECT_DOUBLE_EQ(lj.angstrom, 1.0);
-    EXPECT_DOUBLE_EQ(lj.femtosecond, 1.0);
-    EXPECT_DOUBLE_EQ(lj.qelectron, 1.0);
-    EXPECT_DOUBLE_EQ(lj.qqrd2e(), 1.0);
-    EXPECT_DOUBLE_EQ(lj.two_charge_force(), 1.0);
-    EXPECT_DOUBLE_EQ(lj.dt, 0.005);
-    EXPECT_DOUBLE_EQ(lj.skin, 0.3);
-    EXPECT_EQ(lj.style, units::Style::lj);
-    EXPECT_EQ(units::from_style(units::Style::lj).style, units::Style::lj);
+TEST(UnitSystem, ReducedUnitsAreCoherent) {
+    constexpr auto lj = units::from_style(units::Style::lj);
+    static_assert(lj.kinetic_energy(2.) == 2.);
+    static_assert(lj.velocity_impulse(3.) == 3.);
+    EXPECT_DOUBLE_EQ(lj.thermal_energy(1.), 1.);
+    EXPECT_DOUBLE_EQ(lj.coulomb_constant(), 1.);
+    EXPECT_DOUBLE_EQ(lj.pressure(1.), 1.);
 }
-
-TEST(UnitSystem, FromStyleMatchesLammpsUpdate) {
-    const auto metal = units::from_style("metal");
-    EXPECT_DOUBLE_EQ(metal.qqr2e, 14.399645);
-    EXPECT_DOUBLE_EQ(metal.boltz, 8.617343e-5);
-    EXPECT_DOUBLE_EQ(metal.mvv2e, 1.0364269e-4);
-    EXPECT_DOUBLE_EQ(metal.femtosecond, 1.0e-3);
-    EXPECT_DOUBLE_EQ(metal.qelectron, 1.0);
-    EXPECT_DOUBLE_EQ(metal.angstrom, 1.0);
-    EXPECT_DOUBLE_EQ(metal.two_charge_force(), metal.qqr2e);
-    EXPECT_DOUBLE_EQ(metal.qqrd2e(), metal.qqr2e);
-
+TEST(UnitSystem, PhysicalValuesUseTheSingleRegistry) {
     const auto real = units::from_style("real");
-    EXPECT_DOUBLE_EQ(real.qqr2e, 332.06371);
-    EXPECT_DOUBLE_EQ(real.boltz, 0.0019872067);
-    EXPECT_DOUBLE_EQ(real.mvv2e, 48.88821291 * 48.88821291);
-    EXPECT_DOUBLE_EQ(real.ftm2v, 1.0 / 48.88821291 / 48.88821291);
-    EXPECT_DOUBLE_EQ(real.nktv2p, 68568.415);
-    EXPECT_DOUBLE_EQ(real.two_charge_force(), real.qqr2e);
-
-    const auto cgs = units::from_style("cgs");
-    EXPECT_DOUBLE_EQ(cgs.qelectron, 4.8032044e-10);
-    EXPECT_DOUBLE_EQ(cgs.angstrom, 1.0e-8);
-    EXPECT_NEAR(cgs.two_charge_force(),
-                cgs.qqr2e * cgs.qelectron * cgs.qelectron
-                    / (cgs.angstrom * cgs.angstrom),
-                0.0);
-
+    const auto metal = units::from_style("metal");
     const auto si = units::from_style("si");
-    EXPECT_DOUBLE_EQ(si.qqr2e, 8.9876e9);
-    EXPECT_DOUBLE_EQ(si.qelectron, 1.6021765e-19);
-    const auto electron = units::from_style("electron");
-    EXPECT_DOUBLE_EQ(electron.angstrom, 1.88972612);
-    EXPECT_DOUBLE_EQ(electron.mvv2e, 1.06657236);
-    const auto micro = units::from_style("micro");
-    EXPECT_DOUBLE_EQ(micro.qqr2e, 8.987556e6);
-    const auto nano = units::from_style("nano");
-    EXPECT_DOUBLE_EQ(nano.qqr2e, 230.7078669);
-    EXPECT_DOUBLE_EQ(nano.dt, 0.00045);
-
-    EXPECT_THROW(units::from_style("nope"), std::invalid_argument);
-}
-
-TEST(UnitSystem, DefaultsAndNamesFollowLammpsUpdate) {
-    // update.cpp `Update::set_units`: dt and neighbor->skin per style.
-    struct Row {
-        const char* name;
-        double dt, skin;
-    };
-    constexpr Row rows[] = {
-        {"lj", 0.005, 0.3},    {"real", 1.0, 2.0},     {"metal", 0.001, 2.0},
-        {"si", 1.0e-8, 0.001}, {"cgs", 1.0e-8, 0.1},   {"electron", 0.001, 2.0},
-        {"micro", 2.0, 0.1},   {"nano", 0.00045, 0.1},
-    };
-    for (const auto& r : rows) {
-        const auto u = units::from_style(r.name);
-        EXPECT_STREQ(u.name(), r.name);
-        EXPECT_EQ(units::parse_style(r.name), u.style);
-        EXPECT_DOUBLE_EQ(u.dt, r.dt) << r.name;
-        EXPECT_DOUBLE_EQ(u.skin, r.skin) << r.name;
-        EXPECT_DOUBLE_EQ(u.dielectric, 1.0);
+    EXPECT_NEAR(real.kinetic_energy(1.), 2390.057361376673, 1e-9);
+    EXPECT_NEAR(metal.kinetic_energy(1.), .00010364269656262175, 1e-17);
+    EXPECT_NEAR(real.boltzmann_constant(), .0019872042586408316, 1e-15);
+    EXPECT_NEAR(si.coulomb_constant(), 8.9875517923e9, 1e-5);
+    EXPECT_NEAR(units::from_style("micro").electric_field(1.), 1000., 1e-10);
+    EXPECT_NEAR(units::from_style("nano").electric_field(1.), 160.2176634,
+                1e-10);
+    for (int s = 0; s < units::kStyleCount; ++s) {
+        const auto run = units::from_style(static_cast<units::Style>(s));
+        EXPECT_NEAR(run.velocity_impulse(run.kinetic_energy(3.)), 3., 1e-12);
     }
-    const auto real = units::from_style("real");
-    EXPECT_DOUBLE_EQ(real.e_mass, 1.0 / 1836.1527556560675);
-    EXPECT_DOUBLE_EQ(real.hhmrr2e, 0.0957018663603261);
-    EXPECT_DOUBLE_EQ(real.mvh2r, 1.5339009481951);
-    EXPECT_DOUBLE_EQ(real.mv2d, 1.0 / 0.602214129);
-    const auto metal = units::from_style("metal");
-    EXPECT_DOUBLE_EQ(metal.nktv2p, 1.6021765e6);
-    EXPECT_DOUBLE_EQ(metal.e_mass, 0.0);
-    EXPECT_DOUBLE_EQ(units::from_style("electron").nktv2p, 2.94210108e13);
-    EXPECT_THROW(units::parse_style("LJ"), std::invalid_argument);
+    EXPECT_THROW(units::from_style("unknown"), std::invalid_argument);
+}
+TEST(UnitSystem, PressureDefaultsResolveInTheRunUnits) {
+    // 1 eV/Å³ = 160.2176634 GPa.
+    EXPECT_NEAR(units::from_style("metal").ev_per_cubic_angstrom(),
+                1.602176634e6, 1e-3);
+    EXPECT_NEAR(units::from_style("real").ev_per_cubic_angstrom(),
+                1.602176634e11 / 101325., 1e-3);
+    EXPECT_DOUBLE_EQ(units::from_style("lj").ev_per_cubic_angstrom(), 1.);
+    EXPECT_DOUBLE_EQ(units::resolve_style_default(units::kStyleDefault, 7.),
+                     7.);
+    EXPECT_DOUBLE_EQ(units::resolve_style_default(2., 7.), 2.);
+}
+TEST(UnitSystem, StyleDefaultsRemainExplicit) {
+    EXPECT_DOUBLE_EQ(units::from_style("real").dt, 1.);
+    EXPECT_DOUBLE_EQ(units::from_style("metal").dt, .001);
+    EXPECT_DOUBLE_EQ(units::from_style("nano").dt, .00045);
+    EXPECT_DOUBLE_EQ(units::from_style("real").skin, 2.);
 }
 
-TEST(UnitSystem, CodataIdentitiesAreNotTheMetalRow) {
-    // The electronic-structure constants stay eV·Å·fs CODATA; the metal row
-    // is LAMMPS's own table (different digits, ps time).
-    EXPECT_DOUBLE_EQ(units::coulomb, 14.399645);
-    EXPECT_NE(units::from_style("metal").boltz, units::kB_ev_per_k);
+#include "atomiverse/core/unit_system.h"
+
+TEST(UnitQuantity, AlgebraAndDimensionChecks) {
+    constexpr auto u = units::UnitContext::from_style("real");
+    constexpr auto charge = u.quantity(2., u.charge());
+    constexpr auto field = u.quantity(.03, u.electric_field());
+    constexpr auto f = charge * field;
+    static_assert(f.unit.dimension == u.force().dimension);
+    EXPECT_NEAR(f.numerical_value_in(u.force()), 1.3836328698371416, 1e-14);
+    EXPECT_THROW(f.numerical_value_in(u.length()), std::invalid_argument);
+    constexpr auto metal = units::UnitContext::from_style("metal");
+    EXPECT_NEAR(f.numerical_value_in(metal.force()), .06, 1e-14);
+    const units::Unit reduced_force{u.force().dimension, 1., 1};
+    EXPECT_THROW(f.numerical_value_in(reduced_force), std::invalid_argument);
+    EXPECT_NEAR((f * u.quantity(3., u.length())).numerical_value_in(u.energy()),
+                4.150898609511425, 1e-13);
+}
+
+TEST(UnitQuantity, ResolvedFieldConversionHasNoWrapperStorageOrRuntimeLookup) {
+    using ElectricFieldConversion = units::Conversion;
+    static_assert(sizeof(ElectricFieldConversion) == sizeof(double));
+    static_assert(std::is_trivially_copyable_v<ElectricFieldConversion>);
+    static_assert(std::is_standard_layout_v<ElectricFieldConversion>);
+    constexpr auto metal =
+        units::from_style(units::Style::metal).electric_field;
+    constexpr auto real = units::from_style(units::Style::real).electric_field;
+    constexpr auto electron =
+        units::from_style(units::Style::electron).electric_field;
+    static_assert(metal(.03) == .03);
+    EXPECT_NEAR(real(.03), .6918164349185708, 1e-14);
+    EXPECT_NEAR(real(.06), 1.3836328698371416, 1e-14);
+    EXPECT_NEAR(electron(1.), 1.9446903812113616e-10, 1e-23);
+}
+
+#include "atomiverse/core/field_units.h"
+TEST(UnitQuantity, EveryCanonicalAtomColumnHasAnExplicitInterpretation) {
+    const auto u = units::UnitContext::from_style("real");
+    for (unsigned i = 0; i < static_cast<unsigned>(AtomFieldId::COUNT); ++i)
+        EXPECT_NO_THROW(units::field_unit(static_cast<AtomFieldId>(i), u));
+    EXPECT_EQ(units::field_unit(AtomFieldId::fx, u).dimension,
+              u.force().dimension);
+    EXPECT_EQ(units::field_unit(AtomFieldId::image, u).dimension,
+              units::Dimension{});
+    EXPECT_THROW(units::field_unit(AtomFieldId::COUNT, u),
+                 std::invalid_argument);
+}
+
+TEST(UnitQuantity, StaticUnitsConversionChecksTypesBeforeRuntime) {
+    constexpr auto real = units::UnitContext::from_style(units::Style::real);
+    constexpr auto metal = units::UnitContext::from_style(units::Style::metal);
+    constexpr auto source = real.energy();
+    constexpr auto target = metal.energy();
+    static_assert(noexcept(units::convert<source, target>(1.)));
+    static_assert(units::convert<target, target>(.03) == .03);
+    EXPECT_NEAR((units::convert<source, target>(23.060547830619)), 1., 1e-12);
 }

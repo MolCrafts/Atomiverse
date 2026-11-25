@@ -55,9 +55,9 @@ void KineticEnergy::launch(const cpu::LaunchContext& ctx) {
         s_yz += m * vy * vz;
     }
 
-    // mass·v² times the run's mvv2e is energy (LAMMPS compute ke and the
+    // mass·v² times the run's kinetic_energy scale is energy (LAMMPS compute ke and the
     // kinetic part of compute pressure, both from the current velocities).
-    const double mvv2e = ctx.runtime.units.mvv2e;
+    const double mvv2e = ctx.runtime.units.kinetic_energy.scale();
     f.meta.get(kKinetic) = 0.5 * mvv2e * (s_xx + s_yy + s_zz);
     auto& stress = f.meta.get(kStressKinetic);
     stress[0] = mvv2e * s_xx;
@@ -222,9 +222,10 @@ void InitVelocity::build(const cpu::BuildContext& ctx) {
     // Ndof: single owner, constraint-aware. @see Driver::publish_dof_
     const long long ndof = ctx.runtime.md.n_dof_global;
     if (ndof > 0 && sum_mv2 > 0.0) {
-        const double ke = 0.5 * ctx.runtime.units.mvv2e * sum_mv2;
-        const double t_measured =
-            2.0 * ke / (static_cast<double>(ndof) * ctx.runtime.units.boltz);
+        const double ke = .5 * ctx.runtime.units.kinetic_energy(sum_mv2);
+        const double t_measured = 2.0 * ke
+                                  / (static_cast<double>(ndof)
+                                     * ctx.runtime.units.boltzmann_constant());
         const double factor = std::sqrt(temperature_ / t_measured);
         for (int i = 0; i < n; ++i) {
             sp_vx[i] *= factor;

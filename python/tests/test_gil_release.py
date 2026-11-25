@@ -81,6 +81,7 @@ def _polyacene_frame(n_rings: int) -> "molpy.Frame":
             hydrogens.append(c[i] + ch * v / np.linalg.norm(v))
     xy = np.vstack([c, np.array(hydrogens)])
     frame = molpy.Frame()
+    frame.meta["units_style"] = "electronic"
     atoms = molpy.Block()
     atoms.insert("x", xy[:, 0].copy())
     atoms.insert("y", xy[:, 1].copy())
@@ -100,6 +101,7 @@ def _argon_frame(side: int, jitter: float = 0.25, spacing: float = 3.6) -> "molp
     xyz = np.array(np.meshgrid(grid, grid, grid, indexing="ij")).reshape(3, -1).T
     xyz = xyz + rng.normal(0.0, jitter, xyz.shape)
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     atoms = molpy.Block()
     for axis, column in zip("xyz", xyz.T):
         atoms.insert(axis, column.copy())

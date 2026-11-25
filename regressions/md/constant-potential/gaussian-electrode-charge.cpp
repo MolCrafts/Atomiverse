@@ -47,7 +47,7 @@ double solve_two_site_q1(double A11, double A12, double Psi1, double Psi2) {
 
 int run() {
     const double eta = 1.0;
-    const double K = ATV::units::UnitSystem::lj().qqrd2e();
+    const double K = ATV::units::UnitSystem::lj().coulomb_constant();
     const double kEFixedPin = kEFixedMetal * K / ATV::units::coulomb;
     const double kQGaussPin = kQGaussMetal * ATV::units::coulomb / K;
     int nfail = 0;

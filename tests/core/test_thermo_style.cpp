@@ -47,9 +47,9 @@ TEST(ThermoStyle, PressureIsVirialPlusKineticOverVolumeTimesNktv2p) {
         s.volume = 1000.0;
         s.virial[0] = 1.0; // energy
         s.kinetic[0] = 2.0;
-        s.boltz = u.boltz;
-        s.nktv2p = u.nktv2p;
-        const double pxx = 3.0 / 1000.0 * u.nktv2p;
+        s.boltz = u.boltzmann_constant();
+        s.nktv2p = u.pressure.scale();
+        const double pxx = 3.0 / 1000.0 * u.pressure.scale();
         const std::string line = style.line(s);
         double press = 0, xx = 0, vol = 0;
         ASSERT_EQ(std::sscanf(line.c_str(), "%lf %lf %lf", &press, &xx, &vol),
@@ -64,8 +64,8 @@ TEST(ThermoStyle, TemperatureUsesDegreesOfFreedom) {
     const ThermoStyle style({"temp"});
     ThermoSample s;
     const auto real = units::from_style("real");
-    s.ke = 0.5 * 3.0 * real.boltz * 300.0;
-    s.boltz = real.boltz;
+    s.ke = 0.5 * 3.0 * real.boltzmann_constant() * 300.0;
+    s.boltz = real.boltzmann_constant();
     s.ndof = 3;
     double temp = 0;
     ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf", &temp), 1);
@@ -73,26 +73,26 @@ TEST(ThermoStyle, TemperatureUsesDegreesOfFreedom) {
 }
 
 TEST(ThermoStyle, RealAndMetalReportKelvinAndAtmOrBarLikeLammps) {
-    // LAMMPS Update::set_units factors written out (not read back from the
-    // engine): real boltz 0.0019872067 kcal/mol/K, nktv2p 68568.415
-    // atm·Å³/(kcal/mol); metal boltz 8.617343e-5 eV/K, nktv2p 1.6021765e6
-    // bar·Å³/eV. KE = 1 energy unit over 3 DOF, W_xx = 3 energy units in
+    // Factors at their CODATA 2018 values, written out (not read back from
+    // the engine): real 0.00198720426 kcal/mol/K, 68568.4230
+    // atm·Å³/(kcal/mol); metal 8.61733326e-5 eV/K, 1.602176634e6 bar·Å³/eV.
+    // KE = 1 energy unit over 3 DOF, W_xx = 3 energy units in
     // 1000 Å³ (K = 0).
     struct Row {
         const char* style;
         double boltz, nktv2p;
     };
     const ThermoStyle style({"temp", "press", "pxx"});
-    for (const Row& r : {Row{"real", 0.0019872067, 68568.415},
-                         Row{"metal", 8.617343e-5, 1.6021765e6}}) {
+    for (const Row& r : {Row{"real", 0.00198720425864083, 68568.4229662509},
+                         Row{"metal", 8.617333262145e-5, 1.602176634e6}}) {
         const auto u = units::from_style(r.style);
         ThermoSample s;
         s.ke = 1.0;
         s.ndof = 3;
         s.volume = 1000.0;
         s.virial[0] = 3.0;
-        s.boltz = u.boltz;
-        s.nktv2p = u.nktv2p;
+        s.boltz = u.boltzmann_constant();
+        s.nktv2p = u.pressure.scale();
         double temp = 0, press = 0, pxx = 0;
         ASSERT_EQ(std::sscanf(style.line(s).c_str(), "%lf %lf %lf", &temp,
                               &press, &pxx),

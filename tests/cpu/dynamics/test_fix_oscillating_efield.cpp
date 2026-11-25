@@ -82,3 +82,19 @@ TEST(FixOscillatingEfield, PhaseShift) {
     // cos(2π*250/1000 + π/2) = cos(π/2 + π/2) = cos(π) = -1
     EXPECT_NEAR(osc.field_z(250), -1.0, 1e-12);
 }
+
+TEST(FixOscillatingEfield, RealUnitsPrepareAmplitudeButExposeInputField) {
+    auto f = two_ions();
+    cpu::Context ctx;
+    ctx.units = units::from_style("real");
+    cpu::md::FixOscillatingEfield osc(.03, 0., 0., 100., 1.);
+    osc.build({ctx, f});
+    osc.launch({ctx, f, 0, 0});
+    EXPECT_DOUBLE_EQ(osc.last_Ex(), .03);
+    EXPECT_NEAR(f.span(kAtom_fx)[0], .6918164349185708, 1e-14);
+    EXPECT_NEAR(osc.last_energy(), 1.3836328698371416, 1e-14);
+    osc.Ex0 = .06;
+    osc.launch({ctx, f, 0, 50});
+    EXPECT_NEAR(osc.last_Ex(), -.06, 1e-14);
+    EXPECT_NEAR(osc.last_energy(), -2.767265739674283, 1e-13);
+}

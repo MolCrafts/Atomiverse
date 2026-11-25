@@ -37,11 +37,11 @@ from atomiverse.md.thermostat import (
 from atomiverse.neighbor import NeighborList
 from atomiverse.potentials.pair import Born
 
-#: HARD-CODED GOLDEN — LAMMPS ``units metal`` (src/update.cpp): Boltzmann
+#: HARD-CODED GOLDEN — ``units metal`` at the CODATA 2018 values: Boltzmann
 #: constant [eV/K], m·v² → energy [eV per g/mol·Å²/ps²], k_e [eV·Å/e²].
-_BOLTZ: float = 8.617343e-5
-_MVV2E: float = 1.0364269e-4
-_COULOMB_EV_A: float = 14.399645
+_BOLTZ: float = 8.617333262145179e-5
+_MVV2E: float = 1.0364269656262175e-4
+_COULOMB_EV_A: float = 14.399645478485
 
 #: HARD-CODED GOLDEN — Madelung constant of rock salt (Ziman, *Principles of
 #: the Theory of Solids*, 2nd ed., Cambridge 1972, §2.3).
@@ -123,6 +123,7 @@ def _rock_salt(
         atoms.insert("vy", vel[:, 1].copy())
         atoms.insert("vz", vel[:, 2].copy())
     frame = molpy.Frame()
+    frame.meta["units_style"] = "metal"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(_SIDE * spacing)
     return frame
@@ -238,6 +239,7 @@ class TestTosiFumiTable:
         )
         atoms.insert("type_id", np.array([ti, tj], dtype=np.uint32))
         frame = molpy.Frame()
+        frame.meta["units_style"] = "metal"
         frame["atoms"] = atoms
         frame.box = molpy.Box.cube(20.0)
         sim = MD(units="metal")
@@ -289,6 +291,7 @@ class TestPairBornCutoffTreatment:
         atoms.insert("atomic_number", np.full(2, 18, dtype=np.uint32))
         atoms.insert("type_id", np.full(2, 1, dtype=np.uint32))
         frame = molpy.Frame()
+        frame.meta["units_style"] = "metal"
         frame["atoms"] = atoms
         frame.box = molpy.Box.cube(self._BOX)
         sim = MD(units="metal")
@@ -371,6 +374,7 @@ class TestConfigurationalTemperature:
         atoms.insert("atomic_number", np.array([11, 17], dtype=np.uint32))
         atoms.insert("type_id", np.array([_TYPE_NA, _TYPE_CL], dtype=np.uint32))
         frame = molpy.Frame()
+        frame.meta["units_style"] = "metal"
         frame["atoms"] = atoms
         frame.box = molpy.Box.cube(20.0)
         observer = ConfigurationalTemperature()

@@ -28,6 +28,11 @@ namespace {
 // Three atoms, one bond, a cubic box -- all per-atom result columns set.
 ::rust::Box<molrs::FrameRef> make_full_frame() {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta;
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
 
     const std::vector<double> x = {0.0, 1.5, 3.0};
     const std::vector<double> y = {0.1, 1.6, 3.1};
@@ -156,6 +161,11 @@ TEST(CudaMaterialize, RoundTrip) {
 
 TEST(CudaMaterialize, MissingPositionsThrows) {
     auto fr = molrs::frame_new();
+    molrs::KeyedMetaValue unit_meta;
+    unit_meta.key = "units_style";
+    unit_meta.dtype = molrs::MetaType::String;
+    unit_meta.string_value = "lj";
+    molrs::frame_set_meta(*fr, std::move(unit_meta));
     const std::vector<std::int32_t> type = {1, 2};
     const std::vector<std::uint64_t> z_num(type.begin(), type.end());
     molrs::frame_set_column_u64(

@@ -1,6 +1,7 @@
 /// @file cpu/dynamics/fix_oscillating_efield.h
 /// @brief CPU oscillating (AC) uniform external electric field — LAMMPS variable `fix efield`.
 #pragma once
+#include "atomiverse/core/unit_system.h"
 
 #include "atomiverse/cpu/component/timestep_protocol.h"
 #include <cmath>
@@ -33,12 +34,10 @@ namespace md {
 ///     \mathbf{r}_i^{\mathrm{u}}
 ///   \]
 ///
-/// with \(\mathbf{E}_0\) in the run's LAMMPS field unit (V/Å for real and
-/// metal), \(T\) and \(\Delta t\) in the style's time unit, \(\varphi\) in
-/// rad, \(q\) in the style's charge unit and `qe2f` the run's
-/// (`ctx.runtime.units.qe2f`), so \(\mathbf F\), \(U\) are in the style's
-/// force and energy units. Unwrapped coordinates use orthorhombic image flags
-/// (same foothold as `FixEfield`; triclinic throws).
+/// Field amplitudes, period, timestep, charge, force and energy follow the
+/// run's unit profile; the phase \(\varphi\) is in rad. `qe2f` is the run's
+/// `units.electric_field` conversion, prepared in `build()`. Unwrapped
+/// coordinates use orthorhombic image flags (triclinic throws).
 ///
 /// Instantaneous energy uses the constant-path formula with \(\mathbf{E}\)
 /// frozen at the step value (LAMMPS treats variable fields as constant over
@@ -52,7 +51,7 @@ namespace md {
 /// equal-style expression engine beyond AC cosine.
 class FixOscillatingEfield : public cpu::Bias, public cpu::TimestepConsumer {
   public:
-    /// @brief Consume the enclosing integrator's timestep [style time].
+    /// @brief Consume the enclosing integrator's timestep [run time].
     cpu::TimestepConsumer* as_timestep_consumer() override { return this; }
     bool timestep_required() const override { return false; }
     void set_timestep(double timestep) override {
@@ -62,24 +61,23 @@ class FixOscillatingEfield : public cpu::Bias, public cpu::TimestepConsumer {
         dt = timestep;
     }
 
-    /// @param Ex0 Amplitude of \(E_x\) [style field unit].
-    /// @param Ey0 Amplitude of \(E_y\) [style field unit].
-    /// @param Ez0 Amplitude of \(E_z\) [style field unit].
-    /// @param period Oscillation period \(T\) [style time] (must be \(> 0\)).
-    /// @param dt Timestep \(\Delta t\) [style time] (must be \(> 0\));
-    ///           \(t = n\cdot\Delta t\).
+    /// @param Ex0 Amplitude of \(E_x\) [run electric field].
+    /// @param Ey0 Amplitude of \(E_y\) [run electric field].
+    /// @param Ez0 Amplitude of \(E_z\) [run electric field].
+    /// @param period Oscillation period \(T\) [run time] (must be \(> 0\)).
+    /// @param dt Timestep \(\Delta t\) [run time] (must be \(> 0\)); \(t = n\cdot\Delta t\).
     /// @param phase Phase offset \(\varphi\) [rad] (default 0).
     FixOscillatingEfield(double Ex0, double Ey0, double Ez0, double period,
                          double dt, double phase = 0.0) noexcept
         : Ex0(Ex0), Ey0(Ey0), Ez0(Ez0), period(period), dt(dt), phase(phase) {}
 
-    /// Amplitudes [style field unit] — public members (no Config bag).
+    /// Amplitudes [run electric field] — public members (no Config bag).
     double Ex0 = 0.0;
     double Ey0 = 0.0;
     double Ez0 = 0.0;
-    /// Period \(T\) [style time].
+    /// Period \(T\) [run time].
     double period = 1.0;
-    /// Timestep \(\Delta t\) [style time] used to form \(t = n\cdot\Delta t\).
+    /// Timestep \(\Delta t\) [run time] used to form \(t = n\cdot\Delta t\).
     double dt = 1.0;
     /// Phase \(\varphi\) [rad].
     double phase = 0.0;
@@ -90,33 +88,35 @@ class FixOscillatingEfield : public cpu::Bias, public cpu::TimestepConsumer {
         return {ATV::make_binding(ATV::md::Phase::post_force, +100)};
     }
 
+    void build(const BuildContext& ctx) override {
+        field_units_ = ctx.runtime.units.electric_field;
+    }
     void initialize_forces(const LaunchContext& ctx) override { launch(ctx); }
     void launch(const cpu::LaunchContext& ctx) override;
 
-    /// @brief Instantaneous \(E_x(n)\) [style field unit] at MD step \(n\).
+    /// @brief Instantaneous \(E_x(n)\) [run electric field] at MD step \(n\).
     double field_x(BigInt step) const noexcept {
         return Ex0 * std::cos(omega_t(step));
     }
-    /// @brief Instantaneous \(E_y(n)\) [style field unit] at MD step \(n\).
+    /// @brief Instantaneous \(E_y(n)\) [run electric field] at MD step \(n\).
     double field_y(BigInt step) const noexcept {
         return Ey0 * std::cos(omega_t(step));
     }
-    /// @brief Instantaneous \(E_z(n)\) [style field unit] at MD step \(n\).
+    /// @brief Instantaneous \(E_z(n)\) [run electric field] at MD step \(n\).
     double field_z(BigInt step) const noexcept {
         return Ez0 * std::cos(omega_t(step));
     }
 
-    /// @return Last field energy contribution written this launch [style
-    ///         energy].
+    /// @return Last field energy contribution written this launch [run energy].
     double last_energy() const noexcept { return last_u_; }
 
-    /// @return Last instantaneous field components applied [style field
-    ///         unit].
+    /// @return Last instantaneous field components applied [run electric field].
     double last_Ex() const noexcept { return last_Ex_; }
     double last_Ey() const noexcept { return last_Ey_; }
     double last_Ez() const noexcept { return last_Ez_; }
 
   private:
+    units::Conversion field_units_;
     /// \(2\pi t/T + \varphi\) with \(t = n\cdot\Delta t\).
     double omega_t(BigInt step) const noexcept {
         const double t = static_cast<double>(step) * dt;

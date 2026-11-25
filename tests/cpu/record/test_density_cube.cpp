@@ -99,6 +99,7 @@ TEST(DensityCubeTest, H2DensityIntegratesToTwoElectrons) {
     std::filesystem::remove(tmp, ec);
 
     cpu::minimizer::Minimize opt;
+    opt.set_units("metal");
     opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});
     opt.add_criterion(cpu::ForceConverged{/*ftol=*/0.5});
     opt.on(minimizer::Phase::force).add(std::move(scf));
@@ -134,6 +135,7 @@ TEST(OrbitalCubeTest, WritesOrbitalFileForHomoH2) {
     // H2 RHF: 2 electrons → n_alpha = 1 → HOMO is orbital 0.
     constexpr int homo_idx = 0;
     cpu::minimizer::Minimize opt;
+    opt.set_units("metal");
     opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.01, 10});
     opt.add_criterion(cpu::ForceConverged{/*ftol=*/0.5});
     opt.on(minimizer::Phase::force).add(std::move(scf));
@@ -216,6 +218,7 @@ std::vector<std::array<double, 3>> h2_after(int iters) {
     cpu::Frame frame = make_stretched_h2();
     if (iters > 0) {
         cpu::minimizer::Minimize opt;
+        opt.set_units("metal");
         mount_h2(opt, cpu::scf::RHF{cpu::scf::BasisSet::STO3G});
         opt.build();
         opt.run(frame, iters);
@@ -282,6 +285,7 @@ TEST(CubeWriterSteps, DensityEarlyStopEndsOnTheFinalState) {
     {
         cpu::Frame frame = make_stretched_h2();
         cpu::minimizer::Minimize opt;
+        opt.set_units("metal");
         mount_h2(opt, std::move(scf));
         opt.add_criterion(StopAfter{3});
         opt.on(minimizer::Phase::end_of_step).add_ref(writer);
@@ -309,6 +313,7 @@ TEST(CubeWriterSteps, OrbitalBudgetExhaustionWritesOnStrideOnly) {
     {
         cpu::Frame frame = make_stretched_h2();
         cpu::minimizer::Minimize opt;
+        opt.set_units("metal");
         mount_h2(opt, std::move(scf));
         opt.on(minimizer::Phase::end_of_step).add_ref(writer);
         opt.build();

@@ -111,8 +111,12 @@ void Thermochem::launch(const cpu::LaunchContext& ctx) {
     // ── Constants (PySCF `thermo()` literal forms) ──────────────────────
     const double kB = nist::BOLTZMANN; // J/K
     const double h = nist::PLANCK;     // J*s
-    const double T = temperature;      // K
-    const double P = pressure;         // Pa
+    const auto& profile = ctx.runtime.units.physical();
+    const auto si = units::PhysicalUnits::from_style(units::Style::si);
+    const double T =
+        units::Conversion(profile.temperature(), si.temperature())(temperature);
+    const double P =
+        units::Conversion(profile.pressure(), si.pressure())(pressure);
     const int sigma = symmetry_number;
     // R_Eh = kB * N_A / (HARTREE2J * N_A) = kB / HARTREE2J  [Eh/K].
     const double R_Eh =

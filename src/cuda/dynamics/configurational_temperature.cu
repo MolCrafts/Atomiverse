@@ -223,7 +223,7 @@ void ConfigurationalTemperature::on_retrieve(const BuildContext& ctx) {
     double host[kStats] = {};
     ATV_CUDA_CHECK(
         cudaMemcpy(host, stats_, sizeof(host), cudaMemcpyDeviceToHost));
-    const double kB = ctx.runtime.units.boltz;
+    const double kB = ctx.runtime.units.boltzmann_constant();
     samples_ = static_cast<long long>(host[4]);
     last_ = mean_ = ConfigurationalSample{};
     if (samples_ == 0)

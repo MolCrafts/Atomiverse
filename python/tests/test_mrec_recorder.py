@@ -68,6 +68,7 @@ def _argon_frame() -> "molpy.Frame":
     atoms.insert("mass", np.full(n, 39.948, dtype=np.float64))
     atoms.insert("atomic_number", np.full(n, 18, dtype=np.uint32))
     frame = molpy.Frame()
+    frame.meta["units_style"] = "lj"
     frame["atoms"] = atoms
     frame.box = molpy.Box.cube(20.0)
     return frame
@@ -195,9 +196,9 @@ class TestMrecRecorderCpu:
         assert "error" not in status
 
 
-#: HARD-CODED GOLDEN — LAMMPS ``units metal`` (src/update.cpp): m·v² →
+#: HARD-CODED GOLDEN — ``units metal`` at the CODATA 2018 values: m·v² →
 #: energy [eV per g/mol·Å²/ps²].
-_MVV2E_METAL: float = 1.0364269e-4
+_MVV2E_METAL: float = 1.0364269656262175e-4
 
 
 @pytest.mark.parametrize("barostat", [False, True], ids=["nve", "berendsen"])
@@ -215,6 +216,7 @@ def test_recorded_kinetic_stress_is_that_of_the_recorded_velocities(
         pytest.skip("needs ATV_BUILD_CUDA")
     path = tmp_path / f"{device}.mrec"
     frame = _argon_frame()
+    frame.meta["units_style"] = "metal"
     atoms = frame["atoms"]
     atoms["vx"] = 2.0 * np.sin(3.0 * np.arange(64.0))  # [Å/ps], ~300 K
     atoms["vy"] = 2.0 * np.cos(5.0 * np.arange(64.0))

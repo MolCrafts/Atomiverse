@@ -62,7 +62,7 @@ int run() {
     gfn0.with_forces = true;
 
     // Empty recorder paths: do not litter CWD with frequencies.tsv / mode_*.xyz.
-    cpu::vib::Hessian hess(298.15, 101325.0, 1, 1, "", "");
+    cpu::vib::Hessian hess(298.15, 1.01325, 1, 1, "", "");
     hess.on(vib::Phase::force).add(std::move(gfn0));
     hess.build();
     const auto t0 = std::chrono::steady_clock::now();

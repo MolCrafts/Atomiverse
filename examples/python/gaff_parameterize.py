@@ -27,6 +27,7 @@ def main() -> None:
 
     # MOL2 names atoms C1, H7, ... from the element when the frame has none.
     frame = typed.to_frame()
+    frame.meta["units_style"] = "real"
     frame["atoms"].insert("charge", charges)
     mp.io.write_mol2(Path("ethanol.mol2"), frame)
     mp.io.amber.AmberFrcmodWriter().write(Path("ethanol.frcmod"), forcefield)

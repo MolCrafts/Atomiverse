@@ -337,7 +337,8 @@ struct MinimizeHandle {
                                     conv, driver.units().style}};
         auto frame = borrow_molpy_frame(frame_obj);
         require_charge_column(*frame);
-        cpu::Frame work = cpu::from_molpy(*frame);
+        cpu::Frame work =
+            cpu::from_molpy_for_run(*frame, driver.units().name());
         cpu::task::DispatchResult dispatched{cpu::Frame(0), {}};
         {
             nb::gil_scoped_release release;

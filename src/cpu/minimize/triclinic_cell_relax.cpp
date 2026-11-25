@@ -44,7 +44,8 @@ void TriclinicCellRelax::launch(const LaunchContext& ctx) {
         // unit, like B).
         const double B = units::resolve_style_default(
             bulk_mod, ctx.runtime.units.ev_per_cubic_angstrom());
-        const double invVB = alpha0 * ctx.runtime.units.nktv2p / (B * V);
+        const double invVB =
+            alpha0 * ctx.runtime.units.pressure.scale() / (B * V);
         // Full symmetric strain from Voigt
         eps_(0, 0) = clamp(invVB * s[0]);
         eps_(1, 1) = clamp(invVB * s[1]);

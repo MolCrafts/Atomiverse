@@ -65,8 +65,9 @@ int run() try {
     sim.run(frame, 1);
 
     const int N = n * n * n;
-    const double e_expected =
-        -0.5 * N * kMadelungNaCl * ATV::units::UnitSystem::lj().qqrd2e() / d;
+    const double e_expected = -0.5 * N * kMadelungNaCl
+                              * ATV::units::UnitSystem::lj().coulomb_constant()
+                              / d;
     const double e = static_cast<double>(frame.meta.get(kEnergy));
     const double error = std::abs(e / e_expected - 1.0);
     std::printf(

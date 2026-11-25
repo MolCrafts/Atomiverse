@@ -87,7 +87,8 @@ bool check(const char* name, double got, double want, double tol) {
 int run() {
     constexpr double T = 300.0;
     constexpr double dPsi = 1.0;
-    const double kPinCDiff = kPinVarQ / (units::UnitSystem::lj().boltz * T);
+    const double kPinCDiff =
+        kPinVarQ / (units::UnitSystem::lj().boltzmann_constant() * T);
 
     auto frame = make_parallel_plate();
     cpu::CapacitanceChargeFluctuation obs({1, 2}, T, dPsi);

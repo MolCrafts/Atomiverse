@@ -4,6 +4,7 @@
 ///        owned extension columns riding grow/copy_row/pack, the typed meta
 ///        region, and the launch-boundary resolution discipline.
 
+#include "atomiverse/cpu/units/frame.h"
 #include <gtest/gtest.h>
 
 #include <set>
@@ -340,4 +341,25 @@ TEST(FrameRegistry, MetaRefStalesAfterMetaInsert) {
     auto e2 = frame.meta.ref(kEnergy);
     EXPECT_FALSE(e2.stale());
     EXPECT_EQ(e2.get(), 1.25);
+}
+
+TEST(FrameRegistry, UnitContractSurvivesCopiesAndStructureClones) {
+    ATV::cpu::Frame frame(1);
+    EXPECT_THROW(ATV::units::frame_style(frame), std::invalid_argument);
+    ATV::units::annotate(frame, "real");
+    EXPECT_EQ(ATV::units::frame_style(frame), ATV::units::Style::real);
+    EXPECT_NO_THROW(
+        ATV::units::require_frame_units(frame, ATV::units::Style::real));
+    EXPECT_THROW(
+        ATV::units::require_frame_units(frame, ATV::units::Style::metal),
+        std::invalid_argument);
+    EXPECT_THROW(ATV::units::annotate(frame, "unknown"), std::invalid_argument);
+    EXPECT_EQ(ATV::units::frame_style(frame), ATV::units::Style::real);
+    auto copy = frame;
+    auto clone = frame.clone_structure(3);
+    EXPECT_EQ(ATV::units::frame_style(copy), ATV::units::Style::real);
+    EXPECT_EQ(ATV::units::frame_style(clone), ATV::units::Style::real);
+    ATV::units::annotate(frame, "metal");
+    EXPECT_EQ(ATV::units::frame_style(frame), ATV::units::Style::metal);
+    EXPECT_EQ(ATV::units::frame_style(copy), ATV::units::Style::real);
 }

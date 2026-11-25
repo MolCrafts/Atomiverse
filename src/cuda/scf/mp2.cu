@@ -1,3 +1,4 @@
+#include "atomiverse/cpu/units/frame.h"
 /// @file cuda/scf/mp2.cu
 /// @brief Device-only RHF-to-RMP2 handoff, occupied-tiled AO-to-MO and energies.
 #ifdef ATV_HAS_HF
@@ -395,6 +396,10 @@ double MP2::retrieve_result_(cuda::Context& ctx) {
 }
 
 cpu::scf::MP2Result MP2::solve_(cpu::Frame& frame, bool write) {
+    if (units::needs_conversion(frame, "electronic"))
+        return units::evaluate_in(frame, "electronic", [&](cpu::Frame& native) {
+            return solve_(native, write);
+        });
     if (!mf_)
         throw std::logic_error("cuda::scf::MP2: moved-from reference");
     mf_->energy_available_ = false;

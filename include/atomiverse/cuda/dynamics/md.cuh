@@ -156,6 +156,12 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     ///        on the device, retrieved D2H, updated in place.
     /// @param n_steps Step budget [dimensionless step count].
     BigInt run(cpu::Frame& frame, BigInt n_steps) {
+        if (live_ && frame_ptr_ == &frame
+            && this->units_.style == units::Style::lj
+            && units::reduced_reference(frame)
+                   != this->backend_->context().units.reference())
+            throw std::invalid_argument(
+                "units: LJ reference changed during a continued run");
         if (n_steps < 0)
             throw std::invalid_argument("MD step budget must be nonnegative");
         if (live_ && frame_ptr_ != &frame) {
@@ -379,7 +385,11 @@ class MD : public cuda::Driver<ATV::md::Phase> {
     /// different clocks throw naming both; a consumer that requires a dt
     /// throws when nothing provides one; an unusable dt (not finite, <= 0) is
     /// refused before the first push.
-    void negotiate_timestep_() {
+    void prepare_clocks_(const units::UnitSystem& prepared) override {
+        negotiate_timestep_(&prepared);
+    }
+
+    void negotiate_timestep_(const units::UnitSystem* prepared = nullptr) {
         struct PublishedDt {
             std::string owner;
             double dt_fs;
@@ -433,7 +443,17 @@ class MD : public cuda::Driver<ATV::md::Phase> {
                           "component implements TimestepProvider");
                 continue;
             }
-            consumer->set_timestep(published[0].dt_fs);
+            const auto& clock = prepared ? *prepared : this->units_;
+            if (!prepared && clock.style == units::Style::lj
+                && consumer->timestep_in_femtoseconds())
+                continue;
+            if (consumer->timestep_in_femtoseconds()
+                && clock.style == units::Style::lj)
+                (void)clock.physical();
+            consumer->set_timestep(
+                consumer->timestep_in_femtoseconds()
+                    ? clock.time_from_femtoseconds.inverse(published[0].dt_fs)
+                    : published[0].dt_fs);
         }
     }
 

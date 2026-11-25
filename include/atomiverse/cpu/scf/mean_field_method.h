@@ -173,6 +173,10 @@ class MeanFieldMethod : public cpu::Driver<ATV::scf::Phase>,
                         public cpu::QmEngine,
                         public cpu::EmbeddingEngine {
   public:
+    bool timestep_in_femtoseconds() const override { return true; }
+
+    bool uses_electronic_frame() const override { return true; }
+
     /// @brief Set OpenMP threads for both integral setup and SCF stages.
     /// @param n Positive thread count; zero keeps the runtime default.
     void set_threads(int n);

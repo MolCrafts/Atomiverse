@@ -85,12 +85,13 @@ void VelocityVerlet::launch(const LaunchContext& ctx) {
             a.x, a.y, a.z, a.x_corr, a.y_corr, a.z_corr, a.vx, a.vy, a.vz, a.fx,
             a.fy, a.fz, a.mass, a.image, frame.force_fault, a.tag,
             ctx.runtime.device_step, ctx.step, ctx.runtime.host_box,
-            mixed_t(dt_), mixed_t(ctx.runtime.units.ftm2v), n);
+            mixed_t(dt_), mixed_t(ctx.runtime.units.velocity_impulse.scale()),
+            n);
     } else {
         final_integrate<<<grid, block, 0, stream>>>(
             a.vx, a.vy, a.vz, a.fx, a.fy, a.fz, a.mass, frame.force_fault,
             a.tag, ctx.runtime.device_step, ctx.step, mixed_t(dt_),
-            mixed_t(ctx.runtime.units.ftm2v), n);
+            mixed_t(ctx.runtime.units.velocity_impulse.scale()), n);
     }
 }
 

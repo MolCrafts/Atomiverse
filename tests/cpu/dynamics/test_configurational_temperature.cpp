@@ -120,8 +120,8 @@ Result evaluate_terms(const std::vector<double>& pos, Terms terms,
     r.h = a.hessian_force();
     r.lap = a.laplacian();
     r.g = a.laplacian_gradient();
-    a.temperature_gradient(units::from_style(units::Style::metal).boltz,
-                           r.grad_t);
+    a.temperature_gradient(
+        units::from_style(units::Style::metal).boltzmann_constant(), r.grad_t);
     r.sample = observer.last();
     return r;
 }
@@ -265,7 +265,8 @@ TEST(Curvature, EwaldCoulombLaplacianIsTheUniformBackgroundConstant) {
     const Result r = evaluate_terms(positions(), Terms::Coulomb);
     const units::UnitSystem metal = units::from_style(units::Style::metal);
     const double volume = std::pow(kSide * kSpacing, 3);
-    const double want = -4.0 * units::pi * metal.qqrd2e() * kN / volume;
+    const double want =
+        -4.0 * units::pi * metal.coulomb_constant() * kN / volume;
     EXPECT_NEAR(r.sample.laplacian, want, 1e-4 * std::fabs(want));
 }
 
@@ -390,7 +391,8 @@ TEST(ConfigurationalTemperature, RunAverageIsTheRatioOfTheMeans) {
     cpu::md::GearPC gear{0.001};
     sim.set_integrator_ref(gear);
     sim.build();
-    const double kB = units::from_style(units::Style::metal).boltz;
+    const double kB =
+        units::from_style(units::Style::metal).boltzmann_constant();
     for (const int steps : {30, 10}) {
         SCOPED_TRACE("run of " + std::to_string(steps) + " steps");
         sums.reset();

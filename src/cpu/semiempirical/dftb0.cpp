@@ -3,6 +3,8 @@
 /// Nuclear forces are the closed-form non-SCC gradient (Hellmann–Feynman +
 /// Pulay + repulsive). There is no SCC shift and no γ term.
 #include "atomiverse/cpu/semiempirical/dftb0.h"
+#include "atomiverse/cpu/driver/runtime.h"
+#include "atomiverse/cpu/units/frame.h"
 
 #include <algorithm>
 #include <array>
@@ -316,6 +318,11 @@ DFTB0::DFTB0(DFTB0&&) noexcept = default;
 DFTB0& DFTB0::operator=(DFTB0&&) noexcept = default;
 
 void DFTB0::prepare(const Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        prepare(native);
+        return;
+    }
     if (!workspace_ || !workspace_->matches(frame))
         workspace_ = std::make_unique<Workspace>(frame);
 }
@@ -323,6 +330,11 @@ void DFTB0::prepare(const Frame& frame) {
 void DFTB0::build(const BuildContext& ctx) { prepare(ctx.frame); }
 
 void DFTB0::evaluate(const Frame& frame, bool want_forces) {
+    if (units::needs_conversion(frame, "electronic")) {
+        auto native = units::convert(frame, "electronic");
+        evaluate(native, want_forces);
+        return;
+    }
     energy_ = std::numeric_limits<double>::quiet_NaN();
     prepare(frame);
     workspace_->solve(frame, want_forces);
@@ -350,16 +362,37 @@ void DFTB0::publish(Frame& frame, bool want_forces, bool accumulate) const {
 void DFTB0::run(const Frame& frame) { evaluate(frame, false); }
 
 void DFTB0::run(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](Frame& native) { run(native); });
+        return;
+    }
     evaluate(frame, false);
     publish(frame, false, false);
 }
 
 void DFTB0::forces(Frame& frame) {
+    if (units::needs_conversion(frame, "electronic")) {
+        units::evaluate_in(frame, "electronic",
+                           [&](Frame& native) { forces(native); });
+        return;
+    }
     evaluate(frame, true);
     publish(frame, true, false);
 }
 
 void DFTB0::launch(const LaunchContext& ctx) {
+    if (units::needs_conversion(ctx.frame, "electronic")) {
+        units::evaluate_in(ctx.frame, "electronic", [&](Frame& native) {
+            std::optional<Runtime::ScopedFrame> binding;
+            if (ctx.runtime.exec.runtime)
+                binding.emplace(*ctx.runtime.exec.runtime, native);
+            launch({ctx.runtime, native, ctx.stage, ctx.step,
+                    ctx.forces_requested, ctx.stress_requested});
+        });
+        return;
+    }
+
     evaluate(ctx.frame, ctx.forces_requested);
     publish(ctx.frame, ctx.forces_requested, true);
 }

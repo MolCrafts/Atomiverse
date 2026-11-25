@@ -63,6 +63,7 @@ int main() {
     ATV_INFO("=== Atomiverse: AM1 water (energy, ΔHf, forces, Minimize) ===");
 
     auto frame = make_water();
+    units::annotate(frame, "metal");
 
     // ── 1. Low-level solver: energy + heat of formation ───────────────
     {
@@ -78,6 +79,7 @@ int main() {
     // ── 2. Evaluate + forces (public Component path) ──────────────────
     {
         cpu::Evaluate eval;
+        eval.set_units("metal");
         eval.on(evaluate::Phase::evaluate).add(cpu::semiempirical::AM1{});
         eval.build();
         eval.run(frame);
@@ -92,6 +94,7 @@ int main() {
         const double f0 = max_force(frame);
 
         cpu::minimizer::Minimize opt;
+        opt.set_units("metal");
         opt.set_optimizer(cpu::minimizer::LBFGS{5, 0.02, 8});
         opt.add_criterion(cpu::ForceConverged{0.5, 0.3, 0.5, 0.3, 1e-3});
         opt.on(minimizer::Phase::force).add(cpu::semiempirical::AM1{});
@@ -100,6 +103,7 @@ int main() {
 
         // Re-evaluate for final E/F on Frame.
         cpu::Evaluate eval;
+        eval.set_units("metal");
         eval.on(evaluate::Phase::evaluate).add(cpu::semiempirical::AM1{});
         eval.build();
         eval.run(frame);

@@ -157,7 +157,8 @@ System load(const std::string& style) {
     System s;
     s.style = style;
     s.u = units::from_style(style);
-    s.frame = cpu::load_lammps_data((data_dir(style) / "data.lmp").string());
+    s.frame =
+        cpu::load_lammps_data((data_dir(style) / "data.lmp").string(), style);
     s.ff = cpu::load_lammps_coeffs((data_dir(style) / "system.ff").string());
     return s;
 }
@@ -252,7 +253,7 @@ std::array<double, 6> pressure(const cpu::Frame& f,
     const double V = f.box.volume();
     for (int a = 0; a < 6; ++a)
         p[a] = (f.meta.get(kStress)[a] + f.meta.get(kStressKinetic)[a]) / V
-               * u.nktv2p;
+               * u.pressure.scale();
     return p;
 }
 
@@ -299,7 +300,7 @@ state_error(const cpu::Frame& f,
         vmax = std::max({vmax, std::fabs(r.at("vx")), std::fabs(r.at("vy")),
                          std::fabs(r.at("vz"))});
     }
-    return {dx_max / u.angstrom, dv_max / vmax};
+    return {dx_max / u.length_from_angstrom(1.), dv_max / vmax};
 }
 
 // LAMMPS `pair_modify table 0` evaluates erfc with the Abramowitz-Stegun
@@ -331,11 +332,32 @@ TEST_P(LammpsUnitsParity, SinglePointMatchesLammpsRun0) {
               1e-12);
     EXPECT_LT(rel(f.meta.get(kEnergyImproper), th.at("E_impro"), escale),
               1e-12);
-    // mvv2e and boltz: kinetic energy and temperature (dof 3N - 3).
-    EXPECT_LT(rel(f.meta.get(kKinetic), th.at("KinEng"), 0.0), 1e-12);
-    const double ndof = 3.0 * f.nlocal() - 3.0;
-    EXPECT_LT(rel(2.0 * f.meta.get(kKinetic) / (ndof * s.u.boltz),
-                  th.at("Temp"), 0.0),
+    // Oracle metadata uses historical rounded constants. Translate its
+    // kinetic/temperature channels to the current physical definitions;
+    // retain strict numerical comparisons after that explicit adjustment.
+    double old_mass_v2 = 1., old_boltz = 1.;
+    if (s.style == "real") {
+        old_mass_v2 = 48.88821291 * 48.88821291;
+        old_boltz = .0019872067;
+    }
+    if (s.style == "metal") {
+        old_mass_v2 = 1.0364269e-4;
+        old_boltz = 8.617343e-5;
+    }
+    if (s.style == "si")
+        old_boltz = 1.3806504e-23;
+    if (s.style == "electron") {
+        old_mass_v2 = 1.06657236;
+        old_boltz = 3.16681534e-6;
+    }
+    const double kinetic_ratio = s.u.kinetic_energy(1.) / old_mass_v2;
+    EXPECT_LT(rel(f.meta.get(kKinetic), th.at("KinEng") * kinetic_ratio, 0.),
+              1e-12);
+    const double ndof = 3. * f.nlocal() - 3.;
+    EXPECT_LT(rel(2. * f.meta.get(kKinetic) / (ndof * s.u.boltzmann_constant()),
+                  th.at("Temp") * kinetic_ratio * old_boltz
+                      / s.u.boltzmann_constant(),
+                  0.),
               1e-10);
     // nktv2p: the pressure tensor in the style's pressure unit.
     const auto p = pressure(f, s.u);
@@ -402,11 +424,12 @@ TEST_P(LammpsUnitsParity, NveTrajectoryMatchesLammps) {
     expect_trajectory(GetParam(), "nve", {5e-6, 1e-6, 1e-5, 0});
 }
 
-/// LAMMPS `force->qe2f` of the charged styles (src/update.cpp), written
-/// out here rather than read back from the engine.
-double lammps_qe2f(const std::string& style) {
+/// Force per charge and field of the charged styles at the CODATA values
+/// (real: 1 eV = e N_A / 4184 J kcal/mol; LAMMPS rounds it to 23.060549),
+/// written out here rather than read back from the engine.
+double field_to_force(const std::string& style) {
     if (style == "real")
-        return 23.060549;
+        return 1.602176634e-19 * 6.02214076e23 / 4184.0;
     if (style == "metal" || style == "lj")
         return 1.0;
     throw std::invalid_argument("no efield deck for style " + style);
@@ -416,7 +439,7 @@ class LammpsUnitsEfield : public testing::TestWithParam<std::string> {};
 
 TEST_P(LammpsUnitsEfield, FieldForceIsChargeTimesFieldTimesQe2f) {
     // Closed form: the field adds exactly q E qe2f to every atom's force
-    // (real: 23.060549 kcal/mol/Å per e·V/Å; metal: 1 eV/Å per e·V/Å).
+    // (real: 23.0605478 kcal/mol/Å per e·V/Å; metal: 1 eV/Å per e·V/Å).
 #ifndef ATV_HAS_KSPACE
     GTEST_SKIP() << "PPPM needs ATV_BUILD_KSPACE";
 #endif
@@ -427,7 +450,7 @@ TEST_P(LammpsUnitsEfield, FieldForceIsChargeTimesFieldTimesQe2f) {
         deck_line(data_dir(s.style) / "in.efield_single.lmp", "fix", "2");
     const double E[3] = {std::stod(t.at(4)), std::stod(t.at(5)),
                          std::stod(t.at(6))};
-    const double qe2f = lammps_qe2f(s.style);
+    const double qe2f = field_to_force(s.style);
     const auto q = field.span(kAtom_charge);
     const AccReal* F1[3] = {field.span(kAtom_fx), field.span(kAtom_fy),
                             field.span(kAtom_fz)};

@@ -53,7 +53,7 @@ void Brownian::launch(const cpu::LaunchContext& ctx) {
 
     // D [A^2/fs] / kT [eV] * F [eV/A] * dt [fs] is a displacement [A].
     const double mobility_dt =
-        D_ * dt_ / (ctx.runtime.units.boltz * temperature_);
+        D_ * dt_ / (ctx.runtime.units.boltzmann_constant() * temperature_);
     const double noise = std::sqrt(2.0 * D_ * dt_);
     const std::uint64_t base =
         seed_ * 0x9E3779B97F4A7C15ULL

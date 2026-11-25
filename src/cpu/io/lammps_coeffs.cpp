@@ -368,3 +368,43 @@ LammpsCoeffs load_lammps_coeffs(const std::string& path) {
 
 } // namespace cpu
 } // namespace ATV
+
+namespace ATV::units {
+cpu::LammpsCoeffs convert(cpu::LammpsCoeffs out, const PhysicalUnits& source,
+                          const PhysicalUnits& target) {
+    const Conversion energy(source.energy(), target.energy());
+    const Conversion length(source.length(), target.length());
+    const Conversion stiffness(
+        source.energy() / (source.length() * source.length()),
+        target.energy() / (target.length() * target.length()));
+    out.pair_cut_lj = length(out.pair_cut_lj);
+    out.pair_cut_coul = length(out.pair_cut_coul);
+    for (auto& row : out.lj) {
+        row.epsilon = energy(row.epsilon);
+        row.sigma = length(row.sigma);
+        if (row.cutoff)
+            row.cutoff = length(*row.cutoff);
+    }
+    for (auto& value : out.bond_K)
+        value = stiffness(value);
+    for (auto& value : out.bond_r0)
+        value = length(value);
+    for (auto* values : {&out.angle_K, &out.dihedral_charmm_K, &out.improper_K})
+        for (auto& value : *values)
+            value = energy(value);
+    for (auto& row : out.dihedral_multi_Cn)
+        for (auto& value : row)
+            value = energy(value);
+    for (auto& row : out.dihedral_fourier)
+        for (auto& term : row)
+            term.K = energy(term.K);
+    return out;
+}
+} // namespace ATV::units
+namespace ATV::cpu {
+LammpsCoeffs load_lammps_coeffs(const std::string& path,
+                                const units::PhysicalUnits& source,
+                                const units::PhysicalUnits& target) {
+    return units::convert(load_lammps_coeffs(path), source, target);
+}
+} // namespace ATV::cpu

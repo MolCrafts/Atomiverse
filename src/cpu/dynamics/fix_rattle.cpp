@@ -512,8 +512,9 @@ void DistanceConstraints::solve_positions_(const cpu::LaunchContext& ctx) {
     const double tol = tol_;
     const int max_iter = max_iter_;
     const int n_clusters = static_cast<int>(local_offset_.size()) - 1;
-    const double virial_factor = (velocity_projection_ ? 2.0 : 1.0)
-                                 / (dt_ * dt_ * ctx.runtime.units.ftm2v);
+    const double virial_factor =
+        (velocity_projection_ ? 2.0 : 1.0)
+        / ctx.runtime.units.velocity_impulse(dt_ * dt_);
     const int n_owned = f.nlocal();
     double w0 = 0, w1 = 0, w2 = 0, w3 = 0, w4 = 0, w5 = 0;
     int most_iters = 0;
@@ -685,7 +686,8 @@ void DistanceConstraints::initial_virial_(const cpu::LaunchContext& ctx) {
                 if (!(r2 > 0))
                     throw std::runtime_error(
                         "distance constraints: coincident constrained atoms");
-                const double target = rv2 / ctx.runtime.units.ftm2v;
+                const double target =
+                    ctx.runtime.units.velocity_impulse.inverse(rv2);
                 const double residual = ra + target;
                 worst = std::max(worst, std::abs(residual)
                                             / std::max(1.0, std::abs(target)));
@@ -736,7 +738,7 @@ void DistanceConstraints::solve_shake_forces_(const cpu::LaunchContext& ctx,
     // At startup v is a full-step velocity; during post_force it is the
     // half-step velocity. Predict the next drift, as LAMMPS fix shake does.
     const double dtfsq =
-        (initial ? 0.5 : 1.0) * dt_ * dt_ * ctx.runtime.units.ftm2v;
+        (initial ? 0.5 : 1.0) * ctx.runtime.units.velocity_impulse(dt_ * dt_);
     std::vector<std::array<double, 3>> predicted(f.n_total());
     std::vector<double> lambda(local_i_.size(), 0.0);
     for (std::size_t k = 0; k < local_i_.size(); ++k)
