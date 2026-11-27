@@ -8,8 +8,8 @@
 ///   3. Agrees with SPME (KSpacePME) on the same system
 ///   4. Finite-difference forces F = −∇E
 ///   5. α-independence of total energy (method identity)
-///   6. Pure mesh-arm selector arithmetic (pppm_fft_ranks /
-///      pppm_select_mesh_arm) — no MPI, no FFT, no env
+///   6. Pure mesh-arm selector policy (pppm_select_mesh_arm) — no MPI, no
+///      FFT, no env
 ///   7. Energy and forces equal a literal LAMMPS make_rho / fieldforce_ik
 ///      reference (tests/core/pppm_lammps_reference.h) for odd and even
 ///      orders: the centred charge-assignment stencil
@@ -324,65 +324,6 @@ TEST(PppmLifecycle, IsReciprocalLongRangeParticipant) {
     EXPECT_EQ(pppm.name(), "pppm");
 }
 
-// --- pure selector arithmetic: pppm_fft_ranks -------------------------------
-
-TEST(PppmFftRanks, LargestDivisorWithinRankBudget) {
-    // Budget = min(nprocs, planes_k0); the answer is the largest divisor of
-    // planes_k0 that fits, so the FFTW-MPI dim-0 slab split is never ragged.
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256), 32);
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 64), 32);
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 16), 16);
-    EXPECT_EQ(cpu::pppm_fft_ranks(34, 4), 2);
-}
-
-TEST(PppmFftRanks, MinPlanesPerRankShrinksBudget) {
-    // Budget = min(nprocs, planes_k0 / min_planes_per_rank).
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256, 2), 16);
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256, 4), 8);
-}
-
-TEST(PppmFftRanks, MinPlanesPerRankLargerThanMeshGivesOne) {
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 256, 33), 1);
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 8, 64), 1);
-}
-
-TEST(PppmFftRanks, PrimeMeshOrSingleRankGivesOne) {
-    EXPECT_EQ(cpu::pppm_fft_ranks(31, 8), 1); // 31 prime: only 1 and 31 fit
-    EXPECT_EQ(cpu::pppm_fft_ranks(32, 1), 1);
-    EXPECT_EQ(cpu::pppm_fft_ranks(31, 1), 1);
-}
-
-TEST(PppmFftRanks, ThrowsOnNonPositiveArguments) {
-    EXPECT_THROW(cpu::pppm_fft_ranks(0, 16), std::invalid_argument);
-    EXPECT_THROW(cpu::pppm_fft_ranks(-32, 16), std::invalid_argument);
-    EXPECT_THROW(cpu::pppm_fft_ranks(32, 0), std::invalid_argument);
-    EXPECT_THROW(cpu::pppm_fft_ranks(32, -4), std::invalid_argument);
-    EXPECT_THROW(cpu::pppm_fft_ranks(32, 16, 0), std::invalid_argument);
-    EXPECT_THROW(cpu::pppm_fft_ranks(32, 16, -1), std::invalid_argument);
-}
-
-TEST(PppmFftRanks, ResultDividesMeshAndFitsBudget) {
-    // Same tuples, checked as the two structural invariants the FFTW-MPI slab
-    // split depends on: exact divisibility, and never more ranks than planes.
-    struct Row {
-        int planes;
-        int nprocs;
-        int min_planes;
-    };
-    const Row rows[] = {{32, 256, 1}, {32, 64, 1},  {32, 16, 1},
-                        {32, 256, 2}, {34, 4, 1},   {31, 8, 1},
-                        {32, 1, 1},   {32, 256, 4}, {31, 1, 1}};
-    for (const Row& row : rows) {
-        const int r =
-            cpu::pppm_fft_ranks(row.planes, row.nprocs, row.min_planes);
-        EXPECT_GE(r, 1) << "planes=" << row.planes << " np=" << row.nprocs;
-        EXPECT_EQ(row.planes % r, 0)
-            << "ragged slab: planes=" << row.planes << " r=" << r;
-        EXPECT_LE(r, row.nprocs) << "planes=" << row.planes;
-        EXPECT_LE(r, row.planes) << "np=" << row.nprocs;
-    }
-}
-
 // --- pure selector policy: pppm_select_mesh_arm -----------------------------
 
 TEST(PppmSelectMeshArm, SingleRankIsReplicated) {
@@ -495,7 +436,7 @@ TEST(KSpaceVirial, TraceIsNegativeAffineEnergyDerivativeIncludingNetCharge) {
     }
 }
 
-#if defined(ATV_HAS_MPI) && defined(ATV_HAS_FFTW_MPI)
+#ifdef ATV_HAS_MPI
 TEST(PppmCoul, NonuniformDistributedCutsRejectBeforeBuildOrCollectives) {
     // Synthetic published Runtime metadata: rejection must not call MPI/FFT.
     // Restore the caller's explicit mesh choice, including on assertion failure.

@@ -10,20 +10,20 @@
 /// space** (the Fourier picture of the periodic cell, where that part needs
 /// only a few terms), and interpolates the result back onto the atoms as a
 /// force. The **FFT** (fast Fourier transform) is what moves the mesh between
-/// the two pictures; **FFTW** is the library that provides it, **FFTW-MPI** its
-/// distributed build, and r2c/c2r its real→complex / complex→real transforms.
+/// the two pictures; **FFTW** is the library that provides the 1-D
+/// transforms, r2c/c2r being its real→complex / complex→real ones.
 /// **MPI** (Message Passing Interface) runs the job as `nprocs` processes
-/// called **ranks**, numbered `0 … nprocs-1`. A **mesh plane** is one
-/// `x = const` layer of the mesh — there are `K0` of them — and FFTW-MPI gives
-/// each rank a **slab** of whole planes, so a rank owning no plane has no FFT
-/// work at all. A **brick** is the block of mesh points one rank owns under the
-/// spatial domain decomposition — the ranks laid out as a 3-D grid, the
-/// **Cartesian communicator** — ringed by the **ghost** layers that its
-/// owned atoms' stencils reach and its neighbours also write into; **reverse_comm** sums those ghosts back into
+/// called **ranks**, numbered `0 … nprocs-1`. A **brick** is the block of
+/// mesh points one rank owns under the spatial domain decomposition — the
+/// ranks laid out as a 3-D grid, the **Cartesian communicator** — ringed by
+/// the **ghost** layers that its owned atoms' stencils reach and its
+/// neighbours also write into; **reverse_comm** sums those ghosts back into
 /// their owners and **forward_comm** refills them from the owners afterwards.
-/// Brick layout and slab layout cut the mesh differently, so a **remap** (a
-/// plan-based point-to-point exchange between overlapping ranks, LAMMPS
-/// `remap_3d`) converts between them before and after the FFT.
+/// A **pencil** is a block of whole mesh lines along one axis; the
+/// distributed FFT (`PencilFft`, the LAMMPS `fft_3d` port) transforms one
+/// axis at a time on pencils along it and moves the data between pencil
+/// layouts, and between bricks and pencils, with a **remap** (a plan-based
+/// point-to-point exchange between overlapping ranks, LAMMPS `remap_3d`).
 /// Forces are **ik** differentiation, the LAMMPS `pppm` default: the mesh
 /// potential's Cartesian gradient is i·k·G(k)·ρ̂(k), inverse-transformed, and
 /// gathered with the same B-spline θ that spread the charge.
@@ -46,9 +46,9 @@
 /// | 1 | Local **density brick** (owned mesh + order ghost layers) |
 /// | 2 | Spread **owned atoms only** onto brick |
 /// | 3 | **mesh reverse fold**: ghost density to owners (Grid3d plan, p2p) |
-/// | 4 | **brick→FFT remap** (remap_3d plan, p2p) into FFTW-MPI dim-0 slabs |
-/// | 5 | Distributed r2c FFT → Hockney–Eastwood G(k) → three ik c2r transforms |
-/// | 6 | **FFT→brick remap** + **mesh forward fill** of each field component |
+/// | 4 | Pencil r2c FFT of the owned brick cells (remap into pencils inside) |
+/// | 5 | Hockney–Eastwood G(k) → three ik backward transforms, each landing in its field brick |
+/// | 6 | One **mesh forward fill** of the three field bricks (LAMMPS `FORWARD_IK`) |
 /// | 7 | θ interpolation of the Cartesian electric field |
 ///
 /// ### Mesh arms
@@ -59,28 +59,25 @@
 /// | Arm | Mesh layout | FFT group |
 /// |---|---|---|
 /// | `Replicated` | full mesh on every rank | none: each rank repeats it |
-/// | `BrickWorld` | brick + remap | all `nprocs` ranks |
-/// | `BrickSubgroup` | brick + remap | `fft_ranks()` of `nprocs` ranks |
+/// | `BrickWorld` | brick + pencil FFT | all `nprocs` ranks |
+/// | `BrickSubgroup` | brick + pencil FFT | `fft_ranks()` of `nprocs` ranks |
 ///
 /// `Replicated` is the floor: each rank spreads its own atoms, one
 /// `MPI_Allreduce` sums the whole mesh, and then *every* rank runs the same
 /// serial r2c/c2r transform on that identical grid. Nothing is broadcast and no
 /// rank idles; rank 0 alone banks the reciprocal energy into the Frame. It is
-/// taken at one rank, without a domain decomposition, when FFTW-MPI is not
-/// compiled in, and when `ATV_PPPM_ALLREDUCE=1` forces it.
+/// taken at one rank, without a domain decomposition, and when
+/// `ATV_PPPM_ALLREDUCE=1` forces it.
 ///
-/// The two brick arms both run steps 1–7 above and differ only in who holds the
-/// FFT slabs. `BrickWorld` keeps them on the whole Cartesian communicator
-/// (aliased, never split); it is taken when the FFT group is every rank
-/// (`fft_ranks() == nprocs`) or when `ATV_PPPM_BRICK=1` forces it.
-/// `BrickSubgroup` — the multi-rank default whenever
-/// `pppm_fft_ranks(K0, nprocs) < nprocs`, i.e. whenever the mesh has fewer
-/// usable planes than there are ranks — confines the slabs to a subgroup of
-/// cart ranks `[0, fft_ranks())` split off that communicator. Non-members still
-/// spread, halo, remap and interpolate; they skip only the FFT itself and the
-/// reciprocal-energy reduction.
+/// The two brick arms both run steps 1–7 above and differ only in who holds
+/// pencils. `BrickWorld`, the multi-rank default, gives every rank pencils,
+/// as LAMMPS does. `BrickSubgroup` is taken when the constructor's
+/// `fft_ranks` names fewer: cart ranks `[0, fft_ranks())` hold the pencils
+/// and the others only send their brick to the transform and receive the
+/// field back. On both, each rank banks its own share of the reciprocal
+/// energy and virial.
 ///
-/// Requires `ATV_BUILD_KSPACE` (FFTW3). Multi-rank brick needs `ATV_HAS_FFTW_MPI`.
+/// Requires `ATV_BUILD_KSPACE` (FFTW3); the multi-rank arms need only MPI.
 #pragma once
 
 #include <algorithm>
@@ -101,7 +98,11 @@
 #include "atomiverse/cpu/longrange/kspace.h"
 
 #ifdef ATV_HAS_MPI
+#include <memory>
+
 #include <mpi.h>
+
+#include "atomiverse/cpu/longrange/pencil_fft.h"
 #endif
 
 namespace ATV {
@@ -116,58 +117,23 @@ enum class PppmMeshArm {
     /// grid, then the *same* serial FFT on every rank — no broadcast, no idle
     /// rank. Rank 0 alone banks the reciprocal energy.
     Replicated,
-    /// Brick + remap, with the FFT slabs spread over every rank of the
-    /// Cartesian communicator (aliased, never split).
+    /// Brick + pencil FFT with pencils on every rank of the Cartesian
+    /// communicator.
     BrickWorld,
-    /// Brick + remap, with the FFT slabs confined to the `fft_ranks()`
-    /// lowest-numbered cart ranks; the rest skip the FFT collectives.
+    /// Brick + pencil FFT with pencils on the `fft_ranks()` lowest-numbered
+    /// cart ranks only.
     BrickSubgroup
 };
-
-/// @brief Largest FFT group size that divides the mesh and fits the ranks.
-///
-/// Pure arithmetic — no MPI, no environment, no state. The result is a
-/// *divisor* of @p planes_k0 rather than a plain minimum so that every group
-/// member gets the same whole number of planes: the FFTW-MPI dim-0 slab split
-/// is then exact, never ragged. It also never exceeds the rank budget
-/// `min(nprocs, planes_k0 / min_planes_per_rank)` (clamped to ≥ 1, since 1
-/// divides every mesh). FFTW's MPI slab decomposition gives a rank work only
-/// when it owns at least one plane, which is the origin of the `≤ planes_k0`
-/// bound (Frigo & Johnson, Proc. IEEE 93, 216 (2005)).
-///
-/// @param planes_k0 Mesh planes along x, i.e. the FFT dim-0 extent (count).
-/// @param nprocs Ranks in the parent communicator (count).
-/// @param min_planes_per_rank Minimum planes a group member must own (count).
-/// @return FFT group size (rank count), ≥ 1 and an exact divisor of
-///         @p planes_k0.
-/// @throws std::invalid_argument if any argument is ≤ 0 (no fallback value).
-inline int pppm_fft_ranks(int planes_k0, int nprocs,
-                          int min_planes_per_rank = 1) {
-    if (planes_k0 <= 0 || nprocs <= 0 || min_planes_per_rank <= 0)
-        throw std::invalid_argument(
-            "pppm_fft_ranks: planes_k0, nprocs and min_planes_per_rank must "
-            "all be > 0 (got planes_k0="
-            + std::to_string(planes_k0) + ", nprocs=" + std::to_string(nprocs)
-            + ", min_planes_per_rank=" + std::to_string(min_planes_per_rank)
-            + ")");
-    const int budget =
-        std::max(1, std::min(nprocs, planes_k0 / min_planes_per_rank));
-    for (int d = budget; d > 1; --d)
-        if (planes_k0 % d == 0)
-            return d;
-    return 1;
-}
 
 /// @brief Pick the mesh arm for a mesh/rank/FFT-group triple.
 ///
 /// Pure policy — no MPI, no environment, no state, so it is unit-testable
-/// without launching ranks. Compile-time FFTW-MPI availability and the
-/// `ATV_PPPM_ALLREDUCE` / `ATV_PPPM_BRICK` overrides stay at the call site.
+/// without launching ranks. The `ATV_PPPM_ALLREDUCE` / `ATV_PPPM_BRICK`
+/// overrides stay at the call site.
 ///
 /// @param planes_k0 Mesh planes along x, i.e. the FFT dim-0 extent (count).
 /// @param nprocs Ranks in the parent communicator (count).
-/// @param fft_ranks Members of the FFT group (rank count), typically from
-///        pppm_fft_ranks().
+/// @param fft_ranks Members of the FFT group (rank count).
 /// @return `Replicated` for a single rank, `BrickWorld` when every rank is an
 ///         FFT group member, `BrickSubgroup` otherwise.
 /// @throws std::invalid_argument if any argument is ≤ 0, or if @p fft_ranks
@@ -211,17 +177,13 @@ class KSpacePPPM : public cpu::KSpace {
     ///        also sets the ghost depth. The ik denominator keeps 12
     ///        coefficient slots, which is why the order stops at 12; LAMMPS
     ///        itself stops at 7.
-    /// @param fft_ranks Requested FFT group size (rank count); 0 (the default)
-    ///        derives it from the mesh with pppm_fft_ranks() at the first
-    ///        reciprocal solve, and again whenever the mesh or the rank count
-    ///        changes. Ignored on the replicated arm and when
+    /// @param fft_ranks Ranks that hold FFT pencils (rank count); 0 (the
+    ///        default) is every rank. Ignored on the replicated arm and when
     ///        `ATV_PPPM_BRICK=1` forces the world arm.
     /// @throws std::invalid_argument at construction on a non-positive alpha
     ///         or grid_spacing, an order outside [3, 12], or a negative
-    ///         fft_ranks; and at
-    ///         the first multi-rank reciprocal solve when a positive fft_ranks
-    ///         exceeds `min(nprocs, K0)` — an FFTW-MPI slab member needs at
-    ///         least one mesh plane, so no such group can exist.
+    ///         fft_ranks; and at the first multi-rank reciprocal solve when
+    ///         fft_ranks exceeds the rank count.
     explicit KSpacePPPM(double alpha, double grid_spacing = 1.0, int order = 6,
                         int fft_ranks = 0);
     /// @brief Construct on an explicit mesh (LAMMPS `kspace_modify mesh`).
@@ -276,8 +238,8 @@ class KSpacePPPM : public cpu::KSpace {
     ///
     /// The same value on every rank, member or not — which is what lets a
     /// parity test assert that the arm it meant to exercise is the arm that
-    /// ran. On the two brick arms it counts the ranks holding FFTW-MPI slabs;
-    /// on `PppmMeshArm::Replicated` there are no slabs, so it reports every
+    /// ran. On the two brick arms it counts the ranks holding FFT pencils;
+    /// on `PppmMeshArm::Replicated` there are no pencils, so it reports every
     /// rank sharing the mesh (1 without a domain decomposition) because each of
     /// them repeats the whole serial FFT.
     /// @return Member rank count (count); 0 before the first compute().
@@ -347,16 +309,17 @@ class KSpacePPPM : public cpu::KSpace {
     ///         caller agrees on it across ranks before throwing.
     std::string map_stencils_(int n_local);
 #ifdef ATV_HAS_MPI
-    /// @brief Build the four grid plans against the Allgathered owned /
-    /// ghost-extended brick and slab extent tables (once per mesh shape /
-    /// decomposition / group).
+    /// @brief Build the two mesh-ghost plans against the Allgathered owned
+    /// and ghost-extended brick extents (once per mesh shape /
+    /// decomposition).
     void build_grid_plans_(MPI_Comm comm, int me, int nprocs);
     /// @brief Replay one plan: Irecv all, pack + Isend all, local self
-    /// copies, Waitall, unpack. `src_brick` / `dst_brick` select brick vs
-    /// FFT-slab indexing; `add` sums on unpack (mesh reverse) instead of
-    /// overwriting.
+    /// copies, Waitall, unpack. `add` sums on unpack (mesh reverse) instead
+    /// of overwriting. `nfield` bricks travel in one message per partner
+    /// (LAMMPS `FORWARD_IK` packs the three field bricks the same way);
+    /// brick `c` starts at `data + c * stride` [doubles].
     void run_grid_plan_(const GridPlan& plan, MPI_Comm comm, int tag_base,
-                        bool src_brick, bool dst_brick, bool add);
+                        double* data, std::size_t stride, bool add, int nfield);
 #endif
 
     double alpha_;
@@ -385,7 +348,10 @@ class KSpacePPPM : public cpu::KSpace {
     int nylo_out_ = 0, nyhi_out_ = 0;
     int nzlo_out_ = 0, nzhi_out_ = 0;
     int nxl_ = 0, nyl_ = 0, nzl_ = 0; ///< brick dimensions incl. ghosts
-    std::vector<double> brick_; ///< density or potential, size nxl*nyl*nzl
+    std::vector<double> brick_;       ///< density, size nxl*nyl*nzl
+    /// The three ik field components, each one brick (LAMMPS
+    /// `vdx_brick` / `vdy_brick` / `vdz_brick`), size 3*nxl*nyl*nzl.
+    std::vector<double> field_brick_;
 
     // Serial full-mesh buffers (1-rank path / green tables).
     std::vector<double> dens_full_; ///< full K0·K1·K2 real buffer (serial FFT)
@@ -401,54 +367,38 @@ class KSpacePPPM : public cpu::KSpace {
     void* plan_fwd_ = nullptr;
     void* plan_bwd_ = nullptr;
 
-    // FFTW-MPI slab
+    // Multi-rank pencil FFT (LAMMPS `fft_3d` port), built at the first
+    // multi-rank solve and rebuilt when the mesh, the bricks, the rank count
+    // or the FFT group changes.
     bool mpi_fft_ready_ = false;
-    long long mpi_local_n0_ = 0;
-    long long mpi_local_0_start_ = 0;
-    long long mpi_alloc_ = 0;
-    double* mpi_data_ = nullptr;
-    void* plan_mpi_fwd_ = nullptr;
-    void* plan_mpi_bwd_ = nullptr;
+#ifdef ATV_HAS_MPI
+    std::unique_ptr<longrange::PencilFft> fft_;
+#endif
+    /// ρ̂/V on this rank's pencils (`PencilFft` spectrum layout), kept
+    /// across the three ik solves.
+    std::vector<std::complex<double>> spectrum_;
+    std::vector<double> owned_; ///< owned brick cells, no ghosts
     int mpi_fft_K_[3] = {0, 0, 0};
     int mpi_nprocs_ = 1;
     /// Resolved FFT group size; 0 until the reciprocal solve sets it.
     int fft_ranks_resolved_ = 0;
     /// Arm taken by the reciprocal solve; Replicated until it sets it.
     PppmMeshArm mesh_arm_ = PppmMeshArm::Replicated;
-#ifdef ATV_HAS_MPI
-    /// FFT slab communicator: an alias of `dd->cart_comm` on the world arm, a
-    /// split of it on the subgroup arm, `MPI_COMM_NULL` for a non-member and
-    /// before the first multi-rank solve.
-    MPI_Comm fft_comm_ = MPI_COMM_NULL;
-    /// True only when `fft_comm_` came from `MPI_Comm_split` (an alias is not
-    /// ours to free).
-    bool owns_fft_comm_ = false;
-#endif
-    /// Per-rank FFT m0 ownership (length nprocs+1 prefix starts).
-    std::vector<int> fft_m0_starts_;
-    std::vector<int> fft_m0_counts_;
-
-    // ── Plan-based grid exchanges (LAMMPS `Grid3d` + `remap_3d` port) ──
+    // ── Plan-based mesh-ghost exchanges (LAMMPS `Grid3d` port) ──
     //
-    // Four plans, all built once per (mesh shape, decomposition, FFT
-    // group) and replayed every step as point-to-point value messages
-    // between actually-overlapping ranks — no collectives, no indices on
-    // the wire:
+    // Two plans, built once per (mesh shape, decomposition) and replayed
+    // every step as point-to-point value messages between
+    // actually-overlapping ranks — no collectives, no indices on the wire:
     //
-    //   * `mesh_rev_`  — ghost density folded into owners (sum),
-    //   * `mesh_fwd_`  — ghost potential refilled from owners (copy),
-    //   * `remap_fwd_` — brick owned cells → FFTW-MPI slab,
-    //   * `remap_bwd_` — FFTW-MPI slab → brick owned cells.
+    //   * `mesh_rev_` — ghost density folded into owners (sum),
+    //   * `mesh_fwd_` — ghost field refilled from owners (copy).
     //
-    // The mesh plans enumerate periodic images of the ghost-extended
-    // brick, so a ghost shell deeper than a neighbour's brick (small
-    // mesh, many ranks) is routed to the rank that actually owns the
-    // cells — the dim-by-dim face cascade this replaces silently dropped
-    // that charge.
+    // The plans enumerate periodic images of the ghost-extended brick, so a
+    // ghost shell deeper than a neighbour's brick (small mesh, many ranks)
+    // is routed to the rank that actually owns the cells — the dim-by-dim
+    // face cascade this replaces silently dropped that charge.
     GridPlan mesh_rev_;
     GridPlan mesh_fwd_;
-    GridPlan remap_fwd_;
-    GridPlan remap_bwd_;
     std::vector<double> grid_send_;
     std::vector<double> grid_recv_;
     std::vector<double> grid_self_;

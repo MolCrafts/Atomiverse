@@ -563,6 +563,8 @@ if(NOT ATV_DOCS_ONLY)
     if(ATV_BUILD_KSPACE)
         list(APPEND ATOMIVERSE_SRCS
             src/cpu/longrange/pme.cpp
+            src/cpu/longrange/grid_remap.cpp # LAMMPS remap_3d port (MPI)
+            src/cpu/longrange/pencil_fft.cpp # LAMMPS fft_3d port (MPI)
             src/cpu/longrange/pppm.cpp) # true Hockney–Eastwood PPPM (r2c + HE green)
 
     endif()
@@ -1036,22 +1038,6 @@ if(NOT ATV_DOCS_ONLY)
             $<BUILD_INTERFACE:fftw3_stub>
             $<INSTALL_INTERFACE:Atomiverse::fftw>)
         target_compile_definitions(atomiverse PUBLIC ATV_HAS_KSPACE)
-        # FFTW3 MPI (slab/pencil distributed FFT for multi-rank PPPM).
-        if(ATV_USE_MPI)
-            find_library(FFTW3_MPI_LIB fftw3_mpi HINTS
-                $ENV{FFTW3_ROOT}/lib $ENV{FFTW3_ROOT}/lib64
-                $ENV{FFTW_ROOT}/lib $ENV{FFTW_ROOT}/lib64)
-            if(FFTW3_MPI_LIB)
-                target_link_libraries(atomiverse PUBLIC
-                    $<BUILD_INTERFACE:${FFTW3_MPI_LIB}>
-                    $<INSTALL_INTERFACE:Atomiverse::fftw_mpi>)
-                target_compile_definitions(atomiverse PUBLIC ATV_HAS_FFTW_MPI)
-                message(STATUS "KSPACE: FFTW3 MPI enabled (${FFTW3_MPI_LIB})")
-            else()
-                message(WARNING "KSPACE: libfftw3_mpi not found — multi-rank "
-                                "PPPM falls back to replicated-grid Allreduce")
-            endif()
-        endif()
         # CUDA PME (cuFFT) — only when the CUDA backend is also enabled.
         if(ATV_BUILD_CUDA)
             target_link_libraries(atomiverse PUBLIC CUDA::cufft)

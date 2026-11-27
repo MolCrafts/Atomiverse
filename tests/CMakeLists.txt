@@ -835,6 +835,13 @@ if(ATV_USE_MPI AND MPIEXEC_EXECUTABLE)
                         test_mpi_pppm_subcomm_parity 2)
         atv_add_mpi_run(test_mpi_pppm_subcomm_parity_n4
                         test_mpi_pppm_subcomm_parity 4)
+        # Pencil FFT vs serial FFTW: 1, 4 (2 x 2 pencils), 7 (prime: 1 x 7,
+        # more ranks than x planes) and 12 (3 x 4) ranks.
+        atv_add_mpi_exec(test_mpi_pencil_fft mpi/test_pencil_fft.cpp)
+        atv_add_mpi_run(test_mpi_pencil_fft_n1 test_mpi_pencil_fft 1)
+        atv_add_mpi_run(test_mpi_pencil_fft_n4 test_mpi_pencil_fft 4)
+        atv_add_mpi_run(test_mpi_pencil_fft_n7 test_mpi_pencil_fft 7)
+        atv_add_mpi_run(test_mpi_pencil_fft_n12 test_mpi_pencil_fft 12)
     endif()
 
     atv_add_mpi_exec(test_mpi_bonded_energy_bruteforce
@@ -1252,7 +1259,10 @@ if(ATV_BUILD_CUDA)
     if(ATV_BUILD_EVALUATE)
         atv_add_test(test_cuda_evaluate cuda/evaluate/test_evaluate.cu)
     endif()
-    if(ATV_BUILD_MD AND ATV_BUILD_NEIGHBOR AND ATV_BUILD_POTENTIALS)
+    # Drives cuda::XyzRecorder and cuda::MrecRecorder as capture consumers,
+    # whose writers compile only under ATV_BUILD_IO (iron law 8).
+    if(ATV_BUILD_MD AND ATV_BUILD_IO AND ATV_BUILD_NEIGHBOR
+       AND ATV_BUILD_POTENTIALS)
         atv_add_test(test_cuda_capture_buffer cuda/asynchronous/test_capture_buffer.cu)
     endif()
     if(ATV_BUILD_SEMIEMPIRICAL)

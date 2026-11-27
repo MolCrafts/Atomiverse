@@ -2,12 +2,12 @@
 /// @brief Production gate: CoulLong + brick PPPM on 1 and 2 ranks.
 ///
 /// Proves multi-rank brick PPPM (local brick + reverse/forward + Alltoallv
-/// + FFTW-MPI) does not double-count and matches Madelung science:
+/// + pencil FFT) does not double-count and matches Madelung science:
 ///   * static energy matches Madelung on n=1 and n=2,
 ///   * reduced energy is rank-identical,
 ///   * tag-gathered forces vanish by rock-salt symmetry.
 ///
-/// Requires ATV_BUILD_KSPACE. Multi-rank needs ATV_HAS_FFTW_MPI.
+/// Requires ATV_BUILD_KSPACE.
 
 #include <gtest/gtest.h>
 
@@ -84,11 +84,6 @@ TEST(PppmBrickParity, StaticMadelungForceOn1And2Ranks) {
     if (world_size != 1 && world_size != 2)
         GTEST_SKIP() << "1- or 2-rank specific; got world_size=" << world_size;
 
-#ifndef ATV_HAS_FFTW_MPI
-    if (world_size > 1)
-        GTEST_SKIP() << "multi-rank brick PPPM requires ATV_HAS_FFTW_MPI";
-#endif
-
     auto frame = make_nacl();
     cpu::md::MD sim;
     build_static_pppm(sim);
@@ -149,11 +144,6 @@ TEST(PppmBrickParity, OneRankAgreesWithTwoRankEnergy) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     if (world_size != 1 && world_size != 2)
         GTEST_SKIP();
-
-#ifndef ATV_HAS_FFTW_MPI
-    if (world_size > 1)
-        GTEST_SKIP() << "needs FFTW-MPI";
-#endif
 
     auto frame = make_nacl();
     cpu::md::MD sim;

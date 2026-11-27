@@ -75,10 +75,12 @@ and related unit tests.
 | Style | Multi-rank (default) | Optional / debug |
 |---|---|---|
 | **PME** | Replicated-grid: `MPI_Allreduce` full charge mesh; rank-0 FFT; `MPI_Bcast` potential | — |
-| **PPPM** | **Subgroup arm**: brick + reverse/forward + Alltoallv brick↔FFT + FFTW-MPI slabs on a derived communicator of `pppm_fft_ranks(K0, nprocs)` cart ranks `[0, P_fft)` (largest divisor of K0 within the rank budget; the tree's first real `MPI_Comm_split`, fingerprint-guarded, aliased un-split when `P_fft == nprocs`). Non-members spread/halo/remap/interpolate only — no FFT collective. Selection: `pppm_select_mesh_arm`; the old `mesh ≤ 64³ && ranks ≥ 16 → replicated` rule is gone (falsified at np=64: brick 4.78 s vs replicated 5.43 s). Gates: `test_mpi_pppm_subcomm_parity` n=1/2/4, `test_mpi_pppm_brick_parity` n=1/2. | `ATV_PPPM_BRICK=1` forces the world-comm brick arm (all ranks in the FFT collective); `ATV_PPPM_ALLREDUCE=1` forces the replicated arm (dens_full Allreduce, every rank runs the serial FFT). Both are the debug/compare paths the three-arm bench matrix is measured with. |
+| **PPPM** | **Brick arm**: per-rank brick + mesh reverse/forward ghost plans + pencil FFT (`PencilFft`, the LAMMPS `fft_3d` / `remap_3d` port: 1-D FFTW transforms on pencils along z, y, x, joined by point-to-point remap plans; r2c, so the spectrum is the half spectrum). Every rank holds pencils, as in LAMMPS; `KSpacePPPM{…, fft_ranks}` confines them to cart ranks `[0, fft_ranks)` (subgroup arm). No FFTW-MPI and no derived communicator. Each rank banks its own share of the reciprocal energy and virial. Selection: `pppm_select_mesh_arm`. Gates: `test_mpi_pencil_fft` n=1/4/7/12, `test_mpi_pppm_subcomm_parity` n=1/2/4, `test_mpi_pppm_brick_parity` n=1/2. | `ATV_PPPM_BRICK=1` forces the world brick arm; `ATV_PPPM_ALLREDUCE=1` forces the replicated arm (dens_full Allreduce, every rank runs the serial FFT). Both are debug/compare paths. |
 
-Self-energy partitions over owned atoms; reciprocal energy/net-charge on
-rank 0; `Reduce` all-reduces frame energy/stress.
+Self-energy partitions over owned atoms. The reciprocal energy and virial
+are banked as per-rank shares on the PPPM brick arms and on rank 0 on the
+replicated arms; the net-charge term is on rank 0. `Reduce` all-reduces
+frame energy/stress.
 
 The brick's ghost extents are LAMMPS `Grid3d::ghost_grid` with
 `set_distance(0.5·skin)`: an owned atom may sit half the neighbor skin outside

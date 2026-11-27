@@ -11,7 +11,7 @@ use one that sets exactly the knobs below.
 
 ## Prerequisites
 
-- MPI and FFTW3 (FFTW-MPI enables the PPPM FFT subgroup).
+- MPI and FFTW3.
 - A LAMMPS binary with MOLECULE and KSPACE, run on the same node.
 - `gawk`, for `widebox_parity.sh`.
 
@@ -49,7 +49,7 @@ srun --mpi=pmi2 --ntasks="$NP" --cpus-per-task=1 --cpu-bind=cores \
 ```
 
 Diagnostic switches (no physics change):
-- `--fft-ranks N` sets the size of the PPPM FFT subgroup.
+- `--fft-ranks N` limits the PPPM FFT pencils to N ranks (default: every rank).
 - `ATV_PPPM_BRICK=1` and `ATV_PPPM_ALLREDUCE=1` force the world-brick and
   replicated PPPM arms.
 - `ATV_FORCE_DIMS=x,y,z` forces the processor grid.

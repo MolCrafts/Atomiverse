@@ -4,12 +4,8 @@ include(CMakePackageConfigHelpers)
 set(_atv_package_dir "${CMAKE_INSTALL_LIBDIR}/cmake/Atomiverse")
 
 set(ATV_PACKAGE_FFTW_OMP OFF)
-set(ATV_PACKAGE_FFTW_MPI OFF)
 if(TARGET fftw3_stub AND FFTW3_OMP_LIB AND OpenMP_CXX_FOUND)
     set(ATV_PACKAGE_FFTW_OMP ON)
-endif()
-if(ATV_BUILD_KSPACE AND ATV_USE_MPI AND FFTW3_MPI_LIB)
-    set(ATV_PACKAGE_FFTW_MPI ON)
 endif()
 
 if(ATV_BUILD_MOLPY)

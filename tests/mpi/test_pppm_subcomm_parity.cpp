@@ -1,19 +1,18 @@
 /// @file tests/mpi/test_pppm_subcomm_parity.cpp
 /// @brief Production gate: the PPPM mesh-arm selector and its FFT subgroup.
 ///
-/// Pins the third arm of the `KSpacePPPM` mesh selector (spec
-/// `kspace-subcomm`): the FFT slab lives on a communicator of
-/// `pppm_fft_ranks(K0, nprocs)` ranks derived from `dd->cart_comm`, so at
-/// `world == 4` with `K0 == 6` exactly one rank is a non-member.
+/// Pins the arms of the `KSpacePPPM` mesh selector: the FFT pencils live on
+/// every rank by default, and on cart ranks `[0, fft_ranks)` when the
+/// constructor names fewer.
 ///
 ///   * world 1 → `mesh_arm() == Replicated`, explicit `fft_ranks = 1` is a
 ///     no-op on the energy (same code path ⇒ bitwise identical);
-///   * world 2 → `pppm_fft_ranks(6, 2) == 2 == nprocs`, so the subgroup
-///     derivation must **alias** `cart_comm`, not split it → `BrickWorld`;
-///   * world 4 → `fft_ranks() == 3`, `mesh_arm() == BrickSubgroup`, and the
-///     physics is invariant: total energy and tag-aligned per-atom forces
-///     match a `fft_ranks = 4` `BrickWorld` run on the same system, and the
-///     reduced energy is rank-consistent;
+///   * world 2 → the default group is both ranks → `BrickWorld`;
+///   * world 4 → the default is `BrickWorld` with 4 pencil ranks;
+///     `fft_ranks = 3` is `BrickSubgroup` with one rank that holds no pencil,
+///     and the physics is invariant: total energy and tag-aligned per-atom
+///     forces match the `BrickWorld` run, and the reduced energy is
+///     rank-consistent;
 ///   * world 2 and 4 → each brick arm equals the replicated arm
 ///     (`ATV_PPPM_ALLREDUCE=1`) for odd and even orders, which pins the
 ///     ghost extents of LAMMPS's centred stencil (`Grid3d::ghost_grid` with
@@ -28,7 +27,7 @@
 /// engine, and (deliberately) no literature oracle: Madelung-style pins belong
 /// to `regressions/`.
 ///
-/// Requires ATV_BUILD_KSPACE. Multi-rank needs ATV_HAS_FFTW_MPI.
+/// Requires ATV_BUILD_KSPACE.
 
 #include <gtest/gtest.h>
 
@@ -176,15 +175,7 @@ int world_rank() {
 
 /// @brief Skip unless this launch has `want` ranks and multi-rank FFT is built.
 /// @return true when the caller should keep running.
-bool arm_case_enabled(int want) {
-    if (world_size() != want)
-        return false;
-#ifndef ATV_HAS_FFTW_MPI
-    if (want > 1)
-        return false;
-#endif
-    return true;
-}
+bool arm_case_enabled(int want) { return world_size() == want; }
 
 } // namespace
 
@@ -199,10 +190,10 @@ TEST(PppmSubcommParity, SingleRankReportsReplicatedArm) {
         << "serial PPPM must report the replicated arm, got "
         << arm_label(run.arm);
     // `fft_ranks()` is documented as 0 only *before* the first compute(); after
-    // one solve it must report the resolved group, which at world 1 is
-    // pppm_fft_ranks(K0, 1) == 1. Without this the arm check above passes on a
-    // default-constructed member alone.
-    EXPECT_EQ(run.fft_ranks, cpu::pppm_fft_ranks(kExpectedK0, 1))
+    // one solve it must report the resolved group, which at world 1 is 1.
+    // Without this the arm check above passes on a default-constructed
+    // member alone.
+    EXPECT_EQ(run.fft_ranks, 1)
         << "the resolved FFT group was never published after compute()";
 }
 
@@ -225,24 +216,19 @@ TEST(PppmSubcommParity, SingleRankExplicitFftRanksOneIsBitwiseIdentical) {
 
 TEST(PppmSubcommParity, TwoRanksAliasWorldInsteadOfSplitting) {
     if (!arm_case_enabled(2))
-        GTEST_SKIP() << "2-rank + ATV_HAS_FFTW_MPI specific; got world_size="
-                     << world_size();
+        GTEST_SKIP() << "2-rank specific; got world_size=" << world_size();
     ASSERT_EQ(resolved_k0(), kExpectedK0)
         << "geometry premise broken: L/spacing must resolve to K0=6";
-    ASSERT_EQ(cpu::pppm_fft_ranks(kExpectedK0, 2), 2)
-        << "premise: 2 divides 6, so the group is the whole world";
 
     const ArmRun run = run_arm(/*fft_ranks=*/0);
     EXPECT_EQ(run.fft_ranks, 2);
     EXPECT_EQ(run.arm, cpu::PppmMeshArm::BrickWorld)
-        << "fft_ranks == nprocs must alias cart_comm (no MPI_Comm_split), got "
-        << arm_label(run.arm);
+        << "the default group is every rank, got " << arm_label(run.arm);
 }
 
 TEST(PppmSubcommParity, TwoRanksAgreeOnReducedEnergy) {
     if (!arm_case_enabled(2))
-        GTEST_SKIP() << "2-rank + ATV_HAS_FFTW_MPI specific; got world_size="
-                     << world_size();
+        GTEST_SKIP() << "2-rank specific; got world_size=" << world_size();
 
     const ArmRun run = run_arm(/*fft_ranks=*/0);
     double e_min = run.energy, e_max = run.energy;
@@ -253,35 +239,37 @@ TEST(PppmSubcommParity, TwoRanksAgreeOnReducedEnergy) {
         << "ranks disagree on the reduced energy (missing/duplicated reduce?)";
 }
 
-// ── world = 4: K0 = 6, group = 3 ranks, one non-member ─────────────────────
+// ── world = 4: default is every rank; fft_ranks = 3 leaves one out ─────────
+
+TEST(PppmSubcommParity, FourRanksDefaultToTheWorldArm) {
+    if (!arm_case_enabled(4))
+        GTEST_SKIP() << "4-rank specific; got world_size=" << world_size();
+    ASSERT_EQ(resolved_k0(), kExpectedK0)
+        << "geometry premise broken: L/spacing must resolve to K0=6";
+
+    const ArmRun run = run_arm(/*fft_ranks=*/0);
+    EXPECT_EQ(run.fft_ranks, 4) << "every rank holds pencils by default";
+    EXPECT_EQ(run.arm, cpu::PppmMeshArm::BrickWorld) << arm_label(run.arm);
+}
 
 TEST(PppmSubcommParity, FourRanksSelectSubgroupArmWithThreeFftRanks) {
     if (!arm_case_enabled(4))
-        GTEST_SKIP() << "4-rank + ATV_HAS_FFTW_MPI specific; got world_size="
-                     << world_size();
-    ASSERT_EQ(resolved_k0(), kExpectedK0)
-        << "geometry premise broken: L/spacing must resolve to K0=6";
-    ASSERT_EQ(cpu::pppm_fft_ranks(kExpectedK0, 4), 3)
-        << "premise: largest divisor of 6 that is ≤ 4 is 3";
+        GTEST_SKIP() << "4-rank specific; got world_size=" << world_size();
 
-    const ArmRun run = run_arm(/*fft_ranks=*/0);
-    EXPECT_EQ(run.fft_ranks, 3)
-        << "the FFT slab must live on 3 of the 4 ranks (6 planes, 2 each)";
+    const ArmRun run = run_arm(/*fft_ranks=*/3);
+    EXPECT_EQ(run.fft_ranks, 3);
     EXPECT_EQ(run.arm, cpu::PppmMeshArm::BrickSubgroup)
-        << "one rank is a non-member, so this is the subgroup arm, got "
+        << "one rank holds no pencil, so this is the subgroup arm, got "
         << arm_label(run.arm);
 }
 
 TEST(PppmSubcommParity, FourRankSubgroupEnergyMatchesWorldArm) {
     if (!arm_case_enabled(4))
-        GTEST_SKIP() << "4-rank + ATV_HAS_FFTW_MPI specific; got world_size="
-                     << world_size();
+        GTEST_SKIP() << "4-rank specific; got world_size=" << world_size();
 
-    const ArmRun subgroup = run_arm(/*fft_ranks=*/0);
-    // fft_ranks = 4 does not divide 6: today's world arm, ragged FFTW-MPI
-    // slabs (default dim-0 block ceil(6/4) = 2 -> local_n0 = 2,2,2,0). Energy
-    // is a functional of the Hamiltonian, so only the summation order may
-    // differ.
+    const ArmRun subgroup = run_arm(/*fft_ranks=*/3);
+    // Energy is a functional of the Hamiltonian, so only the summation
+    // order may differ between the two pencil layouts.
     const ArmRun world = run_arm(/*fft_ranks=*/4);
 
     const double rel = std::fabs(subgroup.energy - world.energy)
@@ -292,21 +280,20 @@ TEST(PppmSubcommParity, FourRankSubgroupEnergyMatchesWorldArm) {
     // Anti-false-green: without these an implementation that silently stays on
     // the world arm would pass the parity comparison trivially.
     EXPECT_EQ(subgroup.arm, cpu::PppmMeshArm::BrickSubgroup)
-        << "default arm is not the subgroup arm: " << arm_label(subgroup.arm);
+        << "fft_ranks=3 is not the subgroup arm: " << arm_label(subgroup.arm);
     EXPECT_EQ(world.arm, cpu::PppmMeshArm::BrickWorld)
         << "pinned fft_ranks=4 is not the world arm: " << arm_label(world.arm);
 }
 
 TEST(PppmSubcommParity, FourRankSubgroupForcesMatchWorldArm) {
     if (!arm_case_enabled(4))
-        GTEST_SKIP() << "4-rank + ATV_HAS_FFTW_MPI specific; got world_size="
-                     << world_size();
+        GTEST_SKIP() << "4-rank specific; got world_size=" << world_size();
 
-    const ArmRun subgroup = run_arm(/*fft_ranks=*/0);
+    const ArmRun subgroup = run_arm(/*fft_ranks=*/3);
     const ArmRun world = run_arm(/*fft_ranks=*/4);
     // Anti-false-green (every rank, before the root-only comparison).
     EXPECT_EQ(subgroup.arm, cpu::PppmMeshArm::BrickSubgroup)
-        << "default arm is not the subgroup arm: " << arm_label(subgroup.arm);
+        << "fft_ranks=3 is not the subgroup arm: " << arm_label(subgroup.arm);
 
     if (world_rank() != 0)
         return;
@@ -342,12 +329,11 @@ TEST(PppmSubcommParity, FourRankSubgroupForcesMatchWorldArm) {
 
 TEST(PppmSubcommParity, FourRanksAgreeOnReducedEnergy) {
     if (!arm_case_enabled(4))
-        GTEST_SKIP() << "4-rank + ATV_HAS_FFTW_MPI specific; got world_size="
-                     << world_size();
+        GTEST_SKIP() << "4-rank specific; got world_size=" << world_size();
 
-    const ArmRun run = run_arm(/*fft_ranks=*/0);
-    // The non-member rank must still see the reduced energy: the subgroup
-    // Allreduce plus the existing world-level reduction has to leave every
+    const ArmRun run = run_arm(/*fft_ranks=*/3);
+    // The rank without pencils must still see the reduced energy: the
+    // per-rank shares plus the world-level reduction have to leave every
     // rank on the same number. Reduce before any EXPECT so a one-rank failure
     // cannot strand the others in a collective.
     double e_min = run.energy, e_max = run.energy;
@@ -364,7 +350,7 @@ TEST(PppmSubcommParity, FourRanksAgreeOnReducedEnergy) {
 
 TEST(PppmSubcommParity, BrickArmsMatchReplicatedForOddAndEvenOrders) {
     if (!arm_case_enabled(2) && !arm_case_enabled(4))
-        GTEST_SKIP() << "2- or 4-rank + ATV_HAS_FFTW_MPI specific; got "
+        GTEST_SKIP() << "2- or 4-rank specific; got "
                         "world_size="
                      << world_size();
     struct AllreduceEnv {
@@ -485,7 +471,7 @@ int cut_axis() {
 
 TEST(PppmSubcommParity, OwnedAtomDriftingTwoCellsPastItsCutUsesSkinGhosts) {
     if (!arm_case_enabled(2) && !arm_case_enabled(4))
-        GTEST_SKIP() << "2- or 4-rank + ATV_HAS_FFTW_MPI specific; got "
+        GTEST_SKIP() << "2- or 4-rank specific; got "
                         "world_size="
                      << world_size();
     const int axis = cut_axis();
@@ -544,7 +530,7 @@ TEST(PppmSubcommParity, OwnedAtomDriftingTwoCellsPastItsCutUsesSkinGhosts) {
 
 TEST(PppmSubcommParity, OutOfRangeAtomThrowsOnEveryRank) {
     if (!arm_case_enabled(2) && !arm_case_enabled(4))
-        GTEST_SKIP() << "2- or 4-rank + ATV_HAS_FFTW_MPI specific; got "
+        GTEST_SKIP() << "2- or 4-rank specific; got "
                         "world_size="
                      << world_size();
     const int axis = cut_axis();
