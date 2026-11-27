@@ -44,6 +44,7 @@
 #include "atomiverse/cpu/dynamics/configurational_temperature.h"
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/fix_lincs.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/gear_pc.h"
@@ -258,7 +259,8 @@ struct MdHandle {
             driver.set_barostat(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::InitVelocityParams>
                            || std::is_same_v<P, cpu::task::FixShakeParams>
-                           || std::is_same_v<P, cpu::task::FixRattleParams>)
+                           || std::is_same_v<P, cpu::task::FixRattleParams>
+                           || std::is_same_v<P, cpu::task::FixLincsParams>)
             driver.set_observer(std::move(comp));
         else if constexpr (std::is_same_v<P, cpu::task::ThermoParams>)
             driver.set_thermo(
@@ -507,6 +509,27 @@ void bind_md(nb::module_& m) {
              nb::arg("bond_type"), nb::arg("length"))
         .def("constrain_angle", &cpu::task::FixRattleParams::constrain_angle,
              nb::arg("angle_type"), nb::arg("distance_13"));
+    nb::class_<cpu::task::FixLincsParams>(
+        m, "FixLincs",
+        "LINCS distance constraints (CPU): RATTLE's position and velocity "
+        "stages solved by a matrix expansion of the given order, iterated "
+        "to the tolerance.")
+        .def(nb::init<double, double, int, int>(), nb::arg("dt"),
+             nb::arg("tolerance") = constraint_tolerance,
+             nb::arg("max_iter") = 500, nb::arg("order") = 4)
+        .def(
+            "constrain_bond",
+            [](cpu::task::FixLincsParams& self, int bond_type, double length) {
+                self.constrain_bond(bond_type, length);
+            },
+            nb::arg("bond_type"), nb::arg("length"))
+        .def(
+            "constrain_angle",
+            [](cpu::task::FixLincsParams& self, int angle_type,
+               double distance_13) {
+                self.constrain_angle(angle_type, distance_13);
+            },
+            nb::arg("angle_type"), nb::arg("distance_13"));
 
     nb::enum_<md::Phase>(m, "Phase", "MD phase sequence (LAMMPS-style).")
         .value("initial_integrate", md::Phase::initial_integrate)
@@ -1215,6 +1238,13 @@ void bind_md(nb::module_& m) {
         [](MdHandle& self, const cpu::task::FixRattleParams& p) {
             self.set_categorical("set_observer", p,
                                  p.component<cpu::md::FixRattle>());
+        },
+        nb::arg("comp"));
+    md.def(
+        "set_observer",
+        [](MdHandle& self, const cpu::task::FixLincsParams& p) {
+            self.set_categorical("set_observer", p,
+                                 p.component<cpu::md::FixLincs>());
         },
         nb::arg("comp"));
 

@@ -1450,6 +1450,8 @@ enum class ComponentId : std::uint16_t {
     PW = 40, ///< CPU plane-wave DFT with one NC provider per element.
     FixShake = 41,
     FixRattle = 42,
+    /// LINCS distance constraints — `cpu::md::FixLincs`. MD-only, CPU.
+    FixLincs = 43,
 };
 
 inline const char* component_name(ComponentId id) noexcept {
@@ -1472,6 +1474,8 @@ inline const char* component_name(ComponentId id) noexcept {
         return "FixShake";
     case ComponentId::FixRattle:
         return "FixRattle";
+    case ComponentId::FixLincs:
+        return "FixLincs";
     case ComponentId::NoseHoover:
         return "NoseHoover";
     case ComponentId::Thermo:
@@ -1585,7 +1589,8 @@ using MDComponentParams = std::variant<
     PairMorseParams, PairBuckParams, PairBornParams, PairYukawaParams,
     PairWcaParams, PairDpdParams, BondFeneParams, DihedralCharmmParams,
     ImproperHarmonicParams, PairLJCutCoulLongParams, AngleCosineParams,
-    FixEfieldParams, MrecRecorderParams, FixShakeParams, FixRattleParams>;
+    FixEfieldParams, MrecRecorderParams, FixShakeParams, FixRattleParams,
+    FixLincsParams>;
 
 using MinimizeComponentParams =
     std::variant<PairLJCutParams, NeighborListParams, LBFGSParams, CGParams,
@@ -1620,6 +1625,8 @@ inline ComponentId component_id(const MDComponentParams& params) noexcept {
                 return ComponentId::FixShake;
             else if constexpr (std::is_same_v<P, FixRattleParams>)
                 return ComponentId::FixRattle;
+            else if constexpr (std::is_same_v<P, FixLincsParams>)
+                return ComponentId::FixLincs;
             else if constexpr (std::is_same_v<P, NoseHooverParams>)
                 return ComponentId::NoseHoover;
             else if constexpr (std::is_same_v<P, ThermoParams>)

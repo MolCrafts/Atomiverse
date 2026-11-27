@@ -61,8 +61,9 @@ struct StepTiming {
         if (has("nose") || has("langevin") || has("berendsen") || has("verlet")
             || has("nve") || has("nvt") || has("npt") || has("barostat")
             || has("thermostat") || has("rattle") || has("shake")
-            || has("deform") || has("momentum") || has("fix_")
-            || has("init_velocity") || has("kinetic") || has("gear"))
+            || has("lincs") || has("settle") || has("deform") || has("momentum")
+            || has("fix_") || has("init_velocity") || has("kinetic")
+            || has("gear"))
             return Modify;
         return Other;
     }

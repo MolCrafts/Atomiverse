@@ -1,5 +1,6 @@
 /// @file cpu/dynamics/distance_constraints.h
-/// @brief cpu::md::DistanceConstraints — iterative holonomic distance constraints.
+/// @brief cpu::md::DistanceConstraints — holonomic distance constraints
+///        (SHAKE, RATTLE, LINCS).
 #pragma once
 
 #include "atomiverse/cpu/component/timestep_protocol.h"
@@ -25,7 +26,7 @@ namespace ATV {
 namespace cpu {
 namespace md {
 
-/// @brief Shared SHAKE/RATTLE distance-constraint solver.
+/// @brief Shared SHAKE/RATTLE/LINCS distance-constraint solver.
 ///
 /// SHAKE predicts the next positions from the current coordinates, half-step
 /// velocities and physical forces, solves the coupled distance constraints,
@@ -34,6 +35,20 @@ namespace md {
 /// RATTLE corrects positions and half-step velocities in `post_integrate`,
 /// then projects velocities onto the constraint tangent space after the final
 /// half-kick. FixShake and FixRattle select these concrete algorithms.
+///
+/// LINCS (FixLincs) runs RATTLE's two stages and shares its bindings, virial
+/// convention and initialization, but replaces the constraint-by-constraint
+/// Gauss–Seidel sweep with the matrix expansion of Hess et al., J. Comput.
+/// Chem. 18, 1463 (1997): with \(S = \mathrm{diag}(1/\sqrt{1/m_i + 1/m_j})\)
+/// and \(B\) the unit reference bond directions,
+/// \((S B M^{-1} B^T S)^{-1} = (I - A)^{-1} \approx \sum_{n \le
+/// \mathrm{order}} A^n\). The position stage projects the new bonds onto the
+/// reference directions, then repeats the rotational length correction
+/// \(p = \sqrt{2 d^2 - l^2}\) until every `|r|^2/d^2 - 1` meets the
+/// tolerance; the velocity stage refines the same expansion on
+/// `r.(v_i - v_j) = 0`. The expansion converges only while the spectral
+/// radius of \(A\) is below one; a cluster that does not converge within
+/// `max_iter` sweeps throws.
 ///
 /// SHAKE tallies its reaction force times the current bond vector. RATTLE
 /// converts its accumulated position impulse with 2/(dt^2*ftm2v) and the
@@ -141,6 +156,10 @@ class DistanceConstraints : public cpu::Constraint,
                                                    : 1.0e-10;
     }
 
+    /// @brief Solver: force-level SHAKE, Gauss–Seidel RATTLE, or LINCS
+    ///        (matrix expansion in RATTLE's two stages).
+    enum class Algorithm { Shake, Rattle, Lincs };
+
     /// @param dt Timestep [fs] — the position stage feeds its correction back into
     ///        the velocities as `dx/dt`, so it must match the integrator's.
     /// @param tolerance Relative tolerance on `|r|^2/d^2 - 1`. The default is
@@ -148,8 +167,12 @@ class DistanceConstraints : public cpu::Constraint,
     ///        throw because the Frame columns cannot represent the requested result.
     /// @param max_iter Iteration cap; exceeding it throws rather than silently
     ///        returning an unconstrained molecule.
+    /// @param algorithm Solver and stage selection.
+    /// @param expansion_order LINCS matrix-expansion order (number of
+    ///        \(A^n\) terms beyond the identity) [dimensionless]; >= 1 for
+    ///        `Algorithm::Lincs`, unused by SHAKE and RATTLE.
     explicit DistanceConstraints(double dt, double tolerance, int max_iter,
-                                 bool velocity_projection);
+                                 Algorithm algorithm, int expansion_order = 0);
 
     /// @brief Hold every bond of type `bond_type` at length `length`.
     /// @param bond_type Bond type index as stored in the frame's topology.
@@ -165,7 +188,9 @@ class DistanceConstraints : public cpu::Constraint,
     void constrain_angle(int angle_type, double distance_13);
 
     std::string name() const override {
-        return velocity_projection_ ? "rattle" : "shake";
+        return algorithm_ == Algorithm::Lincs ? "lincs"
+               : velocity_projection_         ? "rattle"
+                                              : "shake";
     }
 
     /// @brief Structural slot: a Constraint, NOT an Integrator. Tagging it as an
@@ -190,14 +215,15 @@ class DistanceConstraints : public cpu::Constraint,
                                    std::vector<BigInt>& by_type) const override;
 
     std::vector<DefaultBinding> default_bindings() const override {
-        std::vector<DefaultBinding> bindings = {
-            ATV::make_binding(ATV::md::Phase::initial_integrate, -500),
-            ATV::make_binding(ATV::md::Phase::post_integrate, 0),
-            ATV::make_binding(ATV::md::Phase::post_force, 100)};
-        if (velocity_projection_)
-            bindings.push_back(
-                ATV::make_binding(ATV::md::Phase::final_integrate, 200));
-        return bindings;
+        // SHAKE is LAMMPS fix shake: one force stage that holds the next
+        // position, so one forward pass per step. RATTLE and LINCS correct
+        // the drifted positions and then project the velocities.
+        if (!velocity_projection_)
+            return {ATV::make_binding(ATV::md::Phase::post_force, 100)};
+        return {ATV::make_binding(ATV::md::Phase::initial_integrate, -500),
+                ATV::make_binding(ATV::md::Phase::post_integrate, 0),
+                ATV::make_binding(ATV::md::Phase::post_force, 100),
+                ATV::make_binding(ATV::md::Phase::final_integrate, 200)};
     }
     void initialize_forces(const cpu::LaunchContext& ctx) override;
 
@@ -205,7 +231,7 @@ class DistanceConstraints : public cpu::Constraint,
     void launch(const cpu::LaunchContext& ctx) override;
 
     /// @brief Forward packer mode; F communicates accumulated physical forces.
-    enum class CommMode { XSHAKE, VP, V, F };
+    enum class CommMode { XSHAKE, VP, V, F, PREDICTED };
 
     /// @brief Select the packer mode (XSHAKE adds the lattice translation H·pbc [Å]).
     /// @param mode Packer mode.
@@ -231,7 +257,8 @@ class DistanceConstraints : public cpu::Constraint,
     /// @param buf Packed doubles.
     void unpack_forward_comm(int n, int first, const double* buf) override;
 
-    /// @brief Iterations taken by the last position stage (diagnostics).
+    /// @brief Iterations taken by the last position stage (diagnostics); for
+    ///        LINCS, the length-correction sweeps after the projection.
     int last_position_iters() const { return last_pos_iters_; }
     /// @brief Iterations taken by the last velocity stage (diagnostics).
     int last_velocity_iters() const { return last_vel_iters_; }
@@ -282,10 +309,27 @@ class DistanceConstraints : public cpu::Constraint,
     /// @brief RATTLE velocity stage, cluster by cluster.
     void solve_velocities_(const cpu::LaunchContext& ctx);
 
+    /// @brief Build the LINCS coupling graph of this rank's clusters and
+    ///        size the solver scratch; called when rows moved.
+    void build_lincs_coupling_();
+
+    /// @brief LINCS position stage: projection plus length corrections.
+    void solve_lincs_positions_(const cpu::LaunchContext& ctx);
+
+    /// @brief LINCS velocity stage: expansion-refined tangent projection.
+    void solve_lincs_velocities_(const cpu::LaunchContext& ctx);
+
+    /// @brief One truncated-expansion solve of `(I - A) sol = rhs` for the
+    ///        local constraints `[k0, k1)`; `lincs_rhs_` holds the right-hand
+    ///        side on entry and is consumed.
+    void lincs_expand_(int k0, int k1);
+
     void solve_shake_forces_(const cpu::LaunchContext& ctx, bool initial);
     void initial_virial_(const cpu::LaunchContext& ctx);
     std::array<double, 6> constraint_virial_{};
-    bool velocity_projection_;
+    Algorithm algorithm_;
+    bool velocity_projection_; ///< RATTLE and LINCS: velocity stage present
+    int expansion_order_;      ///< LINCS expansion order; 0 otherwise
     double dt_;
     double tol_;
     int max_iter_;
@@ -311,6 +355,22 @@ class DistanceConstraints : public cpu::Constraint,
     /// integrator moves anything: SHAKE corrects along them, and by
     /// post_integrate the pre-move positions are gone.
     std::vector<double> ref_sx_, ref_sy_, ref_sz_;
+    /// LINCS only. Constraint k couples to the constraints sharing an atom
+    /// with it: CSR `[lincs_offset_[k], lincs_offset_[k+1])` over
+    /// `lincs_neighbor_`, with the static factor
+    /// `-S_k S_n c_k c_n / m_shared` in `lincs_static_`; `lincs_coef_` is
+    /// that factor times the current `B_k.B_n`. The rest is per-constraint
+    /// scratch, sized here so the stages allocate nothing.
+    std::vector<int> lincs_offset_, lincs_neighbor_;
+    std::vector<double> lincs_static_, lincs_coef_;
+    std::vector<double> lincs_s_;                        ///< S_k [amu^1/2]
+    std::vector<double> lincs_bx_, lincs_by_, lincs_bz_; ///< unit directions
+    std::vector<double> lincs_rhs_, lincs_tmp_, lincs_sol_;
+    std::vector<double> lincs_lambda_; ///< accumulated S_k sol_k per stage
+    /// SHAKE force-stage scratch: predicted next positions per row and the
+    /// accumulated multiplier per local constraint.
+    std::vector<std::array<double, 3>> shake_predicted_;
+    std::vector<double> shake_lambda_;
     std::vector<char> cluster_seen_; ///< scratch, one flag per global cluster
     BondedTupleCache rows_cache_;    ///< row-identity staleness only
 

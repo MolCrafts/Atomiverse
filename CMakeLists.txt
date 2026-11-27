@@ -437,6 +437,7 @@ if(NOT ATV_DOCS_ONLY)
             src/cpu/dynamics/berendsen.cpp
             src/cpu/dynamics/fix_csvr.cpp
             src/cpu/dynamics/fix_rattle.cpp
+            src/cpu/dynamics/fix_lincs.cpp
             src/cpu/dynamics/fix_settle.cpp
             src/cpu/dynamics/virtual_sites.cpp
             src/cpu/dynamics/const_pot_bo.cpp

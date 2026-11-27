@@ -6,6 +6,6 @@ class FixRattle : public DistanceConstraints {
   public:
     explicit FixRattle(double dt, double tolerance = default_tolerance(),
                        int max_iter = 500)
-        : DistanceConstraints(dt, tolerance, max_iter, true) {}
+        : DistanceConstraints(dt, tolerance, max_iter, Algorithm::Rattle) {}
 };
 } // namespace ATV::cpu::md

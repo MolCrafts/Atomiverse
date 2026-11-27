@@ -227,6 +227,7 @@ if(ATV_BUILD_MD) # VelocityVerlet / QEq / ConstPot* / FixRattle are MD-domain so
     atv_add_cpp_test(test_cpu_md_charge_updater_probe cpu/dynamics/test_charge_updater_probe.cpp)
     atv_add_cpp_test(test_cpu_md_fix_rattle_packer    cpu/dynamics/test_fix_rattle_packer.cpp)
     atv_add_cpp_test(test_cpu_md_fix_rattle           cpu/dynamics/test_fix_rattle.cpp)
+    atv_add_cpp_test(test_cpu_md_fix_lincs            cpu/dynamics/test_fix_lincs.cpp)
     atv_add_test(test_constraint_virial cpu/dynamics/test_constraint_virial.cpp)
 endif()
 atv_add_cpp_test(test_cpu_md_charge_packer        cpu/dynamics/test_charge_packer.cpp)

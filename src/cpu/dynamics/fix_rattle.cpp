@@ -1,6 +1,8 @@
 /// @file cpu/dynamics/fix_rattle.cpp
-/// @brief cpu::md::FixRattle — iterative holonomic distance constraints.
+/// @brief cpu::md::DistanceConstraints — shared table, clusters, halo packer
+///        and the SHAKE/RATTLE Gauss–Seidel stages (LINCS: fix_lincs.cpp).
 
+#include "atomiverse/core/timer.h"
 #include "atomiverse/cpu/component/owned_range.h"
 #include "atomiverse/cpu/dynamics/distance_constraints.h"
 
@@ -14,6 +16,7 @@
 #include "atomiverse/cpu/communication/comm.h"
 #include "atomiverse/cpu/communication/domain.h"
 #include "atomiverse/cpu/component/comm.h"
+#include "atomiverse/cpu/driver/step_timing.h"
 #include "atomiverse/cpu/frame/frame.h"
 
 #ifdef ATV_HAS_MPI
@@ -25,6 +28,18 @@ namespace cpu {
 namespace md {
 
 namespace {
+// Scoped regions of the two stages roll up under Modify, like the component.
+constexpr int kTimerCategory = static_cast<int>(StepTiming::Modify);
+
+// The communicator a constraint stage must refresh ghosts through, or null.
+// Constraint rows are resolved by tag: across ranks a partner may be a ghost
+// row (dd->tag_to_local), so the stage re-sends what it reads. On one rank
+// the tag index covers owned rows only and the minimum image supplies the
+// periodic partner, so no ghost is ever read and the pass is skipped (LAMMPS
+// FixRattle guards its own passes with nprocs > 1 for the same reason).
+cpu::Comm* halo_comm_(const cpu::LaunchContext& ctx) {
+    return cpu::multi_rank_dd(ctx.runtime) ? ctx.runtime.md.comm : nullptr;
+}
 
 #ifdef ATV_HAS_MPI
 MPI_Datatype tag_mpi_type() {
@@ -52,8 +67,11 @@ allgatherv_native(const std::vector<T>& local, MPI_Datatype dtype,
 } // namespace
 
 DistanceConstraints::DistanceConstraints(double dt, double tolerance,
-                                         int max_iter, bool velocity_projection)
-    : velocity_projection_(velocity_projection), dt_(dt), tol_(tolerance),
+                                         int max_iter, Algorithm algorithm,
+                                         int expansion_order)
+    : algorithm_(algorithm),
+      velocity_projection_(algorithm != Algorithm::Shake),
+      expansion_order_(expansion_order), dt_(dt), tol_(tolerance),
       max_iter_(max_iter) {
     if (!std::isfinite(dt) || dt <= 0.0)
         throw std::invalid_argument("DistanceConstraints: dt must be positive");
@@ -68,6 +86,9 @@ DistanceConstraints::DistanceConstraints(double dt, double tolerance,
     if (max_iter < 1)
         throw std::invalid_argument(
             "DistanceConstraints: max_iter must be >= 1");
+    if (algorithm == Algorithm::Lincs && expansion_order < 1)
+        throw std::invalid_argument(
+            "DistanceConstraints: the LINCS expansion order must be >= 1");
 }
 
 void DistanceConstraints::constrain_bond(int bond_type, double length) {
@@ -414,6 +435,8 @@ void DistanceConstraints::refresh_local_(const cpu::LaunchContext& ctx) {
     ref_sx_.assign(n, 0.0);
     ref_sy_.assign(n, 0.0);
     ref_sz_.assign(n, 0.0);
+    if (algorithm_ == Algorithm::Lincs)
+        build_lincs_coupling_();
     rows_cache_.mark_built(ctx);
 }
 
@@ -424,7 +447,7 @@ int DistanceConstraints::pack_forward_comm(int n, const int* list, double* buf,
     // Columns were resolved once in launch(); a forward pass calls this per
     // swap, and per-swap lookups would count against the resolution budget.
     int m = 0;
-    if (comm_mode_ == CommMode::XSHAKE) {
+    if (comm_mode_ == CommMode::XSHAKE || comm_mode_ == CommMode::PREDICTED) {
         // The image translation is the lattice combination H·pbc, which
         // has off-axis components in a tilted cell.
         double dx = 0.0, dy = 0.0, dz = 0.0;
@@ -435,6 +458,17 @@ int DistanceConstraints::pack_forward_comm(int n, const int* list, double* buf,
             dx = shift[0];
             dy = shift[1];
             dz = shift[2];
+        }
+        if (comm_mode_ == CommMode::PREDICTED) {
+            // LAMMPS FixShake::pack_forward_comm: the owner's xshake.
+            for (int i = 0; i < n; ++i) {
+                const auto& p =
+                    shake_predicted_[static_cast<std::size_t>(list[i])];
+                buf[m++] = p[0] + dx;
+                buf[m++] = p[1] + dy;
+                buf[m++] = p[2] + dz;
+            }
+            return m;
         }
         for (int i = 0; i < n; ++i) {
             const int j = list[i];
@@ -469,6 +503,14 @@ void DistanceConstraints::unpack_forward_comm(int n, int first,
         for (int i = first; i < first + n; ++i)
             for (int d = 0; d < 3; ++d)
                 force_col_[d][i] = buf[m++];
+        return;
+    }
+    if (comm_mode_ == CommMode::PREDICTED) {
+        int m = 0;
+        for (int i = first; i < first + n; ++i)
+            for (int d = 0; d < 3; ++d)
+                shake_predicted_[static_cast<std::size_t>(i)]
+                                [static_cast<std::size_t>(d)] = buf[m++];
         return;
     }
     const int base = comm_mode_ == CommMode::XSHAKE ? 0 : 3;
@@ -729,24 +771,36 @@ void DistanceConstraints::solve_shake_forces_(const cpu::LaunchContext& ctx,
     force_col_[1] = f.span(kAtom_fy).data();
     force_col_[2] = f.span(kAtom_fz).data();
     refresh_local_(ctx);
-    if (cpu::Comm* comm = ctx.runtime.md.comm)
-        for (auto mode : {CommMode::XSHAKE, CommMode::VP, CommMode::F}) {
-            comm_mode_ = mode;
-            comm->forward_comm(*this);
-        }
+    // Reference bond vectors from the current positions: ghosts hold the
+    // x the force pass was just evaluated with.
     snapshot_(ctx);
     // At startup v is a full-step velocity; during post_force it is the
     // half-step velocity. Predict the next drift, as LAMMPS fix shake does.
     const double dtfsq =
         (initial ? 0.5 : 1.0) * ctx.runtime.units.velocity_impulse(dt_ * dt_);
-    std::vector<std::array<double, 3>> predicted(f.n_total());
-    std::vector<double> lambda(local_i_.size(), 0.0);
+    // Members, so a step reuses the capacity instead of allocating. Only
+    // the rows of constrained atoms are written and read.
+    auto& predicted = shake_predicted_;
+    auto& lambda = shake_lambda_;
+    predicted.resize(static_cast<std::size_t>(f.n_total()));
+    lambda.assign(local_i_.size(), 0.0);
+    // LAMMPS FixShake::unconstrained_update + forward_comm: each owner
+    // predicts its own atoms and one pass carries the result to the ghosts.
+    // A ghost's v and f are never read, so they are not communicated.
+    const int n_own = f.nlocal();
     for (std::size_t k = 0; k < local_i_.size(); ++k)
         for (auto [i, im] : {std::pair{local_i_[k], local_imi_[k]},
                              std::pair{local_j_[k], local_imj_[k]}})
-            for (int d = 0; d < 3; ++d)
-                predicted[i][d] = col_[d][i] + dt_ * col_[3 + d][i]
-                                  + dtfsq * im * force_col_[d][i];
+            if (i < n_own)
+                for (int d = 0; d < 3; ++d)
+                    predicted[i][d] = col_[d][i] + dt_ * col_[3 + d][i]
+                                      + dtfsq * im * force_col_[d][i];
+    if (cpu::Comm* comm = halo_comm_(ctx)) {
+        ATV_PROFILE_SCOPE(ctx, "constraint/halo", ctx.stage, kTimerCategory);
+        comm_mode_ = CommMode::PREDICTED;
+        comm->forward_comm(*this);
+    }
+    ATV_PROFILE_SCOPE(ctx, "constraint/solve", ctx.stage, kTimerCategory);
     for (std::size_t c = 0; c + 1 < local_offset_.size(); ++c) {
         const int begin = local_offset_[c], end = local_offset_[c + 1];
         int iteration = 0;
@@ -868,9 +922,16 @@ void DistanceConstraints::launch(const cpu::LaunchContext& ctx) {
     // correction its owning rank computed — LAMMPS's replicated-cluster route.
     if (ctx.at(ATV::md::Phase::post_integrate)) {
         comm_mode_ = CommMode::XSHAKE;
-        if (cpu::Comm* comm = ctx.runtime.md.comm)
+        if (cpu::Comm* comm = halo_comm_(ctx)) {
+            ATV_PROFILE_SCOPE(ctx, "constraint/halo", ctx.stage,
+                              kTimerCategory);
             comm->forward_comm(*this);
-        solve_positions_(ctx);
+        }
+        ATV_PROFILE_SCOPE(ctx, "constraint/solve", ctx.stage, kTimerCategory);
+        if (algorithm_ == Algorithm::Lincs)
+            solve_lincs_positions_(ctx);
+        else
+            solve_positions_(ctx);
         return;
     }
 
@@ -893,9 +954,16 @@ void DistanceConstraints::launch(const cpu::LaunchContext& ctx) {
     if (ctx.at(ATV::md::Phase::final_integrate)) {
         refresh_local_(ctx);
         comm_mode_ = CommMode::VP;
-        if (cpu::Comm* comm = ctx.runtime.md.comm)
+        if (cpu::Comm* comm = halo_comm_(ctx)) {
+            ATV_PROFILE_SCOPE(ctx, "constraint/halo", ctx.stage,
+                              kTimerCategory);
             comm->forward_comm(*this);
-        solve_velocities_(ctx);
+        }
+        ATV_PROFILE_SCOPE(ctx, "constraint/solve", ctx.stage, kTimerCategory);
+        if (algorithm_ == Algorithm::Lincs)
+            solve_lincs_velocities_(ctx);
+        else
+            solve_velocities_(ctx);
     }
 }
 

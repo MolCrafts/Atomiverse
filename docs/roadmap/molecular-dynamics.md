@@ -90,7 +90,8 @@ cluster hardware.
 | SHAKE / RATTLE | ✓ | ✓ | Force-level SHAKE and position/velocity RATTLE; bond and 1–3 distance constraints, DOF removal and six-component constraint virial (including initialization); RATTLE adds tangent-velocity projection. MPI on CPU, graph capture on single-GPU CUDA. C++ and Python `MD.set_observer` |
 | SETTLE | ✓ | ✓ | Three-site rigid water; one thread per water on CUDA (single GPU) |
 | Virtual sites | ✓ | ○ | Weighted3 (TIP4P), OutOfPlane3 (TIP5P) |
-| LINCS / general rigid bodies | ○ | ○ | |
+| LINCS | ✓ | ○ | `FixLincs(dt, tolerance, max_iter, order)`: the SHAKE/RATTLE rule set (bonds, 1–3 distances), cluster table, DOF removal, six-component virial and MPI route, with RATTLE's position and velocity stages solved by the matrix expansion of Hess et al., J. Comput. Chem. 18, 1463 (1997), iterated to the tolerance; a cluster whose expansion does not converge throws. Task wire ID 43; Python `MD.set_observer` on CPU. Unit tests: held distances, momentum, tangent velocities, converged positions/velocities/virial equal to RATTLE, run-zero virial in every unit style. No external pin; multi-rank runs untested |
+| General rigid bodies | ○ | ○ | |
 
 ## 4. Nonequilibrium
 

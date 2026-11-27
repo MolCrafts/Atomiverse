@@ -1,5 +1,6 @@
 #include "atomiverse/core/frame_schema.h"
 #include "atomiverse/core/unit_system.h"
+#include "atomiverse/cpu/dynamics/fix_lincs.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/md.h"
@@ -88,6 +89,13 @@ TEST(ConstraintVirial, RattleRunZeroHasReactionInEveryUnitStyle) {
     for (const char* u : {"lj", "real", "metal"})
         initial_pressure<cpu::md::FixRattle>(u);
 }
+TEST(ConstraintVirial, LincsRunZeroHasReactionInEveryUnitStyle) {
+    for (const char* u : {"lj", "real", "metal"})
+        initial_pressure<cpu::md::FixLincs>(u);
+}
+TEST(ConstraintVirial, LincsRigidRotorHasMolecularPressure) {
+    rotor_step<cpu::md::FixLincs>();
+}
 TEST(ConstraintVirial, ShakeRunZeroHasReactionInEveryUnitStyle) {
     for (const char* u : {"lj", "real", "metal"})
         initial_pressure<cpu::md::FixShake>(u);
@@ -103,7 +111,7 @@ TEST(ConstraintVirial, AlgorithmsHaveDistinctVelocityBindings) {
     cpu::md::FixRattle rattle(1);
     EXPECT_EQ(shake.name(), "shake");
     EXPECT_EQ(rattle.name(), "rattle");
-    EXPECT_EQ(shake.default_bindings().size(), 3u);
+    EXPECT_EQ(shake.default_bindings().size(), 1u);
     EXPECT_EQ(rattle.default_bindings().size(), 4u);
     EXPECT_THROW((cpu::md::FixShake{std::numeric_limits<double>::infinity()}),
                  std::invalid_argument);
@@ -132,4 +140,38 @@ TEST(ConstraintVirial, RattleInitialReactionCancelsPhysicalBondForce) {
         EXPECT_DOUBLE_EQ(f.span(force[d])[0], 1.3 * r[d]);
         EXPECT_DOUBLE_EQ(f.span(force[d])[1], -1.3 * r[d]);
     }
+}
+
+// The SHAKE force stage sends one forward pass: each owner's predicted next
+// position (LAMMPS xshake), image-shifted like a coordinate.
+TEST(ConstraintVirial, ShakePacksThePredictedPositionWithTheImageShift) {
+    cpu::Context ctx;
+    ctx.units = units::from_style("lj");
+    auto f = rotor();
+    cpu::md::FixShake fix(0.01, 1e-13);
+    fix.constrain_bond(0, 1);
+    fix.build({ctx, f});
+    fix.initialize_forces({ctx, f, slot_of(md::Phase::post_force), 0});
+    fix.set_comm_mode(cpu::md::FixShake::CommMode::PREDICTED);
+    const int list[2] = {0, 1};
+    const int none[3] = {0, 0, 0}, image[3] = {1, 0, -2};
+    double plain[6], shifted[6];
+    ASSERT_EQ(fix.pack_forward_comm(2, list, plain, 0, none), 6);
+    ASSERT_EQ(fix.pack_forward_comm(2, list, shifted, 1, image), 6);
+    // The solved prediction holds the bond at its constrained length.
+    double d2 = 0;
+    for (int d = 0; d < 3; ++d)
+        d2 += (plain[d] - plain[3 + d]) * (plain[d] - plain[3 + d]);
+    EXPECT_NEAR(d2, 1.0, 1e-11);
+    const double shift[3] = {10.0, 0.0, -20.0};
+    for (int k = 0; k < 6; ++k)
+        EXPECT_DOUBLE_EQ(shifted[k], plain[k] + shift[k % 3]);
+    // Unpacking writes the prediction rows back, not the Frame columns.
+    const double x0 = f.span(kAtom_x)[0];
+    fix.unpack_forward_comm(2, 0, shifted);
+    EXPECT_DOUBLE_EQ(f.span(kAtom_x)[0], x0);
+    double again[6];
+    ASSERT_EQ(fix.pack_forward_comm(2, list, again, 0, none), 6);
+    for (int k = 0; k < 6; ++k)
+        EXPECT_DOUBLE_EQ(again[k], shifted[k]);
 }

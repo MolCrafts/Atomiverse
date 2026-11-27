@@ -379,7 +379,8 @@ class MD:
         ``InitVelocity`` (Maxwell–Boltzmann seeding, net momentum removed),
         ``FixShake`` and ``FixRattle`` (distance constraints; a bond/angle
         type is the value the Frame stores — a molpy ``type_id`` as is, the
-        same index the bonded tables use) run on both devices.
+        same index the bonded tables use) run on both devices. ``FixLincs``
+        (the same rules, solved by the LINCS matrix expansion) is CPU only.
         ``ConfigurationalTemperature`` (borrowed, built for this driver's
         device with ``ConfigurationalTemperature(every, device=...)``)
         evaluates the first-order configurational temperature; after ``run``
@@ -392,10 +393,17 @@ class MD:
             _cpp.InitVelocity,
             _cpp.FixShake,
             _cpp.FixRattle,
+            _cpp.FixLincs,
         ):
             raise TypeError(
-                f"set_observer expects InitVelocity, FixShake, FixRattle or "
-                f"ConfigurationalTemperature, got {type(component).__name__}"
+                f"set_observer expects InitVelocity, FixShake, FixRattle, "
+                f"FixLincs or ConfigurationalTemperature, got "
+                f"{type(component).__name__}"
+            )
+        if self.device == "cuda" and type(component) is _cpp.FixLincs:
+            raise ValueError(
+                "FixLincs is implemented on device='cpu' only; use FixShake "
+                "or FixRattle with device='cuda'"
             )
         if configurational:
             self._require_same_device(
@@ -651,6 +659,7 @@ class MD:
 InitVelocity = _cpp.InitVelocity
 FixShake = _cpp.FixShake
 FixRattle = _cpp.FixRattle
+FixLincs = _cpp.FixLincs
 
 #: Constant uniform electric field (LAMMPS ``fix efield``) —
 #: ``cpu::md::FixEfield`` / ``cuda::md::FixEfield``. ``Ex, Ey, Ez`` in the
@@ -683,4 +692,5 @@ __all__ = [
     "PhaseBuilder",
     "FixShake",
     "FixRattle",
+    "FixLincs",
 ]

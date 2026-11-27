@@ -242,7 +242,7 @@ void write(Writer& w, const DihedralMultiHarmonicParams& p) {
         w.vec(values);
 }
 void write(Writer& w, const VelocityVerletParams& p) { w.f64(p.dt); }
-template <bool V>
+template <DistanceConstraintAlgorithm V>
 void write(Writer& w, const DistanceConstraintParams<V>& p) {
     w.f64(p.dt);
     w.f64(p.tolerance);
@@ -255,11 +255,18 @@ void write(Writer& w, const DistanceConstraintParams<V>& p) {
         }
     }
 }
-template <bool V>
-DistanceConstraintParams<V> read_constraint(Reader& r) {
+/// LINCS: the expansion order, then the shared constraint layout.
+void write(Writer& w, const FixLincsParams& p) {
+    w.i32(p.order);
+    write<DistanceConstraintAlgorithm::Lincs>(w, p);
+}
+/// @brief Read the shared constraint layout into
+///        `Params(dt, tolerance, max_iter, extra...)`.
+template <class Params, class... Extra>
+Params read_constraint(Reader& r, Extra... extra) {
     const double dt = r.f64(), tolerance = r.f64();
     const int max_iter = r.i32();
-    DistanceConstraintParams<V> p(dt, tolerance, max_iter);
+    Params p(dt, tolerance, max_iter, extra...);
     for (int kind = 0; kind < 2; ++kind) {
         const auto count = r.u64();
         if (count > (r.size - r.at) / 12)
@@ -661,6 +668,8 @@ ComponentId decode_component_id(std::uint16_t raw) {
         return ComponentId::FixShake;
     case 42:
         return ComponentId::FixRattle;
+    case 43:
+        return ComponentId::FixLincs;
     default:
         throw std::runtime_error("task_codec: unknown component_id "
                                  + std::to_string(raw));
@@ -824,9 +833,13 @@ MDComponentParams read_md_params(Reader& r, ComponentId id) {
     case ComponentId::InitVelocity:
         return InitVelocityParams{r.f64(), r.u32()};
     case ComponentId::FixShake:
-        return read_constraint<false>(r);
+        return read_constraint<FixShakeParams>(r);
     case ComponentId::FixRattle:
-        return read_constraint<true>(r);
+        return read_constraint<FixRattleParams>(r);
+    case ComponentId::FixLincs: {
+        const int order = r.i32();
+        return read_constraint<FixLincsParams>(r, order);
+    }
     case ComponentId::NoseHoover:
         return NoseHooverParams{r.f64(), r.f64(), r.f64()};
     case ComponentId::Thermo:

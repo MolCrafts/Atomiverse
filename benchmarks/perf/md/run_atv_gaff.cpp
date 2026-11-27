@@ -16,7 +16,9 @@
 /// (with `--shake`) holds every water — an O (15.5–16.5 amu) whose only
 /// two bonds go to terminal hydrogens — rigid with FixSettle instead of
 /// RATTLE (LAMMPS `fix shake ... b <OH> a <HOH>`): d_OH from the bond
-/// type's r0, d_HH from the first water's geometry.
+/// type's r0, d_HH from the first water's geometry. `--constraint
+/// shake|rattle|lincs` picks the solver behind `--shake` (default rattle);
+/// `--lincs-order N` is the LINCS expansion order.
 ///
 /// Usage:
 ///   mpirun -np N run_atv_gaff --data melt.data --steps 1000 [--warmup 100]
@@ -41,8 +43,10 @@
 #include "atomiverse/core/pppm_accuracy.h"
 #include "atomiverse/core/stage.h"
 #include "atomiverse/cpu/communication/domain.h"
+#include "atomiverse/cpu/dynamics/fix_lincs.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/fix_settle.h"
+#include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/init.h"
 #include "atomiverse/cpu/dynamics/md.h"
 #include "atomiverse/cpu/dynamics/nose_hoover.h"
@@ -76,7 +80,7 @@ struct Args {
     double cutoff = 10.0;       // overridden by --ff pair_style cutoff
     double accuracy = 1.0e-4;   // overridden by --ff kspace_style accuracy
     double alpha = -1.0;        // <0 → LAMMPS PPPM::init (pppm_from_accuracy)
-    int fft_ranks = 0;          // 0 → derive from the mesh
+    int fft_ranks = 0;          // 0 → every rank
     double grid_spacing = -1.0; // <0 → the pppm_from_accuracy mesh
     double T = 400.0;
     double tau_T = 100.0;
@@ -92,9 +96,12 @@ struct Args {
     bool shake = false;        // hold X-H bonds rigid (fix shake m 1.008)
     bool settle = false;       // rigid waters through FixSettle
     double shake_tol = 1.0e-5; // relative tolerance
-    std::string forces_out;    // single point: write "id fx fy fz" kcal/mol/Å
-    int thermo = 0;            // >0: Thermo line every N steps (LAMMPS thermo)
-    bool nve = false;          // no thermostat (gate G2: energy drift)
+    int shake_iter = 100;      // iteration cap of the constraint solver
+    std::string constraint = "rattle"; // solver behind --shake
+    int lincs_order = 4;               // LINCS matrix expansion order
+    std::string forces_out; // single point: write "id fx fy fz" kcal/mol/Å
+    int thermo = 0;         // >0: Thermo line every N steps (LAMMPS thermo)
+    bool nve = false;       // no thermostat (gate G2: energy drift)
 };
 
 Args parse(int argc, char** argv) {
@@ -153,6 +160,12 @@ Args parse(int argc, char** argv) {
             a.settle = true;
         else if (!std::strcmp(argv[i], "--shake-tol"))
             a.shake_tol = std::atof(next("--shake-tol"));
+        else if (!std::strcmp(argv[i], "--shake-iter"))
+            a.shake_iter = std::atoi(next("--shake-iter"));
+        else if (!std::strcmp(argv[i], "--constraint"))
+            a.constraint = next("--constraint");
+        else if (!std::strcmp(argv[i], "--lincs-order"))
+            a.lincs_order = std::atoi(next("--lincs-order"));
         else if (!std::strcmp(argv[i], "--forces-out"))
             a.forces_out = next("--forces-out");
         else if (!std::strcmp(argv[i], "--thermo"))
@@ -166,7 +179,9 @@ Args parse(int argc, char** argv) {
                 " [--T 400] [--tau-T 100] [--npt] [--P atm] [--tau-P 1000]"
                 " [--single-point] [--seed N] [--dt fs] [--mesh K] [--shake] "
                 "[--settle]"
-                " [--shake-tol 1e-5] [--forces-out PATH] [--tail 0|1]"
+                " [--shake-tol 1e-5] [--shake-iter 100]"
+                " [--constraint shake|rattle|lincs] [--lincs-order 4]"
+                " [--forces-out PATH] [--tail 0|1]"
                 " [--shift 0|1] [--thermo N] [--nve]\n");
             std::exit(0);
         } else {
@@ -595,17 +610,28 @@ int main(int argc, char** argv) {
                     && water_types.count(bond_type(i, m)) == 0)
                     types.insert(bond_type(i, m));
             }
-        cpu::md::FixRattle rattle{args.dt, args.shake_tol, /*max_iter=*/100};
-        for (int t : types) {
-            if (t < 0 || t >= static_cast<int>(r0.size()))
-                throw std::runtime_error("--shake: bond type has no r0");
-            rattle.constrain_bond(t, r0[static_cast<std::size_t>(t)]);
-        }
+        auto hold = [&](auto fix) {
+            for (int t : types) {
+                if (t < 0 || t >= static_cast<int>(r0.size()))
+                    throw std::runtime_error("--shake: bond type has no r0");
+                fix.constrain_bond(t, r0[static_cast<std::size_t>(t)]);
+            }
+            sim.set_observer(std::move(fix));
+        };
+        if (args.constraint == "rattle")
+            hold(cpu::md::FixRattle{args.dt, args.shake_tol, args.shake_iter});
+        else if (args.constraint == "shake")
+            hold(cpu::md::FixShake{args.dt, args.shake_tol, args.shake_iter});
+        else if (args.constraint == "lincs")
+            hold(cpu::md::FixLincs{args.dt, args.shake_tol, args.shake_iter,
+                                   args.lincs_order});
+        else
+            throw std::invalid_argument(
+                "--constraint must be shake, rattle or lincs");
         if (rank == 0)
-            std::printf("[atv] shake: %zu X-H bond types held rigid, %d "
+            std::printf("[atv] %s: %zu X-H bond types held rigid, %d "
                         "SETTLE waters\n",
-                        types.size(), n_waters);
-        sim.set_observer(std::move(rattle));
+                        args.constraint.c_str(), types.size(), n_waters);
         if (args.settle)
             sim.set_observer(std::move(settle));
     }

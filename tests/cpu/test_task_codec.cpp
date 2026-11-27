@@ -786,13 +786,20 @@ TEST(TaskCodec, DistanceConstraintAlgorithmsRoundTripAllRules) {
     FixRattleParams rattle{0.25, 1e-8, 913};
     rattle.constrain_bond(7, 1.1);
     rattle.constrain_angle(9, 1.6);
-    const TaskSpec spec(
-        MDTask{{{shake, std::nullopt}, {rattle, std::nullopt}}, 12});
+    FixLincsParams lincs{0.125, 1e-9, 77, 6};
+    lincs.constrain_bond(3, 1.01);
+    lincs.constrain_angle(5, 1.63);
+    const TaskSpec spec(MDTask{
+        {{shake, std::nullopt}, {rattle, std::nullopt}, {lincs, std::nullopt}},
+        12});
     const auto bytes = pack(spec);
     const auto copy = unpack(bytes.data(), bytes.size());
-    ASSERT_EQ(copy.md().entries.size(), 2u);
+    ASSERT_EQ(copy.md().entries.size(), 3u);
     EXPECT_EQ(std::get<FixShakeParams>(copy.md().entries[0].params), shake);
     EXPECT_EQ(std::get<FixRattleParams>(copy.md().entries[1].params), rattle);
+    EXPECT_EQ(std::get<FixLincsParams>(copy.md().entries[2].params), lincs);
+    EXPECT_EQ(std::get<FixLincsParams>(copy.md().entries[2].params).order, 6);
+    EXPECT_THROW((FixLincsParams{0.125, 1e-9, 77, 0}), std::invalid_argument);
     EXPECT_THROW(shake.constrain_bond(2, 1.2), std::invalid_argument);
     EXPECT_THROW((void)unpack(bytes.data(), bytes.size() - 1),
                  std::runtime_error);

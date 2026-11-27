@@ -16,6 +16,7 @@
 #include "atomiverse/cpu/dynamics/fix_csvr.h"
 #include "atomiverse/cpu/dynamics/fix_efield.h"
 #include "atomiverse/cpu/dynamics/fix_langevin.h"
+#include "atomiverse/cpu/dynamics/fix_lincs.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/init.h"
@@ -425,6 +426,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                     bind(p.template component<cpu::md::FixShake>());
                 else if constexpr (std::is_same_v<P, FixRattleParams>)
                     bind(p.template component<cpu::md::FixRattle>());
+                else if constexpr (std::is_same_v<P, FixLincsParams>)
+                    bind(p.template component<cpu::md::FixLincs>());
                 else if constexpr (std::is_same_v<P, NoseHooverParams>)
                     bind(cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});
                 else if constexpr (std::is_same_v<P, FixLangevinParams>)
@@ -532,6 +535,8 @@ void register_md_entry(md::MD& driver, const MDComponentEntry& entry,
                 driver.set_observer(p.template component<cpu::md::FixShake>());
             else if constexpr (std::is_same_v<P, FixRattleParams>)
                 driver.set_observer(p.template component<cpu::md::FixRattle>());
+            else if constexpr (std::is_same_v<P, FixLincsParams>)
+                driver.set_observer(p.template component<cpu::md::FixLincs>());
             else if constexpr (std::is_same_v<P, NoseHooverParams>)
                 driver.set_thermostat(
                     cpu::md::NoseHoover{p.T_start, p.tau_T, p.dt});

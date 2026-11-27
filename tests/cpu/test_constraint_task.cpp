@@ -1,4 +1,5 @@
 #include "atomiverse/core/frame_schema.h"
+#include "atomiverse/cpu/dynamics/fix_lincs.h"
 #include "atomiverse/cpu/dynamics/fix_rattle.h"
 #include "atomiverse/cpu/dynamics/fix_shake.h"
 #include "atomiverse/cpu/dynamics/md.h"
@@ -50,4 +51,7 @@ TEST(ConstraintTask, ShakeCategoricalReplayMatchesNative) {
 }
 TEST(ConstraintTask, RattleCategoricalReplayMatchesNative) {
     replay_constraint<cpu::task::FixRattleParams, cpu::md::FixRattle>();
+}
+TEST(ConstraintTask, LincsCategoricalReplayMatchesNative) {
+    replay_constraint<cpu::task::FixLincsParams, cpu::md::FixLincs>();
 }

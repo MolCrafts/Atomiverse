@@ -7,6 +7,6 @@ class FixShake : public DistanceConstraints {
   public:
     explicit FixShake(double dt, double tolerance = default_tolerance(),
                       int max_iter = 500)
-        : DistanceConstraints(dt, tolerance, max_iter, false) {}
+        : DistanceConstraints(dt, tolerance, max_iter, Algorithm::Shake) {}
 };
 } // namespace ATV::cpu::md

@@ -5,8 +5,11 @@
 #include <vector>
 
 namespace ATV::cpu::task {
+/// Solver a distance-constraint parameter set selects.
+enum class DistanceConstraintAlgorithm { Shake, Rattle, Lincs };
+
 /// Backend-neutral, serializable distance-constraint configuration.
-template <bool VelocityProjection>
+template <DistanceConstraintAlgorithm Algorithm>
 struct DistanceConstraintParams {
     double dt, tolerance;
     int max_iter;
@@ -25,9 +28,11 @@ struct DistanceConstraintParams {
     void constrain_angle(int type, double distance) {
         append(angles, type, distance);
     }
-    template <class Native>
-    Native component() const {
-        Native result(dt, tolerance, max_iter);
+    /// @brief The native component: `Native(dt, tolerance, max_iter,
+    ///        extra...)` with every rule applied.
+    template <class Native, class... Extra>
+    Native component(Extra... extra) const {
+        Native result(dt, tolerance, max_iter, extra...);
         for (auto [type, length] : bonds)
             result.constrain_bond(type, length);
         for (auto [type, distance] : angles)
@@ -54,6 +59,30 @@ struct DistanceConstraintParams {
         rules.emplace_back(type, length);
     }
 };
-using FixShakeParams = DistanceConstraintParams<false>;
-using FixRattleParams = DistanceConstraintParams<true>;
+using FixShakeParams =
+    DistanceConstraintParams<DistanceConstraintAlgorithm::Shake>;
+using FixRattleParams =
+    DistanceConstraintParams<DistanceConstraintAlgorithm::Rattle>;
+
+/// LINCS: the shared rule set plus the matrix-expansion order.
+struct FixLincsParams
+    : DistanceConstraintParams<DistanceConstraintAlgorithm::Lincs> {
+    int order; ///< expansion order [dimensionless], >= 1
+    explicit FixLincsParams(double step = 1.0, double tol = 1e-10,
+                            int iterations = 500, int expansion_order = 4)
+        : DistanceConstraintParams(step, tol, iterations),
+          order(expansion_order) {
+        if (order < 1)
+            throw std::invalid_argument(
+                "LINCS: the expansion order must be >= 1");
+    }
+    template <class Native>
+    Native component() const {
+        return DistanceConstraintParams::component<Native>(order);
+    }
+    bool operator==(const FixLincsParams& other) const {
+        return DistanceConstraintParams::operator==(other)
+               && order == other.order;
+    }
+};
 } // namespace ATV::cpu::task

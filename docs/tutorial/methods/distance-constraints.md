@@ -1,4 +1,4 @@
-# SHAKE and RATTLE distance constraints
+# SHAKE, RATTLE and LINCS distance constraints
 
 `cpu::md::FixShake` / `cuda::md::FixShake` enforce bond and angle 1–3
 distances with iterative force-level SHAKE. `FixRattle` also projects
@@ -48,6 +48,43 @@ graph replay. Constraint failures stop the run rather than returning an
 unconstrained trajectory. Lengths, times and pressures follow the driver
 unit style. Tolerances below the storage/integration precision floor are
 rejected.
+
+## LINCS
+
+`cpu::md::FixLincs{dt, tolerance, max_iter, order}` (Python
+`FixLincs(dt, tolerance=..., max_iter=500, order=4)`) takes the same rules and
+runs RATTLE's two stages, but solves each cluster with the matrix expansion of
+Hess, Bekker, Berendsen and Fraaije, *J. Comput. Chem.* **18**, 1463 (1997)
+instead of a constraint-by-constraint sweep. With \(B\) the unit reference
+bond directions and \(S = \mathrm{diag}\,(1/m_i + 1/m_j)^{-1/2}\),
+
+\[
+(S B M^{-1} B^{T} S)^{-1} = (I - A)^{-1} \approx \sum_{n=0}^{\mathrm{order}} A^{n}.
+\]
+
+The position stage first projects the new bonds onto the reference directions,
+then applies the rotational length correction \(p = \sqrt{2d^{2} - l^{2}}\)
+until every \(|r|^{2}/d^{2} - 1\) is within `tolerance`. The velocity stage
+refines the same expansion on \(\mathbf{r}\cdot(\mathbf{v}_i -
+\mathbf{v}_j) = 0\). `max_iter` caps the correction sweeps of a stage;
+exceeding it stops the run. The converged positions, velocities and virial are
+those of RATTLE, so the two are interchangeable in a run.
+
+```python
+from atomiverse.md import FixLincs
+
+constraint = FixLincs(1.0, tolerance=1e-8, order=4)
+constraint.constrain_bond(1, 1.0969)
+sim.set_observer(constraint)  # device="cpu"
+```
+
+The expansion converges only while the spectral radius of \(A\) is below
+one. Bond constraints satisfy that; coupled angle constraints converge slowly
+(a rigid water triangle) or not at all, and `FixRattle` or `FixSettle` is the
+solver for those. A higher `order` costs more per sweep and needs fewer sweeps.
+LINCS runs on the CPU only.
+
+## Scope
 
 These components implement MD distance constraints. CUDA runs on one GPU;
 multi-GPU constraint communication and minimization constraints are not

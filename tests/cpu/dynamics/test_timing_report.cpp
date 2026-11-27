@@ -158,3 +158,10 @@ TEST(Report, CsvRoutesThroughMetricsFile) {
     EXPECT_EQ(row.rfind("stage1,1,10,", 0), 0u); // starts with
     std::remove(path.c_str());
 }
+
+TEST(StepTiming, EveryConstraintSolverIsModify) {
+    // The category is read off the component name; a solver missing from
+    // the list is reported as Other and drops out of the Modify share.
+    for (const char* name : {"shake", "rattle", "lincs", "settle"})
+        EXPECT_EQ(StepTiming::classify(name), StepTiming::Modify) << name;
+}
